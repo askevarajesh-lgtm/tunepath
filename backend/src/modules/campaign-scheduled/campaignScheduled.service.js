@@ -353,10 +353,13 @@ async function postToFacebook(account, post) {
 
   const hasMedia =
     post.media_url &&
-    post.media_url.startsWith("http") &&
-    !post.media_url.includes("picsum");
+    (Array.isArray(post.media_url) ? post.media_url.length > 0 : (post.media_url.startsWith("http") && !post.media_url.includes("picsum")));
+
+  const firstMedia = Array.isArray(post.media_url) ? post.media_url[0] : post.media_url;
   const isVideo =
-    hasMedia && /\.(mp4|mov|avi|webm|mkv)$/i.test(post.media_url);
+    hasMedia && /\.(mp4|mov|avi|webm|mkv)$/i.test(firstMedia);
+
+  const isCarousel = Array.isArray(post.media_url) && post.media_url.length > 1;
 
   if (isVideo && isReel) {
     // Facebook Reels Flow
@@ -371,13 +374,13 @@ async function postToFacebook(account, post) {
     const { upload_url, video_reel_id } = startRes.data;
 
     // Download and upload video to FB
-    const videoRes = await axios.get(post.media_url, {
+    const videoRes = await axios.get(firstMedia, {
       responseType: "arraybuffer",
     });
     await axios.post(upload_url, videoRes.data, {
       headers: {
         Authorization: `OAuth ${account.access_token}`,
-        file_url: post.media_url,
+        file_url: firstMedia,
       },
     });
 
@@ -402,7 +405,7 @@ async function postToFacebook(account, post) {
   if (isVideo) {
     // Standard Video Flow
     const res = await axios.post(`${META_GRAPH}/${account.page_id}/videos`, {
-      file_url: post.media_url,
+      file_url: firstMedia,
       description: post.caption,
       access_token: account.access_token,
     });
@@ -413,10 +416,30 @@ async function postToFacebook(account, post) {
     };
   }
 
-  if (hasMedia) {
+  if (isCarousel) {
+    const attached_media = [];
+    for (const url of post.media_url) {
+      const res = await axios.post(`${META_GRAPH}/${account.page_id}/photos`, {
+        url: url,
+        published: false,
+        access_token: account.access_token,
+      });
+      attached_media.push({ media_fbid: res.data.id });
+    }
+    const res = await axios.post(`${META_GRAPH}/${account.page_id}/feed`, {
+      message: post.caption,
+      attached_media: attached_media,
+      access_token: account.access_token,
+    });
+    const postId = res.data.id;
+    return {
+      externalId: postId,
+      url: `https://www.facebook.com/${postId}`,
+    };
+  } else if (hasMedia) {
     // Photo Flow
     const res = await axios.post(`${META_GRAPH}/${account.page_id}/photos`, {
-      url: post.media_url,
+      url: firstMedia,
       message: post.caption,
       access_token: account.access_token,
     });
@@ -447,8 +470,7 @@ async function postToInstagram(account, post, options = {}) {
 
   const hasMedia =
     post.media_url &&
-    post.media_url.startsWith("http") &&
-    !post.media_url.includes("picsum");
+    (Array.isArray(post.media_url) ? post.media_url.length > 0 : (post.media_url.startsWith("http") && !post.media_url.includes("picsum")));
 
   if (!hasMedia) {
     throw new Error(
@@ -456,9 +478,12 @@ async function postToInstagram(account, post, options = {}) {
     );
   }
 
+  const isCarousel = Array.isArray(post.media_url) && post.media_url.length > 1;
+  const firstMedia = Array.isArray(post.media_url) ? post.media_url[0] : post.media_url;
+
   // Determine media type from post or options
   let mediaType = "IMAGE";
-  if (post.media_url && /\.(mp4|mov|avi|webm|mkv)$/i.test(post.media_url)) {
+  if (firstMedia && /\.(mp4|mov|avi|webm|mkv)$/i.test(firstMedia)) {
     mediaType = "VIDEO";
   }
   if (options.mediaType) {
@@ -477,51 +502,83 @@ async function postToInstagram(account, post, options = {}) {
     platformOption === "reel" ||
     platformOption === "video_short" ||
     platformOption === "short";
+    
+  let creationId;
 
-  if (mediaType === "VIDEO") {
-    containerPayload.media_type = "REELS";
-    containerPayload.video_url = post.media_url;
-    // Always share to feed unless explicitly requested not to (but standard is to share)
-    containerPayload.share_to_feed = true;
-  } else {
-    containerPayload.image_url = post.media_url;
-  }
-
-  const containerRes = await axios.post(
-    `${META_GRAPH}/${account.ig_user_id}/media`,
-    containerPayload,
-  );
-
-  const creationId = containerRes.data.id;
-
-  // For videos, poll until status = FINISHED (max ~60s)
-  if (mediaType === "VIDEO") {
-    const maxAttempts = 20;
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 3000));
-      const statusRes = await axios.get(`${META_GRAPH}/${creationId}`, {
-        params: { fields: "status_code", access_token: account.access_token },
+  if (isCarousel) {
+    const childrenIds = [];
+    for (const url of post.media_url) {
+      const itemRes = await axios.post(`${META_GRAPH}/${account.ig_user_id}/media`, {
+        image_url: url,
+        is_carousel_item: true,
+        access_token: account.access_token
       });
-      if (statusRes.data.status_code === "FINISHED") break;
-      if (statusRes.data.status_code === "ERROR") {
-        throw new Error("Video processing failed on Instagram");
-      }
+      childrenIds.push(itemRes.data.id);
     }
+    
+    for (const id of childrenIds) {
+      let ready = false;
+      for (let i = 0; i < 10; i += 1) {
+        const statusRes = await axios.get(`${META_GRAPH}/${id}`, { params: { fields: "status_code", access_token: account.access_token }});
+        if (statusRes.data.status_code === "FINISHED") { ready = true; break; }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      if (!ready) throw new Error("Carousel item did not finish processing");
+    }
+
+    const carouselRes = await axios.post(`${META_GRAPH}/${account.ig_user_id}/media`, {
+      media_type: "CAROUSEL",
+      caption: post.caption || "",
+      children: childrenIds.join(","),
+      access_token: account.access_token
+    });
+    
+    creationId = carouselRes.data.id;
   } else {
-    // For images, wait a bit then check status
-    let ready = false;
-    for (let i = 0; i < 10; i += 1) {
-      const statusRes = await axios.get(`${META_GRAPH}/${creationId}`, {
-        params: { fields: "status_code", access_token: account.access_token },
-      });
-      if (statusRes.data.status_code === "FINISHED") {
-        ready = true;
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 1500));
+    if (mediaType === "VIDEO") {
+      containerPayload.media_type = "REELS";
+      containerPayload.video_url = firstMedia;
+      containerPayload.share_to_feed = true;
+    } else {
+      containerPayload.image_url = firstMedia;
     }
-    if (!ready)
-      throw new Error("Instagram media container did not finish processing");
+
+    const containerRes = await axios.post(
+      `${META_GRAPH}/${account.ig_user_id}/media`,
+      containerPayload,
+    );
+
+    creationId = containerRes.data.id;
+
+    // For videos, poll until status = FINISHED (max ~60s)
+    if (mediaType === "VIDEO") {
+      const maxAttempts = 20;
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise((r) => setTimeout(r, 3000));
+        const statusRes = await axios.get(`${META_GRAPH}/${creationId}`, {
+          params: { fields: "status_code", access_token: account.access_token },
+        });
+        if (statusRes.data.status_code === "FINISHED") break;
+        if (statusRes.data.status_code === "ERROR") {
+          throw new Error("Video processing failed on Instagram");
+        }
+      }
+    } else {
+      // For images, wait a bit then check status
+      let ready = false;
+      for (let i = 0; i < 10; i += 1) {
+        const statusRes = await axios.get(`${META_GRAPH}/${creationId}`, {
+          params: { fields: "status_code", access_token: account.access_token },
+        });
+        if (statusRes.data.status_code === "FINISHED") {
+          ready = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      if (!ready)
+        throw new Error("Instagram media container did not finish processing");
+    }
   }
 
   const publishRes = await axios.post(
@@ -911,11 +968,22 @@ async function createLinkedInUgcPost(authorUrn, token, post, media = null) {
     visibility: "PUBLIC",
   };
 
-  if (media?.id) {
-    const title = media.title || getLinkedInPostTitle(post);
+  if (Array.isArray(media) && media.length > 1) {
+    payload.content = {
+      multiImage: {
+        images: media.map(m => {
+          const img = { id: m.id };
+          if (m.title) img.title = m.title;
+          return img;
+        })
+      }
+    };
+  } else if (media && (media.id || (Array.isArray(media) && media[0].id))) {
+    const singleMedia = Array.isArray(media) ? media[0] : media;
+    const title = singleMedia.title || getLinkedInPostTitle(post);
     payload.content = {
       media: {
-        id: media.id,
+        id: singleMedia.id,
       },
     };
     if (title) {
@@ -979,7 +1047,9 @@ async function postToLinkedIn(account, post, options = {}) {
   console.log(
     `[LinkedIn] Resolved authorUrn: ${authorUrn} (type: ${account.token_type})`,
   );
-  const mediaUrl = post.media_url;
+  const isCarousel = Array.isArray(post.media_url) && post.media_url.length > 1;
+  const firstMedia = Array.isArray(post.media_url) ? post.media_url[0] : post.media_url;
+  const mediaUrl = firstMedia;
   const uploadedMedia = options.uploadedMedia || null;
   let mediaBuffer = uploadedMedia?.buffer || options.mediaBuffer || null;
 
@@ -1005,7 +1075,7 @@ async function postToLinkedIn(account, post, options = {}) {
     !mediaUrl.includes("localhost") &&
     !mediaUrl.startsWith("blob:");
 
-  const hasMediaContent = Boolean(uploadedMedia) || Boolean(isValidMediaUrl);
+  const hasMediaContent = Boolean(uploadedMedia) || Boolean(isValidMediaUrl) || isCarousel;
 
   if (!hasMediaContent) {
     const postId = await createLinkedInUgcPost(authorUrn, token, post);
@@ -1046,17 +1116,41 @@ async function postToLinkedIn(account, post, options = {}) {
     };
   }
 
+  if (isCarousel) {
+    console.log(`[LinkedIn] Starting carousel upload for ${authorUrn}...`);
+    const mediaUrns = [];
+    for (const url of post.media_url) {
+      const { imageUrn } = await uploadLinkedInImage(
+        authorUrn,
+        token,
+        { ...post, media_url: url },
+        null
+      );
+      mediaUrns.push({ id: imageUrn, title: getLinkedInPostTitle(post) });
+    }
+    
+    const postId = await createLinkedInUgcPost(authorUrn, token, post, mediaUrns);
+    if (!postId) {
+      throw new Error("LinkedIn returned success without a post id");
+    }
+
+    return {
+      externalId: postId,
+      url: `https://www.linkedin.com/feed/update/${postId}/`,
+    };
+  }
+
   // Versioned image flow
   const { imageUrn, mediaBuffer: newBuffer } = await uploadLinkedInImage(
     authorUrn,
     token,
-    post,
+    { ...post, media_url: firstMedia },
     uploadedMedia || (mediaBuffer ? { buffer: mediaBuffer } : null),
   );
   if (newBuffer && !mediaBuffer) {
     options.mediaBuffer = newBuffer;
-    mediaBuffer = newBuffer;
   }
+
   const postId = await createLinkedInUgcPost(authorUrn, token, post, {
     id: imageUrn,
     title: getLinkedInPostTitle(post),

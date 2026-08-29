@@ -1126,4 +1126,19 @@ Require stack:
     at processParams (D:\Office Projects\Bcc\bcc\backend\node_modules\router\index.js:664:3)
     at next (D:\Office Projects\Bcc\bcc\backend\node_modules\router\index.js:291:5)
     at D:\Office Projects\Bcc\bcc\backend\src\modules\campaign-scheduled\campaignScheduled.routes.js:1647:12
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n\n2026-08-28T12:42:39.295Z\nundefined\n\n
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n\n2026-08-28T12:42:39.295Z\nundefined\n\n2026-08-29T10:32:49.763Z\nTypeError: finalMediaUrl.startsWith is not a function
+    at E:\Office Projects\M1\tunepath\backend\src\modules\campaign-scheduled\campaignScheduled.routes.js:2263:22
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n\n2026-08-29T10:40:15.988Z\nValidationError: CampaignScheduledPost validation failed: media_url: Cast to string failed for value "[
+  'https://res.cloudinary.com/dzjsvtnb8/image/upload/v1788000011/campaign-posts/opftgecskv2e2g5gzmxv.jpg',
+  'https://res.cloudinary.com/dzjsvtnb8/image/upload/v1788000012/campaign-posts/yhojsbegmobzmwct7ji7.jpg',
+  'https://res.cloudinary.com/dzjsvtnb8/image/upload/v1788000015/campaign-posts/n2qhcqn7y7y0gyhb2xpf.jpg'
+]" (type Array) at path "media_url"
+    at Document.invalidate (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:3449:32)
+    at model.$set (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:1524:12)
+    at model.$set (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:1173:16)
+    at model.Document (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:181:12)
+    at model.Model (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:143:12)
+    at new model (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:4969:15)
+    at Function.create (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:2760:16)
+    at E:\Office Projects\M1\tunepath\backend\src\modules\campaign-scheduled\campaignScheduled.routes.js:2289:32
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n\n

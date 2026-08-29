@@ -20,96 +20,104 @@ router.use(authMiddleware);
 
 router.get('/payment/:companyId', integrationController.getPaymentIntegration);
 
+const ALLOWED_INTEGRATION_ROLES = [
+  "super_admin",
+  "supreme_super_admin",
+  "commander_admin",
+  "admin",
+  "coordinator",
+  "digital_marketing_coordinator",
+  "website_coordinator",
+  "agency_manager",
+  "agency_super_admin",
+  "brand_manager",
+  "brand_super_admin",
+  "agency_client",
+  "client",
+  "brand_team_user",
+  "client_user",
+  "user",
+  "salesperson"
+];
+
 router.get(
   "/",
-  rbacMiddleware(
-    "super_admin",
-    "supreme_super_admin",
-    "commander_admin",
-    "admin",
-    "coordinator",
-    "digital_marketing_coordinator",
-    "website_coordinator",
-    "agency_manager",
-    "agency_super_admin",
-    "brand_manager",
-    "brand_super_admin"
-  ),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.getAllIntegrations,
 );
 router.post(
   "/",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.createIntegration,
 );
 router.put(
   "/:id",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.updateIntegration,
 );
 router.post(
   "/:id/events",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.upsertEventConfig,
 );
 router.get(
   "/:id/events",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.getEventConfigs,
 );
 router.post(
   "/:id/send",
-  rbacMiddleware("super_admin", "admin", "supreme_super_admin", "commander_admin", "salesperson", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.sendMessage,
 );
 
 // Twilio SMS Integration Routes
 router.post(
   "/twilio/test",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.testTwilioConnection,
 );
 router.post(
   "/twilio/save",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.saveTwilioIntegration,
 );
 router.get(
   "/twilio",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.getTwilioIntegration,
 );
 
 router.get(
   "/:id/whatsapp/templates",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.fetchWhatsAppTemplates,
 );
 router.post(
   "/:id/whatsapp-leads/fetch",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.fetchWhatsAppLeads,
 );
 router.post(
   "/whatsapp-leads/sync",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.syncAllWhatsAppLeads,
 );
 
 // Ekta HR integration endpoints
 router.post(
   "/ekta/validate",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.validateEktaApi,
 );
 router.post(
   "/:id/ekta/sync/staff",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.syncEktaStaff,
 );
 router.post(
   "/:id/ekta/sync/attendance",
-  rbacMiddleware("super_admin", "supreme_super_admin", "commander_admin", "admin", "agency_manager", "agency_super_admin", "brand_manager", "brand_super_admin"),
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
   integrationController.syncEktaAttendance,
 );
 

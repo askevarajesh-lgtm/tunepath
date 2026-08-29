@@ -2214,6 +2214,15 @@ router.post("/posts", mediaUpload.any(), async (req, res, next) => {
 
     let finalMediaUrl =
       mediaUrl || media_url || "https://picsum.photos/seed/new/400/400";
+    
+    // Completely filter out browser/localhost placeholder URLs from finalMediaUrl before any processing
+    if (typeof finalMediaUrl === "string" && (finalMediaUrl.startsWith("blob:") || finalMediaUrl.includes("localhost"))) {
+      finalMediaUrl = null;
+    } else if (Array.isArray(finalMediaUrl)) {
+      finalMediaUrl = finalMediaUrl.filter(url => url && !url.startsWith("blob:") && !url.includes("localhost"));
+      if (finalMediaUrl.length === 0) finalMediaUrl = null;
+    }
+
     let platform_media_urls = {};
 
     // If files are uploaded via multer, upload them to Cloudinary
@@ -2228,10 +2237,24 @@ router.post("/posts", mediaUpload.any(), async (req, res, next) => {
           );
           
           if (file.fieldname === "media") {
-            finalMediaUrl = uploadRes.secure_url;
+            if (!finalMediaUrl || finalMediaUrl === "https://picsum.photos/seed/new/400/400") {
+                finalMediaUrl = [uploadRes.secure_url];
+            } else if (Array.isArray(finalMediaUrl)) {
+                finalMediaUrl.push(uploadRes.secure_url);
+            } else {
+                finalMediaUrl = [finalMediaUrl, uploadRes.secure_url];
+            }
           } else if (file.fieldname.startsWith("media_")) {
             const accountId = file.fieldname.replace("media_", "");
-            platform_media_urls[accountId] = uploadRes.secure_url;
+            if (!platform_media_urls[accountId] || (typeof platform_media_urls[accountId] === "string" && (platform_media_urls[accountId].startsWith("blob:") || platform_media_urls[accountId].includes("localhost")))) {
+               platform_media_urls[accountId] = [uploadRes.secure_url];
+            } else {
+               if (!Array.isArray(platform_media_urls[accountId])) {
+                  platform_media_urls[accountId] = [platform_media_urls[accountId]];
+               }
+               platform_media_urls[accountId] = platform_media_urls[accountId].filter(url => !url.startsWith("blob:") && !url.includes("localhost"));
+               platform_media_urls[accountId].push(uploadRes.secure_url);
+            }
           }
         }
       } catch (err) {
@@ -2244,11 +2267,11 @@ router.post("/posts", mediaUpload.any(), async (req, res, next) => {
       }
     }
 
-    // Reject if finalMediaUrl is a blob or localhost URL — these are not accessible by the scheduler
-    if (
-      finalMediaUrl &&
-      (finalMediaUrl.startsWith("blob:") || finalMediaUrl.includes("localhost"))
-    ) {
+    const isInvalidMedia = Array.isArray(finalMediaUrl) 
+      ? finalMediaUrl.some(url => url && (url.startsWith("blob:") || url.includes("localhost")))
+      : finalMediaUrl && (finalMediaUrl.startsWith("blob:") || finalMediaUrl.includes("localhost"));
+
+    if (isInvalidMedia) {
       res
         .status(400)
         .json({
@@ -2376,10 +2399,25 @@ router.put("/posts/:id", mediaUpload.any(), async (req, res) => {
         );
         
         if (file.fieldname === "media") {
-          updates.media_url = uploadRes.secure_url;
+            if (!updates.media_url || (typeof updates.media_url === "string" && (updates.media_url.startsWith("blob:") || updates.media_url.includes("localhost")))) {
+                updates.media_url = [uploadRes.secure_url];
+            } else if (Array.isArray(updates.media_url)) {
+                updates.media_url = updates.media_url.filter(url => !url.startsWith("blob:") && !url.includes("localhost"));
+                updates.media_url.push(uploadRes.secure_url);
+            } else {
+                updates.media_url = [updates.media_url, uploadRes.secure_url];
+            }
         } else if (file.fieldname.startsWith("media_")) {
           const accountId = file.fieldname.replace("media_", "");
-          updates.platform_media_urls[accountId] = uploadRes.secure_url;
+          if (!updates.platform_media_urls[accountId] || (typeof updates.platform_media_urls[accountId] === "string" && (updates.platform_media_urls[accountId].startsWith("blob:") || updates.platform_media_urls[accountId].includes("localhost")))) {
+             updates.platform_media_urls[accountId] = [uploadRes.secure_url];
+          } else {
+             if (!Array.isArray(updates.platform_media_urls[accountId])) {
+                updates.platform_media_urls[accountId] = [updates.platform_media_urls[accountId]];
+             }
+             updates.platform_media_urls[accountId] = updates.platform_media_urls[accountId].filter(url => !url.startsWith("blob:") && !url.includes("localhost"));
+             updates.platform_media_urls[accountId].push(uploadRes.secure_url);
+          }
         }
       }
     } catch (err) {

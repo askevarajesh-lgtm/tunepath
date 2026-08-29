@@ -18,7 +18,7 @@ const campaignScheduledPostSchema = new mongoose.Schema(
     caption: { type: String, required: true },
     campaign: { type: String, default: "General" },
     media_url: {
-      type: String,
+      type: mongoose.Schema.Types.Mixed,
       default: "https://picsum.photos/seed/new/400/400",
     },
     status: {

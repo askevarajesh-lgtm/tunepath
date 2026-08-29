@@ -449,9 +449,14 @@ export default function ListView({
                   ) : (
                     <FileImageOutlined />
                   );
-                if (!row.mediaUrl)
+                if (!row.mediaUrl || (Array.isArray(row.mediaUrl) && row.mediaUrl.length === 0))
                   return <Text type="secondary">No media</Text>;
-                if (row.mediaUrl?.startsWith("blob:")) {
+                
+                const isBlob = Array.isArray(row.mediaUrl)
+                  ? row.mediaUrl.some(url => url?.startsWith("blob:"))
+                  : row.mediaUrl?.startsWith("blob:");
+
+                if (isBlob) {
                   return (
                     <Tooltip title="Temporary local storage. Edit and re-upload to save permanently to bucket.">
                       <Tag color="orange" icon={<LinkOutlined />}>
@@ -460,12 +465,16 @@ export default function ListView({
                     </Tooltip>
                   );
                 }
+                
+                const firstMediaUrl = Array.isArray(row.mediaUrl) ? row.mediaUrl[0] : row.mediaUrl;
+                const isCarousel = Array.isArray(row.mediaUrl) && row.mediaUrl.length > 1;
+
                 return (
-                  <a href={row.mediaUrl} target="_blank" rel="noreferrer">
+                  <a href={firstMediaUrl} target="_blank" rel="noreferrer">
                     <Space size={4}>
                       {icon}
                       <LinkOutlined />
-                      <span>View file</span>
+                      <span>{isCarousel ? `View ${row.mediaUrl.length} files` : 'View file'}</span>
                     </Space>
                   </a>
                 );

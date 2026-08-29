@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import {
   Card,
@@ -13,7 +13,8 @@ import {
   Typography,
   Divider,
   Alert,
-  Skeleton
+  Skeleton,
+  Tooltip
 } from "antd";
 import {
   FacebookOutlined,
@@ -23,7 +24,8 @@ import {
   CheckCircleOutlined,
   ExclamationCircleOutlined,
   QuestionCircleOutlined,
-  ApiOutlined
+  ApiOutlined,
+  ClockCircleOutlined
 } from "@ant-design/icons";
 import {
   useGetFacebookIntegrationsQuery,
@@ -40,10 +42,30 @@ const getBackendUrl = () => {
   return url.replace(/\/api$/, "");
 };
 
-const FacebookLeadsTab = () => {
+const FacebookLeadsTab = ({ clientId: propClientId }) => {
   const token = localStorage.getItem('token');
-  const selectedClientId = null;
   const { id: integrationId } = useParams();
+
+  const selectedClientId = useMemo(() => {
+    if (propClientId) return propClientId;
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const parsed = JSON.parse(userStr);
+        if (parsed?.role === 'client' || parsed?.brandId || parsed?.clientId) {
+          return parsed.clientId || parsed.brandId || parsed._id;
+        }
+      } catch (e) {}
+    }
+    const selectedClientStr = localStorage.getItem('selectedClient');
+    if (selectedClientStr) {
+      try {
+        const parsed = JSON.parse(selectedClientStr);
+        if (parsed?._id) return parsed._id;
+      } catch (e) {}
+    }
+    return null;
+  }, [propClientId]);
   
   const {
     data: integrationsData,
@@ -123,35 +145,32 @@ const FacebookLeadsTab = () => {
     window.open(oauthUrl, 'Facebook OAuth', `width=${width},height=${height},top=${top},left=${left}`);
   };
 
-  const handleOpenSyncModal = (page) => {
+  const handleOpenSyncModal = async (page) => {
     setPageForForms(page);
-    setSelectedFormIds([]);
+    setSelectedFormIds(page.selectedForms || []);
     setIsFormsModalOpen(true);
-    fetchForms({
-      pageId: page.pageId,
-      ...(selectedClientId ? { clientId: selectedClientId } : {}),
-    });
+    try {
+      await fetchForms({
+        pageId: page.pageId,
+        ...(selectedClientId ? { clientId: selectedClientId } : {}),
+      }).unwrap();
+    } catch (err) {
+      const errMsg = err?.data?.message || err?.message || "Failed to load forms from Facebook";
+      message.error(errMsg);
+    }
   };
 
   const handleManualSync = async () => {
     if (!pageForForms) return;
     setIsSyncingPageId(pageForForms.pageId);
-    setIsFormsModalOpen(false);
     try {
       const res = await syncLeads({
         pageId: pageForForms.pageId,
         formIds: selectedFormIds,
         ...(selectedClientId ? { clientId: selectedClientId } : {}),
       }).unwrap();
-      const { syncedCount, duplicateCount } = res?.data || {};
-      
-      if (syncedCount > 0 || duplicateCount > 0) {
-        message.success(
-          `Sync completed! Fetched ${syncedCount} new leads. (${duplicateCount} duplicate profiles skipped)`
-        );
-      } else {
-        message.info("No new leads found on Facebook.");
-      }
+      message.success(`Leads synced! ${res.data?.syncedCount || 0} imported, ${res.data?.duplicateCount || 0} duplicates skipped.`);
+      setIsFormsModalOpen(false);
       refetch();
     } catch (err) {
       message.error(err?.data?.message || "Failed to sync Facebook leads");
@@ -173,13 +192,17 @@ const FacebookLeadsTab = () => {
     }
   };
 
-  const handleShowLogs = (page) => {
+  const handleShowLogs = async (page) => {
     setSelectedPage(page);
     setIsLogsModalOpen(true);
-    fetchLogs({
-      pageId: page.pageId,
-      ...(selectedClientId ? { clientId: selectedClientId } : {}),
-    });
+    try {
+      await fetchLogs({
+        pageId: page.pageId,
+        ...(selectedClientId ? { clientId: selectedClientId } : {}),
+      });
+    } catch (err) {
+      message.error("Failed to fetch sync logs");
+    }
   };
 
   const integrations = integrationsData?.data?.integrations || [];
@@ -197,16 +220,24 @@ const FacebookLeadsTab = () => {
       )
     },
     {
-      title: "Sync Status",
-      dataIndex: "integrationStatus",
-      key: "integrationStatus",
-      render: (status) => {
-        if (status === "active") {
-          return <Tag color="success">Sync Active</Tag>;
-        } else if (status === "expired") {
-          return <Tag color="error">Token Expired</Tag>;
-        }
-        return <Tag color="default">Connected</Tag>;
+      title: "Auto-Sync Status",
+      key: "autoSyncStatus",
+      render: (_, record) => {
+        const hasForms = record.selectedForms && record.selectedForms.length > 0;
+        return (
+          <Space direction="vertical" size={2}>
+            <Space>
+              <Tag color={hasForms ? "processing" : "default"} icon={<ClockCircleOutlined />}>
+                {hasForms ? "5-Min Auto Sync Active" : "Sync Configured"}
+              </Tag>
+            </Space>
+            {hasForms && (
+              <Text type="secondary" style={{ fontSize: "11px" }}>
+                {record.selectedForms.length} form(s) actively syncing
+              </Text>
+            )}
+          </Space>
+        );
       }
     },
     {
@@ -239,7 +270,7 @@ const FacebookLeadsTab = () => {
           </Button>
           <Popconfirm
             title="Disconnect Page"
-            description="Are you sure you want to disconnect this page? Real-time sync will stop."
+            description="Are you sure you want to disconnect this page? Real-time and auto sync will stop."
             onConfirm={() => handleDisconnectPage(record.pageId)}
             okText="Yes, Disconnect"
             cancelText="Cancel"
@@ -283,7 +314,7 @@ const FacebookLeadsTab = () => {
           <Title level={3}>Facebook Lead Ads Integration</Title>
           <Paragraph style={{ maxWidth: "600px", margin: "0 auto 24px auto", fontSize: "15px", lineHeight: "1.6" }}>
             Connect your Facebook Pages to automatically sync lead form submissions directly into the CRM.
-            Incoming submissions are captured in real-time, checked for duplicate profiles, and cataloged with complete campaign metadata.
+            Select your specific lead form to sync historic submissions and automatically fetch new leads every 5 minutes.
           </Paragraph>
           
           <Space>
@@ -317,13 +348,13 @@ const FacebookLeadsTab = () => {
             </div>
             <div style={{ maxWidth: "250px", textAlign: "center" }}>
               <SyncOutlined style={{ fontSize: "28px", color: "#10b981", marginBottom: "12px" }} />
-              <Title level={5}>2. Sync Leads</Title>
-              <Text type="secondary">Click the "Sync Leads" action button to fetch all existing historic lead forms into your CRM.</Text>
+              <Title level={5}>2. Select Form & Sync</Title>
+              <Text type="secondary">Click "Sync Leads" and select your specific lead form to import historic submissions.</Text>
             </div>
             <div style={{ maxWidth: "250px", textAlign: "center" }}>
-              <CheckCircleOutlined style={{ fontSize: "28px", color: "#8b5cf6", marginBottom: "12px" }} />
-              <Title level={5}>3. Automate Leads</Title>
-              <Text type="secondary">Real-time submissions populate your CRM workspace immediately as Leads.</Text>
+              <ClockCircleOutlined style={{ fontSize: "28px", color: "#8b5cf6", marginBottom: "12px" }} />
+              <Title level={5}>3. 5-Min Auto-Sync</Title>
+              <Text type="secondary">The system automatically checks and pulls new leads from the selected form every 5 minutes into the CRM.</Text>
             </div>
           </div>
         </Card>
@@ -331,7 +362,7 @@ const FacebookLeadsTab = () => {
         <Space direction="vertical" size="large" style={{ width: "100%" }}>
           <Alert
             message="Facebook Lead Ads Integration Status"
-            description="All connected pages are active. Click the green 'Sync Leads' button under Actions to retrieve historic form submissions, while all new incoming leads sync automatically via webhooks!"
+            description="All connected pages are active. Click the green 'Sync Leads' button under Actions to select a lead form. Once selected, the system automatically checks and pulls new leads every 5 minutes directly into your CRM!"
             type="success"
             showIcon
             closable
@@ -395,7 +426,7 @@ const FacebookLeadsTab = () => {
         ) : !logsData?.data?.logs || logsData.data.logs.length === 0 ? (
           <Alert
             message="No Sync Records"
-            description="We haven't received any webhook submission events for this page since it was configured."
+            description="We haven't received any lead submission events for this page since it was configured."
             type="info"
             showIcon
             style={{ margin: "20px 0", borderRadius: "8px" }}
@@ -475,12 +506,14 @@ const FacebookLeadsTab = () => {
             onClick={handleManualSync}
             disabled={formsRes?.data && formsRes.data.length > 0 && selectedFormIds.length === 0}
           >
-            Sync Selected ({selectedFormIds.length})
+            Sync & Schedule Auto-Sync ({selectedFormIds.length})
           </Button>
         ]}
       >
         <div style={{ marginBottom: "16px" }}>
-          <Text>Select the specific forms you want to sync leads from. You can sync from multiple forms at once.</Text>
+          <Paragraph>
+            Select the specific lead generation form(s) to sync. Leads from the selected form(s) will be imported immediately, and <strong>automatically synced every 5 minutes</strong> going forward.
+          </Paragraph>
         </div>
         
         {isFetchingForms ? (

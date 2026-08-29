@@ -93,15 +93,53 @@ export const useGetFacebookAdSetsQuery = createQueryHook((params) => ({ url: `/f
 export const useGetFacebookAdsQuery = createQueryHook((params) => ({ url: `/facebook/integrations/assets/ads`, params }));
 export const useGetFacebookFormsQuery = createQueryHook((params) => ({ url: `/facebook/integrations/assets/forms`, params }));
 export const useLazyGetFacebookFormsQuery = () => {
-  const [params, setParams] = useState(null);
-  const queryResult = useGetFacebookFormsQuery(params || {}, { skip: !params });
-  return [setParams, { ...queryResult, isFetching: queryResult.isLoading }];
+  const [data, setData] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const trigger = useCallback(async (params) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await api.get('/facebook/integrations/assets/forms', { params: params || {} });
+      setData(response.data);
+      return response.data;
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  return [trigger, { data, isLoading, error, isFetching: isLoading }];
 };
+
 export const useGetFacebookSyncLogsQuery = createQueryHook(({ pageId, clientId }) => `/facebook/integrations/${pageId}/logs${clientId ? `?clientId=${clientId}` : ""}`);
 export const useLazyGetFacebookSyncLogsQuery = () => {
-  const [params, setParams] = useState(null);
-  const queryResult = useGetFacebookSyncLogsQuery(params || {}, { skip: !params });
-  return [setParams, { ...queryResult, isFetching: queryResult.isLoading }];
+  const [data, setData] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const trigger = useCallback(async (params) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const { pageId, clientId } = params || {};
+      const response = await api.get(`/facebook/integrations/${pageId}/logs`, {
+        params: clientId ? { clientId } : {}
+      });
+      setData(response.data);
+      return response.data;
+    } catch (err) {
+      setError(err);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  return [trigger, { data, isLoading, error, isFetching: isLoading }];
 };
 export const useSyncFacebookLeadsMutation = createMutationHook((data) => ({ url: "/facebook/integrations/sync-leads", method: "POST", body: data }));
 export const useTestTwilioConnectionMutation = createMutationHook((data) => ({ url: "/integrations/twilio/test", method: "POST", body: data }));

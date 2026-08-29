@@ -103,11 +103,21 @@ export const campaignScheduledApi = {
     const { platformMediaFiles, ...restPayload } = payload;
     if (mediaFile || (platformMediaFiles && Object.keys(platformMediaFiles).length > 0)) {
       const formData = new FormData();
-      if (mediaFile) formData.append("media", mediaFile);
+      if (mediaFile) {
+        if (Array.isArray(mediaFile)) {
+          mediaFile.forEach(f => formData.append("media", f));
+        } else {
+          formData.append("media", mediaFile);
+        }
+      }
       
       if (platformMediaFiles) {
-        Object.entries(platformMediaFiles).forEach(([id, file]) => {
-          formData.append(`media_${id}`, file);
+        Object.entries(platformMediaFiles).forEach(([id, files]) => {
+          if (Array.isArray(files)) {
+            files.forEach(f => formData.append(`media_${id}`, f));
+          } else {
+            formData.append(`media_${id}`, files);
+          }
         });
       }
 
@@ -141,11 +151,21 @@ export const campaignScheduledApi = {
     const { platformMediaFiles, ...restPayload } = payload;
     if (mediaFile || (platformMediaFiles && Object.keys(platformMediaFiles).length > 0)) {
       const formData = new FormData();
-      if (mediaFile) formData.append("media", mediaFile);
+      if (mediaFile) {
+        if (Array.isArray(mediaFile)) {
+          mediaFile.forEach(f => formData.append("media", f));
+        } else {
+          formData.append("media", mediaFile);
+        }
+      }
       
       if (platformMediaFiles) {
-        Object.entries(platformMediaFiles).forEach(([pId, file]) => {
-          formData.append(`media_${pId}`, file);
+        Object.entries(platformMediaFiles).forEach(([pId, files]) => {
+          if (Array.isArray(files)) {
+            files.forEach(f => formData.append(`media_${pId}`, f));
+          } else {
+            formData.append(`media_${pId}`, files);
+          }
         });
       }
 

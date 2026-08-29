@@ -737,7 +737,7 @@ document.getElementById('tunepath-lead-form').addEventListener('submit', async (
                 <FacebookOutlined /> Facebook Leads
               </span>
             ),
-            children: <FacebookLeadsTab />,
+            children: <FacebookLeadsTab clientId={websiteIntegration?.clientId} />,
           },
         ]}
       />

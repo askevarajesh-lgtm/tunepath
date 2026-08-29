@@ -16,6 +16,7 @@ import {
   Divider,
   Checkbox,
   Radio,
+  Carousel,
   Alert,
   Tabs,
 } from "antd";
@@ -160,7 +161,7 @@ const LOGICAL_POST_OPTIONS = [
   { label: "Short-form (Reel / Shorts)", value: "short" },
 ];
 
-const DraggableImage = ({ src, cropData, setCropData }) => {
+const DraggableImage = ({ src, cropData, setCropData, isOriginalRatio = false }) => {
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef(null);
   
@@ -174,7 +175,6 @@ const DraggableImage = ({ src, cropData, setCropData }) => {
   const handlePointerMove = (e) => {
     if (!isDragging || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    // Normalize movement to percentage of container size so it scales to full image
     const dx = e.movementX / rect.width;
     const dy = e.movementY / rect.height;
     
@@ -208,7 +208,18 @@ const DraggableImage = ({ src, cropData, setCropData }) => {
   return (
     <div
       ref={containerRef}
-      style={{ width: "100%", height: "100%", overflow: "hidden", position: "relative", cursor: isDragging ? "grabbing" : "grab", display: "flex", alignItems: "center", justifyContent: "center" }}
+      style={{ 
+        width: "100%", 
+        height: "100%",
+        overflow: "hidden", 
+        position: "relative", 
+        cursor: isDragging ? "grabbing" : "grab", 
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#000",
+        userSelect: "none"
+      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -219,11 +230,13 @@ const DraggableImage = ({ src, cropData, setCropData }) => {
         alt="Preview" 
         draggable={false}
         style={{
+          display: "block",
           transform: `translate(${currentCrop.x * 100}%, ${currentCrop.y * 100}%) scale(${currentCrop.zoom})`,
-          maxWidth: "100%",
-          maxHeight: "100%",
-          objectFit: "contain",
-          transition: isDragging ? "none" : "transform 0.1s"
+          width: "100%",
+          height: "100%",
+          objectFit: isOriginalRatio ? "contain" : "cover",
+          transition: isDragging ? "none" : "transform 0.1s",
+          pointerEvents: "none"
         }}
       />
     </div>
@@ -237,26 +250,95 @@ const PostPreview = ({
   postType,
   platform = "generic",
   aspectRatio,
-  cropData,
-  setCropData,
+  accountId,
+  cropDataMap,
+  setCropDataMap,
 }) => {
-  const currentRatio = aspectRatio || "1/1";
-  
-  const ratioNumber = useMemo(() => {
-    if (currentRatio === "original" || !currentRatio) return null;
-    const parts = currentRatio.split("/");
-    if (parts.length !== 2) return null;
-    return parseFloat(parts[0]) / parseFloat(parts[1]);
-  }, [currentRatio]);
+  const currentRatio = aspectRatio || "original";
+  const [measuredRatios, setMeasuredRatios] = useState({});
 
-  const mediaUrl = useMemo(() => {
-    if (!media || media.length === 0) return null;
-    const file = media[0];
-    if (file.originFileObj) {
-      return URL.createObjectURL(file.originFileObj);
-    }
-    return file.url;
+  const mediaUrls = useMemo(() => {
+    if (!media || media.length === 0) return [];
+    return media.map((file) => {
+      if (!file) return "";
+      if (typeof file === "string" && file) return file;
+      if (file instanceof File || file instanceof Blob) {
+        return URL.createObjectURL(file);
+      }
+      if (file.originFileObj && (file.originFileObj instanceof File || file.originFileObj instanceof Blob)) {
+        return URL.createObjectURL(file.originFileObj);
+      }
+      if (file.url && typeof file.url === "string") return file.url;
+      if (file.thumbUrl && typeof file.thumbUrl === "string") return file.thumbUrl;
+      if (file.type && file.size && file.name) {
+        try {
+          return URL.createObjectURL(new Blob([file], { type: file.type }));
+        } catch (e) {
+          return "";
+        }
+      }
+      return "";
+    }).filter(Boolean);
   }, [media]);
+
+  useEffect(() => {
+    if (!mediaUrls || mediaUrls.length === 0) {
+      setMeasuredRatios({});
+      return;
+    }
+
+    let isMounted = true;
+    mediaUrls.forEach((url) => {
+      if (!url) return;
+      if (postType === "video") {
+        const video = document.createElement("video");
+        video.onloadedmetadata = () => {
+          if (!isMounted) return;
+          if (video.videoWidth && video.videoHeight) {
+            const r = video.videoWidth / video.videoHeight;
+            setMeasuredRatios((prev) => ({ ...prev, [url]: r }));
+          }
+        };
+        video.src = url;
+      } else {
+        const img = new Image();
+        img.onload = () => {
+          if (!isMounted) return;
+          if (img.naturalWidth && img.naturalHeight) {
+            const r = img.naturalWidth / img.naturalHeight;
+            setMeasuredRatios((prev) => ({ ...prev, [url]: r }));
+          }
+        };
+        img.src = url;
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [mediaUrls, postType]);
+
+  const computedAspectRatio = useMemo(() => {
+    if (currentRatio !== "original" && currentRatio) {
+      return currentRatio;
+    }
+
+    const ratios = mediaUrls
+      .map((url) => measuredRatios[url])
+      .filter((r) => typeof r === "number" && !isNaN(r) && r > 0);
+
+    if (ratios.length === 0) {
+      return "1 / 1";
+    }
+
+    if (ratios.length === 1) {
+      return `${ratios[0]}`;
+    }
+
+    // In a carousel with multiple images, use the highest aspect ratio (widest)
+    const maxRatio = Math.max(...ratios);
+    return `${maxRatio}`;
+  }, [currentRatio, mediaUrls, measuredRatios]);
 
   const platformIcon = useMemo(() => {
     switch (platform) {
@@ -279,6 +361,114 @@ const PostPreview = ({
 
   return (
     <div className="post-preview-container">
+      <style>{`
+        .post-preview-media {
+          width: 100%;
+          aspect-ratio: ${computedAspectRatio};
+          background: #000;
+          display: block;
+          overflow: hidden;
+          position: relative;
+          border-radius: 8px;
+        }
+        .post-preview-media .ant-carousel {
+          width: 100%;
+          height: 100%;
+        }
+        .post-preview-media .ant-carousel .slick-slider {
+          width: 100%;
+          height: 100%;
+          position: relative;
+        }
+        .post-preview-media .ant-carousel .slick-list {
+          width: 100%;
+          height: 100% !important;
+          overflow: hidden;
+        }
+        .post-preview-media .ant-carousel .slick-track {
+          height: 100% !important;
+          display: flex !important;
+        }
+        .post-preview-media .ant-carousel .slick-slide {
+          height: 100% !important;
+          display: block !important;
+        }
+        .post-preview-media .ant-carousel .slick-slide > div {
+          width: 100%;
+          height: 100%;
+          display: flex !important;
+          align-items: center;
+          justify-content: center;
+        }
+        .post-preview-media .ant-carousel .slick-prev,
+        .post-preview-media .ant-carousel .slick-next {
+          font-size: 0 !important;
+          color: transparent !important;
+          z-index: 10;
+          width: 32px;
+          height: 32px;
+          background: rgba(0, 0, 0, 0.55);
+          border-radius: 50%;
+          display: flex !important;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+          top: 50%;
+          transform: translateY(-50%);
+          border: none;
+          outline: none;
+          cursor: pointer;
+        }
+        .post-preview-media .ant-carousel .slick-prev:hover,
+        .post-preview-media .ant-carousel .slick-next:hover {
+          background: rgba(0, 0, 0, 0.85);
+          transform: translateY(-50%) scale(1.1);
+        }
+        .post-preview-media .ant-carousel .slick-prev {
+          left: 10px;
+        }
+        .post-preview-media .ant-carousel .slick-next {
+          right: 10px;
+        }
+        .post-preview-media .ant-carousel .slick-prev > *,
+        .post-preview-media .ant-carousel .slick-next > * {
+          display: none !important;
+        }
+        .post-preview-media .ant-carousel .slick-prev::before {
+          content: "‹";
+          font-size: 24px;
+          line-height: 1;
+          color: #ffffff;
+          display: block;
+          margin-top: -2px;
+        }
+        .post-preview-media .ant-carousel .slick-next::before {
+          content: "›";
+          font-size: 24px;
+          line-height: 1;
+          color: #ffffff;
+          display: block;
+          margin-top: -2px;
+        }
+        .post-preview-media .ant-carousel .slick-dots {
+          bottom: 8px;
+          z-index: 10;
+          margin: 0;
+        }
+        .post-preview-media .ant-carousel .slick-dots li {
+          vertical-align: middle;
+        }
+        .post-preview-media .ant-carousel .slick-dots li button {
+          background: rgba(255, 255, 255, 0.4);
+          height: 4px;
+          border-radius: 2px;
+          transition: all 0.3s ease;
+        }
+        .post-preview-media .ant-carousel .slick-dots li.slick-active button {
+          background: #ffffff;
+          width: 18px;
+        }
+      `}</style>
       <div className="post-preview-card">
         <div className="post-preview-header">
           <div className="post-preview-avatar" style={{ position: "relative" }}>
@@ -314,23 +504,67 @@ const PostPreview = ({
 
         <div className="post-preview-content">
           {postType !== "text" && (
-            <div className="post-preview-media" style={{ 
-               position: "relative",
-               aspectRatio: currentRatio !== "original" ? currentRatio : "auto",
-               height: ratioNumber ? "auto" : undefined,
-            }}>
-              {mediaUrl ? (
-                postType === "video" ? (
-                  <video src={mediaUrl} autoPlay muted loop />
+            <div className="post-preview-media">
+              {mediaUrls.length > 0 ? (
+                mediaUrls.length === 1 ? (
+                  postType === "video" ? (
+                    <video 
+                      src={mediaUrls[0]} 
+                      autoPlay 
+                      muted 
+                      loop 
+                      controls
+                      style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} 
+                    />
+                  ) : (
+                    <DraggableImage 
+                      src={mediaUrls[0]} 
+                      isOriginalRatio={currentRatio === "original"}
+                      cropData={cropDataMap[`${accountId}_0`] || cropDataMap[accountId] || { x: 0, y: 0, zoom: 1 }} 
+                      setCropData={(updater) => {
+                         setCropDataMap(prev => {
+                           const oldCrop = prev[`${accountId}_0`] || prev[accountId] || { x: 0, y: 0, zoom: 1 };
+                           const newCrop = typeof updater === 'function' ? updater(oldCrop) : updater;
+                           return { ...prev, [`${accountId}_0`]: newCrop };
+                         });
+                      }} 
+                    />
+                  )
                 ) : (
-                  <DraggableImage 
-                    src={mediaUrl} 
-                    cropData={cropData} 
-                    setCropData={setCropData} 
-                  />
+                  <Carousel arrows={true} dots={true} infinite={false} style={{ width: "100%", height: "100%" }}>
+                    {mediaUrls.map((url, index) => {
+                      return (
+                        <div key={index} style={{ width: "100%", height: "100%" }}>
+                          {postType === "video" ? (
+                            <video 
+                              src={url} 
+                              autoPlay 
+                              muted 
+                              loop 
+                              controls
+                              style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} 
+                            />
+                          ) : (
+                            <DraggableImage 
+                              src={url} 
+                              isOriginalRatio={currentRatio === "original"}
+                              cropData={cropDataMap[`${accountId}_${index}`] || cropDataMap[accountId] || { x: 0, y: 0, zoom: 1 }} 
+                              setCropData={(updater) => {
+                                 setCropDataMap(prev => {
+                                   const oldCrop = prev[`${accountId}_${index}`] || prev[accountId] || { x: 0, y: 0, zoom: 1 };
+                                   const newCrop = typeof updater === 'function' ? updater(oldCrop) : updater;
+                                   return { ...prev, [`${accountId}_${index}`]: newCrop };
+                                 });
+                              }} 
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </Carousel>
                 )
               ) : (
-                <div style={{ textAlign: "center", color: "#94a3b8" }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", minHeight: "250px", color: "#94a3b8", background: "#f1f5f9" }}>
                   <UploadOutlined
                     style={{ fontSize: 32, display: "block", marginBottom: 8 }}
                   />
@@ -385,6 +619,8 @@ export default function PostEditor({
   const caption = Form.useWatch("caption", form);
   const campaign = Form.useWatch("campaign", form);
   const media = Form.useWatch("media", form);
+  const [mediaFiles, setMediaFiles] = useState([]);
+  const [platformMediaFiles, setPlatformMediaFiles] = useState({});
   const selectedPlatformIds = Form.useWatch("platforms", form) || [];
   
   const hasYoutubeSelected = useMemo(() => {
@@ -540,35 +776,45 @@ export default function PostEditor({
   );
 
   useEffect(() => {
-    const existingMedia = post?.media_url || post?.mediaUrl || "";
-    const inferredPostType = !existingMedia
-      ? "text"
-      : /\.(mp4|mov|avi|webm|mkv)$/i.test(existingMedia) ||
-          existingMedia.includes("/video/upload/")
-        ? "video"
-        : "image";
+    if (open) {
+      form.resetFields();
+      setCropDataMap({ default: { x: 0, y: 0, zoom: 1 } });
+      setMediaFiles([]);
+      setPlatformMediaFiles({});
+      setAspectRatios({ default: "original" });
+      setPreviewTab("all");
+      setActiveMediaTab("default");
 
-    form.setFieldsValue({
-      postType: post ? inferredPostType : "image",
-      caption: post?.caption || "",
-      campaign: post?.campaign || "",
-      date: post?.scheduled_iso
-        ? dayjs(post.scheduled_iso)
-        : post?.scheduledDate
-          ? dayjs(post.scheduledDate)
-          : dayjs().add(1, "day"),
-      time: post?.scheduled_iso
-        ? dayjs(post.scheduled_iso)
-        : post?.scheduledTime
-          ? dayjs(post.scheduledTime, "HH:mm")
-          : dayjs("09:00", "HH:mm"),
-      platforms: post?.platforms || [],
-      media: [],
-    });
-    setPlatformOptions(post?.post_option || {});
-    setSelectedBoards(post?.boards || {});
-    setPostMode(post?.post_mode || post?.postMode || "immediate");
-  }, [post, form, open, accounts]);
+      const existingMedia = post?.media_url || post?.mediaUrl || "";
+      const inferredPostType = !existingMedia
+        ? "text"
+        : /\.(mp4|mov|avi|webm|mkv)$/i.test(existingMedia) ||
+            existingMedia.includes("/video/upload/")
+          ? "video"
+          : "image";
+
+      form.setFieldsValue({
+        postType: post ? inferredPostType : "image",
+        caption: post?.caption || "",
+        campaign: post?.campaign || "",
+        date: post?.scheduled_iso
+          ? dayjs(post.scheduled_iso)
+          : post?.scheduledDate
+            ? dayjs(post.scheduledDate)
+            : dayjs().add(1, "day"),
+        time: post?.scheduled_iso
+          ? dayjs(post.scheduled_iso)
+          : post?.scheduledTime
+            ? dayjs(post.scheduledTime, "HH:mm")
+            : dayjs("09:00", "HH:mm"),
+        platforms: post?.platforms || [],
+        media: [],
+      });
+      setPlatformOptions(post?.post_option || {});
+      setSelectedBoards(post?.boards || {});
+      setPostMode(post?.post_mode || post?.postMode || "immediate");
+    }
+  }, [post, form, open]);
 
   useEffect(() => {
     if (!allowedPostTypes.includes(postType) && allowedPostTypes.length > 0) {
@@ -580,14 +826,20 @@ export default function PostEditor({
     }
   }, [allowedPostTypes, postType, form]);
 
-  const buildPostPayload = (values, mode, customMediaFile = null, customPlatformMediaFiles = {}) => {
+  const buildPostPayload = (values, mode, customMediaFiles = null, customPlatformMediaFiles = {}) => {
+    let mediaFile = customMediaFiles;
+    if (!mediaFile && values.media && values.media.length > 0) {
+      mediaFile = values.media.map(m => m.originFileObj).filter(Boolean);
+      if (mediaFile.length === 0) mediaFile = null;
+    }
+
+    const firstMediaFile = Array.isArray(mediaFile) ? mediaFile[0] : mediaFile;
     const uploadedFile = values.media?.[0];
-    const mediaFile = customMediaFile || uploadedFile?.originFileObj || null;
     const mediaUrl =
       values.postType === "text"
         ? undefined
-        : customMediaFile
-          ? URL.createObjectURL(customMediaFile)
+        : firstMediaFile
+          ? URL.createObjectURL(firstMediaFile)
           : uploadedFile?.originFileObj
           ? URL.createObjectURL(uploadedFile.originFileObj)
           : uploadedFile?.url || post?.media_url || post?.mediaUrl || undefined;
@@ -597,9 +849,9 @@ export default function PostEditor({
     // Process platform-specific media from values
     const uniqueAccountIds = [...new Set(values.platforms || [])];
     uniqueAccountIds.forEach(id => {
-       const pFile = values[`media_${id}`]?.[0];
-       if (pFile?.originFileObj && !platformMediaFiles[id]) {
-           platformMediaFiles[id] = pFile.originFileObj;
+       const pFiles = values[`media_${id}`];
+       if (pFiles && pFiles.length > 0 && !platformMediaFiles[id]) {
+           platformMediaFiles[id] = pFiles.map(f => f.originFileObj).filter(Boolean);
        }
     });
 
@@ -638,34 +890,44 @@ export default function PostEditor({
   };
 
   const handleCropping = async (values) => {
-    let defaultCropped = null;
+    let defaultCropped = [];
     let customPlatformMediaFiles = {};
 
     const defaultRatio = aspectRatios["default"];
-    const defaultCrop = cropDataMap["default"];
     const defaultRatioNum = defaultRatio && defaultRatio !== "original" ? parseFloat(defaultRatio.split("/")[0]) / parseFloat(defaultRatio.split("/")[1]) : null;
 
-    if (values.media?.[0]?.originFileObj && values.postType === "image" && defaultCrop) {
-      defaultCropped = await cropImage(values.media[0].originFileObj, defaultCrop, defaultRatioNum);
-    } else {
-      defaultCropped = values.media?.[0]?.originFileObj || null;
+    if (values.media && values.media.length > 0) {
+       for (let i = 0; i < values.media.length; i++) {
+          const file = values.media[i].originFileObj;
+          if (file && values.postType === "image") {
+             const defaultCrop = cropDataMap[`default_${i}`] || cropDataMap["default"] || { x: 0, y: 0, zoom: 1 };
+             defaultCropped.push(await cropImage(file, defaultCrop, defaultRatioNum));
+          } else if (file) {
+             defaultCropped.push(file);
+          }
+       }
     }
 
     const uniqueAccountIds = [...new Set(values.platforms || [])];
     for (const accountId of uniqueAccountIds) {
-      const pFile = values[`media_${accountId}`]?.[0]?.originFileObj;
-      if (pFile && values.postType === "image") {
+      const pFiles = values[`media_${accountId}`] || [];
+      if (pFiles.length > 0) {
+        customPlatformMediaFiles[accountId] = [];
         const pRatio = aspectRatios[accountId] || "original";
-        const pCrop = cropDataMap[accountId] || { x: 0, y: 0, zoom: 1 };
         const pRatioNum = pRatio !== "original" ? parseFloat(pRatio.split("/")[0]) / parseFloat(pRatio.split("/")[1]) : null;
-        if (pCrop) {
-          customPlatformMediaFiles[accountId] = await cropImage(pFile, pCrop, pRatioNum);
-        } else {
-          customPlatformMediaFiles[accountId] = pFile;
+        
+        for (let i = 0; i < pFiles.length; i++) {
+           const pFile = pFiles[i].originFileObj;
+           if (pFile && values.postType === "image") {
+             const pCrop = cropDataMap[`${accountId}_${i}`] || cropDataMap[accountId] || { x: 0, y: 0, zoom: 1 };
+             customPlatformMediaFiles[accountId].push(await cropImage(pFile, pCrop, pRatioNum));
+           } else if (pFile) {
+             customPlatformMediaFiles[accountId].push(pFile);
+           }
         }
       }
     }
-    return { defaultCropped, customPlatformMediaFiles };
+    return { defaultCropped: defaultCropped.length > 0 ? defaultCropped : null, customPlatformMediaFiles };
   };
 
   const onSubmit = async (values) => {
@@ -841,10 +1103,13 @@ export default function PostEditor({
                             >
                               <Upload
                                 beforeUpload={() => false}
-                                maxCount={1}
+                                maxCount={10}
+                                multiple={true}
                                 accept={postType === "video" ? "video/*" : "image/*"}
                                 listType="text"
-                                onRemove={() => form.setFieldValue("media", [])}
+                                onChange={(info) => {
+                                  setMediaFiles([...(info.fileList || [])]);
+                                }}
                               >
                                 <Button icon={<UploadOutlined />}>
                                   {postType === "video" ? "Upload Default Video" : "Upload Default Image"}
@@ -870,10 +1135,16 @@ export default function PostEditor({
                               >
                                 <Upload
                                   beforeUpload={() => false}
-                                  maxCount={1}
+                                  maxCount={10}
+                                  multiple={true}
                                   accept={postType === "video" ? "video/*" : "image/*"}
                                   listType="text"
-                                  onRemove={() => form.setFieldValue(`media_${accountId}`, [])}
+                                  onChange={(info) => {
+                                    setPlatformMediaFiles(prev => ({
+                                      ...prev,
+                                      [accountId]: [...(info.fileList || [])]
+                                    }));
+                                  }}
                                 >
                                   <Button icon={<UploadOutlined />}>
                                     Upload specific {postType} for {accountName}
@@ -901,10 +1172,13 @@ export default function PostEditor({
                   >
                     <Upload
                       beforeUpload={() => false}
-                      maxCount={1}
+                      maxCount={10}
+                      multiple={true}
                       accept={postType === "video" ? "video/*" : "image/*"}
                       listType="text"
-                      onRemove={() => form.setFieldValue("media", [])}
+                      onChange={(info) => {
+                        setMediaFiles([...(info.fileList || [])]);
+                      }}
                     >
                       <Button icon={<UploadOutlined />}>
                         {postType === "video" ? "Upload Video" : "Upload Image"}
@@ -1081,8 +1355,16 @@ export default function PostEditor({
                   selectedPlatformIds.map((accountId) => {
                       const account = accounts.find(a => a.id === accountId);
                       const pPlatform = account ? account.platform : "generic";
-                      const pMedia = form.getFieldValue(`media_${accountId}`)?.length > 0 ? form.getFieldValue(`media_${accountId}`) : media;
-                      const pAspectRatio = aspectRatios[accountId] || aspectRatios["default"] || "1/1";
+                      const pMedia = platformMediaFiles[accountId]?.length > 0
+                        ? platformMediaFiles[accountId]
+                        : mediaFiles?.length > 0
+                        ? mediaFiles
+                        : form.getFieldValue(`media_${accountId}`)?.length > 0
+                        ? form.getFieldValue(`media_${accountId}`)
+                        : media?.length > 0
+                        ? media
+                        : [];
+                      const pAspectRatio = aspectRatios[accountId] || aspectRatios["default"] || "original";
                       const pCropData = cropDataMap[accountId] || cropDataMap["default"] || { x: 0, y: 0, zoom: 1 };
                       
                       return (
@@ -1094,14 +1376,9 @@ export default function PostEditor({
                           postType={postType}
                           platform={pPlatform}
                           aspectRatio={pAspectRatio}
-                          cropData={pCropData}
-                          setCropData={(updater) => {
-                             setCropDataMap(prev => {
-                               const oldCrop = prev[accountId] || { x: 0, y: 0, zoom: 1 };
-                               const newCrop = typeof updater === 'function' ? updater(oldCrop) : updater;
-                               return { ...prev, [accountId]: newCrop };
-                             });
-                          }}
+                          accountId={accountId}
+                          cropDataMap={cropDataMap}
+                          setCropDataMap={setCropDataMap}
                         />
                       );
                   })
@@ -1109,31 +1386,32 @@ export default function PostEditor({
                   <PostPreview
                     title={campaign}
                     caption={caption}
-                    media={media}
+                    media={mediaFiles?.length > 0 ? mediaFiles : media || []}
                     postType={postType}
                     platform="generic"
-                    aspectRatio={aspectRatios["default"] || "1/1"}
-                    cropData={cropDataMap["default"] || { x: 0, y: 0, zoom: 1 }}
-                    setCropData={(updater) => {
-                        setCropDataMap(prev => {
-                          const oldCrop = prev.default || { x: 0, y: 0, zoom: 1 };
-                          const newCrop = typeof updater === 'function' ? updater(oldCrop) : updater;
-                          return { ...prev, default: newCrop };
-                        });
-                    }}
+                    aspectRatio={aspectRatios["default"] || "original"}
+                    accountId="default"
+                    cropDataMap={cropDataMap}
+                    setCropDataMap={setCropDataMap}
                   />
                 )}
               </div>
             ) : (() => {
-                // If previewTab is a specific platform, we can find the first account that matches it
-                // Or better, if previewTab is still platforms, we show all accounts for that platform
                 const accountsForPlatform = selectedPlatformIds.filter(id => accounts.find(a => a.id === id)?.platform === previewTab);
                 
                 return accountsForPlatform.map(accountId => {
                     const account = accounts.find(a => a.id === accountId);
-                    const pMedia = form.getFieldValue(`media_${accountId}`)?.length > 0 ? form.getFieldValue(`media_${accountId}`) : media;
-                    const pAspectRatio = aspectRatios[accountId] || aspectRatios["default"] || "1/1";
-                    const pCropData = cropDataMap[accountId] || cropDataMap["default"] || { x: 0, y: 0, zoom: 1 };
+                    const pPlatform = account ? account.platform : "generic";
+                    const pMedia = platformMediaFiles[accountId]?.length > 0
+                      ? platformMediaFiles[accountId]
+                      : mediaFiles?.length > 0
+                      ? mediaFiles
+                      : form.getFieldValue(`media_${accountId}`)?.length > 0
+                      ? form.getFieldValue(`media_${accountId}`)
+                      : media?.length > 0
+                      ? media
+                      : [];
+                    const pAspectRatio = aspectRatios[accountId] || aspectRatios["default"] || "original";
                     
                     return (
                       <PostPreview
@@ -1144,14 +1422,9 @@ export default function PostEditor({
                         postType={postType}
                         platform={previewTab}
                         aspectRatio={pAspectRatio}
-                        cropData={pCropData}
-                        setCropData={(updater) => {
-                           setCropDataMap(prev => {
-                             const oldCrop = prev[accountId] || { x: 0, y: 0, zoom: 1 };
-                             const newCrop = typeof updater === 'function' ? updater(oldCrop) : updater;
-                             return { ...prev, [accountId]: newCrop };
-                           });
-                        }}
+                        accountId={accountId}
+                        cropDataMap={cropDataMap}
+                        setCropDataMap={setCropDataMap}
                       />
                     );
                 });

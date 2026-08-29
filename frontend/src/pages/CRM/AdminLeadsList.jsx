@@ -74,7 +74,27 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
   const [selectedFbPageId, setSelectedFbPageId] = useState(null);
   const [selectedFbFormIds, setSelectedFbFormIds] = useState([]);
 
-  const { data: fbIntegrationsData, isLoading: isLoadingFbIntegrations } = useGetFacebookIntegrationsQuery();
+  const selectedClientId = useMemo(() => {
+    const userStr = localStorage.getItem('user');
+    if (userStr) {
+      try {
+        const parsed = JSON.parse(userStr);
+        if (parsed?.role === 'client' || parsed?.brandId || parsed?.clientId) {
+          return parsed.clientId || parsed.brandId || parsed._id;
+        }
+      } catch (e) {}
+    }
+    const selectedClientStr = localStorage.getItem('selectedClient');
+    if (selectedClientStr) {
+      try {
+        const parsed = JSON.parse(selectedClientStr);
+        if (parsed?._id) return parsed._id;
+      } catch (e) {}
+    }
+    return null;
+  }, []);
+
+  const { data: fbIntegrationsData, isLoading: isLoadingFbIntegrations } = useGetFacebookIntegrationsQuery(selectedClientId);
   const fbPages = fbIntegrationsData?.data?.integrations || [];
   
   const [fetchFbForms, { data: fbFormsData, isFetching: isFetchingFbForms }] = useLazyGetFacebookFormsQuery();
@@ -82,11 +102,16 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
   
   const [syncFacebookLeads, { isLoading: isSyncingFbLeads }] = useSyncFacebookLeadsMutation();
 
-  const handleFbPageChange = (pageId) => {
+  const handleFbPageChange = async (pageId) => {
     setSelectedFbPageId(pageId);
-    setSelectedFbFormIds([]);
+    const selectedPage = fbPages.find(p => p.pageId === pageId);
+    setSelectedFbFormIds(selectedPage?.selectedForms || []);
     if (pageId) {
-      fetchFbForms({ pageId });
+      try {
+        await fetchFbForms({ pageId, ...(selectedClientId ? { clientId: selectedClientId } : {}) }).unwrap();
+      } catch (err) {
+        message.error(err?.data?.message || err?.message || 'Failed to fetch forms for this page');
+      }
     }
   };
 
@@ -96,8 +121,12 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
       return;
     }
     try {
-      const res = await syncFacebookLeads({ pageId: selectedFbPageId, formIds: selectedFbFormIds }).unwrap();
-      message.success(`Successfully synced ${res.data?.syncedCount || 0} leads from Facebook`);
+      const res = await syncFacebookLeads({ 
+        pageId: selectedFbPageId, 
+        formIds: selectedFbFormIds,
+        ...(selectedClientId ? { clientId: selectedClientId } : {})
+      }).unwrap();
+      message.success(`Successfully synced ${res.data?.syncedCount || 0} leads from Facebook. 5-minute auto-sync is active.`);
       setIsFbSyncModalOpen(false);
       refetch?.();
     } catch (error) {
