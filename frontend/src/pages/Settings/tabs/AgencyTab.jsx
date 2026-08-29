@@ -224,7 +224,7 @@ const AgencyTab = () => {
         }
 
         onSuccess(res.data);
-        message.success('Invoice signature uploaded and applied successfully.');
+        message.success('Invoice / Proposal signature uploaded and applied successfully.');
       } else {
         throw new Error('Upload failed');
       }
@@ -385,7 +385,7 @@ const AgencyTab = () => {
                   </div>
                 </Form.Item>
 
-                <Form.Item label={<strong style={{ color: 'var(--text-secondary)' }}>Invoice Signature</strong>}>
+                <Form.Item label={<strong style={{ color: 'var(--text-secondary)' }}>Invoice / Proposal Signature</strong>}>
                   <Form.Item name="invoiceSignature" hidden>
                     <Input />
                   </Form.Item>

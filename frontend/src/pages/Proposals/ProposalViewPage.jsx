@@ -1,18 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { Card, Button, Typography, message, Space, Spin } from "antd";
+import { useParams, useNavigate } from "react-router-dom";
+import { Button, message, Spin } from "antd";
 import { ArrowLeftOutlined, PrinterOutlined } from "@ant-design/icons";
 import ProfessionalProposal from "./components/ProfessionalProposal";
 import api from "../../services/api";
 
-const { Title } = Typography;
-
 const ProposalViewPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const location = useLocation();
-
-  const isClientPanel = location.pathname.startsWith('/client');
 
   const [proposal, setProposal] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -25,8 +20,8 @@ const ProposalViewPage = () => {
 
   useEffect(() => {
     if (proposal) {
-      const agencyName = proposal.agencyId?.name || proposal.adminId?.name || 'Proposal';
-      document.title = `${agencyName} - ${proposal.proposalNumber}`;
+      const title = proposal.name || proposal.proposalNumber || "Proposal";
+      document.title = `${title} | M1 Labs`;
     }
     return () => {
       document.title = 'M1 Labs'; // Revert back
@@ -69,32 +64,35 @@ const ProposalViewPage = () => {
   }
 
   return (
-    <div className="page-container">
-      <Space style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-        <Space>
-          <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>
-            Back
-          </Button>
-          <Title level={3} style={{ margin: 0 }}>
-            Proposal: {proposal?.proposalNumber}
-          </Title>
-        </Space>
-        
+    <div className="page-container proposal-view-page" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div
+        className="proposal-view-toolbar no-print"
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 12,
+          flexWrap: 'wrap',
+          width: '100%'
+        }}
+      >
+        <Button icon={<ArrowLeftOutlined />} onClick={handleBack}>
+          Back
+        </Button>
+
         <Button icon={<PrinterOutlined />} onClick={handlePrint}>
           Print / Save as PDF
         </Button>
-      </Space>
+      </div>
 
-      <Card bodyStyle={{ padding: 0 }} bordered={false}>
-        <ProfessionalProposal proposal={proposal} />
-      </Card>
+      <ProfessionalProposal proposal={proposal} />
 
       <style>{`
         @media print {
           /* Hide layout wrappers */
           .ant-layout-sider, .ant-layout-header, aside, header { display: none !important; }
           /* Hide buttons and spaces */
-          .ant-space, .ant-btn { display: none !important; }
+          .proposal-view-toolbar, .no-print, .ant-btn { display: none !important; }
           
           /* Remove all padding, margin, and backgrounds */
           body, .ant-layout, .ant-layout-content, .page-container {

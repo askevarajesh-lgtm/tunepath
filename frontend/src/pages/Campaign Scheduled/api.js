@@ -100,14 +100,22 @@ export const campaignScheduledApi = {
     };
   },
   async createPost(payload, mediaFile = null, clientCompanyId = null) {
-    if (mediaFile) {
+    const { platformMediaFiles, ...restPayload } = payload;
+    if (mediaFile || (platformMediaFiles && Object.keys(platformMediaFiles).length > 0)) {
       const formData = new FormData();
-      formData.append("media", mediaFile);
-      Object.keys(payload).forEach((key) => {
+      if (mediaFile) formData.append("media", mediaFile);
+      
+      if (platformMediaFiles) {
+        Object.entries(platformMediaFiles).forEach(([id, file]) => {
+          formData.append(`media_${id}`, file);
+        });
+      }
+
+      Object.keys(restPayload).forEach((key) => {
         if (key === "platforms" || key === "boards" || key === "post_option") {
-          formData.append(key, JSON.stringify(payload[key]));
+          formData.append(key, JSON.stringify(restPayload[key]));
         } else {
-          formData.append(key, payload[key]);
+          formData.append(key, restPayload[key]);
         }
       });
       const res = await fetch(buildScopedUrl("/posts", clientCompanyId), {
@@ -124,20 +132,28 @@ export const campaignScheduledApi = {
     }
     const data = await request("/posts", {
       method: "POST",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(restPayload),
       clientCompanyId,
     });
     return normalizePost(data.post);
   },
   async updatePost(id, payload, mediaFile = null, clientCompanyId = null) {
-    if (mediaFile) {
+    const { platformMediaFiles, ...restPayload } = payload;
+    if (mediaFile || (platformMediaFiles && Object.keys(platformMediaFiles).length > 0)) {
       const formData = new FormData();
-      formData.append("media", mediaFile);
-      Object.keys(payload).forEach((key) => {
+      if (mediaFile) formData.append("media", mediaFile);
+      
+      if (platformMediaFiles) {
+        Object.entries(platformMediaFiles).forEach(([pId, file]) => {
+          formData.append(`media_${pId}`, file);
+        });
+      }
+
+      Object.keys(restPayload).forEach((key) => {
         if (key === "platforms" || key === "boards" || key === "post_option") {
-          formData.append(key, JSON.stringify(payload[key]));
+          formData.append(key, JSON.stringify(restPayload[key]));
         } else {
-          formData.append(key, payload[key]);
+          formData.append(key, restPayload[key]);
         }
       });
       const res = await fetch(buildScopedUrl(`/posts/${id}`, clientCompanyId), {
@@ -154,7 +170,7 @@ export const campaignScheduledApi = {
     }
     const data = await request(`/posts/${id}`, {
       method: "PUT",
-      body: JSON.stringify(payload),
+      body: JSON.stringify(restPayload),
       clientCompanyId,
     });
     return normalizePost(data.post);

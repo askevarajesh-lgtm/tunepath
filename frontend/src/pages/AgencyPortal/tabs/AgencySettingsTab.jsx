@@ -561,7 +561,7 @@ const AgencySettingsTab = () => {
             </Col>
 
             <Col xs={24} md={12} style={{ marginTop: 16 }}>
-              <Form.Item label={<Text style={{ fontWeight: 600 }}>Invoice Signature</Text>}>
+              <Form.Item label={<Text style={{ fontWeight: 600 }}>Invoice / Proposal Signature</Text>}>
                 <Form.Item name="invoiceSignature" hidden>
                   <Input />
                 </Form.Item>

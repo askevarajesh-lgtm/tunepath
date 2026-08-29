@@ -166,10 +166,10 @@ const SignIn = () => {
         <div className="bcc-signin-frame">
           <motion.aside variants={panelVariants} className="bcc-signin-visual">
             <div className="bcc-signin-visual__content">
-              <motion.div variants={itemVariants} className="bcc-signin-visual__header">
+              {/* <motion.div variants={itemVariants} className="bcc-signin-visual__header">
                 <span className="bcc-signin-visual__brand-tag">M1 Labs</span>
                 <span className="bcc-signin-visual__subtag">Agency Growth OS</span>
-              </motion.div>
+              </motion.div> */}
 
               <motion.h1 variants={itemVariants}>Sign in to your growth workspace.</motion.h1>
 

@@ -1,434 +1,725 @@
 import React from "react";
-import { Typography, Row, Col, Divider, Card, Tag, Space } from "antd";
+import { Typography } from "antd";
+import { ExportOutlined, SearchOutlined } from "@ant-design/icons";
 import { useTheme } from "../../../contexts/ThemeContext";
-import { CheckCircleOutlined, CalendarOutlined, RocketOutlined } from "@ant-design/icons";
 
-const { Title, Text, Paragraph } = Typography;
+const { Title } = Typography;
+const RUPEE = "\u20b9";
+
+const formatCurrency = (value = 0) =>
+  `${RUPEE}${Number(value || 0).toLocaleString("en-IN")}`;
+
+const formatDate = (value) => {
+  if (!value) return "N/A";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "N/A";
+  return parsed.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+};
+
+const formatAddress = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "object") {
+    const parts = [
+      value.line1,
+      value.line2,
+      value.city,
+      value.state,
+      value.pincode,
+      value.postalCode,
+      value.country,
+    ]
+      .filter(Boolean)
+      .map((part) => String(part).trim())
+      .filter(Boolean);
+    return parts.join(", ");
+  }
+  return String(value).trim();
+};
+
+const formatWebsiteLabel = (value) => {
+  if (!value) return "yourwebsite.com";
+  return String(value).trim().replace(/^https?:\/\//i, "").replace(/\/$/, "");
+};
+
+const toWebsiteUrl = (value) => {
+  if (!value) return "";
+  const trimmed = String(value).trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed.replace(/^\/+/, "")}`;
+};
+
+const truncateText = (value, max = 120) => {
+  if (!value) return "";
+  const text = String(value).trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+};
+
+const parseDuration = (value) => {
+  if (!value) return null;
+  const text = String(value).trim();
+  if (!text || /^(n\/a|na|none|-)$/i.test(text)) return null;
+
+  const match = text.match(
+    /^(\d+(?:\.\d+)?)\s*(day|days|week|weeks|month|months|year|years)$/i,
+  );
+  if (!match) {
+    return { days: 0, label: text };
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  let days = amount;
+  if (unit.startsWith("week")) days = amount * 7;
+  if (unit.startsWith("month")) days = amount * 30;
+  if (unit.startsWith("year")) days = amount * 365;
+
+  return { days, label: text };
+};
+
+const buildScopeBullets = (items) => {
+  const categoryBullets = [];
+  const categorySeen = new Set();
+
+  items.forEach((item) => {
+    (item?.categories || []).forEach((category) => {
+      const label = category?.name || category?.categoryName;
+      if (!label && label !== 0) return;
+      const count = category?.count;
+      const bullet = `${label}: ${count ?? 0}`;
+      const key = bullet.toLowerCase();
+      if (!categorySeen.has(key)) {
+        categorySeen.add(key);
+        categoryBullets.push(bullet);
+      }
+    });
+  });
+
+  if (categoryBullets.length > 0) {
+    return categoryBullets.slice(0, 3);
+  }
+
+  const itemBullets = items
+    .map((item, index) => {
+      const serviceName = item?.name || `Service ${index + 1}`;
+      let detail = "";
+      if (item?.description) {
+        detail = truncateText(item.description, 80);
+      } else if (item?.handlingDuration) {
+        detail = item.handlingDuration;
+      } else if (item?.isCampaign && item?.campaignDetails?.numberOfDays) {
+        detail = `${item.campaignDetails.numberOfDays} day campaign`;
+      } else if (Array.isArray(item?.applicableAccess) && item.applicableAccess.length > 0) {
+        const firstAccess = item.applicableAccess[0];
+        detail = [
+          firstAccess?.name,
+          firstAccess?.value ? `: ${firstAccess.value}` : "",
+        ]
+          .filter(Boolean)
+          .join("");
+      }
+      return detail ? `${serviceName}: ${detail}` : serviceName;
+    })
+    .filter(Boolean);
+
+  if (itemBullets.length > 0) {
+    return itemBullets.slice(0, 3);
+  }
+
+  return [
+    "Strategic planning and scope definition",
+    "Execution, review, and delivery milestones",
+    "Final handoff and support notes",
+  ];
+};
+
+const buildDeliverableBullets = (items) => {
+  const accessBullets = [];
+  const accessSeen = new Set();
+
+  items.forEach((item) => {
+    (item?.applicableAccess || []).forEach((access) => {
+      const label = access?.name || access?.label;
+      const value = access?.value || access?.description || "";
+      const bullet = [label, value ? `: ${value}` : ""].filter(Boolean).join("");
+      const key = bullet.toLowerCase();
+      if (bullet && !accessSeen.has(key)) {
+        accessSeen.add(key);
+        accessBullets.push(bullet);
+      }
+    });
+  });
+
+  if (accessBullets.length > 0) {
+    return accessBullets.slice(0, 3);
+  }
+
+  const itemBullets = items
+    .map((item, index) => {
+      const serviceName = item?.name || `Item ${index + 1}`;
+      return `Final deliverable for ${serviceName}`;
+    })
+    .filter(Boolean);
+
+  if (itemBullets.length > 0) {
+    return itemBullets.slice(0, 3);
+  }
+
+  return [
+    "Approved creative and execution assets",
+    "Progress reporting and status updates",
+    "Project handoff and next-step recommendations",
+  ];
+};
+
+const buildTimelineText = (items) => {
+  const candidates = items
+    .map((item) => {
+      if (item?.isCampaign && item?.campaignDetails?.numberOfDays) {
+        const days = Number(item.campaignDetails.numberOfDays) || 0;
+        return {
+          days,
+          label: `${days} days`,
+        };
+      }
+
+      const duration = parseDuration(item?.handlingDuration);
+      if (!duration) return null;
+      if (/^(n\/a|na|none|-)$/i.test(String(duration.label || "").trim())) {
+        return null;
+      }
+      return duration;
+    })
+    .filter(Boolean);
+
+  if (candidates.length > 0) {
+    const best = candidates.reduce((currentBest, candidate) => {
+      if (!currentBest) return candidate;
+      return candidate.days > currentBest.days ? candidate : currentBest;
+    }, null);
+    return `Estimated completion: ${best.label || "4-6 weeks"} from approval`;
+  }
+
+  return "Estimated completion: 4-6 weeks from approval";
+};
+
+const buildDescription = (projectName, items) => {
+  const leadDetail = items[0]?.description ? truncateText(items[0].description, 120) : "";
+  if (leadDetail) {
+    return `This proposal outlines the scope for ${projectName || "the project"}. ${leadDetail} It keeps the project purpose, key details, and intended direction clear from the start.`;
+  }
+
+  return `This proposal outlines the scope for ${projectName || "the project"}. It summarizes the project purpose, key details, and intended direction clearly.`;
+};
 
 const ProfessionalProposal = ({ proposal }) => {
   const { isDark } = useTheme();
-  
-  // Theme Variables
-  const primaryColor = isDark ? "#3b82f6" : "#2563eb";
-  const secondaryBg = isDark ? "#1e293b" : "#f8fafc";
-  const cardBg = isDark ? "#1e293b" : "#ffffff";
-  const cardBorder = isDark ? "#334155" : "#e2e8f0";
-  const textSecondaryColor = isDark ? "#94a3b8" : "#64748b";
-  const bodyTextColor = isDark ? "#f8fafc" : "#0f172a";
-  const headerGradient = isDark 
-    ? "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)" 
-    : "linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)";
 
   if (!proposal) return null;
 
-  // Process packages
-  const packages = [];
-  
-  if (proposal.masterItems) {
-    proposal.masterItems.forEach(item => {
-      packages.push({
-        ...item,
-        isCustom: false,
-        _id: item._id ? `${item._id}-service` : `service-${Math.random()}`
-      });
-      if (item.isCampaign && item.campaignDetails) {
-        packages.push({
-          ...item,
-          _id: item._id ? `${item._id}-campaign` : `campaign-${Math.random()}`,
-          name: `${item.name} (Campaign Setup & Management)`,
-          description: `Includes campaign execution and monitoring. Ads budget is paid directly to platforms.`,
-          isCampaignRow: true,
-          price: item.campaignDetails.campaignAmount,
-        });
-      }
-    });
-  }
+  const masterItems = Array.isArray(proposal.masterItems)
+    ? proposal.masterItems.filter(Boolean)
+    : [];
 
-  if (proposal.customMasterItems) {
-    proposal.customMasterItems.forEach(item => {
-      packages.push({
-        ...item,
-        isCustom: true,
-        name: item.customPackageName || 'Custom Solution',
-        categories: item.customCategories,
-        applicableAccess: item.customApplicableAccess,
-        price: item.amount || 0,
-        _id: item._id ? `${item._id}-custom` : `custom-${Math.random()}`
-      });
-    });
-  }
+  const client = proposal.clientId || {};
+  const agency = proposal.agencyId || proposal.adminId || proposal.createdBy || {};
+
+  const projectName = proposal.name || "Proposal";
+  const proposalDate = formatDate(proposal.proposalDate || proposal.createdAt);
+  const clientName = client.companyName || client.name || "Name";
+  const clientEmail = client.email || "Email";
+  const clientAddress = formatAddress(client.address) || "Address";
+  const agencyName = agency.companyName || agency.name || "Your Company Name";
+  const agencyWebsite = formatWebsiteLabel(agency.domain);
+  const agencyWebsiteUrl = toWebsiteUrl(agency.domain);
+  const agencyPhone = agency.supportPhone || agency.phone || "+00 000 000";
+  const description = buildDescription(projectName, masterItems);
+  const scopeBullets = buildScopeBullets(masterItems);
+  const deliverableBullets = buildDeliverableBullets(masterItems);
+  const timelineText = buildTimelineText(masterItems);
+  const grandTotal = formatCurrency(proposal.grandTotal || 0);
+  const searchImageUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(
+    projectName || clientName || agencyName || "proposal",
+  )}`;
 
   return (
-    <div
-      className="professional-proposal"
-      style={{
-        background: isDark ? "#0f172a" : "#ffffff",
-        color: bodyTextColor,
-        fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-        borderRadius: "12px",
-        overflow: "hidden",
-        boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)",
-        border: `1px solid ${cardBorder}`
-      }}
-      id="printable-proposal"
-    >
-      {/* Hero Header Section */}
-      <div style={{
-        background: headerGradient,
-        padding: "60px 48px",
-        borderBottom: `1px solid ${cardBorder}`,
-        position: 'relative'
-      }}>
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <Tag color="blue" style={{ marginBottom: 16, fontSize: '14px', padding: '4px 12px', borderRadius: '4px', textTransform: 'uppercase', fontWeight: 600 }}>
-            Project Proposal
-          </Tag>
-          <Title level={1} style={{ 
-            margin: 0, 
-            fontSize: "42px", 
-            fontWeight: 800,
-            color: bodyTextColor,
-            lineHeight: 1.2
-          }}>
-            {proposal.name}
-          </Title>
-          <Text style={{ 
-            fontSize: "18px", 
-            color: textSecondaryColor,
-            display: 'block',
-            marginTop: '12px'
-          }}>
-            Proposal Ref: #{proposal.proposalNumber}
-          </Text>
-        </div>
-      </div>
+    <div className="proposal-stage">
+      <article className="proposal-sheet">
+        <div className="proposal-top">
+          <div className="proposal-top__left">
+            <div className="proposal-top__eyebrow">Project</div>
+            <Title level={1} className="proposal-top__title">
+              Proposal
+            </Title>
 
-      {/* Stakeholders Section */}
-      <div style={{ padding: "48px" }}>
-        <Row gutter={48}>
-          <Col xs={24} md={12}>
-            <div style={{ 
-              padding: "24px", 
-              background: secondaryBg, 
-              borderRadius: "8px",
-              height: '100%',
-              border: `1px solid ${cardBorder}`
-            }}>
-              <Text style={{ fontSize: "12px", fontWeight: 700, color: textSecondaryColor, textTransform: "uppercase", letterSpacing: "1px" }}>
-                Prepared For
-              </Text>
-              <Title level={4} style={{ marginTop: 8, marginBottom: 4, color: bodyTextColor }}>
-                {proposal.clientId?.name || "Valued Client"}
-              </Title>
-              {proposal.clientId?.email && <Text style={{ display: 'block', color: textSecondaryColor }}>{proposal.clientId.email}</Text>}
-              {proposal.clientId?.phone && <Text style={{ display: 'block', color: textSecondaryColor }}>{proposal.clientId.phone}</Text>}
-              {proposal.clientId?.address && <Text style={{ display: 'block', color: textSecondaryColor, marginTop: 8 }}>{proposal.clientId.address}</Text>}
-            </div>
-          </Col>
-          <Col xs={24} md={12}>
-            <div style={{ 
-              padding: "24px", 
-              background: secondaryBg, 
-              borderRadius: "8px",
-              height: '100%',
-              border: `1px solid ${cardBorder}`
-            }}>
-              <Text style={{ fontSize: "12px", fontWeight: 700, color: textSecondaryColor, textTransform: "uppercase", letterSpacing: "1px" }}>
-                Prepared By
-              </Text>
-              <Title level={4} style={{ marginTop: 8, marginBottom: 4, color: bodyTextColor }}>
-                {proposal.agencyId?.name || proposal.adminId?.name || "Our Agency"}
-              </Title>
-              <Text style={{ display: 'block', color: textSecondaryColor }}>
-                {proposal.agencyId?.industry || proposal.adminId?.industry || "Agency & Consultancy Services"}
-              </Text>
-              <Text style={{ display: 'block', color: textSecondaryColor }}>
-                {proposal.agencyId?.email || proposal.adminId?.email || ""}
-              </Text>
-              
-              <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1px solid ${cardBorder}` }}>
-                <Row>
-                  <Col span={12}>
-                    <Text style={{ fontSize: "12px", color: textSecondaryColor, display: 'block' }}>Date</Text>
-                    <Text strong>{proposal.proposalDate ? new Date(proposal.proposalDate).toLocaleDateString() : new Date(proposal.createdAt).toLocaleDateString()}</Text>
-                  </Col>
-                  <Col span={12}>
-                    <Text style={{ fontSize: "12px", color: textSecondaryColor, display: 'block' }}>Valid Until</Text>
-                    <Text strong>{proposal.validUntil ? new Date(proposal.validUntil).toLocaleDateString() : "N/A"}</Text>
-                  </Col>
-                </Row>
-              </div>
-            </div>
-          </Col>
-        </Row>
-      </div>
-
-      <Divider style={{ margin: 0, borderColor: cardBorder }} />
-
-      {/* Proposed Solutions Section */}
-      <div style={{ padding: "48px" }}>
-        <div style={{ marginBottom: 32 }}>
-          <Title level={2} style={{ margin: 0, color: bodyTextColor }}>Proposed Solutions</Title>
-          <Paragraph style={{ fontSize: "16px", color: textSecondaryColor, marginTop: 8, maxWidth: "800px" }}>
-            Based on our understanding of your goals, we have crafted the following packages to deliver the best results. Each package includes dedicated strategy, execution, and reporting.
-          </Paragraph>
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-          {packages.map((pkg, idx) => (
-            <div key={pkg._id || idx} style={{ 
-              border: `1px solid ${cardBorder}`, 
-              borderRadius: "12px",
-              background: cardBg,
-              overflow: "hidden",
-              pageBreakInside: "avoid"
-            }}>
-              {/* Package Header */}
-              <div style={{ 
-                padding: "20px 24px", 
-                borderBottom: `1px solid ${cardBorder}`,
-                background: secondaryBg,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center"
-              }}>
-                <div>
-                  <Title level={4} style={{ margin: 0, color: bodyTextColor, display: "flex", alignItems: "center", gap: "8px" }}>
-                    {pkg.isCampaignRow ? <RocketOutlined style={{ color: primaryColor }} /> : <CheckCircleOutlined style={{ color: primaryColor }} />}
-                    {pkg.name}
-                  </Title>
-                  {(pkg.category || pkg.handlingDuration) && (
-                    <Space style={{ marginTop: 8 }} size="middle">
-                      {pkg.category && <Tag bordered={false}>{pkg.category}</Tag>}
-                      {pkg.handlingDuration && (
-                        <Text style={{ color: textSecondaryColor, fontSize: "13px" }}>
-                          <CalendarOutlined style={{ marginRight: 4 }} /> 
-                          {pkg.handlingDuration}
-                        </Text>
-                      )}
-                    </Space>
-                  )}
-                </div>
-                {!pkg.isCampaignRow && pkg.price > 0 && (
-                  <div style={{ textAlign: "right" }}>
-                    <Text style={{ fontSize: "20px", fontWeight: 700, color: primaryColor }}>
-                      ₹{(pkg.price || 0).toLocaleString()}
-                    </Text>
-                  </div>
-                )}
-                {pkg.isCampaignRow && (
-                   <div style={{ textAlign: "right" }}>
-                   <Text style={{ fontSize: "14px", color: textSecondaryColor, display: "block" }}>Platform Budget</Text>
-                   <Text style={{ fontSize: "20px", fontWeight: 700, color: bodyTextColor }}>
-                     ₹{(pkg.price || 0).toLocaleString()}
-                   </Text>
-                 </div>
-                )}
+            <div className="proposal-top__meta">
+              <div className="proposal-top__meta-item">
+                <span className="proposal-top__meta-label">Date:</span>
+                <span className="proposal-top__meta-value">{proposalDate}</span>
               </div>
 
-              {/* Package Details */}
-              <div style={{ padding: "24px" }}>
-                {pkg.description && (
-                  <Paragraph style={{ fontSize: "15px", color: textSecondaryColor, marginBottom: 24 }}>
-                    {pkg.description}
-                  </Paragraph>
-                )}
-                
-                {pkg.isCampaignRow && pkg.campaignDetails && (
-                  <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
-                    <Col span={8}>
-                      <div style={{ padding: "16px", background: secondaryBg, borderRadius: "8px" }}>
-                        <Text style={{ fontSize: "12px", color: textSecondaryColor, display: 'block', marginBottom: 4 }}>Duration</Text>
-                        <Text strong style={{ fontSize: "16px" }}>{pkg.campaignDetails.numberOfDays} Days</Text>
-                      </div>
-                    </Col>
-                    <Col span={8}>
-                      <div style={{ padding: "16px", background: secondaryBg, borderRadius: "8px" }}>
-                        <Text style={{ fontSize: "12px", color: textSecondaryColor, display: 'block', marginBottom: 4 }}>Daily Budget</Text>
-                        <Text strong style={{ fontSize: "16px" }}>₹{pkg.campaignDetails.dailyBudget?.toLocaleString()}</Text>
-                      </div>
-                    </Col>
-                    <Col span={8}>
-                      <div style={{ padding: "16px", background: secondaryBg, borderRadius: "8px" }}>
-                        <Text style={{ fontSize: "12px", color: textSecondaryColor, display: 'block', marginBottom: 4 }}>Total Ads Budget</Text>
-                        <Text strong style={{ fontSize: "16px" }}>₹{pkg.price?.toLocaleString()}</Text>
-                      </div>
-                    </Col>
-                  </Row>
-                )}
-
-                <Row gutter={[48, 24]}>
-                  {pkg.categories && pkg.categories.length > 0 && (
-                    <Col xs={24} sm={12}>
-                      <Text strong style={{ fontSize: "14px", textTransform: "uppercase", letterSpacing: "0.5px", color: bodyTextColor, display: 'block', marginBottom: 12 }}>
-                        Scope & Quantities
-                      </Text>
-                      <ul style={{ paddingLeft: '20px', margin: 0, color: textSecondaryColor, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {pkg.categories.map((cat, index) => (
-                          <li key={`cat-${index}`} style={{ fontSize: "15px" }}>
-                            <span style={{ color: bodyTextColor, fontWeight: 500 }}>{cat.categoryName || cat.name}</span>: {cat.count || cat.quantity}
-                          </li>
-                        ))}
-                      </ul>
-                    </Col>
-                  )}
-                  {pkg.applicableAccess && pkg.applicableAccess.length > 0 && (
-                    <Col xs={24} sm={12}>
-                      <Text strong style={{ fontSize: "14px", textTransform: "uppercase", letterSpacing: "0.5px", color: bodyTextColor, display: 'block', marginBottom: 12 }}>
-                        Deliverables & Access
-                      </Text>
-                      <ul style={{ paddingLeft: '20px', margin: 0, color: textSecondaryColor, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {pkg.applicableAccess.map((access, index) => (
-                          <li key={`acc-${index}`} style={{ fontSize: "15px" }}>
-                            <span style={{ color: bodyTextColor, fontWeight: 500 }}>{access.name}</span>: {access.value}
-                          </li>
-                        ))}
-                      </ul>
-                    </Col>
-                  )}
-                </Row>
+              <div className="proposal-top__meta-item proposal-top__meta-item--right">
+                <span className="proposal-top__meta-label">Project Name</span>
+                <span className="proposal-top__meta-value proposal-top__meta-value--strong">
+                  {projectName}
+                </span>
               </div>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Investment Summary */}
-      <div className="print-no-break" style={{ background: secondaryBg, padding: "48px", borderTop: `1px solid ${cardBorder}` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'nowrap' }}>
-          <div style={{ flex: 1, paddingRight: '24px' }}>
-            <Title level={2} style={{ margin: 0, color: bodyTextColor }}>Investment Summary</Title>
-            <Paragraph style={{ fontSize: "15px", color: textSecondaryColor, marginTop: 8, marginBottom: 0 }}>
-              The total proposed value for the selected solutions. This is an estimate based on current scope.
-            </Paragraph>
           </div>
-          <div style={{ flexShrink: 0, textAlign: "right" }}>
-            <div className="investment-box" style={{ 
-              display: "inline-block", 
-              background: cardBg, 
-              padding: "24px 40px", 
-              borderRadius: "12px", 
-              border: `1px solid ${cardBorder}`,
-              boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)"
-            }}>
-              <Text style={{ fontSize: "14px", textTransform: "uppercase", fontWeight: 600, color: textSecondaryColor, display: "block", marginBottom: 8 }}>
-                Total Proposal Value
-              </Text>
-              <Text style={{ fontSize: "36px", fontWeight: 800, color: primaryColor }}>
-                ₹{(proposal.grandTotal || 0).toLocaleString()}
-              </Text>
+
+          <div className="proposal-company">
+            <div className="proposal-company__label">Company Info:</div>
+            <div className="proposal-company__value">{clientName}</div>
+            <div className="proposal-company__value">{clientEmail}</div>
+            <div className="proposal-company__value">{clientAddress}</div>
+          </div>
+        </div>
+
+        <section className="proposal-section">
+          <div className="proposal-section__title">Description</div>
+          <p className="proposal-section__body">{description}</p>
+        </section>
+
+        <section className="proposal-section">
+          <div className="proposal-section__title">Work Scope</div>
+          <ul className="proposal-section__list">
+            {scopeBullets.map((bullet) => (
+              <li key={bullet}>{bullet}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="proposal-section">
+          <div className="proposal-section__title">Deliverables</div>
+          <div className="proposal-section__note">We will provide the following</div>
+          <ul className="proposal-section__list">
+            {deliverableBullets.map((bullet) => (
+              <li key={bullet}>{bullet}</li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="proposal-section">
+          <div className="proposal-section__title">Timeline</div>
+          <div className="proposal-section__body">{timelineText}</div>
+        </section>
+
+        <section className="proposal-section proposal-section--investment">
+          <div className="proposal-section__title">Investment</div>
+          <div className="proposal-investment__amount">{grandTotal}</div>
+        </section>
+
+        <footer className="proposal-footer">
+
+          <div className="proposal-footer__right">
+            <div className="proposal-footer__contact">
+              <div
+                style={{
+                  width: 140,
+                  height: 56,
+                  marginBottom: 8,
+                  position: "relative",
+                }}
+              >
+                {agency.invoiceSignature && (
+                  <img
+                    src={agency.invoiceSignature}
+                    alt="Signature"
+                    style={{
+                      position: "absolute",
+                      left: 10,
+                      bottom: 4,
+                      maxHeight: 60,
+                      maxWidth: 120,
+                      objectFit: "contain",
+                    }}
+                  />
+                )}
+              </div>
+              <div style={{ fontWeight: 600, fontSize: "14px", marginTop: 4, textAlign: 'center', width: 140 }}>
+                Signature
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </footer>
+      </article>
 
-      {/* Footer Notes */}
-      <div className="print-no-break" style={{ padding: "32px 48px", background: cardBg, borderTop: `1px solid ${cardBorder}` }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'nowrap' }}>
-          <div>
-            <Space>
-              <Text strong style={{ color: textSecondaryColor }}>Status:</Text>
-              <Tag color={proposal.status === "Approved" ? "green" : "orange"} style={{ margin: 0, fontWeight: 600 }}>
-                {proposal.status?.toUpperCase() || "DRAFT"}
-              </Tag>
-            </Space>
-          </div>
-          <div style={{ textAlign: "right" }}>
-            <Text style={{ fontSize: "13px", color: textSecondaryColor }}>
-              This document is a proposal of services and is valid until {proposal.validUntil ? new Date(proposal.validUntil).toLocaleDateString() : "further notice"}.
-            </Text>
-          </div>
-        </div>
-      </div>
-
-      {/* Print Styles */}
       <style>{`
+        .proposal-stage {
+          display: flex;
+          justify-content: center;
+          padding: 24px 16px 36px;
+          overflow: hidden;
+        }
+
+        .proposal-sheet {
+          position: relative;
+          display: flex;
+          flex-direction: column;
+          width: min(100%, 760px);
+          min-height: min(90vh, 980px);
+          padding: clamp(30px, 4vw, 50px);
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          border-radius: 34px;
+          background: #ffffff;
+          color: #101010;
+          box-shadow:
+            0 30px 80px rgba(0, 0, 0, 0.38),
+            0 1px 0 rgba(255, 255, 255, 0.65) inset;
+          overflow: hidden;
+          gap: 26px;
+        }
+
+        .proposal-top {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 220px;
+          gap: 28px;
+          align-items: start;
+        }
+
+        .proposal-top__left {
+          min-width: 0;
+        }
+
+        .proposal-top__eyebrow {
+          margin-bottom: 12px;
+          color: #2b2b2b;
+          font-size: 18px;
+          font-weight: 400;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          line-height: 1;
+        }
+
+        .proposal-top__title.ant-typography {
+          margin: 0;
+          color: #111111;
+          font-size: clamp(58px, 9vw, 80px);
+          font-weight: 900;
+          letter-spacing: -0.08em;
+          line-height: 0.9;
+        }
+
+        .proposal-top__meta {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 20px;
+          margin-top: 12px;
+          align-items: end;
+        }
+
+        .proposal-top__meta-item {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          min-width: 0;
+        }
+
+        .proposal-top__meta-item--right {
+          align-items: flex-end;
+          text-align: right;
+        }
+
+        .proposal-top__meta-label {
+          color: #1e1e1e;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+        }
+
+        .proposal-top__meta-value {
+          color: #4a4a4a;
+          font-size: 13px;
+          font-weight: 500;
+          line-height: 1.35;
+          word-break: break-word;
+        }
+
+        .proposal-top__meta-value--strong {
+          color: #111111;
+          font-weight: 700;
+        }
+
+        .proposal-company {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 2px;
+          min-width: 0;
+          text-align: right;
+        }
+
+        .proposal-company__label {
+          margin-bottom: 8px;
+          color: #2c2c2c;
+          font-size: 12px;
+          font-weight: 800;
+          letter-spacing: 0.16em;
+          text-transform: uppercase;
+        }
+
+        .proposal-company__value {
+          color: #444444;
+          font-size: 12px;
+          line-height: 1.35;
+          word-break: break-word;
+        }
+
+        .proposal-section {
+          max-width: 660px;
+        }
+
+        .proposal-section__title {
+          margin-bottom: 6px;
+          color: #1b1b1b;
+          font-size: 13px;
+          font-weight: 800;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+
+        .proposal-section__body {
+          margin: 0;
+          color: #515151;
+          font-size: 13px;
+          line-height: 1.45;
+        }
+
+        .proposal-section__note {
+          margin-bottom: 6px;
+          color: #555555;
+          font-size: 13px;
+          line-height: 1.45;
+        }
+
+        .proposal-section__list {
+          margin: 0;
+          padding-left: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          color: #4a4a4a;
+        }
+
+        .proposal-section__list li {
+          font-size: 13px;
+          line-height: 1.4;
+        }
+
+        .proposal-section--investment {
+          margin-bottom: 4px;
+        }
+
+        .proposal-investment__amount {
+          color: #111111;
+          font-size: clamp(30px, 4vw, 38px);
+          font-weight: 800;
+          letter-spacing: -0.04em;
+          line-height: 1;
+        }
+
+        .proposal-footer {
+          display: grid;
+          grid-template-columns: 1fr auto;
+          gap: 24px;
+          align-items: end;
+          margin-top: auto;
+          padding-top: 8px;
+        }
+
+        .proposal-footer__left {
+          display: flex;
+          align-items: flex-end;
+        }
+
+        .proposal-footer__right {
+          display: flex;
+          flex-direction: column;
+          align-items: flex-end;
+          gap: 12px;
+          text-align: right;
+        }
+
+        .proposal-footer__contact {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .proposal-footer__company {
+          color: #1f1f1f;
+          font-size: 15px;
+          font-weight: 700;
+          line-height: 1.2;
+        }
+
+        .proposal-footer__domain,
+        .proposal-footer__phone {
+          color: #555555;
+          font-size: 12px;
+          line-height: 1.2;
+        }
+
+        .proposal-cta {
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          min-height: 46px;
+          padding: 0 18px;
+          border-radius: 999px;
+          border: 1px solid rgba(15, 23, 42, 0.08);
+          background: rgba(255, 255, 255, 0.94);
+          color: #111111;
+          text-decoration: none;
+          font-size: 15px;
+          font-weight: 700;
+          line-height: 1;
+          box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+          transition:
+            transform 0.18s ease,
+            box-shadow 0.18s ease,
+            border-color 0.18s ease,
+            background 0.18s ease;
+          white-space: nowrap;
+        }
+
+        .proposal-cta svg {
+          font-size: 16px;
+        }
+
+        .proposal-cta:hover {
+          transform: translateY(-1px);
+          background: #ffffff;
+          border-color: rgba(15, 23, 42, 0.14);
+          box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+        }
+
+        .proposal-cta--secondary {
+          min-width: 156px;
+          justify-content: center;
+        }
+
+        .proposal-cta--disabled {
+          opacity: 0.45;
+          cursor: default;
+          pointer-events: none;
+        }
+
+        @media (max-width: 900px) {
+          .proposal-stage {
+            padding: 18px 12px 28px;
+          }
+
+          .proposal-sheet {
+            width: 100%;
+            min-height: auto;
+            border-radius: 28px;
+            gap: 22px;
+          }
+
+          .proposal-top {
+            grid-template-columns: 1fr;
+            gap: 18px;
+          }
+
+          .proposal-company {
+            align-items: flex-start;
+            text-align: left;
+          }
+
+          .proposal-top__meta {
+            grid-template-columns: 1fr;
+            gap: 10px;
+          }
+
+          .proposal-top__meta-item--right {
+            align-items: flex-start;
+            text-align: left;
+          }
+
+          .proposal-section {
+            max-width: 100%;
+          }
+
+          .proposal-footer {
+            grid-template-columns: 1fr;
+            gap: 18px;
+          }
+
+          .proposal-footer__right {
+            align-items: flex-start;
+            text-align: left;
+          }
+        }
+
+        @media (max-width: 640px) {
+          .proposal-sheet {
+            padding: 22px 18px 20px;
+          }
+
+          .proposal-top__eyebrow {
+            font-size: 14px;
+            letter-spacing: 0.14em;
+          }
+
+          .proposal-top__title.ant-typography {
+            font-size: clamp(46px, 18vw, 64px);
+          }
+
+          .proposal-top__meta-label,
+          .proposal-company__label,
+          .proposal-section__title {
+            font-size: 11px;
+          }
+
+          .proposal-section__body,
+          .proposal-section__note,
+          .proposal-section__list li,
+          .proposal-top__meta-value,
+          .proposal-company__value {
+            font-size: 12px;
+          }
+
+          .proposal-cta {
+            min-height: 44px;
+            font-size: 14px;
+          }
+
+          .proposal-cta--secondary {
+            min-width: 0;
+            width: fit-content;
+          }
+        }
+
         @media print {
-          /* Hide layout wrappers and UI elements completely */
-          .ant-layout-sider, .ant-layout-header, aside, header, nav, 
-          .ant-tabs-nav, .ant-space, .ant-btn, button, 
-          .ant-modal-close, .ant-modal-footer, .ant-breadcrumb {
-            display: none !important;
-          }
-          
-          /* Reset containers to take full width */
-          .ant-layout, .ant-layout-content, main, body, html {
-            background: #fff !important;
-            margin: 0 !important;
+          .proposal-stage {
+            background: #ffffff !important;
             padding: 0 !important;
+          }
+
+          .proposal-sheet {
             width: 100% !important;
-            min-height: auto !important;
-          }
-
-          .page-container {
-            padding: 0 !important;
-            margin: 0 !important;
             max-width: 100% !important;
-          }
-
-          .professional-proposal {
-            box-shadow: none !important;
+            min-height: auto !important;
+            margin: 0 !important;
             border: none !important;
             border-radius: 0 !important;
-            background: #ffffff !important;
-            color: #0f172a !important;
-          }
-          
-          #printable-proposal {
-            width: 100% !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            box-sizing: border-box;
-          }
-          
-          /* Force light mode styles for printing */
-          .professional-proposal div[style*="background"] {
-             background: #ffffff !important;
-             border-color: #e2e8f0 !important;
-          }
-          
-          .professional-proposal div[style*="linear-gradient"] {
-             background: #f8fafc !important;
-             padding: 40px 32px !important; /* reduce padding */
+            box-shadow: none !important;
           }
 
-          /* Reduce paddings globally for print */
-          .professional-proposal > div {
-             padding-left: 32px !important;
-             padding-right: 32px !important;
-          }
-          
-          .investment-box {
-             padding: 16px 24px !important;
-             border: 2px solid #e2e8f0 !important;
+          .proposal-cta {
+            box-shadow: none !important;
           }
 
-          .print-no-break {
-             page-break-inside: avoid !important;
-          }
-
-          .professional-proposal .ant-typography, 
-          .professional-proposal span, 
-          .professional-proposal div {
-             color: #0f172a !important;
-          }
-
-          .professional-proposal .ant-tag {
-             border: 1px solid #e2e8f0 !important;
-             background: #f8fafc !important;
-             color: #0f172a !important;
-          }
-          
-          /* Keep primary blue colors for accents */
-          .professional-proposal .anticon, 
-          .professional-proposal [style*="color: #3b82f6"],
-          .professional-proposal [style*="color: #2563eb"],
-          .professional-proposal [style*="color: rgb(59, 130, 246)"],
-          .professional-proposal [style*="color: rgb(37, 99, 235)"] {
-             color: #2563eb !important;
-          }
-          
-          /* Ensure backgrounds print correctly */
           * {
             -webkit-print-color-adjust: exact !important;
             print-color-adjust: exact !important;

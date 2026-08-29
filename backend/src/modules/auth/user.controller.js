@@ -129,11 +129,22 @@ exports.createUser = async (req, res, next) => {
     if (incomingRole && !SYSTEM_ROLES.includes(incomingRole)) {
       // It's a dynamic custom role, look it up
       const mongoose = require('mongoose');
+
+      let scopeQuery = {};
+      if (req.user.role === 'commander_admin') {
+        scopeQuery = { adminId: req.user._id };
+      } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
+        scopeQuery = { brandId: req.user.brandId || (req.user.role === 'agency_client' ? req.user._id : null) };
+      } else {
+        scopeQuery = { agencyId: req.companyId || req.user.agencyId || req.user._id };
+      }
+
       const customRole = await Role.findOne({ 
         $or: [
           { roleKey: incomingRole }, 
           { _id: mongoose.Types.ObjectId.isValid(incomingRole) ? incomingRole : null }
-        ] 
+        ],
+        ...scopeQuery
       });
       if (customRole) {
         userData.customRoleId = customRole._id;
@@ -272,11 +283,15 @@ exports.updateUser = async (req, res, next) => {
     // Prevent password update through this route
     const { password, ...updateData } = req.body;
     
+    const existingUser = await User.findById(req.params.id);
+    if (!existingUser) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
     // Validate Phone Number if updated
     if (updateData.phone !== undefined && updateData.phone !== null && updateData.phone !== '') {
-      const existingUser = await User.findById(req.params.id).select('countryCode');
       // Use provided countryCode or fallback to existing
-      const cCode = req.body.countryCode || existingUser?.countryCode;
+      const cCode = req.body.countryCode || existingUser.countryCode;
       const validation = validatePhoneNumber(updateData.phone, cCode);
       if (!validation.isValid) {
         return res.status(400).json({ success: false, message: validation.message });
@@ -286,11 +301,18 @@ exports.updateUser = async (req, res, next) => {
     // Check for Two-Tier Role Mapping during update
     if (updateData.role && !SYSTEM_ROLES.includes(updateData.role)) {
       const mongoose = require('mongoose');
+      
+      let scopeQuery = {};
+      if (existingUser.agencyId) scopeQuery.agencyId = existingUser.agencyId;
+      if (existingUser.brandId) scopeQuery.brandId = existingUser.brandId;
+      if (existingUser.adminId) scopeQuery.adminId = existingUser.adminId;
+
       const customRole = await Role.findOne({ 
         $or: [
           { roleKey: updateData.role }, 
           { _id: mongoose.Types.ObjectId.isValid(updateData.role) ? updateData.role : null }
-        ] 
+        ],
+        ...scopeQuery
       });
       if (customRole) {
         updateData.customRoleId = customRole._id;

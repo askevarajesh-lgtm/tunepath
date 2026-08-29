@@ -2163,7 +2163,7 @@ router.post(
   },
 );
 
-router.post("/posts", mediaUpload.single("media"), async (req, res, next) => {
+router.post("/posts", mediaUpload.any(), async (req, res, next) => {
   try {
     const {
       caption,
@@ -2214,17 +2214,26 @@ router.post("/posts", mediaUpload.single("media"), async (req, res, next) => {
 
     let finalMediaUrl =
       mediaUrl || media_url || "https://picsum.photos/seed/new/400/400";
+    let platform_media_urls = {};
 
-    // If a file is uploaded via multer, upload it to Cloudinary
-    if (req.file) {
+    // If files are uploaded via multer, upload them to Cloudinary
+    if (req.files && req.files.length > 0) {
       try {
-        const uploadRes = await uploadAnyFileToCloudinary(
-          req.file.path,
-          "campaign-posts",
-          null,
-          { mimetype: req.file.mimetype },
-        );
-        finalMediaUrl = uploadRes.secure_url;
+        for (const file of req.files) {
+          const uploadRes = await uploadAnyFileToCloudinary(
+            file.path,
+            "campaign-posts",
+            null,
+            { mimetype: file.mimetype },
+          );
+          
+          if (file.fieldname === "media") {
+            finalMediaUrl = uploadRes.secure_url;
+          } else if (file.fieldname.startsWith("media_")) {
+            const accountId = file.fieldname.replace("media_", "");
+            platform_media_urls[accountId] = uploadRes.secure_url;
+          }
+        }
       } catch (err) {
         console.error("[Cloudinary] Upload failed:", err);
         res.status(500).json({
@@ -2261,6 +2270,7 @@ router.post("/posts", mediaUpload.single("media"), async (req, res, next) => {
       caption,
       campaign: campaign || "General",
       media_url: finalMediaUrl,
+      platform_media_urls,
       status: status || "Scheduled",
       type: type || "Post Composer",
       scheduled_date: dateStr,
@@ -2311,7 +2321,7 @@ router.post("/posts", mediaUpload.single("media"), async (req, res, next) => {
   }
 });
 
-router.put("/posts/:id", mediaUpload.single("media"), async (req, res) => {
+router.put("/posts/:id", mediaUpload.any(), async (req, res) => {
   const post = await Post.findOne({
     id: req.params.id,
     companyId: req.companyId,
@@ -2352,16 +2362,26 @@ router.put("/posts/:id", mediaUpload.single("media"), async (req, res) => {
     try { updates.post_option = JSON.parse(updates.post_option); } catch (e) { delete updates.post_option; }
   }
 
-  // If a file is uploaded via multer, upload it to Cloudinary
-  if (req.file) {
+  updates.platform_media_urls = post.platform_media_urls || {};
+
+  // If files are uploaded via multer, upload them to Cloudinary
+  if (req.files && req.files.length > 0) {
     try {
-      const uploadRes = await uploadAnyFileToCloudinary(
-        req.file.path,
-        "campaign-posts",
-        null,
-        { mimetype: req.file.mimetype },
-      );
-      updates.media_url = uploadRes.secure_url;
+      for (const file of req.files) {
+        const uploadRes = await uploadAnyFileToCloudinary(
+          file.path,
+          "campaign-posts",
+          null,
+          { mimetype: file.mimetype },
+        );
+        
+        if (file.fieldname === "media") {
+          updates.media_url = uploadRes.secure_url;
+        } else if (file.fieldname.startsWith("media_")) {
+          const accountId = file.fieldname.replace("media_", "");
+          updates.platform_media_urls[accountId] = uploadRes.secure_url;
+        }
+      }
     } catch (err) {
       console.error("[Cloudinary] Update upload failed:", err);
     }

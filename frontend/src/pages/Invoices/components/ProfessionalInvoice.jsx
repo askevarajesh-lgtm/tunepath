@@ -581,8 +581,6 @@ const ProfessionalInvoice = ({ invoice }) => {
                   style={{
                     width: 140,
                     height: 56,
-                    borderBottom: `2px solid ${isDark ? "rgba(255,255,255,0.3)" : "#111"}`,
-                    borderRadius: "50%",
                     marginBottom: 8,
                     position: "relative",
                   }}

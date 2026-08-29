@@ -2045,9 +2045,19 @@ async function dispatchPost(post, options = {}) {
       errors.push(`Account "${platformId}" not connected`);
       continue;
     }
+    
+    // Determine the media URL for this specific platform
+    const effectiveMediaUrl = post.platform_media_urls?.[account.id] || post.media_url;
+    // Create a copy of the post object with the effective media URL to avoid mutating the original
+    const platformPost = { ...(post.toObject ? post.toObject() : post) };
+    if (platformPost._doc) {
+      Object.assign(platformPost, platformPost._doc);
+    }
+    platformPost.media_url = effectiveMediaUrl;
+
     try {
       if (account.platform === "facebook") {
-        const fbResult = await postToFacebook(account, post);
+        const fbResult = await postToFacebook(account, platformPost);
         results.push(`Facebook/${account.page_name}: ${fbResult.externalId}`);
         platformResults[account.id] = { status: "Published", platform: "facebook", externalId: fbResult.externalId, url: fbResult.url };
         deliveries.push({
@@ -2062,7 +2072,7 @@ async function dispatchPost(post, options = {}) {
             "Direct Instagram connections currently support profile integration only. Publishing requires a Business/Creator account connected via Facebook.",
           );
         }
-        const igResult = await postToInstagram(account, post, options);
+        const igResult = await postToInstagram(account, platformPost, options);
         results.push(`Instagram/${account.username}: ${igResult.externalId}`);
         platformResults[account.id] = { status: "Published", platform: "instagram", externalId: igResult.externalId, url: igResult.url };
         deliveries.push({
@@ -2072,7 +2082,7 @@ async function dispatchPost(post, options = {}) {
           url: igResult.url,
         });
       } else if (account.platform === "youtube") {
-        const ytResult = await postToYoutube(account, post, options);
+        const ytResult = await postToYoutube(account, platformPost, options);
         // Reuse buffer for next YouTube account to avoid re-downloading
         if (ytResult.mediaBuffer) {
           options.mediaBuffer = ytResult.mediaBuffer;
@@ -2097,7 +2107,7 @@ async function dispatchPost(post, options = {}) {
           hasAnyMetrics = true;
         }
       } else if (account.platform === "linkedin") {
-        const liResult = await postToLinkedIn(account, post, options);
+        const liResult = await postToLinkedIn(account, platformPost, options);
         results.push(`LinkedIn/${account.page_name}: ${liResult.externalId}`);
         platformResults[account.id] = { status: "Published", platform: "linkedin", externalId: liResult.externalId, url: liResult.url };
         deliveries.push({
@@ -2107,7 +2117,7 @@ async function dispatchPost(post, options = {}) {
           url: liResult.url,
         });
       } else if (account.platform === "google_business") {
-        const gbpResult = await postToGoogleBusiness(account, post);
+        const gbpResult = await postToGoogleBusiness(account, platformPost);
         results.push(`GoogleBusiness/${account.page_name}: ${gbpResult.externalId}`);
         platformResults[account.id] = { status: "Published", platform: "google_business", externalId: gbpResult.externalId, url: gbpResult.url };
         deliveries.push({
@@ -2117,7 +2127,7 @@ async function dispatchPost(post, options = {}) {
           url: gbpResult.url,
         });
       } else if (account.platform === "pinterest") {
-        const pinResult = await postToPinterest(account, post, options);
+        const pinResult = await postToPinterest(account, platformPost, options);
         results.push(`Pinterest/${account.page_name || account.username}: ${pinResult.externalId}`);
         platformResults[account.id] = { status: "Published", platform: "pinterest", externalId: pinResult.externalId, url: pinResult.url };
         deliveries.push({

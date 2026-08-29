@@ -70,7 +70,7 @@ exports.getProposals = async (req, res, next) => {
 
     const total = await Proposal.countDocuments(queryFilter);
     const proposals = await Proposal.find(queryFilter)
-      .populate('clientId', 'name email')
+      .populate('clientId', 'name companyName email')
       .populate('masterItems', 'name itemCode price categories handlingDuration description applicableAccess isCampaign campaignDetails')
       .populate('createdBy', 'name email roleName')
       .sort({ createdAt: -1 })
@@ -94,8 +94,11 @@ exports.getProposals = async (req, res, next) => {
 exports.getProposal = async (req, res, next) => {
   try {
     const proposal = await Proposal.findOne({ _id: req.params.id, isDeleted: false })
-      .populate('clientId', 'name email address phone')
-      .populate('masterItems', 'name itemCode category categories price duration description handlingDuration applicableAccess isCampaign campaignDetails');
+      .populate('clientId', 'name companyName email address phone')
+      .populate('masterItems', 'name itemCode category categories price duration description handlingDuration applicableAccess isCampaign campaignDetails')
+      .populate('agencyId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
+      .populate('adminId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
+      .populate('createdBy', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature');
     if (!proposal) {
       return res.status(404).json({ success: false, message: 'Proposal not found' });
     }

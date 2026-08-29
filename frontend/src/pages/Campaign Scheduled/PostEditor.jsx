@@ -40,6 +40,10 @@ const cropImage = (file, cropData, containerRatio) => {
     if (!file || !cropData) return resolve(file);
     
     const { x, y, zoom } = cropData;
+    if (x === 0 && y === 0 && zoom === 1 && !containerRatio) {
+      return resolve(file);
+    }
+
     const img = new Image();
     const url = URL.createObjectURL(file);
     
@@ -319,15 +323,11 @@ const PostPreview = ({
                 postType === "video" ? (
                   <video src={mediaUrl} autoPlay muted loop />
                 ) : (
-                  ratioNumber ? (
-                    <DraggableImage 
-                      src={mediaUrl} 
-                      cropData={cropData} 
-                      setCropData={setCropData} 
-                    />
-                  ) : (
-                    <img src={mediaUrl} alt="Preview" style={{ objectFit: "cover" }} />
-                  )
+                  <DraggableImage 
+                    src={mediaUrl} 
+                    cropData={cropData} 
+                    setCropData={setCropData} 
+                  />
                 )
               ) : (
                 <div style={{ textAlign: "center", color: "#94a3b8" }}>
@@ -378,8 +378,9 @@ export default function PostEditor({
   const [postMode, setPostMode] = useState("immediate");
   const [saving, setSaving] = useState(false);
   const [previewTab, setPreviewTab] = useState("all");
-  const [aspectRatio, setAspectRatio] = useState("1/1");
-  const [cropData, setCropData] = useState({ x: 0, y: 0, zoom: 1 });
+  const [activeMediaTab, setActiveMediaTab] = useState("default");
+  const [aspectRatios, setAspectRatios] = useState({ default: "original" });
+  const [cropDataMap, setCropDataMap] = useState({ default: { x: 0, y: 0, zoom: 1 } });
   const postType = Form.useWatch("postType", form) || "image";
   const caption = Form.useWatch("caption", form);
   const campaign = Form.useWatch("campaign", form);
@@ -579,7 +580,7 @@ export default function PostEditor({
     }
   }, [allowedPostTypes, postType, form]);
 
-  const buildPostPayload = (values, mode, customMediaFile = null) => {
+  const buildPostPayload = (values, mode, customMediaFile = null, customPlatformMediaFiles = {}) => {
     const uploadedFile = values.media?.[0];
     const mediaFile = customMediaFile || uploadedFile?.originFileObj || null;
     const mediaUrl =
@@ -591,10 +592,20 @@ export default function PostEditor({
           ? URL.createObjectURL(uploadedFile.originFileObj)
           : uploadedFile?.url || post?.media_url || post?.mediaUrl || undefined;
 
+    const platformMediaFiles = customPlatformMediaFiles || {};
+    
+    // Process platform-specific media from values
+    const uniqueAccountIds = [...new Set(values.platforms || [])];
+    uniqueAccountIds.forEach(id => {
+       const pFile = values[`media_${id}`]?.[0];
+       if (pFile?.originFileObj && !platformMediaFiles[id]) {
+           platformMediaFiles[id] = pFile.originFileObj;
+       }
+    });
+
     const isScheduled = mode === "scheduled";
     const resolvedDate = isScheduled ? values.date : dayjs();
     const resolvedTime = isScheduled ? values.time : dayjs();
-    const uniqueAccountIds = [...new Set(values.platforms || [])];
 
     return {
       id: post?.id || `p-${Date.now()}`,
@@ -622,20 +633,47 @@ export default function PostEditor({
       post_option: platformOptions,
       boards: selectedBoards,
       mediaFile,
+      platformMediaFiles,
     };
+  };
+
+  const handleCropping = async (values) => {
+    let defaultCropped = null;
+    let customPlatformMediaFiles = {};
+
+    const defaultRatio = aspectRatios["default"];
+    const defaultCrop = cropDataMap["default"];
+    const defaultRatioNum = defaultRatio && defaultRatio !== "original" ? parseFloat(defaultRatio.split("/")[0]) / parseFloat(defaultRatio.split("/")[1]) : null;
+
+    if (values.media?.[0]?.originFileObj && values.postType === "image" && defaultCrop) {
+      defaultCropped = await cropImage(values.media[0].originFileObj, defaultCrop, defaultRatioNum);
+    } else {
+      defaultCropped = values.media?.[0]?.originFileObj || null;
+    }
+
+    const uniqueAccountIds = [...new Set(values.platforms || [])];
+    for (const accountId of uniqueAccountIds) {
+      const pFile = values[`media_${accountId}`]?.[0]?.originFileObj;
+      if (pFile && values.postType === "image") {
+        const pRatio = aspectRatios[accountId] || "original";
+        const pCrop = cropDataMap[accountId] || { x: 0, y: 0, zoom: 1 };
+        const pRatioNum = pRatio !== "original" ? parseFloat(pRatio.split("/")[0]) / parseFloat(pRatio.split("/")[1]) : null;
+        if (pCrop) {
+          customPlatformMediaFiles[accountId] = await cropImage(pFile, pCrop, pRatioNum);
+        } else {
+          customPlatformMediaFiles[accountId] = pFile;
+        }
+      }
+    }
+    return { defaultCropped, customPlatformMediaFiles };
   };
 
   const onSubmit = async (values) => {
     if (saving) return;
     setSaving(true);
     try {
-      const uploadedFile = values.media?.[0];
-      let croppedFile = null;
-      const ratioNum = aspectRatio !== "original" ? parseFloat(aspectRatio.split("/")[0]) / parseFloat(aspectRatio.split("/")[1]) : null;
-      if (uploadedFile?.originFileObj && values.postType === "image" && aspectRatio !== "original" && cropData) {
-        croppedFile = await cropImage(uploadedFile.originFileObj, cropData, ratioNum);
-      }
-      await onSaved(buildPostPayload(values, postMode, croppedFile), postMode);
+      const { defaultCropped, customPlatformMediaFiles } = await handleCropping(values);
+      await onSaved(buildPostPayload(values, postMode, defaultCropped, customPlatformMediaFiles), postMode);
     } finally {
       setSaving(false);
     }
@@ -651,13 +689,8 @@ export default function PostEditor({
       ]);
       setSaving(true);
       const allValues = form.getFieldsValue();
-      const uploadedFile = allValues.media?.[0];
-      let croppedFile = null;
-      const ratioNum = aspectRatio !== "original" ? parseFloat(aspectRatio.split("/")[0]) / parseFloat(aspectRatio.split("/")[1]) : null;
-      if (uploadedFile?.originFileObj && allValues.postType === "image" && aspectRatio !== "original" && cropData) {
-        croppedFile = await cropImage(uploadedFile.originFileObj, cropData, ratioNum);
-      }
-      await onSaved(buildPostPayload(allValues, "draft", croppedFile), "draft");
+      const { defaultCropped, customPlatformMediaFiles } = await handleCropping(allValues);
+      await onSaved(buildPostPayload(allValues, "draft", defaultCropped, customPlatformMediaFiles), "draft");
     } catch (err) {
     } finally {
       setSaving(false);
@@ -775,46 +808,114 @@ export default function PostEditor({
                 <div style={{ marginBottom: 8, fontSize: 13, color: 'var(--text-secondary)' }}>
                   {postType === "video" ? "Max video size: 100MB" : "Max image size: 10MB"}
                 </div>
-                <Form.Item
-                  name="media"
-                  valuePropName="fileList"
-                  getValueFromEvent={(e) => e?.fileList || []}
-                  rules={[
-                    { required: true, message: `Please upload a ${postType}` },
-                  ]}
-                  noStyle
-                >
-                  <Upload
-                    beforeUpload={() => false}
-                    maxCount={1}
-                    accept={postType === "video" ? "video/*" : "image/*"}
-                    listType="text"
+                
+                {selectedPlatformIds.length > 0 ? (
+                  <Tabs
+                    type="card"
+                    activeKey={activeMediaTab}
+                    onChange={setActiveMediaTab}
+                    items={[
+                      {
+                        key: "default",
+                        label: "Default Media",
+                        children: (
+                          <div style={{ padding: '16px 0' }}>
+                            <Form.Item
+                              name="media"
+                              valuePropName="fileList"
+                              getValueFromEvent={(e) => e?.fileList || []}
+                              rules={[
+                                {
+                                  validator: async (_, value) => {
+                                    if (value && value.length > 0) return Promise.resolve();
+                                    const allHaveSpecific = selectedPlatformIds.every(id => {
+                                      const specific = form.getFieldValue(`media_${id}`);
+                                      return specific && specific.length > 0;
+                                    });
+                                    if (allHaveSpecific) return Promise.resolve();
+                                    return Promise.reject(new Error(`Please upload a default ${postType}`));
+                                  }
+                                }
+                              ]}
+                              noStyle
+                            >
+                              <Upload
+                                beforeUpload={() => false}
+                                maxCount={1}
+                                accept={postType === "video" ? "video/*" : "image/*"}
+                                listType="text"
+                                onRemove={() => form.setFieldValue("media", [])}
+                              >
+                                <Button icon={<UploadOutlined />}>
+                                  {postType === "video" ? "Upload Default Video" : "Upload Default Image"}
+                                </Button>
+                              </Upload>
+                            </Form.Item>
+                          </div>
+                        )
+                      },
+                      ...selectedPlatformIds.map(accountId => {
+                        const account = accounts.find(a => a.id === accountId);
+                        const accountName = account ? (account.page_name || account.username || account.platform) : accountId;
+                        return {
+                          key: accountId,
+                          label: accountName,
+                          children: (
+                            <div style={{ padding: '16px 0' }}>
+                              <Form.Item
+                                name={`media_${accountId}`}
+                                valuePropName="fileList"
+                                getValueFromEvent={(e) => e?.fileList || []}
+                                noStyle
+                              >
+                                <Upload
+                                  beforeUpload={() => false}
+                                  maxCount={1}
+                                  accept={postType === "video" ? "video/*" : "image/*"}
+                                  listType="text"
+                                  onRemove={() => form.setFieldValue(`media_${accountId}`, [])}
+                                >
+                                  <Button icon={<UploadOutlined />}>
+                                    Upload specific {postType} for {accountName}
+                                  </Button>
+                                </Upload>
+                              </Form.Item>
+                              <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
+                                Optional. If not provided, the Default Media will be used.
+                              </div>
+                            </div>
+                          )
+                        };
+                      })
+                    ]}
+                  />
+                ) : (
+                  <Form.Item
+                    name="media"
+                    valuePropName="fileList"
+                    getValueFromEvent={(e) => e?.fileList || []}
+                    rules={[
+                      { required: true, message: `Please upload a ${postType}` },
+                    ]}
+                    noStyle
                   >
-                    <Button icon={<UploadOutlined />}>
-                      {postType === "video" ? "Upload Video" : "Upload Image"}
-                    </Button>
-                  </Upload>
-                </Form.Item>
+                    <Upload
+                      beforeUpload={() => false}
+                      maxCount={1}
+                      accept={postType === "video" ? "video/*" : "image/*"}
+                      listType="text"
+                      onRemove={() => form.setFieldValue("media", [])}
+                    >
+                      <Button icon={<UploadOutlined />}>
+                        {postType === "video" ? "Upload Video" : "Upload Image"}
+                      </Button>
+                    </Upload>
+                  </Form.Item>
+                )}
               </Form.Item>
             )}
 
-            {postType === "image" && media?.length > 0 && (
-              <Form.Item label="Image Aspect Ratio (Applies to all platforms)">
-                <Radio.Group
-                  value={aspectRatio}
-                  onChange={(e) => {
-                    setAspectRatio(e.target.value);
-                    setCropData({ x: 0, y: 0, zoom: 1 });
-                  }}
-                  optionType="button"
-                  buttonStyle="solid"
-                >
-                  <Radio.Button value="1/1">1:1</Radio.Button>
-                  <Radio.Button value="4/5">4:5</Radio.Button>
-                  <Radio.Button value="16/9">16:9</Radio.Button>
-                </Radio.Group>
-              </Form.Item>
-            )}
+
 
             {hasYoutubeSelected && (
               <Form.Item
@@ -976,20 +1077,34 @@ export default function PostEditor({
               <div
                 style={{ display: "flex", flexDirection: "column", gap: 24 }}
               >
-                {selectedPlatforms.length > 0 ? (
-                  selectedPlatforms.map((p) => (
-                      <PostPreview
-                        key={p}
-                        title={campaign}
-                        caption={caption}
-                        media={media}
-                        postType={postType}
-                        platform={p}
-                        aspectRatio={aspectRatio}
-                        cropData={cropData}
-                        setCropData={setCropData}
-                      />
-                  ))
+                {selectedPlatformIds.length > 0 ? (
+                  selectedPlatformIds.map((accountId) => {
+                      const account = accounts.find(a => a.id === accountId);
+                      const pPlatform = account ? account.platform : "generic";
+                      const pMedia = form.getFieldValue(`media_${accountId}`)?.length > 0 ? form.getFieldValue(`media_${accountId}`) : media;
+                      const pAspectRatio = aspectRatios[accountId] || aspectRatios["default"] || "1/1";
+                      const pCropData = cropDataMap[accountId] || cropDataMap["default"] || { x: 0, y: 0, zoom: 1 };
+                      
+                      return (
+                        <PostPreview
+                          key={accountId}
+                          title={campaign}
+                          caption={caption}
+                          media={pMedia}
+                          postType={postType}
+                          platform={pPlatform}
+                          aspectRatio={pAspectRatio}
+                          cropData={pCropData}
+                          setCropData={(updater) => {
+                             setCropDataMap(prev => {
+                               const oldCrop = prev[accountId] || { x: 0, y: 0, zoom: 1 };
+                               const newCrop = typeof updater === 'function' ? updater(oldCrop) : updater;
+                               return { ...prev, [accountId]: newCrop };
+                             });
+                          }}
+                        />
+                      );
+                  })
                 ) : (
                   <PostPreview
                     title={campaign}
@@ -997,24 +1112,50 @@ export default function PostEditor({
                     media={media}
                     postType={postType}
                     platform="generic"
-                    aspectRatio={aspectRatio}
-                    cropData={cropData}
-                    setCropData={setCropData}
+                    aspectRatio={aspectRatios["default"] || "1/1"}
+                    cropData={cropDataMap["default"] || { x: 0, y: 0, zoom: 1 }}
+                    setCropData={(updater) => {
+                        setCropDataMap(prev => {
+                          const oldCrop = prev.default || { x: 0, y: 0, zoom: 1 };
+                          const newCrop = typeof updater === 'function' ? updater(oldCrop) : updater;
+                          return { ...prev, default: newCrop };
+                        });
+                    }}
                   />
                 )}
               </div>
-            ) : (
-              <PostPreview
-                title={campaign}
-                caption={caption}
-                media={media}
-                postType={postType}
-                platform={previewTab}
-                aspectRatio={aspectRatio}
-                cropData={cropData}
-                setCropData={setCropData}
-              />
-            )}
+            ) : (() => {
+                // If previewTab is a specific platform, we can find the first account that matches it
+                // Or better, if previewTab is still platforms, we show all accounts for that platform
+                const accountsForPlatform = selectedPlatformIds.filter(id => accounts.find(a => a.id === id)?.platform === previewTab);
+                
+                return accountsForPlatform.map(accountId => {
+                    const account = accounts.find(a => a.id === accountId);
+                    const pMedia = form.getFieldValue(`media_${accountId}`)?.length > 0 ? form.getFieldValue(`media_${accountId}`) : media;
+                    const pAspectRatio = aspectRatios[accountId] || aspectRatios["default"] || "1/1";
+                    const pCropData = cropDataMap[accountId] || cropDataMap["default"] || { x: 0, y: 0, zoom: 1 };
+                    
+                    return (
+                      <PostPreview
+                        key={accountId}
+                        title={campaign}
+                        caption={caption}
+                        media={pMedia}
+                        postType={postType}
+                        platform={previewTab}
+                        aspectRatio={pAspectRatio}
+                        cropData={pCropData}
+                        setCropData={(updater) => {
+                           setCropDataMap(prev => {
+                             const oldCrop = prev[accountId] || { x: 0, y: 0, zoom: 1 };
+                             const newCrop = typeof updater === 'function' ? updater(oldCrop) : updater;
+                             return { ...prev, [accountId]: newCrop };
+                           });
+                        }}
+                      />
+                    );
+                });
+            })()}
           </div>
           <div style={{ marginTop: 24 }}>
             <Text type="secondary" size="small">
