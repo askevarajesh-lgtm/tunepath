@@ -6,9 +6,17 @@ const META_APP_ID = process.env.META_APP_ID || 'dummy_app_id';
 const META_APP_SECRET = process.env.META_SECRET || process.env.META_APP_SECRET || 'dummy_app_secret';
 const META_REDIRECT_URI = process.env.META_REDIRECT_URI || `${process.env.APP_URL || 'http://localhost:5500'}/api/integrations/meta/callback`;
 
+const getAgencyId = (req) => {
+  let clientId = req.query.clientId;
+  if (clientId === 'null' || clientId === 'undefined') {
+    clientId = null;
+  }
+  return (req.isClientRole && req.clientUserId) ? req.clientUserId : (clientId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency)));
+};
+
 exports.generateAuthUrl = async (req, res, next) => {
   try {
-    const agencyId = (req.isClientRole && req.clientUserId) ? req.clientUserId : (req.query.clientId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency)));
+    const agencyId = getAgencyId(req);
     if (!agencyId) {
       return res.status(400).json({ success: false, message: 'Agency ID missing from user token' });
     }
@@ -124,7 +132,7 @@ exports.handleCallback = async (req, res, next) => {
 
 exports.getAdAccounts = async (req, res, next) => {
   try {
-    const agencyId = (req.isClientRole && req.clientUserId) ? req.clientUserId : (req.query.clientId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency)));
+    const agencyId = getAgencyId(req);
     const integration = await Integration.findOne({ companyId: agencyId, type: 'meta_ads', isActive: true });
     
     if (!integration || !integration.config || !integration.config.accessToken) {
@@ -212,7 +220,7 @@ exports.getAdAccounts = async (req, res, next) => {
 
 exports.saveSelectedAdAccounts = async (req, res, next) => {
   try {
-    const agencyId = (req.isClientRole && req.clientUserId) ? req.clientUserId : (req.query.clientId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency)));
+    const agencyId = getAgencyId(req);
     const { selectedAdAccounts } = req.body; // array of { id, name }
 
     if (!Array.isArray(selectedAdAccounts)) {
@@ -243,7 +251,7 @@ exports.saveSelectedAdAccounts = async (req, res, next) => {
 
 exports.createCampaign = async (req, res, next) => {
   try {
-    const agencyId = (req.isClientRole && req.clientUserId) ? req.clientUserId : (req.query.clientId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency)));
+    const agencyId = getAgencyId(req);
     const integration = await Integration.findOne({ companyId: agencyId, type: 'meta_ads', isActive: true });
     
     if (!integration || !integration.config || !integration.config.accessToken) {
@@ -346,7 +354,7 @@ exports.createCampaign = async (req, res, next) => {
 
 exports.disconnectMeta = async (req, res, next) => {
   try {
-    const agencyId = (req.isClientRole && req.clientUserId) ? req.clientUserId : (req.query.clientId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency)));
+    const agencyId = getAgencyId(req);
     
     await Integration.findOneAndDelete({ companyId: agencyId, type: 'meta_ads' });
     res.status(200).json({ success: true, message: 'Meta Ads disconnected successfully' });
@@ -358,7 +366,7 @@ exports.disconnectMeta = async (req, res, next) => {
 
 exports.getMetaIntegrationStatus = async (req, res, next) => {
   try {
-    const agencyId = (req.isClientRole && req.clientUserId) ? req.clientUserId : (req.query.clientId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency)));
+    const agencyId = getAgencyId(req);
     const integration = await Integration.findOne({ companyId: agencyId, type: 'meta_ads', isActive: true });
     
     if (!integration) {
@@ -374,4 +382,5 @@ exports.getMetaIntegrationStatus = async (req, res, next) => {
     next(error);
   }
 };
+
 

@@ -250,7 +250,8 @@ const PerformanceAds = () => {
   };
   const handleDisconnectMeta = async () => {
     try {
-      const res = await api.delete(`/integrations/meta?clientId=${selectedClient}`);
+      const endpoint = selectedClient ? `/integrations/meta?clientId=${selectedClient}` : `/integrations/meta`;
+      const res = await api.delete(endpoint);
       if (res.data.success) {
         setIsMetaConnected(false);
         setMetaIntegration(null);

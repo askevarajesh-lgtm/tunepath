@@ -324,12 +324,44 @@ const ProjectList = () => {
       title: "Status",
       dataIndex: "status",
       key: "status",
-      render: (status) => {
+      render: (status, record) => {
         let displayStatus = status ? status.replace(/_/g, " ").toUpperCase() : "CREATED";
+        
+        let totalDeliverables = (record.numberOfPosters || 0) + (record.numberOfVideos || 0) + (record.numberOfShoots || 0);
+        let completedDeliverables = (record.completedPosters || 0) + (record.completedVideos || 0) + (record.completedShoots || 0);
+
+        if (record.selectedCategories && Array.isArray(record.selectedCategories)) {
+          record.selectedCategories.forEach(cat => {
+            const rawName = cat.name || cat.categoryName || "";
+            const isStandard = ["poster", "video", "shoot"].some(k => rawName.toLowerCase().includes(k));
+            if (!isStandard) {
+              const qty = cat.quantity || 0;
+              const completed = cat.completed || 0;
+              totalDeliverables += qty;
+              completedDeliverables += completed;
+            }
+          });
+        }
+        
+        let completionPercentage = 0;
+        let showPercentage = false;
+        
+        if (totalDeliverables > 0) {
+          completionPercentage = Math.round((completedDeliverables / totalDeliverables) * 100);
+          showPercentage = true;
+        }
+
         return (
-          <Tag color={getStatusColor(status)}>
-            {displayStatus}
-          </Tag>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
+            <Tag color={getStatusColor(status)}>
+              {displayStatus}
+            </Tag>
+            {showPercentage && (
+              <span style={{ fontSize: '12px', color: '#666', fontWeight: 500 }}>
+                {completionPercentage}% Complete
+              </span>
+            )}
+          </div>
         );
       },
     },

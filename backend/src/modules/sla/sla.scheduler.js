@@ -84,7 +84,10 @@ const startSlaScheduler = () => {
           status = 'At Risk';
         }
 
+        let totalDeliverables = (project.numberOfPosters || 0) + (project.numberOfVideos || 0) + (project.numberOfShoots || 0);
+        let completedDeliverables = (project.completedPosters || 0) + (project.completedVideos || 0) + (project.completedShoots || 0);
         let remainingServices = [];
+
         if (project.remainingPosters > 0) remainingServices.push(`${project.remainingPosters} Posters`);
         if (project.remainingVideos > 0) remainingServices.push(`${project.remainingVideos} Videos`);
         if (project.remainingShoots > 0) remainingServices.push(`${project.remainingShoots} Shoots`);
@@ -94,7 +97,12 @@ const startSlaScheduler = () => {
             const rawName = cat.name || cat.categoryName || "";
             const isStandard = ["poster", "video", "shoot"].some(k => rawName.toLowerCase().includes(k));
             if (!isStandard) {
-              const pendingCount = cat.remaining !== undefined ? cat.remaining : cat.quantity;
+              const qty = cat.quantity || 0;
+              const completed = cat.completed || 0;
+              totalDeliverables += qty;
+              completedDeliverables += completed;
+              
+              const pendingCount = cat.remaining !== undefined ? cat.remaining : (qty > completed ? qty - completed : 0);
               if (pendingCount > 0) {
                 remainingServices.push(`${pendingCount} ${rawName}`);
               }
@@ -102,9 +110,20 @@ const startSlaScheduler = () => {
           });
         }
         
-        let description = `Due Date Monitoring for Project ${project.name}`;
+        let completionPercentage = 0;
+        if (totalDeliverables > 0) {
+          completionPercentage = Math.round((completedDeliverables / totalDeliverables) * 100);
+        } else if (remainingServices.length === 0) {
+          completionPercentage = 100;
+        }
+        let remainingPercentage = 100 - completionPercentage;
+        
+        let triggerType = 'Completion';
+        let description = `Project is ${completionPercentage}% complete. Remaining completion is ${remainingPercentage}%. Pending: ${remainingServices.length > 0 ? remainingServices.join(', ') : 'None'}`;
+        
         if (status === 'At Risk' || status === 'Breached') {
-          description = `Project Near Due Date. Pending: ${remainingServices.length > 0 ? remainingServices.join(', ') : 'None'}`;
+          triggerType = 'Due Date & Completion';
+          description = `Project Near Due Date. ${completionPercentage}% complete. Remaining: ${remainingPercentage}%. Pending: ${remainingServices.length > 0 ? remainingServices.join(', ') : 'None'}`;
           
           if (project.status !== 'project_near_due_date') {
             project.status = 'project_near_due_date';
@@ -119,7 +138,7 @@ const startSlaScheduler = () => {
             clientId: project.companyId,
             agencyId: project.tenantCompanyId,
             clientType: 'Direct User Client',
-            triggerType: 'Due Date',
+            triggerType: triggerType,
             entityId: project._id,
             entityType: 'Project',
             title: `Project: ${project.name}`,
