@@ -87,6 +87,7 @@ exports.getProjects = async (req, res, next) => {
 
     const filter = { companyId: agencyId, isDeleted: false };
     if (clientId) filter.clientId = clientId;
+    else if (req.query.clientId) filter.clientId = req.query.clientId;
 
     const projects = await AnalyticsProject.find(filter).sort({ createdAt: -1 }).lean();
 

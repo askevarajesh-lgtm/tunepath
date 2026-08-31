@@ -9,9 +9,11 @@ exports.createInvoice = async (req, res, next) => {
     const data = { ...req.body };
     data.createdBy = req.user._id;
 
+    const isClient = ['client', 'agency_client', 'brand_team_user', 'client_user', 'brand_manager', 'brand_super_admin'].includes(req.user.role);
+
     if (req.user.role === 'commander_admin') {
       data.adminId = req.user._id;
-    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role)) {
+    } else if (isClient) {
       data.brandId = req.user.brandId || req.user._id;
       data.agencyId = req.companyId || req.user.agencyId;
       if (req.user.adminId) data.adminId = req.user.adminId;
@@ -88,9 +90,11 @@ exports.getInvoices = async (req, res, next) => {
       queryFilter.clientId = req.query.companyId;
     }
 
+    const isClient = ['client', 'agency_client', 'brand_team_user', 'client_user', 'brand_manager', 'brand_super_admin'].includes(req.user.role);
+
     if (req.user.role === 'commander_admin') {
       queryFilter.adminId = req.user._id;
-    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role)) {
+    } else if (isClient) {
       queryFilter.clientId = req.user.brandId || req.user._id;
       // Clients should not see draft invoices
       queryFilter.invoiceStatus = { $ne: 'Draft' };

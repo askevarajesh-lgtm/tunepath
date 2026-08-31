@@ -9,6 +9,7 @@ import {
   useGetAssignableBdeUsersQuery,
   useLazyExportLeadsCsvQuery,
   useImportLeadsCsvMutation,
+  useBulkDeleteLeadsMutation,
   useAddLeadNoteMutation,
   useDeleteLeadNoteMutation,
   useAddLeadReminderMutation
@@ -69,7 +70,9 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
   const [exportCsv, { isFetching: isExporting }] = useLazyExportLeadsCsvQuery();
   const [importCsv, { isLoading: isImporting }] = useImportLeadsCsvMutation();
   const [syncWhatsApp, { isLoading: isSyncingWhatsApp }] = useSyncWhatsAppLeadsMutation();
+  const [bulkDeleteLeads, { isLoading: isBulkDeleting }] = useBulkDeleteLeadsMutation();
   const [activeTab, setActiveTab] = useState('all');
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [isFbSyncModalOpen, setIsFbSyncModalOpen] = useState(false);
   const [selectedFbPageId, setSelectedFbPageId] = useState(null);
   const [selectedFbFormIds, setSelectedFbFormIds] = useState([]);
@@ -108,7 +111,8 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     setSelectedFbFormIds(selectedPage?.selectedForms || []);
     if (pageId) {
       try {
-        await fetchFbForms({ pageId, ...(selectedClientId ? { clientId: selectedClientId } : {}) }).unwrap();
+        const { data, error } = await fetchFbForms({ pageId, ...(selectedClientId ? { clientId: selectedClientId } : {}) });
+        if (error) throw error;
       } catch (err) {
         message.error(err?.data?.message || err?.message || 'Failed to fetch forms for this page');
       }
@@ -126,7 +130,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
         formIds: selectedFbFormIds,
         ...(selectedClientId ? { clientId: selectedClientId } : {})
       }).unwrap();
-      message.success(`Successfully synced ${res.data?.syncedCount || 0} leads from Facebook. 5-minute auto-sync is active.`);
+      message.success(`Successfully synced ${res.data?.syncedCount || 0} leads from Facebook. 1-minute auto-sync is active.`);
       setIsFbSyncModalOpen(false);
       refetch?.();
     } catch (error) {
@@ -160,7 +164,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Name</strong>, dataIndex: 'fullName', key: 'fullName', render: t => <strong style={{ color: 'var(--text-primary)' }}>{t}</strong> },
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Phone Number</strong>, dataIndex: 'phoneNumber', key: 'phoneNumber' },
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Email</strong>, dataIndex: 'email', key: 'email' },
-    { title: <strong style={{ color: 'var(--text-secondary)' }}>Lead Date</strong>, key: 'createdAt', sorter: (a, b) => getActualLeadDate(a).valueOf() - getActualLeadDate(b).valueOf(), render: (_, record) => getActualLeadDate(record).format('DD-MM-YYYY HH:mm') },
+    { title: <strong style={{ color: 'var(--text-secondary)' }}>Lead Date</strong>, key: 'createdAt', defaultSortOrder: 'descend', sorter: (a, b) => getActualLeadDate(a).valueOf() - getActualLeadDate(b).valueOf(), render: (_, record) => getActualLeadDate(record).format('DD-MM-YYYY HH:mm') },
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Form Name</strong>, key: 'formName', render: (_, record) => getFormName(record) || '—' },
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Lead Source</strong>, dataIndex: 'source', key: 'source', render: s => <Tag color="purple" style={{ borderRadius: 6, fontWeight: 600 }}>{s}</Tag> },
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Status</strong>, dataIndex: 'status', key: 'status', render: s => <Tag color="blue" style={{ borderRadius: 6, fontWeight: 700, textTransform: 'uppercase' }}>{s}</Tag> },
@@ -197,7 +201,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     }
     
     return dateMatch && formMatch;
-  });
+  }).sort((a, b) => getActualLeadDate(b).valueOf() - getActualLeadDate(a).valueOf());
 
   const handleEditClick = (record) => {
     setEditingLead(record);
@@ -258,25 +262,63 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
 
   const handleExport = async () => {
     try {
-      const exportParams = { filter: activeTab };
-      if (dateRangeFilter && dateRangeFilter.length === 2 && dateRangeFilter[0] && dateRangeFilter[1]) {
-        exportParams.startDate = dateRangeFilter[0].startOf('day').toISOString();
-        exportParams.endDate = dateRangeFilter[1].endOf('day').toISOString();
+      let activeFilter = activeTab;
+      if (activeTab === 'all' && dateRangeFilter) activeFilter = 'all';
+      if (activeTab === 'all' && formNameFilter && formNameFilter.length > 0) activeFilter = 'all';
+      
+      const payload = { 
+        filter: activeFilter, 
+        companyId: selectedClientId 
+      };
+      
+      if (dateRangeFilter) {
+        payload.startDate = dateRangeFilter[0].toISOString();
+        payload.endDate = dateRangeFilter[1].toISOString();
       }
       if (formNameFilter && formNameFilter.length > 0) {
-        exportParams.formName = formNameFilter.join(',');
+        payload.formName = formNameFilter[0];
       }
 
-      const blob = await exportCsv(exportParams).unwrap();
+      if (selectedRowKeys.length > 0) {
+        payload.selectedIds = selectedRowKeys;
+      }
+
+      const { data, error } = await exportCsv(payload);
+      if (error) throw error;
+      const res = data;
+      
+      const blob = new Blob([res.csv], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `leads_export_${dayjs().format('YYYY-MM-DD')}.csv`;
+      a.download = res.filename;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       window.URL.revokeObjectURL(url);
-    } catch (error) {
-      message.error('Failed to export leads');
+    } catch (err) {
+      message.error(err.data?.message || err.message || 'Export failed');
     }
+  };
+
+  const handleBulkDelete = () => {
+    Modal.confirm({
+      title: 'Delete Selected Leads',
+      content: `Are you sure you want to delete ${selectedRowKeys.length} selected lead(s)? This action cannot be undone.`,
+      okText: 'Yes, Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        try {
+          const res = await bulkDeleteLeads(selectedRowKeys).unwrap();
+          message.success(res.message || 'Leads deleted successfully');
+          setSelectedRowKeys([]);
+          refetch?.();
+        } catch (err) {
+          message.error(err.data?.message || err.message || 'Failed to delete leads');
+        }
+      }
+    });
   };
 
   const handleAddNote = async () => {
@@ -417,6 +459,9 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                   <Button icon={<UploadOutlined />} loading={isImporting} style={{ borderRadius: 8, fontWeight: 600, borderColor: 'var(--border-color)' }}>Import</Button>
                 </Upload>
                 <Button icon={<DownloadOutlined />} loading={isExporting} onClick={handleExport} style={{ borderRadius: 8, fontWeight: 600, borderColor: 'var(--border-color)' }}>Export</Button>
+                {selectedRowKeys.length > 0 && canView && (
+                  <Button danger icon={<DeleteOutlined />} loading={isBulkDeleting} onClick={handleBulkDelete} style={{ borderRadius: 8, fontWeight: 600 }}>Bulk Delete ({selectedRowKeys.length})</Button>
+                )}
               </>
             )}
             {canAdd && (
@@ -430,7 +475,11 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
           dataSource={filteredLeads} 
           rowKey="_id"
           pagination={{ pageSize: 10 }}
-          rowSelection={{ type: 'checkbox' }}
+          rowSelection={{ 
+            type: 'checkbox',
+            selectedRowKeys,
+            onChange: (newSelectedRowKeys) => setSelectedRowKeys(newSelectedRowKeys)
+          }}
           style={{ padding: 24 }}
           scroll={{ x: 'max-content' }}
           rowClassName={() => 'hover-bg'}

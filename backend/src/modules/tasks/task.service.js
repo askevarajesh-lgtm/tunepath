@@ -3521,8 +3521,10 @@ const updateTaskStatusAndOrder = async (
   );
 
   // If task is completed, notify watchers and create timeline events
-  const isNewStatusCompleted = ["completed", "validated", "done", "complete"].includes(taskStatus);
-  const isOldStatusCompleted = ["completed", "validated", "done", "complete"].includes(oldStatus);
+  // Note: "review" maps to "completed" in kanbanToTaskStatus
+  const isNewStatusCompleted = ["completed", "validated", "done", "complete", "review", "in_review", "reviewing"].includes(taskStatus) || ["completed", "validated", "done", "complete"].includes(finalStatus);
+  const isOldStatusCompleted = ["completed", "validated", "done", "complete", "review", "in_review", "reviewing"].includes(oldStatus);
+  
   if (isNewStatusCompleted && !isOldStatusCompleted) {
     // Auto-resolve any linked correction
     await resolveRelatedCorrection(taskId, userId);
@@ -3530,6 +3532,34 @@ const updateTaskStatusAndOrder = async (
     // Get comment from command if available
     const comment = command || task.validationRemarks || null;
     await notifyTaskCompleted(task, userId, tenantCompanyId, comment);
+
+    // Mark SLA as Resolved to trigger Success metrics
+    try {
+      const SlaRecord = require('../sla/sla.model');
+      const existingSla = await SlaRecord.findOne({ entityId: task._id, entityType: 'Task' });
+      if (existingSla) {
+        existingSla.status = 'Resolved';
+        await existingSla.save();
+      } else {
+        await SlaRecord.create({
+          slaId: `SLA-TSK-${task._id.toString().substring(0, 8).toUpperCase()}`,
+          clientId: task.companyId,
+          agencyId: task.tenantCompanyId,
+          clientType: task.taskType === 'own_brand' ? 'Agency' : 'Direct User Client',
+          triggerType: 'Due Date',
+          entityId: task._id,
+          entityType: 'Task',
+          title: `Task: ${task.title}`,
+          description: `Task completed successfully.`,
+          dueDate: task.dueDate || new Date(),
+          priority: task.priority || 'Medium',
+          status: 'Resolved',
+          assignedTo: task.assignedTo
+        });
+      }
+    } catch (slaErr) {
+      console.error("[Task Service] Failed to sync SLA for task completion in Kanban:", slaErr);
+    }
 
     // Dispatch system notification for task completion
     const { dispatchSystemNotification } = require('./notification.service');

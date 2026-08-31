@@ -50,7 +50,7 @@ const slaRecordSchema = new mongoose.Schema({
   },
   triggerType: {
     type: String,
-    enum: ['Due Date', 'Payment', 'Client Issue', 'Agency Client Issue'],
+    enum: ['Due Date', 'Payment', 'Client Issue', 'Agency Client Issue', 'Completion', 'Due Date & Completion'],
     required: true
   },
   entityId: {

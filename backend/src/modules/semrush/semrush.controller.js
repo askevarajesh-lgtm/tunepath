@@ -16,6 +16,8 @@ exports.getProjects = async (req, res) => {
     if (isClient) {
       const myClientId = req.user.brandId || req.user._id;
       filter.$or = [{ clientId: myClientId }, { createdBy: req.user._id }];
+    } else if (req.query.clientId) {
+      filter.clientId = req.query.clientId;
     }
 
     const projects = await SemrushProject.find(filter)

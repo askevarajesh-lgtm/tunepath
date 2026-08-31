@@ -41,6 +41,10 @@ const ClientDetailContent = ({
   const [proposals, setProposals] = useState([]);
   const [projects, setProjects] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [taskCount, setTaskCount] = useState(0);
+  const [seoMetrics, setSeoMetrics] = useState(null);
+  const [leadsTotalCount, setLeadsTotalCount] = useState(null);
+  const [gaMetrics, setGaMetrics] = useState(null);
   const [loading, setLoading] = useState(false);
   const [togglingFeatureId, setTogglingFeatureId] = useState(null);
   const [togglingIntId, setTogglingIntId] = useState(null);
@@ -69,7 +73,7 @@ const ClientDetailContent = ({
         const res = await fetch(`/api/projects?clientId=${clientId}`, { headers });
         if (res.ok) {
           const d = await res.json();
-          setProjects(safeArray(d?.data?.projects || d?.projects || d?.data || d));
+          setProjects(safeArray(d?.data?.data || d?.data?.projects || d?.projects || d?.data || d));
         }
       } catch (e) { console.warn('projects fetch failed', e.message); }
 
@@ -81,6 +85,55 @@ const ClientDetailContent = ({
           setInvoices(safeArray(d?.data?.invoices || d?.data || d?.invoices || d));
         }
       } catch (e) { console.warn('invoices fetch failed', e.message); }
+
+      // Tasks
+      try {
+        const res = await fetch(`/api/tasks?companyId=${clientId}&limit=1`, { headers });
+        if (res.ok) {
+          const d = await res.json();
+          const total = d?.data?.pagination?.total ?? d?.data?.tasks?.length ?? d?.tasks?.length ?? d?.data?.length ?? 0;
+          setTaskCount(total);
+        }
+      } catch (e) { console.warn('tasks fetch failed', e.message); }
+
+      // Semrush (SEO/AEO/GEO)
+      try {
+        const res = await fetch(`/api/semrush/projects?clientId=${clientId}`, { headers });
+        if (res.ok) {
+          const d = await res.json();
+          if (d?.success && d?.data?.length > 0) {
+            setSeoMetrics(d.data[0].optimizationScore || { seoScore: 0, aeoScore: 0, geoScore: 0 });
+          }
+        }
+      } catch (e) { console.warn('semrush fetch failed', e.message); }
+
+      // Leads
+      try {
+        const res = await fetch(`/api/leads?companyId=${clientId}&limit=1`, { headers });
+        if (res.ok) {
+          const d = await res.json();
+          const total = d?.data?.pagination?.total ?? d?.data?.leads?.length ?? d?.leads?.length ?? d?.data?.length ?? 0;
+          setLeadsTotalCount(total);
+        }
+      } catch (e) { console.warn('leads fetch failed', e.message); }
+
+      // Google Analytics
+      try {
+        const res = await fetch(`/api/analytics/projects?clientId=${clientId}`, { headers });
+        if (res.ok) {
+          const d = await res.json();
+          if (d?.success && d?.data?.length > 0) {
+            const gaProjId = d.data[0]._id;
+            const gaRes = await fetch(`/api/analytics?projectId=${gaProjId}`, { headers });
+            if (gaRes.ok) {
+              const gaData = await gaRes.json();
+              if (gaData?.success) {
+                setGaMetrics(gaData.data);
+              }
+            }
+          }
+        }
+      } catch (e) { console.warn('ga fetch failed', e.message); }
 
       setLoading(false);
     };
@@ -242,7 +295,7 @@ const ClientDetailContent = ({
                     { label: 'Proposals', value: proposals.length, color: '#6366f1' },
                     { label: 'Projects', value: projects.length, color: '#0ea5e9' },
                     { label: 'Invoices', value: invoices.length, color: '#10b981' },
-                    { label: 'Tasks', value: '—', color: '#f59e0b' },
+                    { label: 'Tasks', value: taskCount, color: '#f59e0b' },
                   ].map(kpi => (
                     <div key={kpi.label} style={{ background: `${kpi.color}10`, border: `1px solid ${kpi.color}25`, borderRadius: 12, padding: '14px 16px' }}>
                       <Text style={{ fontSize: 11, fontWeight: 700, color: kpi.color, textTransform: 'uppercase', letterSpacing: 0.5 }}>{kpi.label}</Text>
@@ -273,24 +326,52 @@ const ClientDetailContent = ({
                   </div>
                 </div>
 
-                {/* MOS Scores */}
+                {/* Performance Metrics */}
                 <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 14, padding: 20 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-                    <Progress type="circle" percent={selectedClient.mos} strokeColor={getStatusColor(selectedClient.status)} trailColor="var(--bg-tertiary)" size={64} format={() => <span style={{ fontWeight: 900, color: 'var(--text-primary)', fontSize: 16 }}>{selectedClient.mos}</span>} />
-                    <div>
-                      <Text style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', letterSpacing: 1, textTransform: 'uppercase' }}>MOS Score</Text>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)' }}>{selectedClient.mos} / 100</div>
-                      <Tag style={{ margin: 0, marginTop: 4, borderRadius: 6, background: `${getStatusColor(selectedClient.status)}15`, color: getStatusColor(selectedClient.status), border: 'none', fontWeight: 700, fontSize: 11 }}>{selectedClient.status}</Tag>
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {selectedClient.scores && Object.entries(selectedClient.scores).map(([label, score]) => (
-                      <div key={label}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                          <span style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', letterSpacing: 1 }}>{label}</span>
-                          <span style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-primary)' }}>{score}</span>
-                        </div>
-                        <Progress percent={score} showInfo={false} strokeColor={getScoreColor(score)} trailColor="var(--bg-tertiary)" size="small" />
+                  <Text style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', letterSpacing: 1, textTransform: 'uppercase', display: 'block', marginBottom: 16 }}>Performance Metrics</Text>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 12 }}>
+                    {[
+                      {
+                        label: 'SEO Score',
+                        value: seoMetrics ? `${seoMetrics.seoScore || 0}%` : null,
+                        color: '#6366f1',
+                      },
+                      {
+                        label: 'AEO Score',
+                        value: seoMetrics ? `${seoMetrics.aeoScore || 0}%` : null,
+                        color: '#8b5cf6',
+                      },
+                      {
+                        label: 'GEO Score',
+                        value: seoMetrics ? `${seoMetrics.geoScore || 0}%` : null,
+                        color: '#ec4899',
+                      },
+                      {
+                        label: 'Leads Count',
+                        value: leadsTotalCount !== null ? leadsTotalCount : null,
+                        color: '#f59e0b',
+                      },
+                      {
+                        label: 'Google Analytics',
+                        subLabel: 'Total Sessions',
+                        value: gaMetrics?.cards?.sessions?.value ? gaMetrics.cards.sessions.value.toLocaleString() : null,
+                        color: '#10b981',
+                      }
+                    ].map((metric) => (
+                      <div key={metric.label} style={{ background: metric.value !== null ? `${metric.color}10` : 'var(--bg-tertiary)', border: `1px solid ${metric.value !== null ? `${metric.color}25` : 'var(--border-color)'}`, borderRadius: 12, padding: '14px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                        <Text style={{ fontSize: 10, fontWeight: 800, color: metric.value !== null ? metric.color : 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{metric.label}</Text>
+                        {metric.value !== null ? (
+                          <>
+                            <div style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1.1, marginTop: 6 }}>{metric.value}</div>
+                            {metric.subLabel && <Text style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, marginTop: 4 }}>{metric.subLabel}</Text>}
+                          </>
+                        ) : (
+                          <div style={{ marginTop: 6 }}>
+                            <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-tertiary)', lineHeight: 1.1 }}>—</div>
+                            <Text style={{ fontSize: 10, color: 'var(--text-tertiary)', fontWeight: 600, marginTop: 4, display: 'block' }}>Not configured</Text>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -300,7 +381,7 @@ const ClientDetailContent = ({
           },
           {
             key: 'proposals',
-            label: `Proposals${proposals.length ? ` (${proposals.length})` : ''}`,
+            label: `Proposals (${proposals.length})`,
             children: (
               <div style={{ paddingTop: 12 }}>
                 {proposals.length === 0 && !loading ? emptyState('proposals') : (
@@ -311,7 +392,7 @@ const ClientDetailContent = ({
           },
           {
             key: 'projects',
-            label: `Projects${projects.length ? ` (${projects.length})` : ''}`,
+            label: `Projects (${projects.length})`,
             children: (
               <div style={{ paddingTop: 12 }}>
                 {projects.length === 0 && !loading ? emptyState('projects') : (
@@ -322,7 +403,7 @@ const ClientDetailContent = ({
           },
           {
             key: 'tasks',
-            label: 'Tasks',
+            label: `Tasks (${taskCount})`,
             children: (
               <div style={{ paddingTop: 12 }}>
                 <TaskListView clientId={clientId} onTaskClick={onTaskClick} />
@@ -331,7 +412,7 @@ const ClientDetailContent = ({
           },
           {
             key: 'invoices',
-            label: `Invoices${invoices.length ? ` (${invoices.length})` : ''}`,
+            label: `Invoices (${invoices.length})`,
             children: (
               <div style={{ paddingTop: 12 }}>
                 {invoices.length === 0 && !loading ? emptyState('invoices') : (

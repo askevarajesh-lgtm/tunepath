@@ -654,7 +654,7 @@ exports.syncLeads = async (req, res, next) => {
                 clientId: clientId || null,
                 isClientLead: !!clientId,
                 ownerId: integration.ownerId || null,
-                createdBy: req.user ? req.user._id : null,
+                createdBy: (req.user && req.user._id) ? req.user._id : companyId,
                 fullName: fullName || 'Unknown',
                 email,
                 phoneNumber,

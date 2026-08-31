@@ -106,6 +106,7 @@ const syncFacebookIntegrationLeads = async (integration) => {
 
                 await Lead.create({
                   companyId,
+                  createdBy: companyId,
                   clientId: clientId || null,
                   isClientLead: !!clientId,
                   ownerId: ownerId || null,
@@ -178,12 +179,12 @@ const runLeadSyncJob = async () => {
 };
 
 const startLeadSyncScheduler = () => {
-  // Run every 5 minutes
-  cron.schedule('*/5 * * * *', async () => {
-    console.log('[Lead AutoSync] Starting 5-minute recurring lead sync check...');
+  // Run every 1 minute
+  cron.schedule('*/1 * * * *', async () => {
+    console.log('[Lead AutoSync] Starting 1-minute recurring lead sync check...');
     await runLeadSyncJob();
   });
-  console.log('[Lead AutoSync] 5-minute Facebook Lead Sync Scheduler initialized.');
+  console.log('[Lead AutoSync] 1-minute Facebook Lead Sync Scheduler initialized.');
 };
 
 module.exports = {

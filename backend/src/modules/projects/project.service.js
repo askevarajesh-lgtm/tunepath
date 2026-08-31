@@ -955,7 +955,8 @@ const resolveProjectListQueryOptions = async (
     additionalFilters: {
       ...(clientIdFilter && { clientId: clientIdFilter }),
       ...(q.status && { status: q.status }),
-      ...(q.companyId && { clientId: q.companyId }),
+      ...(q.companyId && !clientIdFilter && { clientId: q.companyId }),
+      ...(q.clientId && !clientIdFilter && { clientId: q.clientId }),
       ...(!isGlobalAdmin && tenantCompanyId && { companyId: tenantCompanyId }),
       ...(masterItemIdFilter && { masterItemId: masterItemIdFilter }),
       ...(q.departments?.length && {
