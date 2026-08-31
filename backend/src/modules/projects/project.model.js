@@ -354,6 +354,11 @@ const projectSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    approvedPosters: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     remainingVideos: {
       type: Number,
       default: 0,
@@ -364,9 +369,15 @@ const projectSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    approvedVideos: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     numberOfShoots: { type: Number, default: 0 },
     remainingShoots: { type: Number, default: 0 },
     completedShoots: { type: Number, default: 0 },
+    approvedShoots: { type: Number, default: 0 },
     // Dynamic Categories Tracking
     selectedCategories: [
       {
@@ -375,6 +386,7 @@ const projectSchema = new mongoose.Schema(
         quantity: { type: Number, default: 0 },
         remaining: { type: Number, default: 0 },
         completed: { type: Number, default: 0 },
+        approved: { type: Number, default: 0 },
         cost: { type: Number, default: 0 },
       },
     ],

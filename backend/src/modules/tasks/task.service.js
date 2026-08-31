@@ -1881,9 +1881,30 @@ const updateTask = async (
     if (isNowCompleted && !wasPreviouslyCompleted) {
       await updateProjectCompletedCount(task.projectId, task.serviceType, 1);
       
-      // Also remove SLA automatically if task is completed
+      // Mark SLA as Resolved instead of deleting, to trigger Success metrics
       const SlaRecord = require('../sla/sla.model');
-      await SlaRecord.deleteMany({ entityId: task._id, entityType: 'Task' });
+      const existingSla = await SlaRecord.findOne({ entityId: task._id, entityType: 'Task' });
+      if (existingSla) {
+        existingSla.status = 'Resolved';
+        await existingSla.save();
+      } else {
+        // If no SLA existed (e.g., completed same day), create a Success record
+        await SlaRecord.create({
+          slaId: `SLA-TSK-${task._id.toString().substring(0, 8).toUpperCase()}`,
+          clientId: task.companyId,
+          agencyId: task.tenantCompanyId,
+          clientType: task.taskType === 'own_brand' ? 'Agency' : 'Direct User Client',
+          triggerType: 'Due Date',
+          entityId: task._id,
+          entityType: 'Task',
+          title: `Task: ${task.title}`,
+          description: `Task completed successfully.`,
+          dueDate: task.dueDate || new Date(),
+          priority: task.priority || 'Medium',
+          status: 'Resolved',
+          assignedTo: task.assignedTo
+        });
+      }
     } else if (!isNowCompleted && wasPreviouslyCompleted) {
       await updateProjectCompletedCount(task.projectId, task.serviceType, -1);
     }

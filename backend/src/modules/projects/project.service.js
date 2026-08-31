@@ -54,10 +54,7 @@ const getProjectCountTriple = (totalValue, completedValue, remainingValue) => {
     completedValue === undefined || completedValue === null
       ? Math.max(overall - toNonNegativeNumber(remainingValue), 0)
       : toNonNegativeNumber(completedValue);
-  const remaining =
-    remainingValue === undefined || remainingValue === null
-      ? Math.max(overall - completed, 0)
-      : toNonNegativeNumber(remainingValue);
+  const remaining = Math.max(overall - completed, 0);
 
   return { overall, completed, remaining };
 };
@@ -356,10 +353,20 @@ const buildProjectReportData = (projects = []) => {
 };
 
 const COMPLETED_TASK_STATUSES = new Set([
+  "review",
+  "submitted",
   "completed",
   "validated",
   "done",
   "complete",
+]);
+
+const APPROVED_TASK_STATUSES = new Set([
+  "completed",
+  "validated",
+  "done",
+  "complete",
+  "approved",
 ]);
 
 const DELIVERABLE_KEY_ALIASES = new Map([
@@ -412,22 +419,31 @@ const getProjectCategoryKeys = (category = {}, masterCategory = null) => {
 const summarizeProjectTasksByDeliverable = (tasks = []) => {
   const assignedCounts = new Map();
   const completedCounts = new Map();
+  const approvedCounts = new Map();
 
   for (const task of tasks) {
     const key = normalizeDeliverableKey(task?.serviceType);
     if (!key) continue;
 
-    assignedCounts.set(key, (assignedCounts.get(key) || 0) + 1);
-
     const status = String(task?.status || "")
       .trim()
       .toLowerCase();
+
+    if (status !== "rejected") {
+      assignedCounts.set(key, (assignedCounts.get(key) || 0) + 1);
+    }
+
     if (COMPLETED_TASK_STATUSES.has(status)) {
       completedCounts.set(key, (completedCounts.get(key) || 0) + 1);
     }
+
+    // Only count as approved if explicitly approved by client or status is approved directly
+    if (task?.clientReviewStatus === "approved" || status === "approved") {
+      approvedCounts.set(key, (approvedCounts.get(key) || 0) + 1);
+    }
   }
 
-  return { assignedCounts, completedCounts };
+  return { assignedCounts, completedCounts, approvedCounts };
 };
 
 const getProjectServiceTarget = (project, serviceType) => {
@@ -551,7 +567,7 @@ const getProjectServiceCapacity = async (
     ? tasksInput
     : await Task.find({
         projectId: project._id,
-      }).select("serviceType status");
+      }).select("serviceType status clientReviewStatus");
 
   const { assignedCounts, completedCounts } = summarizeProjectTasksByDeliverable(tasks);
   const target = getProjectServiceTarget(project, serviceType);
@@ -630,9 +646,9 @@ const reconcileProjectTaskCounts = async (
     ? tasksInput
     : await Task.find({
         projectId: project._id,
-      }).select("serviceType status");
+      }).select("serviceType status clientReviewStatus");
 
-  const { assignedCounts, completedCounts } =
+  const { assignedCounts, completedCounts, approvedCounts } =
     summarizeProjectTasksByDeliverable(tasks);
 
   let changed = false;
@@ -646,7 +662,7 @@ const reconcileProjectTaskCounts = async (
     }
   };
 
-  const syncStandardCounts = (key, totalField, remainingField, completedField) => {
+  const syncStandardCounts = (key, totalField, remainingField, completedField, approvedField) => {
     let currentTotal = Math.max(0, Number(project[totalField]) || 0);
     
     // Recovery logic: Calculate total from categories if the current total is 0 or seems too low
@@ -680,8 +696,9 @@ const reconcileProjectTaskCounts = async (
 
     const assigned = assignedCounts.get(key) || 0;
     const completed = completedCounts.get(key) || 0;
+    const approved = approvedCounts.get(key) || 0;
 
-    const maxAllowedRemaining = Math.max(0, total - completed);
+    const maxAllowedRemaining = Math.max(0, total - assigned);
     const currentRemaining = project[remainingField];
     
     const isUninitialized = (currentRemaining === 0 || currentRemaining === null || currentRemaining === undefined) 
@@ -689,11 +706,14 @@ const reconcileProjectTaskCounts = async (
       && assigned === 0 
       && completed === 0;
       
-    // Strictly recalculate remaining based on total minus completed
+    // Strictly recalculate remaining based on total minus assigned
     const nextRemaining = maxAllowedRemaining;
 
     syncNumericField(remainingField, nextRemaining);
     syncNumericField(completedField, Math.min(total, completed));
+    if (approvedField) {
+      syncNumericField(approvedField, Math.min(total, approved));
+    }
   };
 
   syncStandardCounts(
@@ -701,18 +721,21 @@ const reconcileProjectTaskCounts = async (
     "numberOfPosters",
     "remainingPosters",
     "completedPosters",
+    "approvedPosters"
   );
   syncStandardCounts(
     "video",
     "numberOfVideos",
     "remainingVideos",
     "completedVideos",
+    "approvedVideos"
   );
   syncStandardCounts(
     "shoot",
     "numberOfShoots",
     "remainingShoots",
     "completedShoots",
+    "approvedShoots"
   );
 
   const masterCategories = Array.isArray(project.masterItemId?.selectedCategories)
@@ -748,13 +771,15 @@ const reconcileProjectTaskCounts = async (
 
     const assigned = assignedCounts.get(matchedKey) || 0;
     const completed = completedCounts.get(matchedKey) || 0;
+    const approved = approvedCounts.get(matchedKey) || 0;
     
-    const maxAllowedRemaining = Math.max(0, quantity - completed);
+    const maxAllowedRemaining = Math.max(0, quantity - assigned);
     const currentRemaining = category.remaining;
     
-    // Strictly recalculate remaining based on quantity minus completed
+    // Strictly recalculate remaining based on quantity minus assigned
     const nextRemaining = maxAllowedRemaining;
     const nextCompleted = Math.min(quantity, completed);
+    const nextApproved = Math.min(quantity, approved);
 
     if ((Number(category.remaining) || 0) !== nextRemaining) {
       category.remaining = nextRemaining;
@@ -763,6 +788,11 @@ const reconcileProjectTaskCounts = async (
 
     if ((Number(category.completed) || 0) !== nextCompleted) {
       category.completed = nextCompleted;
+      selectedCategoriesChanged = true;
+    }
+
+    if ((Number(category.approved) || 0) !== nextApproved) {
+      category.approved = nextApproved;
       selectedCategoriesChanged = true;
     }
   });
@@ -774,6 +804,83 @@ const reconcileProjectTaskCounts = async (
 
   if (changed) {
     await project.save();
+  }
+
+  // NEW: Real-time update of Project SLA whenever task counts are reconciled
+  try {
+    const SlaRecord = require('../sla/sla.model');
+    
+    let totalDeliverables = (project.numberOfPosters || 0) + (project.numberOfVideos || 0) + (project.numberOfShoots || 0);
+    let completedDeliverables = (project.completedPosters || 0) + (project.completedVideos || 0) + (project.completedShoots || 0);
+    let remainingServices = [];
+
+    if (project.remainingPosters > 0) remainingServices.push(`${project.remainingPosters} Posters`);
+    if (project.remainingVideos > 0) remainingServices.push(`${project.remainingVideos} Videos`);
+    if (project.remainingShoots > 0) remainingServices.push(`${project.remainingShoots} Shoots`);
+    
+    if (project.selectedCategories && Array.isArray(project.selectedCategories)) {
+      project.selectedCategories.forEach(cat => {
+        const rawName = cat.name || cat.categoryName || "";
+        const isStandard = ["poster", "video", "shoot"].some(k => rawName.toLowerCase().includes(k));
+        if (!isStandard) {
+           const qty = Math.max(0, Number(cat.quantity) || Number(cat.count) || 0);
+           const completed = Math.max(0, Number(cat.completed) || 0);
+           totalDeliverables += qty;
+           completedDeliverables += completed;
+           
+           const pendingCount = cat.remaining !== undefined ? cat.remaining : (qty > completed ? qty - completed : 0);
+           if (pendingCount > 0) {
+             remainingServices.push(`${pendingCount} ${rawName}`);
+           }
+        }
+      });
+    }
+    
+    let completionPercentage = 0;
+    if (totalDeliverables > 0) {
+      completionPercentage = Math.round((completedDeliverables / totalDeliverables) * 100);
+    } else if (remainingServices.length === 0) {
+      completionPercentage = 100;
+    }
+    let remainingPercentage = 100 - completionPercentage;
+    
+    let triggerType = 'Completion';
+    let description = `Project is ${completionPercentage}% complete. Remaining completion is ${remainingPercentage}%. Pending: ${remainingServices.length > 0 ? remainingServices.join(', ') : 'None'}`;
+    let status = completionPercentage === 100 ? 'Resolved' : 'Normal';
+
+    // Check if SLA record already exists to preserve 'At Risk' or 'Breached' status
+    const existingSla = await SlaRecord.findOne({ entityId: project._id, entityType: 'Project' });
+    if (existingSla) {
+      if (completionPercentage < 100 && (existingSla.status === 'At Risk' || existingSla.status === 'Breached')) {
+        triggerType = 'Due Date & Completion';
+        status = existingSla.status;
+        description = `Project Near Due Date. ${completionPercentage}% complete. Remaining: ${remainingPercentage}%. Pending: ${remainingServices.length > 0 ? remainingServices.join(', ') : 'None'}`;
+      } else if (completionPercentage === 100) {
+        status = 'Resolved';
+      }
+    }
+
+    await SlaRecord.findOneAndUpdate(
+      { entityId: project._id, entityType: 'Project' },
+      {
+        slaId: existingSla ? existingSla.slaId : `SLA-PRJ-${project._id.toString().substring(0, 8).toUpperCase()}`,
+        clientId: project.companyId,
+        agencyId: project.tenantCompanyId,
+        clientType: 'Direct User Client',
+        triggerType: triggerType,
+        entityId: project._id,
+        entityType: 'Project',
+        title: `Project: ${project.name}`,
+        description,
+        dueDate: project.endDate || new Date(),
+        priority: status === 'Breached' ? 'High' : 'Medium',
+        status,
+        ...(status === 'Resolved' && { resolvedAt: new Date() })
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+  } catch (slaErr) {
+    console.error("[Project Service] Failed to sync SLA for project:", slaErr);
   }
 
   return project;
@@ -889,7 +996,7 @@ const getAllProjects = async (
     {
       path: "masterItemId",
       select:
-        "name description deliverables itemType pricingModel basePrice handlingAmount campaignAmount handlingDuration numberOfPosters numberOfVideos numberOfShoots digitalMarketingPackages campaignPackages seoPackages websitePackages designingPackages selectedCategories isActive",
+        "name description deliverables itemType pricingModel basePrice handlingAmount campaignAmount handlingDuration numberOfPosters completedPosters approvedPosters remainingPosters numberOfVideos completedVideos approvedVideos remainingVideos numberOfShoots completedShoots approvedShoots remainingShoots digitalMarketingPackages campaignPackages seoPackages websitePackages designingPackages selectedCategories isActive",
     },
     {
       path: "masterItemIds",
@@ -949,7 +1056,7 @@ const getProjectReport = async (
 
   const projects = await Project.find(resolved.queryOptions.filters)
     .select(
-      "name status startDate endDate renewalDate packageName clientId masterItemId numberOfPosters completedPosters remainingPosters numberOfVideos completedVideos remainingVideos numberOfShoots completedShoots remainingShoots selectedCategories",
+      "name status startDate endDate renewalDate packageName clientId masterItemId numberOfPosters completedPosters approvedPosters remainingPosters numberOfVideos completedVideos approvedVideos remainingVideos numberOfShoots completedShoots approvedShoots remainingShoots selectedCategories",
     )
     .populate("clientId", "name")
     .populate("masterItemId", "name")

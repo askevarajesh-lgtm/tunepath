@@ -42,6 +42,7 @@ import {
   useUpdateTaskScreenshotMutation,
   useUpdateTaskMutation,
   useHoldTaskMutation,
+  useClientApproveTaskMutation,
 } from "../../api/taskApi";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
@@ -65,6 +66,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
   const [isHoldModalVisible, setIsHoldModalVisible] = useState(false);
   const [holdReason, setHoldReason] = useState("");
   const [updateTask] = useUpdateTaskMutation();
+  const [clientApproveTask, { isLoading: isApproving }] = useClientApproveTaskMutation();
   const [holdTask, { isLoading: isHoldingTask }] = useHoldTaskMutation();
 
   // Check permissions and roles
@@ -207,8 +209,14 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
   const handleClientAction = async (newStatus) => {
     const taskId = liveTask?._id || task._id;
     try {
-      await updateTask({ id: taskId, status: newStatus }).unwrap();
-      notifySuccess('task', taskId, `Task ${newStatus === 'complete' ? 'approved' : 'rejected'} successfully`);
+      if (newStatus === 'complete') {
+        await clientApproveTask(taskId).unwrap();
+        notifySuccess('task', taskId, `Task approved successfully`);
+      } else {
+        await updateTask({ id: taskId, status: newStatus }).unwrap();
+        notifySuccess('task', taskId, `Task rejected successfully`);
+      }
+      
       if (newStatus === 'complete' && typeof onTaskCompleted === 'function') {
         onTaskCompleted();
       }

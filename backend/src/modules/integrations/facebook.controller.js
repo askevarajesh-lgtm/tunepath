@@ -575,7 +575,7 @@ exports.syncLeads = async (req, res, next) => {
       pageEntry.selectedForms = formIds || [];
       pageEntry.lastSyncAt = new Date();
       pageEntry.autoSync = true;
-      if (targetAccessToken && targetAccessToken !== accessToken) {
+      if (targetAccessToken && targetAccessToken !== integration.config.accessToken) {
         pageEntry.accessToken = targetAccessToken;
       }
     } else {

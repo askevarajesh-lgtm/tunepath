@@ -10,18 +10,30 @@ const DebouncedSearchInput = ({
   ...rest
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const isFirstRender = React.useRef(true);
+
+  // Store latest onChange without triggering effect
+  const onChangeRef = React.useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   useEffect(() => {
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
     const handler = setTimeout(() => {
-      if (onChange) {
-        onChange(searchTerm);
+      if (onChangeRef.current) {
+        onChangeRef.current(searchTerm);
       }
     }, debounceDelay);
 
     return () => {
       clearTimeout(handler);
     };
-  }, [searchTerm, onChange, debounceDelay]);
+  }, [searchTerm, debounceDelay]);
 
   return (
     <Input

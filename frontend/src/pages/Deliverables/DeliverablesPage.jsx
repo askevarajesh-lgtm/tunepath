@@ -57,10 +57,10 @@ const DeliverablesPage = () => {
 
       // Aggregate core project specific deliverable fields
       const pTotal = (project.numberOfPosters || 0) + (project.numberOfVideos || 0) + (project.numberOfShoots || 0);
-      const pRemaining = (project.remainingPosters || 0) + (project.remainingVideos || 0) + (project.remainingShoots || 0);
+      const pCompleted = (project.approvedPosters || 0) + (project.approvedVideos || 0) + (project.approvedShoots || 0);
 
       let extraTotal = 0;
-      let extraRemaining = 0;
+      let extraCompleted = 0;
 
       // also check selectedCategories for custom deliverables
       if (project.selectedCategories && Array.isArray(project.selectedCategories)) {
@@ -68,15 +68,15 @@ const DeliverablesPage = () => {
           const rawName = cat.name || cat.categoryName || "";
           const isStandard = ["poster", "video", "shoot"].some(k => rawName.toLowerCase().includes(k));
           if (!isStandard) {
-            extraTotal += (cat.quantity || 0);
-            extraRemaining += (cat.remaining || 0);
+            extraTotal += (cat.quantity || cat.count || 0);
+            extraCompleted += (cat.approved || 0);
           }
         });
       }
 
       const totalD = pTotal + extraTotal;
-      const remD = pRemaining + extraRemaining;
-      const compD = totalD - remD;
+      const compD = pCompleted + extraCompleted;
+      const remD = totalD - compD;
 
       clientsMap[clientId].totalDeliverables += totalD;
       clientsMap[clientId].remainingDeliverables += remD;

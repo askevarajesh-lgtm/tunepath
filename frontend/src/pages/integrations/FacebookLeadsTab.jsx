@@ -153,7 +153,7 @@ const FacebookLeadsTab = ({ clientId: propClientId }) => {
       await fetchForms({
         pageId: page.pageId,
         ...(selectedClientId ? { clientId: selectedClientId } : {}),
-      }).unwrap();
+      });
     } catch (err) {
       const errMsg = err?.data?.message || err?.message || "Failed to load forms from Facebook";
       message.error(errMsg);

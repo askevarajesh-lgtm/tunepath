@@ -1,16 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 
 const usePagination = (options = {}) => {
   const [current, setCurrent] = useState(options.defaultCurrent || 1);
   const [pageSize, setPageSize] = useState(options.defaultPageSize || 10);
   const [search, setSearch] = useState('');
 
-  const pagination = {
+  const pagination = useMemo(() => ({
     current,
     pageSize,
     onChange: (p, s) => { setCurrent(p); setPageSize(s); },
     total: 0,
-  };
+  }), [current, pageSize]);
 
   const queryParams = useMemo(() => ({
     page: current,
@@ -18,21 +18,28 @@ const usePagination = (options = {}) => {
     search,
   }), [current, pageSize, search]);
 
-  const handleTableChange = (newPagination) => {
+  const handleTableChange = useCallback((newPagination) => {
     setCurrent(newPagination.current);
     setPageSize(newPagination.pageSize);
-  };
+  }, []);
 
-  const handleSearchChange = (value) => {
+  const handleSearchChange = useCallback((value) => {
     setSearch(value);
     setCurrent(1);
-  };
+  }, []);
 
-  const setPagination = (setter) => {
-    const val = typeof setter === 'function' ? setter(pagination) : setter;
-    if (val.current) setCurrent(val.current);
-    if (val.pageSize) setPageSize(val.pageSize);
-  };
+  const setPagination = useCallback((setter) => {
+    if (typeof setter === 'function') {
+      setCurrent(prev => {
+        const val = setter({ current: prev, pageSize });
+        if (val.pageSize) setPageSize(val.pageSize);
+        return val.current || prev;
+      });
+    } else {
+      if (setter.current) setCurrent(setter.current);
+      if (setter.pageSize) setPageSize(setter.pageSize);
+    }
+  }, [pageSize]);
 
   return { pagination, queryParams, handleTableChange, handleSearchChange, setPagination };
 };
