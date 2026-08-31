@@ -5387,13 +5387,15 @@ const getTodayTaskStats = async (
 
   const completedStatuses = ["done", "completed", "validated", "complete", "review", "in_review", "in review", "reviewing"];
 
-  // 1. All active (incomplete) tasks assigned to the user, due on or before today
+  // 1. All active (incomplete) tasks assigned to the user that overlap with today
+  // Task must have started on or before today, and due on or after today (so it's active today)
   const activeTasksCount = await Task.countDocuments({
     assignedTo: userId,
     tenantCompanyId: { $in: [tenantCompanyId, ...clientCompanyIds] },
     ...(selectedClientCompanyId ? { companyId: selectedClientCompanyId } : {}),
     status: { $nin: completedStatuses },
-    dueDate: { $lte: todayEnd },
+    startDate: { $lte: todayEnd },
+    dueDate: { $gte: todayStart },
   });
 
   // 2. All tasks completed by the user TODAY
