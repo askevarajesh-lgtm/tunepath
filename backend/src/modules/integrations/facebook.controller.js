@@ -661,6 +661,7 @@ exports.syncLeads = async (req, res, next) => {
                 companyName,
                 source: 'Facebook Lead Ads',
                 status: 'new',
+                createdAt: fbLead.created_time ? new Date(fbLead.created_time) : Date.now(),
                 customData: {
                   leadgenId,
                   formId: form.id,
@@ -1003,6 +1004,7 @@ exports.handleWebhook = async (req, res) => {
               companyName,
               source: 'Facebook Lead Ads',
               status: 'new',
+              createdAt: fbLead.created_time ? new Date(fbLead.created_time) : (createdTime ? new Date(createdTime * 1000) : Date.now()),
               customData: {
                 leadgenId,
                 formId,

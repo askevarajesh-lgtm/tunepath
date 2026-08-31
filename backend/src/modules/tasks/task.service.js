@@ -359,6 +359,20 @@ const ensureNoOtherInProgressTask = async (
     query._id = { $ne: excludedTaskId };
   }
 
+  let dateFilter = buildInProgressScopeQuery(scope);
+  if (!dateFilter && targetTask) {
+    const taskDate = targetTask.startDate || targetTask.dueDate || new Date();
+    dateFilter = buildInProgressScopeQuery({
+      boardStartDate: taskDate,
+      boardEndDate: taskDate,
+      boardDateField: "assignedOrStartDate"
+    });
+  }
+
+  if (dateFilter && dateFilter.$or) {
+    query.$or = dateFilter.$or;
+  }
+
   // Find all in-progress tasks for this user
   const blockingTasks = await Task.find(query)
     .select("title projectId startDate dueDate")

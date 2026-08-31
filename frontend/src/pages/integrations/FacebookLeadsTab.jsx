@@ -228,7 +228,7 @@ const FacebookLeadsTab = ({ clientId: propClientId }) => {
           <Space direction="vertical" size={2}>
             <Space>
               <Tag color={hasForms ? "processing" : "default"} icon={<ClockCircleOutlined />}>
-                {hasForms ? "5-Min Auto Sync Active" : "Sync Configured"}
+                {hasForms ? "1-Min Auto Sync Active" : "Sync Configured"}
               </Tag>
             </Space>
             {hasForms && (

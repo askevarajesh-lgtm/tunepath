@@ -57,10 +57,21 @@ const syncFacebookIntegrationLeads = async (integration) => {
 
           let hasNextPage = true;
           let url = `https://graph.facebook.com/v18.0/${formId}/leads`;
+          // Only fetch leads from the last 7 days to prevent fetching thousands of old leads and timing out.
+          // If we have a lastSyncAt, we fetch from 12 hours before that to ensure we catch any missed leads.
+          let sinceUnix = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
+          if (page.lastSyncAt) {
+            let lastSync = Math.floor(new Date(page.lastSyncAt).getTime() / 1000) - (12 * 60 * 60);
+            if (lastSync > sinceUnix) {
+              sinceUnix = lastSync;
+            }
+          }
+
           let leadsParams = {
             access_token: targetAccessToken,
             fields: 'id,created_time,ad_id,form_id,field_data,adset_id,campaign_id',
-            limit: 100
+            limit: 100,
+            since: sinceUnix
           };
 
           let newLeadsCount = 0;
@@ -116,6 +127,7 @@ const syncFacebookIntegrationLeads = async (integration) => {
                   companyName,
                   source: 'Facebook Lead Ads',
                   status: 'new',
+                  createdAt: fbLead.created_time ? new Date(fbLead.created_time) : Date.now(),
                   customData: {
                     leadgenId,
                     formId,
