@@ -957,6 +957,7 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
       "workflow_approved",
       "in_progress",
       "completed",
+      "project_near_due_date",
     ];
     if (taskData.assignedTo && !allowedStatuses.includes(project.status)) {
       throw new Error(
@@ -1678,6 +1679,7 @@ const updateTask = async (
         "workflow_approved",
         "in_progress",
         "completed",
+        "project_near_due_date",
       ];
       if (!allowedStatuses.includes(project.status)) {
         throw new Error(
