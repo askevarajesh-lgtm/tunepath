@@ -266,7 +266,7 @@ const TaskList = () => {
               <Button
                 type="link"
                 icon={<EyeOutlined />}
-                onClick={() => navigate(`/tasks/${record._id}`)}
+                onClick={() => onTaskClick(record)}
               >
                 <span className="hide-on-mobile">View</span>
               </Button>

@@ -753,7 +753,8 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
                     icon={<EditOutlined />}
                     onClick={() => {
                       onClose();
-                      navigate(`/tasks/${task._id}/edit`);
+                      const basePath = window.location.pathname.startsWith("/client") ? "/client/workspace" : window.location.pathname.startsWith("/agency") ? "/agency/workspace" : window.location.pathname.startsWith("/user") ? "/user/workspace" : "/workspace";
+                      navigate(`${basePath}/tasks/${task._id}/edit`);
                     }}
                   >
                     Edit

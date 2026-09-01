@@ -486,7 +486,10 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
               key: "edit",
               label: "Edit",
               icon: <EditOutlined />,
-              onClick: () => navigate(`/tasks/${record._id}/edit`),
+              onClick: () => {
+                const basePath = window.location.pathname.startsWith("/client") ? "/client/workspace" : window.location.pathname.startsWith("/agency") ? "/agency/workspace" : window.location.pathname.startsWith("/user") ? "/user/workspace" : "/workspace";
+                navigate(`${basePath}/tasks/${record._id}/edit`);
+              },
             },
           canDeleteThisTask && {
             key: "delete",

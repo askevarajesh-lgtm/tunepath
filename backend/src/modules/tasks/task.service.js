@@ -554,21 +554,18 @@ const getAllTasks = async (
     additionalFilters.validationStatus = reqQuery.validationStatus;
 
   // Handle Assigned To filter (including unassigned)
-  // IMPORTANT: If assignedTo filter is applied, it overrides the role-based $or to avoid conflicts
-  if (!restrictToOwnAssignedTasks) {
-    if (reqQuery.assignedTo === "unassigned") {
-      // Apply unassigned filter without deleting $or visibility constraints.
-      additionalFilters.assignedTo = { $in: [null, undefined] };
-    } else if (reqQuery.assignedTo) {
-      // Apply assignedTo filter. We do NOT delete $or here because $or contains
-      // essential visibility constraints (watchers, department visibility) for non-admin users.
-      // Mongoose will naturally AND this filter with the existing $or constraints.
-      additionalFilters.assignedTo = mongoose.Types.ObjectId.isValid(
-        reqQuery.assignedTo,
-      )
-        ? new mongoose.Types.ObjectId(reqQuery.assignedTo)
-        : reqQuery.assignedTo;
-    }
+  if (reqQuery.assignedTo === "unassigned") {
+    // Apply unassigned filter without deleting $or visibility constraints.
+    additionalFilters.assignedTo = { $in: [null, undefined] };
+  } else if (reqQuery.assignedTo) {
+    // Apply assignedTo filter. We do NOT delete $or here because $or contains
+    // essential visibility constraints (watchers, department visibility) for non-admin users.
+    // Mongoose will naturally AND this filter with the existing $or constraints.
+    additionalFilters.assignedTo = mongoose.Types.ObjectId.isValid(
+      reqQuery.assignedTo,
+    )
+      ? new mongoose.Types.ObjectId(reqQuery.assignedTo)
+      : reqQuery.assignedTo;
   }
 
   // Handle Date Range Filters
@@ -2772,17 +2769,14 @@ const getTasksForKanban = async (
   }
 
   // Handle Assigned To filter (including unassigned)
-  // IMPORTANT: If assignedTo filter is applied, it overrides the role-based $or to avoid conflicts
-  if (!restrictToOwnAssignedTasks) {
-    if (filters.assignedTo === "unassigned") {
-      // Apply unassigned filter without deleting $or visibility constraints.
-      query.assignedTo = { $in: [null, undefined] };
-    } else if (filters.assignedTo) {
-      // Apply assignedTo filter without deleting $or visibility constraints.
-      query.assignedTo = mongoose.Types.ObjectId.isValid(filters.assignedTo)
-        ? new mongoose.Types.ObjectId(filters.assignedTo)
-        : filters.assignedTo;
-    }
+  if (filters.assignedTo === "unassigned") {
+    // Apply unassigned filter without deleting $or visibility constraints.
+    query.assignedTo = { $in: [null, undefined] };
+  } else if (filters.assignedTo) {
+    // Apply assignedTo filter without deleting $or visibility constraints.
+    query.assignedTo = mongoose.Types.ObjectId.isValid(filters.assignedTo)
+      ? new mongoose.Types.ObjectId(filters.assignedTo)
+      : filters.assignedTo;
   }
 
   // Only add projectId filter if it's a valid value (not null, undefined, or empty string)

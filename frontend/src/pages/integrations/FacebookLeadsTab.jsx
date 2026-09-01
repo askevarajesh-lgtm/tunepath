@@ -512,7 +512,7 @@ const FacebookLeadsTab = ({ clientId: propClientId }) => {
       >
         <div style={{ marginBottom: "16px" }}>
           <Paragraph>
-            Select the specific lead generation form(s) to sync. Leads from the selected form(s) will be imported immediately, and <strong>automatically synced every 5 minutes</strong> going forward.
+            Select the specific lead generation form(s) to sync. Leads from the selected form(s) will be imported immediately, and <strong>automatically synced every 1 minutes</strong> going forward.
           </Paragraph>
         </div>
         
@@ -546,6 +546,13 @@ const FacebookLeadsTab = ({ clientId: propClientId }) => {
                 )
               }
             ]}
+          />
+        ) : formsRes?.error ? (
+          <Alert
+            message="Connection Error"
+            description={formsRes.error?.data?.message || formsRes.error?.message || "Failed to load forms from Facebook. Please try reconnecting."}
+            type="error"
+            showIcon
           />
         ) : (
           <Alert

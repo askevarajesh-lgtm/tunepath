@@ -530,35 +530,56 @@ exports.syncLeads = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Facebook integration not found or disconnected' });
     }
 
-    const targetAccessToken = await resolvePageAccessToken(integration, pageId);
+    let targetAccessToken = await resolvePageAccessToken(integration, pageId);
 
     let forms = [];
     if (pageId) {
-      try {
-        const formsRes = await axios.get(`https://graph.facebook.com/v18.0/${pageId}/leadgen_forms`, {
-          params: { access_token: targetAccessToken, limit: 100, fields: 'id,name' },
+      const fetchFormsForSync = async (token) => {
+        return axios.get(`https://graph.facebook.com/v18.0/${pageId}/leadgen_forms`, {
+          params: { access_token: token, limit: 100, fields: 'id,name' },
           timeout: 15000
         });
+      };
+
+      try {
+        let formsRes;
+        try {
+          if (!targetAccessToken) throw new Error('Missing page access token');
+          formsRes = await fetchFormsForSync(targetAccessToken);
+        } catch (firstErr) {
+          try {
+            targetAccessToken = await resolvePageAccessToken(integration, pageId, true);
+          } catch (refreshErr) {
+            throw refreshErr;
+          }
+          if (targetAccessToken) {
+            formsRes = await fetchFormsForSync(targetAccessToken);
+          } else {
+            throw firstErr;
+          }
+        }
+        
         if (formsRes.data && formsRes.data.data) {
           forms = formsRes.data.data;
         }
       } catch (err) {
-        if (targetAccessToken !== integration.config.accessToken) {
+        if (integration.config.accessToken && targetAccessToken !== integration.config.accessToken) {
           try {
-            const fallbackRes = await axios.get(`https://graph.facebook.com/v18.0/${pageId}/leadgen_forms`, {
-              params: { access_token: integration.config.accessToken, limit: 100, fields: 'id,name' },
-              timeout: 15000
-            });
+            const fallbackRes = await fetchFormsForSync(integration.config.accessToken);
             if (fallbackRes.data && fallbackRes.data.data) {
               forms = fallbackRes.data.data;
             }
           } catch (e) {}
         }
         if (forms.length === 0) {
+          let errMsg = err.response?.data?.error?.message || err.message || err.toString();
+          if (errMsg.includes('Error fetching /me/accounts') || err.response?.data?.error?.code === 190 || errMsg.includes('permission') || errMsg.includes('impersonating') || err.response?.data?.error?.code === 100) {
+            errMsg = 'Your Facebook account does not have admin permissions for this page or your session expired. Please click Reconnect Facebook with the account that manages this page.';
+          }
           return res.status(400).json({ 
             success: false, 
-            message: err.response?.data?.error?.message || 'Failed to fetch forms for the page', 
-            meta: { error: err.response?.data || err.message } 
+            message: errMsg, 
+            meta: { error: err.response?.data || errMsg } 
           });
         }
       }
@@ -803,11 +824,11 @@ exports.getAds = async (req, res, next) => {
   }
 };
 
-const resolvePageAccessToken = async (integration, pageId) => {
+const resolvePageAccessToken = async (integration, pageId, forceRefresh = false) => {
   const pages = integration.config?.pages || [];
   const page = pages.find(p => p.pageId === pageId);
   
-  if (page && page.accessToken && page.accessToken.startsWith('EAA') && page.accessToken.length > 50) {
+  if (!forceRefresh && page && page.accessToken && page.accessToken.startsWith('EAA') && page.accessToken.length > 50) {
     return page.accessToken;
   }
 
@@ -837,9 +858,11 @@ const resolvePageAccessToken = async (integration, pageId) => {
     }
   } catch (err) {
     console.error('Error fetching /me/accounts for page access token:', err.response?.data?.error?.message || err.message);
+    throw new Error(err.response?.data?.error?.message || err.message);
   }
 
-  return userAccessToken;
+  // Do NOT return userAccessToken as a fallback here, it causes confusing Facebook permission errors on Page endpoints
+  return null;
 };
 
 exports.getForms = async (req, res, next) => {
@@ -854,30 +877,47 @@ exports.getForms = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Integration not found' });
     }
 
-    const targetAccessToken = await resolvePageAccessToken(integration, pageId);
+    let targetAccessToken = await resolvePageAccessToken(integration, pageId);
 
-    try {
-      const formsRes = await axios.get(`https://graph.facebook.com/v18.0/${pageId}/leadgen_forms`, {
-        params: { access_token: targetAccessToken, fields: 'id,name,status', limit: 100 },
+    const fetchFormsWithToken = async (token) => {
+      return axios.get(`https://graph.facebook.com/v18.0/${pageId}/leadgen_forms`, {
+        params: { access_token: token, fields: 'id,name,status', limit: 100 },
         timeout: 15000
       });
+    };
+
+    try {
+      let formsRes;
+      try {
+        if (!targetAccessToken) throw new Error('Missing page access token');
+        formsRes = await fetchFormsWithToken(targetAccessToken);
+      } catch (firstErr) {
+        // If first attempt fails (e.g., token expired), force refresh the page token and try again
+        try {
+          targetAccessToken = await resolvePageAccessToken(integration, pageId, true);
+        } catch (refreshErr) {
+          throw refreshErr;
+        }
+        if (targetAccessToken) {
+          formsRes = await fetchFormsWithToken(targetAccessToken);
+        } else {
+          throw firstErr;
+        }
+      }
       return res.status(200).json({ success: true, data: formsRes.data.data || [] });
     } catch (fbErr) {
       // If page token failed, try user token as fallback
-      if (targetAccessToken !== integration.config.accessToken) {
+      if (integration.config.accessToken && targetAccessToken !== integration.config.accessToken) {
         try {
-          const fallbackRes = await axios.get(`https://graph.facebook.com/v18.0/${pageId}/leadgen_forms`, {
-            params: { access_token: integration.config.accessToken, fields: 'id,name,status', limit: 100 },
-            timeout: 15000
-          });
+          const fallbackRes = await fetchFormsWithToken(integration.config.accessToken);
           return res.status(200).json({ success: true, data: fallbackRes.data.data || [] });
         } catch (e) {}
       }
 
       console.error('Get Forms FB Error:', fbErr.response?.data || fbErr.message);
-      let errMsg = fbErr.response?.data?.error?.message || fbErr.message;
-      if (fbErr.response?.data?.error?.code === 190 || errMsg.includes('permission') || errMsg.includes('impersonating')) {
-        errMsg = 'Your Facebook account does not have admin permissions for this page. Please click Reconnect Facebook with the account that manages this page.';
+      let errMsg = fbErr.response?.data?.error?.message || fbErr.message || fbErr.toString();
+      if (errMsg.includes('Error fetching /me/accounts') || fbErr.response?.data?.error?.code === 190 || errMsg.includes('permission') || errMsg.includes('impersonating') || fbErr.response?.data?.error?.code === 100) {
+        errMsg = 'Your Facebook account does not have admin permissions for this page or your session expired. Please click Reconnect Facebook with the account that manages this page.';
       }
       return res.status(400).json({ 
         success: false, 
