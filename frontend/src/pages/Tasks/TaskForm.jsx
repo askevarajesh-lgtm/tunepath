@@ -882,6 +882,7 @@ const TaskForm = () => {
             taskType: "New",
             taskCategory: "New",
             status: "created",
+            startDate: dayjs(),
           }}
         >
           <Row gutter={16}>

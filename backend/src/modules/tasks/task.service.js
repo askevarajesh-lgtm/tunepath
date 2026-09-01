@@ -901,6 +901,7 @@ const updateProjectCompletedCount = async (projectId, taskServiceType, increment
 };
 
 const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
+  const agencyCompanyId = tenantCompanyId;
   const User = require("../auth/user.model");
   const creator = await User.findById(createdByUserId).select("role clientId brandId");
   const isGlobalAdmin = creator && ["supreme_super_admin"].includes(creator.role);
@@ -1177,16 +1178,16 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
 
       // Get company-level notification settings (primary source)
       let companySettings = await CompanyNotificationSettings.findOne({
-        companyId: tenantCompanyId,
+        companyId: agencyCompanyId,
       });
 
       // If company settings don't exist, create default ones
       if (!companySettings) {
         companySettings = await CompanyNotificationSettings.create({
-          companyId: tenantCompanyId,
+          companyId: agencyCompanyId,
         });
         logger.info(
-          `Created default company notification settings for company ${tenantCompanyId}`,
+          `Created default company notification settings for company ${agencyCompanyId}`,
         );
       }
 
@@ -1199,12 +1200,12 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
 
       // Check event configuration to see if WhatsApp/Email are configured at system level
       const eventConfig =
-        await eventConfigService.getEventConfigByType("task_assigned", tenantCompanyId);
+        await eventConfigService.getEventConfigByType("task_assigned", agencyCompanyId);
 
       // Check WhatsApp integration availability
       const whatsappIntegration = await Integration.findOne({
         type: "whatsapp",
-        companyId: tenantCompanyId,
+        companyId: agencyCompanyId,
         isActive: true,
       });
       const whatsappIntegrationConfigured = !!(
@@ -1224,7 +1225,7 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
         isWhatsappConfigured;
       const emailIntegration = await Integration.findOne({
         type: "email",
-        companyId: tenantCompanyId,
+        companyId: agencyCompanyId,
         isActive: true,
       });
       const emailIntegrationConfigured = !!(
@@ -1253,7 +1254,7 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
         whatsappEventEnabled;
 
       logger.info(
-        `Company notification settings for company ${tenantCompanyId} (user ${assignedUser.email}): inApp=${inAppEnabled}, email=${emailEnabled} (company=${companySettings?.taskAssigned?.email || false}, event=${emailEventEnabled}), whatsapp=${whatsappEnabled} (company=${companySettings?.taskAssigned?.whatsapp || false}, event=${whatsappEventEnabled})`,
+        `Company notification settings for company ${agencyCompanyId} (user ${assignedUser.email}): inApp=${inAppEnabled}, email=${emailEnabled} (company=${companySettings?.taskAssigned?.email || false}, event=${emailEventEnabled}), whatsapp=${whatsappEnabled} (company=${companySettings?.taskAssigned?.whatsapp || false}, event=${whatsappEventEnabled})`,
       );
 
       // Create in-app notification (based on company settings)
@@ -1306,7 +1307,7 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
               to: assignedUser.email,
               phone: assignedUser.phone,
               channels: channels,
-              tenantCompanyId,
+              tenantCompanyId: agencyCompanyId,
             },
           );
 

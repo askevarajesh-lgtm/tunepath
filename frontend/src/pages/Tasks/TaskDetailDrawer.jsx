@@ -181,11 +181,12 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
   };
 
   const handleDelete = async () => {
-    try {
-      await deleteTask(task._id).unwrap();
-      notifySuccess('delete', task._id, 'Task deleted successfully');
-      onClose();
-    } catch (err) {
+      try {
+        await deleteTask(task._id).unwrap();
+        notifySuccess('delete', task._id, 'Task deleted successfully');
+        onClose();
+        setTimeout(() => window.location.reload(), 1500);
+      } catch (err) {
       notifyError('delete', task._id, err.data?.message || "Failed to delete task");
     }
   };

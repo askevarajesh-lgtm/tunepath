@@ -900,41 +900,7 @@ const ProjectForm = () => {
                 />
               </Form.Item>
 
-              <Divider>Deliverables Tracking</Divider>
-              <Row gutter={16}>
-                <Col span={8}>
-                  <Form.Item name="numberOfPosters" label="Number of Posters">
-                    <InputNumber style={{ width: "100%" }} min={0} />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item name="numberOfVideos" label="Number of Videos">
-                    <InputNumber style={{ width: "100%" }} min={0} />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item name="numberOfShoots" label="Number of Shoots">
-                    <InputNumber style={{ width: "100%" }} min={0} />
-                  </Form.Item>
-                </Col>
-              </Row>
-              <Row gutter={16}>
-                <Col span={8}>
-                  <Form.Item name="remainingPosters" label="Remaining Posters">
-                    <InputNumber style={{ width: "100%" }} min={0} />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item name="remainingVideos" label="Remaining Videos">
-                    <InputNumber style={{ width: "100%" }} min={0} />
-                  </Form.Item>
-                </Col>
-                <Col span={8}>
-                  <Form.Item name="remainingShoots" label="Remaining Shoots">
-                    <InputNumber style={{ width: "100%" }} min={0} />
-                  </Form.Item>
-                </Col>
-              </Row>
+
 
               <Divider>Other Dynamic Deliverables</Divider>
               <Form.List name="selectedCategories">

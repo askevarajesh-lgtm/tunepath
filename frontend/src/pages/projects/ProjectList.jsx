@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import api from "../../services/api";
 import {
   Table,
   Button,
@@ -45,7 +46,6 @@ import BulkActionBar from "../../components/common/BulkActionBar";
 import DebouncedSearchInput from "../../components/common/DebouncedSearchInput";
 import usePagination from "../../hooks/usePagination";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
-import { MASTER_ITEM_NAME_OPTIONS } from "../../constants/masterItemNames";
 import dayjs from "dayjs";
 import { downloadProjectReportExcel } from "../../utils/projectReportExport";
 import "./ProjectList.css";
@@ -89,6 +89,23 @@ const ProjectList = () => {
   useEffect(() => {
     setPagination((prev) => ({ ...prev, current: 1 }));
   }, [selectedClientId]);
+
+  const [masterItemOptions, setMasterItemOptions] = useState([]);
+  useEffect(() => {
+    const fetchMasterItems = async () => {
+      try {
+        const res = await api.get('/master-items');
+        if (res.data?.success) {
+          const items = res.data.data;
+          const options = items.map(item => item.name);
+          setMasterItemOptions([...new Set(options)]);
+        }
+      } catch (err) {
+        console.error('Failed to fetch master items', err);
+      }
+    };
+    fetchMasterItems();
+  }, []);
 
   // Build query params with filters — selectedClientId from header takes priority
   const queryParamsWithFilters = useMemo(
@@ -140,7 +157,7 @@ const ProjectList = () => {
     canView,
   } = useActionPermissions("/projects");
   const { data: clientsData } = useGetCompaniesDropdownQuery({});
-  const clients = clientsData?.data?.data || clientsData?.data?.companies || [];
+  const clients = clientsData?.data || clientsData?.companies || [];
 
   // Handle paginated response
   const paginationData = data?.data?.pagination;
@@ -625,7 +642,7 @@ const ProjectList = () => {
                   .toLowerCase()
                   .includes(input.toLowerCase())
               }
-              options={MASTER_ITEM_NAME_OPTIONS.map((name) => ({
+              options={masterItemOptions.map((name) => ({
                 value: name,
                 label: name,
               }))}

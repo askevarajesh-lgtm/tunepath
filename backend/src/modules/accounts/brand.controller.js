@@ -66,19 +66,41 @@ exports.getBrands = async (req, res, next) => {
       .populate('createdBy', 'name role roleName')
       .populate('assignedUsers', 'name email role roleName');
 
-    const data = await Promise.all(brands.map(async (brand) => {
-      const usersCount = await User.countDocuments({
-        brandId: brand._id,
-        _id: { $ne: brand._id }, // Exclude the brand admin itself
-        role: { $in: ['brand_manager', 'user'] }
-      });
+    const brandIds = brands.map(b => b._id);
+    const usersCounts = await User.aggregate([
+      {
+        $match: {
+          brandId: { $in: brandIds },
+          role: { $in: ['brand_manager', 'user'] }
+        }
+      },
+      {
+        $match: {
+          $expr: { $ne: ['$_id', '$brandId'] }
+        }
+      },
+      {
+        $group: {
+          _id: '$brandId',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
 
+    const countMap = {};
+    usersCounts.forEach(c => {
+      if (c._id) {
+        countMap[c._id.toString()] = c.count;
+      }
+    });
+
+    const data = brands.map((brand) => {
       return {
         ...brand.toObject(),
         adminEmail: brand.email,
-        usersCount
+        usersCount: countMap[brand._id.toString()] || 0
       };
-    }));
+    });
 
     res.status(200).json({ success: true, count: data.length, data });
   } catch (error) {

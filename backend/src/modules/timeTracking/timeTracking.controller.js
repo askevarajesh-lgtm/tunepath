@@ -243,10 +243,28 @@ exports.getDashboardData = async (req, res) => {
     if (!req.companyId) return res.status(401).json({ success: false, message: 'Unauthorized' });
     const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
 
+    const startDateParam = req.query.startDate ? new Date(req.query.startDate) : null;
+    const endDateParam = req.query.endDate ? new Date(req.query.endDate) : null;
     const dateParam = req.query.date ? new Date(req.query.date) : new Date();
-    const { startOfWeek, endOfWeek } = getWeekRange(dateParam);
-    const startOfMonth = new Date(dateParam.getFullYear(), dateParam.getMonth(), 1);
-    const endOfMonth = new Date(dateParam.getFullYear(), dateParam.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    let startOfWeek, endOfWeek, startOfMonth, endOfMonth;
+    
+    if (startDateParam && endDateParam) {
+      startOfWeek = new Date(startDateParam);
+      startOfWeek.setUTCHours(0, 0, 0, 0);
+      
+      endOfWeek = new Date(endDateParam);
+      endOfWeek.setUTCHours(23, 59, 59, 999);
+      
+      startOfMonth = startOfWeek;
+      endOfMonth = endOfWeek;
+    } else {
+      const weekRange = getWeekRange(dateParam);
+      startOfWeek = weekRange.startOfWeek;
+      endOfWeek = weekRange.endOfWeek;
+      startOfMonth = new Date(dateParam.getFullYear(), dateParam.getMonth(), 1);
+      endOfMonth = new Date(dateParam.getFullYear(), dateParam.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
 
     const baseMatch = { tenantCompanyId: tenantObjectId };
     // Regular users: scope to their own entries
@@ -473,8 +491,23 @@ exports.getTeamTaskPerformance = async (req, res) => {
     if (!req.companyId) return res.status(401).json({ success: false, message: 'Unauthorized' });
     const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
 
+    const startDateParam = req.query.startDate ? new Date(req.query.startDate) : null;
+    const endDateParam = req.query.endDate ? new Date(req.query.endDate) : null;
     const dateParam = req.query.date ? new Date(req.query.date) : new Date();
-    const { startOfWeek, endOfWeek } = getWeekRange(dateParam);
+
+    let startOfWeek, endOfWeek;
+    
+    if (startDateParam && endDateParam) {
+      startOfWeek = new Date(startDateParam);
+      startOfWeek.setUTCHours(0, 0, 0, 0);
+      
+      endOfWeek = new Date(endDateParam);
+      endOfWeek.setUTCHours(23, 59, 59, 999);
+    } else {
+      const weekRange = getWeekRange(dateParam);
+      startOfWeek = weekRange.startOfWeek;
+      endOfWeek = weekRange.endOfWeek;
+    }
 
     const completedStatuses = ['completed', 'done', 'validated', 'complete', 'review', 'REVIEW'];
 

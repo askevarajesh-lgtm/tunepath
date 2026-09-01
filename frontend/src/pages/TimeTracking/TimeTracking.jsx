@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Typography, Row, Col, Card, Button, Table, Tag, Avatar,
   message, Spin, Modal, Form, Select, InputNumber, Switch,
-  Input, Popconfirm, Tabs
+  Input, Popconfirm, Tabs, DatePicker
 } from 'antd';
 import { motion } from 'framer-motion';
 import {
@@ -15,10 +15,12 @@ import { timeTrackingService } from '../../services/timeTracking.service';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { RangePicker } = DatePicker;
 
 const TimeTracking = () => {
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dateRange, setDateRange] = useState(null);
   const [kpis, setKpis] = useState({
     totalHours: 0, billableHours: 0, nonBillableHours: 0,
     utilizationRate: 0, capacity: null, billablePercent: 0,
@@ -43,11 +45,19 @@ const TimeTracking = () => {
     setLoading(true);
     try {
       const targetDate = dateStr || selectedDate;
+      const queryParams = {};
+      if (dateRange && dateRange.length === 2) {
+        queryParams.startDate = dateRange[0].format('YYYY-MM-DD');
+        queryParams.endDate = dateRange[1].format('YYYY-MM-DD');
+      } else {
+        queryParams.date = targetDate;
+      }
+      
       const [dashRes, recentRes, optRes, perfRes] = await Promise.all([
-        timeTrackingService.getDashboardData(targetDate),
+        timeTrackingService.getDashboardData(queryParams),
         timeTrackingService.getRecentEntries(),
         timeTrackingService.getFormOptions(),
-        timeTrackingService.getTeamTaskPerformance(targetDate)
+        timeTrackingService.getTeamTaskPerformance(queryParams)
       ]);
 
       if (dashRes.success) {
@@ -70,7 +80,7 @@ const TimeTracking = () => {
     }
   };
 
-  useEffect(() => { fetchData(); }, [selectedDate]);
+  useEffect(() => { fetchData(); }, [selectedDate, dateRange]);
 
   const handlePrevWeek = () => {
     const d = new Date(selectedDate);
@@ -324,13 +334,13 @@ const TimeTracking = () => {
           <Title level={2} style={{ margin: '4px 0 0 0', fontWeight: 800 }}>Time Tracking</Title>
           <Text type="secondary" style={{ fontWeight: 500 }}>Log billable and non-billable hours by department, client and task.</Text>
         </div>
-        {/* <Button
-          type="primary" icon={<Plus size={16} />}
-          style={{ borderRadius: 8, fontWeight: 600, height: 40 }}
-          onClick={() => { form.resetFields(); form.setFieldsValue({ date: new Date().toISOString().split('T')[0], isBillable: true }); setIsAddModalOpen(true); }}
-        >
-          Log Time
-        </Button> */}
+        <div>
+          <RangePicker 
+            value={dateRange} 
+            onChange={(dates) => setDateRange(dates)} 
+            style={{ borderRadius: 8, height: 40 }} 
+          />
+        </div>
       </motion.div>
 
       {/* ─── KPI Cards ──────────────────────────────────────────────────────── */}
@@ -384,7 +394,7 @@ const TimeTracking = () => {
           bodyStyle={{ padding: 0 }}
         >
           <Table
-            columns={tsCols} dataSource={timesheetData} pagination={false}
+            columns={tsCols} dataSource={timesheetData} pagination={{ pageSize: 10 }}
             rowKey={(r) => r.name + r.department} size="middle" scroll={{ x: 1100 }}
             rowClassName={() => 'hover-bg'} loading={loading}
             locale={{ emptyText: 'No department members found. Add team members with agencyId linked to this company.' }}
@@ -532,7 +542,7 @@ const TimeTracking = () => {
           bodyStyle={{ padding: 0 }}
         >
           <Table
-            columns={entryCols} dataSource={recentEntries} pagination={false}
+            columns={entryCols} dataSource={recentEntries} pagination={{ pageSize: 10 }}
             rowKey="id" size="middle" scroll={{ x: 1100 }} rowClassName={() => 'hover-bg'}
           />
         </Card>

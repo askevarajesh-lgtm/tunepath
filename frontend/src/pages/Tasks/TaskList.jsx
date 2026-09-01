@@ -82,7 +82,7 @@ const TaskList = () => {
   const canDelete =
     !isIntern && canDeletePermission && (!isSEO || isSEOFullTime);
   const [filters, setFilters] = useState({});
-  const { data, isLoading, error } = useGetTasksQuery(filters);
+  const { data, isLoading, error, refetch } = useGetTasksQuery(filters);
   const { data: departmentsResp } = useGetDepartmentsDynamicQuery();
   const departments = departmentsResp?.data?.departments || [];
 
@@ -125,6 +125,7 @@ const TaskList = () => {
       notifyLoading('delete', taskId, 'Deleting task...');
       await deleteTask(taskId).unwrap();
       notifySuccess('delete', taskId, 'Task deleted successfully');
+      try { if (typeof refetch === 'function') await refetch(); } catch(e) {}
     } catch (err) {
       notifyError('delete', taskId, err.data?.message || "Failed to delete task");
     }
