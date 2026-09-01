@@ -152,7 +152,7 @@ const Dashboard = () => {
                 dataSource={recentCompanies} 
                 loading={loading}
                 pagination={false}
-                className="custom-table"
+                
                 locale={{ emptyText: 'No recent agencies found' }}
               />
             </Card>

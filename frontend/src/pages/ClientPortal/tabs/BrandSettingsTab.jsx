@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Typography, Tabs, Card, Form, Input, Button, Upload, Select, message, Tag, Modal, Checkbox, ColorPicker } from 'antd';
 import { motion } from 'framer-motion';
-import { Upload as UploadIcon, Building, Package, Shield, ExternalLink, Plug } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Upload as UploadIcon, Building, Package, Shield, ExternalLink, Plug, Users, Bell } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useTheme } from '../../../contexts/ThemeContext';
 import IntegrationsTab from '../../Settings/tabs/IntegrationsTab';
+import UserManagementTab from '../../Settings/tabs/UserManagementTab';
+import NotificationsTab from '../../Settings/tabs/NotificationsTab';
 
 const { Title, Text } = Typography;
 
@@ -24,6 +27,15 @@ const availableFeatures = [
 const BrandSettingsTab = () => {
   const { user, setUser } = useAuth();
   const { updatePreviewTheme } = useTheme();
+  const location = useLocation();
+  const [activeTab, setActiveTab] = useState(location.state?.activeTab || 'details');
+
+  useEffect(() => {
+    if (location.state?.activeTab) {
+      setActiveTab(location.state.activeTab);
+    }
+  }, [location.state?.activeTab]);
+
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [logoPreview, setLogoPreview] = useState(null);
@@ -381,12 +393,15 @@ const BrandSettingsTab = () => {
 
       <motion.div variants={itemVariants}>
         <Tabs 
-          defaultActiveKey="details" 
+          activeKey={activeTab} 
+          onChange={setActiveTab}
           tabBarStyle={{ fontWeight: 600, color: 'var(--text-secondary)' }}
           items={[
             { key: 'details', label: <span><Building size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Brand Details</span>, children: brandDetailsContent },
+            { key: 'users', label: <span><Users size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />User Management</span>, children: <UserManagementTab /> },
             { key: 'integrations', label: <span><Plug size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Integrations</span>, children: <IntegrationsTab /> },
             { key: 'plans', label: <span><Package size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Brand Plans</span>, children: brandPlansContent },
+            { key: '4', label: <span><Bell size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Notifications</span>, children: <NotificationsTab /> },
           ]}
         />
       </motion.div>

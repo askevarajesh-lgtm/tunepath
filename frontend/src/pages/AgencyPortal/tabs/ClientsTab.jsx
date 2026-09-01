@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Typography, Input, Button, Tag, Row, Col, Drawer, Tabs, Progress, Switch, Select, message, Modal, Form, Checkbox, Table, Dropdown, Menu, Popconfirm, Tooltip } from 'antd';
+import { Typography, Input, Button, Tag, Row, Col, Drawer, Tabs, Progress, Switch, Select, message, Modal, Form, Checkbox, Table, Dropdown, Menu, Popconfirm, Tooltip , Card} from 'antd';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useGetIntegrationsQuery } from '../../../api/integrationApi';
 import { Search, AlertTriangle, CheckCircle, ExternalLink, MoreHorizontal, Circle, ArrowUpRight, Shield, Zap, Globe, Users, Plus } from 'lucide-react';
@@ -635,9 +635,9 @@ const ClientsTab = () => {
         </Form>
       </Modal>
 
-      <div style={{ background: 'var(--bg-secondary)', borderRadius: 16, border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+      <Card>
         <Table
-          className="custom-table"
+          
           dataSource={filteredClients}
           rowKey="_id"
           pagination={{
@@ -645,7 +645,7 @@ const ClientsTab = () => {
             showSizeChanger: true,
             pageSizeOptions: ['10', '20', '50', '100'],
             showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
-            position: ['bottomCenter']
+            position: ['bottomRight']
           }}
           locale={{ emptyText: searchQuery ? 'No clients match your search' : 'No clients found' }}
           columns={[
@@ -799,7 +799,7 @@ const ClientsTab = () => {
             }
           ]}
         />
-      </div>
+      </Card>
 
       {/* Client Detail Drawer */}
       <Drawer

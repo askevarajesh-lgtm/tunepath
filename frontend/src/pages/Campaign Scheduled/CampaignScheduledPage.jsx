@@ -27,6 +27,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useClientContext } from "../../contexts/ClientContext";
 import NoClientSelected from "./NoClientSelected";
 import DashboardView from "./DashboardView";
+import useActionPermissions from "../../hooks/useActionPermissions";
 
 const enabledIntegrations = {
   googleBusiness: true,
@@ -85,10 +86,7 @@ export default function CampaignScheduledPage() {
   const lastLoadErrorMessageRef = useRef("");
   const isAdminView = user?.role?.includes("admin") || user?.role?.includes("agency");
 
-  const isPrivilegedUser = ["supreme_super_admin", "commander_admin", "agency_super_admin", "agency_manager", "brand_super_admin", "brand_manager", "client", "agency_client", "client_user"].includes(user?.role) || (user?.role === "user" && user?.brandId);
-  const canCreate = isPrivilegedUser || user?.permissions?.["Workspace-Social Media"]?.Create === true;
-  const canEdit = isPrivilegedUser || user?.permissions?.["Workspace-Social Media"]?.Edit === true;
-  const canDelete = isPrivilegedUser || user?.permissions?.["Workspace-Social Media"]?.Delete === true;
+  const { canCreate, canEdit, canDelete } = useActionPermissions('/social');
 
   // Bypassed company integrations check since the API slices were missing from this project
   useEffect(() => {

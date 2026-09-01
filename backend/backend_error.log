@@ -1141,4 +1141,13 @@ Require stack:
     at new model (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:4969:15)
     at Function.create (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:2760:16)
     at E:\Office Projects\M1\tunepath\backend\src\modules\campaign-scheduled\campaignScheduled.routes.js:2289:32
-    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n\n
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n\n2026-09-01T07:56:32.275Z\nMongoServerError: E11000 duplicate key error collection: bcc.users index: email_1 dup key: { email: "rajesh@gmail.com" }
+    at InsertOneOperation.handleOk (E:\Office Projects\M1\tunepath\backend\node_modules\mongodb\lib\operations\insert.js:51:19)
+    at executeOperationWithRetries (E:\Office Projects\M1\tunepath\backend\node_modules\mongodb\lib\operations\execute_operation.js:194:34)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async executeOperation (E:\Office Projects\M1\tunepath\backend\node_modules\mongodb\lib\operations\execute_operation.js:83:16)
+    at async Collection.insertOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongodb\lib\collection.js:154:16)
+    at async model.$__save (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:434:16)
+    at async maybeTracedSave (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:675:7)
+    at async Function.create (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:2763:5)
+    at async exports.createUser (E:\Office Projects\M1\tunepath\backend\src\modules\auth\user.controller.js:257:18)\n\n

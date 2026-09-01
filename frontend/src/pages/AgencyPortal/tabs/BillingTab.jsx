@@ -198,7 +198,7 @@ const BillingTab = () => {
                 pagination={false} 
                 rowKey="id"
                 style={{ width: '100%' }}
-                className="custom-table"
+                
               />
             </SlabCard>
           </motion.div>

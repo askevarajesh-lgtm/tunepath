@@ -797,7 +797,7 @@
 }
 
 [data-theme='dark'] .campaign-scheduler-surface .ant-table-wrapper .ant-table-row:hover>td {
-  background: rgba(255, 255, 255, 0.03) !important;
+  background: #15223a !important;
 }
 
 [data-theme='dark'] .campaign-scheduler-actions .ant-btn-default {

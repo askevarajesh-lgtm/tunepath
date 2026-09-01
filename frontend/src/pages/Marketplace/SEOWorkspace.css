@@ -172,7 +172,11 @@
 }
 
 .seo-table .ant-table-tbody > tr:hover > td {
-  background: rgba(59, 130, 246, 0.02) !important;
+  background: #f5f8fc !important;
+}
+
+[data-theme='dark'] .seo-table .ant-table-tbody > tr:hover > td {
+  background: #15223a !important;
 }
 
 /* Custom Badges */

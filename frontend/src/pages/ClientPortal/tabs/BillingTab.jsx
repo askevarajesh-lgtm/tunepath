@@ -255,7 +255,7 @@ const BillingTab = () => {
             rowKey="id"
             rowClassName="billing-table-row"
             style={{ width: '100%' }}
-            className="custom-table"
+            
           />
         </BubbleCard>
       </motion.div>

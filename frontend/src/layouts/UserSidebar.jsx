@@ -37,9 +37,6 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   if (hasPerm('Clients-Accounts')) {
     clientsChildren.push({ key: '/user/clients', icon: getIcon(Users), label: 'Accounts' });
   }
-  if (hasPerm('Clients-SLA & Success')) {
-    clientsChildren.push({ key: '/user/sla', icon: getIcon(Activity), label: 'SLA & Success' });
-  }
 
   if (clientsChildren.length > 0) {
     menuItems.push({

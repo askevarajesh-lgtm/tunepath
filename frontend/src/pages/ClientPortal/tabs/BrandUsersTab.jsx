@@ -42,7 +42,7 @@ const BrandUsersTab = ({ user }) => {
       });
       const data = await res.json();
       if (data.success) {
-        setUsers(data.data);
+        setUsers(data.data.filter(u => u.role !== 'user'));
       }
     } catch (error) {
       console.error('Failed to fetch users', error);
@@ -71,7 +71,7 @@ const BrandUsersTab = ({ user }) => {
           phone: values.phone,
           countryCode: userCountryCode,
           password: values.password,
-          role: 'user',
+          role: 'brand_manager',
           features: values.features || []
         })
       });
@@ -194,13 +194,7 @@ const BrandUsersTab = ({ user }) => {
       
       return (
         <Space>
-          <Tooltip title="Login As">
-            <Button 
-              type="text" 
-              icon={<LogIn size={16} />} 
-              onClick={() => handleLoginAs(record._id)}
-            />
-          </Tooltip>
+
           <Tooltip title="Edit">
             <Button 
               type="text" 
@@ -248,7 +242,7 @@ const BrandUsersTab = ({ user }) => {
     <motion.div variants={containerVariants} initial="hidden" animate="visible" >
       <motion.div variants={itemVariants} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <div>
-          <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Users Management</Title>
+          <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Managers</Title>
           <Text type="secondary" style={{ fontSize: 14, fontWeight: 500 }}>Manage your brand's team members.</Text>
         </div>
         <Button 
@@ -268,7 +262,7 @@ const BrandUsersTab = ({ user }) => {
           loading={loading} 
           rowKey="_id" 
           pagination={false} 
-          className="custom-table"
+          
           style={{ background: 'var(--bg-secondary)', borderRadius: 16, border: '1px solid var(--border-color)', overflow: 'hidden' }}
         />
       </motion.div>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Typography, Tabs } from 'antd';
 import { motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
+import { User, Building, Users, Plug, Receipt, Package, Bell } from 'lucide-react';
 
 import AgencyTab from './tabs/AgencyTab';
 import IntegrationsTab from './tabs/IntegrationsTab';
@@ -24,7 +25,7 @@ const SettingsPage = () => {
   const location = useLocation();
 
   const hasFullCrmAccess = () => {
-    if (['commander_admin', 'agency_super_admin', 'agency_manager', 'brand_super_admin'].includes(role)) return true;
+    if (['commander_admin', 'agency_super_admin', 'agency_manager', 'brand_super_admin', 'brand_manager'].includes(role)) return true;
     
     // For agency client sub-users, check their features array
     if (role === 'user' && user?.brandId) {
@@ -94,19 +95,19 @@ const SettingsPage = () => {
   };
 
   const allTabs = [
-    { key: '9', label: <strong style={{ fontWeight: 600 }}>Profile</strong> },
-    { key: '1', label: <strong style={{ fontWeight: 600 }}>Agency</strong> },
-    { key: '7', label: <strong style={{ fontWeight: 600 }}>User Management</strong> },
-    { key: '2', label: <strong style={{ fontWeight: 600 }}>Integrations</strong> },
-    { key: '12', label: <strong style={{ fontWeight: 600 }}>Tax Settings</strong> },
+    { key: '9', label: <span><User size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Profile</span> },
+    { key: '1', label: <span><Building size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Agency</span> },
+    { key: '7', label: <span><Users size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />User Management</span> },
+    { key: '2', label: <span><Plug size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Integrations</span> },
+    { key: '12', label: <span><Receipt size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Tax Settings</span> },
     ...(['brand_super_admin', 'brand_manager'].includes(role) ? [] : [
-      { key: '8', label: <strong style={{ fontWeight: 600 }}>Agency Packages</strong> },
-      { key: '10', label: <strong style={{ fontWeight: 600 }}>Direct Brand Packages</strong> }
+      { key: '8', label: <span><Package size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Agency Packages</span> },
+      { key: '10', label: <span><Package size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Direct Brand Packages</span> }
     ]),
     ...(['commander_admin', 'brand_super_admin', 'brand_manager'].includes(role) ? [] : [
-      { key: '11', label: <strong style={{ fontWeight: 600 }}>Client Packages</strong> }
+      { key: '11', label: <span><Package size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Client Packages</span> }
     ]),
-    { key: '4', label: <strong style={{ fontWeight: 600 }}>Notifications</strong> }
+    { key: '4', label: <span><Bell size={16} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />Notifications</span> }
   ];
 
   let allowedKeys = [];
@@ -134,6 +135,7 @@ const SettingsPage = () => {
           onChange={setActiveTab} 
           style={{ marginBottom: 32 }} 
           size="large"
+          tabBarStyle={{ fontWeight: 600, color: 'var(--text-secondary)' }}
           items={tabItems}
         />
       </motion.div>

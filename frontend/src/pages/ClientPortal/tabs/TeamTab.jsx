@@ -117,7 +117,7 @@ const TeamTab = () => {
           style={{ borderRadius: 16, border: '1px solid var(--border-color)', overflow: 'hidden' }}
           bodyStyle={{ padding: 0 }}
         >
-          <Table columns={columns} dataSource={users} rowKey="_id" loading={loading} pagination={false} className="custom-table" />
+          <Table columns={columns} dataSource={users} rowKey="_id" loading={loading} pagination={false}  />
         </Card>
       </motion.div>
 

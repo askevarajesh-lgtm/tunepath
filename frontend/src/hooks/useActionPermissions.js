@@ -49,51 +49,49 @@ export function useActionPermissions(path) {
   if (path === '/performance') moduleName = 'HRMS-Performance';
 
   const hasPermission = useCallback((action) => {
-    // Agency Managers, Admins, Super Admins, and ALL Client users always have FULL access
-    if (ALWAYS_FULL_ACCESS_ROLES.includes(role) || user?.brandId) return true;
+    // Supreme and core super admins always get full access
+    if (['supreme_super_admin', 'superadmin', 'commander_admin', 'agency_super_admin', 'brand_super_admin'].includes(role)) {
+      return true;
+    }
 
     if (!action) return false;
     let actionKey = action.charAt(0).toUpperCase() + action.slice(1);
     
-    // Map specific action strings (e.g. 'create-task', 'edit-task') to standard permission keys
+    // Map specific action strings to standard permission keys
     const actionLower = action.toLowerCase();
     if (actionLower.includes('create') || actionLower === 'add') actionKey = 'Create';
     else if (actionLower.includes('edit') || actionLower.includes('assign') || actionLower.includes('complete') || actionLower.includes('validate') || actionLower.includes('reopen') || actionLower.includes('manage')) actionKey = 'Edit';
     else if (actionLower.includes('delete')) actionKey = 'Delete';
     else if (actionLower.includes('view') || actionLower.includes('read')) actionKey = 'View';
 
-    // Employee (user) role: controlled strictly by permissions object
-    if (EMPLOYEE_ROLES.includes(role)) {
-      if (!user || !user.permissions) return false;
+    const hasCustomPermissions = user && user.permissions && Object.keys(user.permissions).length > 0;
+
+    // If the user is assigned a custom role with permissions, STRICTLY ENFORCE IT
+    if (hasCustomPermissions) {
       const permissions = user.permissions[moduleName];
-      if (!permissions) return false;
+      if (!permissions) return false; // If module isn't in permissions, deny
       return !!permissions[actionKey];
     }
 
-    // Any other custom role: check the permissions object
-    if (!user || !user.permissions) return true;
-
-    const permissions = user.permissions[moduleName];
-    if (!permissions) {
-      const knownModules = [
-        'Workspace-Projects', 'Workspace-Task Management', 'Workspace-Proposals', 'Workspace-Invoices', 'Workspace-Master Item',
-        'Workspace-Strategy', 'Workspace-SEO / AEO / GEO', 'Workspace-Content', 'Workspace-AI Studio', 'Workspace-Social Media',
-        'Workspace-Performance Ads', 'Workspace-CRM & Leads', 'Workspace-Automation', 'Workspace-Websites',
-        'Workspace-Meetings', 'Workspace-Calendar', 'Workspace-Deliverables',
-        'Intelligence-Google Analytics', 'Intelligence-MOS Score', 'Intelligence-ChatGPT', 'Intelligence-Canva',
-        'Intelligence-AI Agent', 'Intelligence-Benchmarks', 'Intelligence-Reports', 'Intelligence-SEO Intelligence',
-        'HRMS-Daily Reports', 'HRMS-Performance', 'Workspace-SEO Panel'
-      ];
-      if (knownModules.includes(moduleName)) return false;
+    // Fallback for standard roles without custom permissions
+    if (['agency_manager', 'admin', 'brand_manager', 'agency_client', 'client'].includes(role)) {
       return true;
     }
 
-    return !!permissions[actionKey];
+    // Default for 'user' or 'brand_team_user' with NO custom permissions: deny write, allow read/view?
+    // We deny everything by default to be safe, unless it's a View action and they have no custom permissions?
+    // Actually, previously it just returned true for user?.brandId. Let's return true for backward compatibility for standard users without roles, but false for Employee-type roles.
+    if (['user'].includes(role)) {
+      return false; 
+    }
+
+    return true;
   }, [user, role, moduleName]);
 
   return {
     hasPermission,
     canAdd: hasPermission('create'),
+    canCreate: hasPermission('create'),
     canEdit: hasPermission('edit'),
     canDelete: hasPermission('delete'),
     canView: hasPermission('view')

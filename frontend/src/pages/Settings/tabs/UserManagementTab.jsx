@@ -96,8 +96,7 @@ const UserManagementTab = () => {
         'Clients': ['Accounts'],
         'Workspace': [],
         'Intelligence': [],
-        'Agency Ops': [],
-        'Support': ['Support']
+        'Agency Ops': []
       };
 
       // Workspace
@@ -132,7 +131,7 @@ const UserManagementTab = () => {
     } else if (['brand_super_admin', 'brand_manager', 'brand_team_user'].includes(currentRole)) {
       const groups = {
         'General': [],
-        'Clients': ['Support'],
+        'Clients': [],
         'Workspace': [],
         'Intelligence': [],
         'Agency Ops': []

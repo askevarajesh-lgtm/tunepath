@@ -864,8 +864,8 @@ const reconcileProjectTaskCounts = async (
       { entityId: project._id, entityType: 'Project' },
       {
         slaId: existingSla ? existingSla.slaId : `SLA-PRJ-${project._id.toString().substring(0, 8).toUpperCase()}`,
-        clientId: project.companyId,
-        agencyId: project.tenantCompanyId,
+        clientId: project.clientId,
+        agencyId: project.companyId,
         clientType: 'Direct User Client',
         triggerType: triggerType,
         entityId: project._id,

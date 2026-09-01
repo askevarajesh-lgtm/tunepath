@@ -277,7 +277,7 @@ const MyPerformanceTab = () => {
                 columns={columns} 
                 pagination={false} 
                 rowKey="page"
-                className="custom-table"
+                
                 style={{ width: '100%' }}
               />
             </BubbleCard>

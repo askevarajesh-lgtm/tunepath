@@ -132,8 +132,15 @@ const extractEmployeeCodeFromAttendance = (record) => {
 };
 
 const getTenantUserEmails = async (companyId) => {
-  // companyId might be null for super_admin; use it explicitly to prevent leaking cross-tenant emails.
-  const query = companyId ? { companyId } : { companyId: null };
+  if (!companyId) return null; // Return null to indicate no filtering (global)
+  const query = {
+    $or: [
+      { _id: companyId },
+      { agencyId: companyId },
+      { brandId: companyId },
+      { adminId: companyId },
+    ],
+  };
   const users = await User.find(query).select("email").lean();
   return new Set(
     users
@@ -144,6 +151,7 @@ const getTenantUserEmails = async (companyId) => {
 
 const filterStaffByTenantUsers = (staffArr, userEmailSet) => {
   if (!Array.isArray(staffArr)) return [];
+  if (userEmailSet === null) return staffArr; // Skip filtering if global
   if (!userEmailSet || userEmailSet.size === 0) return [];
 
   return staffArr.filter((s) => {

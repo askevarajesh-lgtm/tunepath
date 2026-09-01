@@ -1131,6 +1131,7 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
     );
   }
 
+
   // Dispatch system notification for task creation
   const { dispatchSystemNotification } = require('./notification.service');
   if (tenantCompanyId) {
@@ -2488,8 +2489,6 @@ const validateTask = async (
     task.validatedBy = validatedByUserId;
     task.validatedAt = new Date();
 
-    // Move to completed status
-    task.status = "completed";
     task.actualCompletionDate = new Date();
 
     // Notify watchers and admin when task is completed (with remarks as comment)
@@ -2499,6 +2498,10 @@ const validateTask = async (
       tenantCompanyId,
       remarks,
     );
+
+    // Mark SLA as Resolved to trigger Success metrics
+    await resolveSlaForTask(task);
+
 
     // Auto-resolve any linked correction
     await resolveRelatedCorrection(task._id, validatedByUserId);
@@ -2600,10 +2603,6 @@ const validateTask = async (
     task.validatedBy = validatedByUserId;
     task.validatedAt = new Date();
     task.reworkCount += 1;
-
-    // Reset to in_progress so user can rework
-    task.status = "in_progress";
-    task.validationStatus = "pending";
   }
 
   await task.save();
@@ -2646,10 +2645,14 @@ const clientApproveTask = async (taskId, approvedByUserId, tenantCompanyId) => {
 
   task.clientReviewStatus = "approved";
   task.requiresClientReview = true;
-  task.status = "completed";
+  task.status = "validated";
   task.actualCompletionDate = new Date();
   task.updatedBy = approvedByUserId || task.updatedBy;
   await task.save();
+
+  // Mark SLA as Resolved to trigger Success metrics
+  await resolveSlaForTask(task);
+
 
   if (task.projectId) {
     const {
@@ -3551,32 +3554,7 @@ const updateTaskStatusAndOrder = async (
     await notifyTaskCompleted(task, userId, tenantCompanyId, comment);
 
     // Mark SLA as Resolved to trigger Success metrics
-    try {
-      const SlaRecord = require('../sla/sla.model');
-      const existingSla = await SlaRecord.findOne({ entityId: task._id, entityType: 'Task' });
-      if (existingSla) {
-        existingSla.status = 'Resolved';
-        await existingSla.save();
-      } else {
-        await SlaRecord.create({
-          slaId: `SLA-TSK-${task._id.toString().substring(0, 8).toUpperCase()}`,
-          clientId: task.companyId,
-          agencyId: task.tenantCompanyId,
-          clientType: task.taskType === 'own_brand' ? 'Agency' : 'Direct User Client',
-          triggerType: 'Due Date',
-          entityId: task._id,
-          entityType: 'Task',
-          title: `Task: ${task.title}`,
-          description: `Task completed successfully.`,
-          dueDate: task.dueDate || new Date(),
-          priority: task.priority || 'Medium',
-          status: 'Resolved',
-          assignedTo: task.assignedTo
-        });
-      }
-    } catch (slaErr) {
-      console.error("[Task Service] Failed to sync SLA for task completion in Kanban:", slaErr);
-    }
+    await resolveSlaForTask(task);
 
     // Dispatch system notification for task completion
     const { dispatchSystemNotification } = require('./notification.service');
@@ -4747,7 +4725,7 @@ const notifyTaskCompleted = async (
 
   // ALWAYS notify admin users when task is completed
   const adminUsers = await User.find({
-    role: { $in: ["admin", "super_admin"] },
+    role: { $in: ["admin", "super_admin", "agency_manager", "agency_super_admin", "commander_admin"] },
     companyId: tenantCompanyId,
     isActive: true,
   }).select("_id name email role");
@@ -5497,6 +5475,19 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
     date: todayStart,
   };
 };
+
+async function resolveSlaForTask(task) {
+  try {
+    const SlaRecord = require('../sla/sla.model');
+    const existingSla = await SlaRecord.findOne({ entityId: task._id, entityType: 'Task' });
+    if (existingSla) {
+      existingSla.status = 'Resolved';
+      await existingSla.save();
+    }
+  } catch (slaErr) {
+    console.error("[Task Service] Failed to sync SLA for task completion:", slaErr);
+  }
+}
 
 module.exports = {
   getAllTasks,

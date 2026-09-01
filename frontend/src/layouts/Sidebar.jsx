@@ -218,7 +218,6 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
       children: [
 
         { key: '/ops/time', icon: getIcon(Calendar), label: 'Time Tracking' },
-        { key: '/ops/resources', icon: getIcon(Calendar), label: 'Resources' },
         ...(role === 'commander_admin' ? [] : [
           { key: '/ops/finance', icon: getIcon(CreditCard), label: 'Finance' },
           { key: '/ops/profitability', icon: getIcon(DollarSign), label: 'Profitability' },
@@ -301,4 +300,3 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
 };
 
 export default Sidebar;
-

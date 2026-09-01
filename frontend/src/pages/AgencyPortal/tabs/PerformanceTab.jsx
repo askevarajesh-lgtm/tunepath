@@ -210,7 +210,7 @@ const PerformanceTab = () => {
             pagination={false} 
             rowKey="code"
             style={{ width: '100%' }}
-            className="custom-table"
+            
           />
         </SlabCard>
       </motion.div>

@@ -158,7 +158,7 @@ const ReportsTab = () => {
             columns={columns} 
             dataSource={reports} 
             pagination={{ pageSize: 10 }} 
-            className="custom-table" 
+             
             rowKey="id"
           />
         </Card>

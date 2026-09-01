@@ -184,11 +184,11 @@ exports.signin = async (req, res, next) => {
       }
     }
 
-    if (user.brandId && user.brandId.features && user.brandId.features.length > 0) {
+    if (user.brandId && user.brandId.features && user.brandId.features.length > 0 && ['brand_super_admin', 'brand_manager'].includes(user.role)) {
       features = Array.from(new Set([...features, ...user.brandId.features]));
     }
 
-    if (user.brandId && user.brandId.integrations && user.brandId.integrations.length > 0) {
+    if (user.brandId && user.brandId.integrations && user.brandId.integrations.length > 0 && ['brand_super_admin', 'brand_manager'].includes(user.role)) {
       integrations = Array.from(new Set([...integrations, ...user.brandId.integrations]));
     }
 
@@ -239,7 +239,6 @@ exports.signin = async (req, res, next) => {
         contactEmail: user.contactEmail,
         domain: user.domain,
         industry: user.industry,
-        invoiceSignature: user.invoiceSignature,
         workspaceId: user.workspaceId,
         features: features,
         integrations: integrations,
@@ -325,11 +324,11 @@ exports.me = async (req, res, next) => {
       }
     }
 
-    if (user.brandId && user.brandId.features && user.brandId.features.length > 0) {
+    if (user.brandId && user.brandId.features && user.brandId.features.length > 0 && ['brand_super_admin', 'brand_manager'].includes(user.role)) {
       features = Array.from(new Set([...features, ...user.brandId.features]));
     }
 
-    if (user.brandId && user.brandId.integrations && user.brandId.integrations.length > 0) {
+    if (user.brandId && user.brandId.integrations && user.brandId.integrations.length > 0 && ['brand_super_admin', 'brand_manager'].includes(user.role)) {
       integrations = Array.from(new Set([...integrations, ...user.brandId.integrations]));
     }
 
@@ -357,7 +356,6 @@ exports.me = async (req, res, next) => {
         contactEmail: user.contactEmail || (user.brandId ? user.brandId.contactEmail : null),
         domain: user.domain || (user.brandId ? user.brandId.domain : null),
         industry: user.industry || (user.brandId ? user.brandId.industry : null),
-        invoiceSignature: user.invoiceSignature,
         workspaceId: user.workspaceId,
         features: features,
         agencyFeatures: agencyFeatures,
@@ -693,6 +691,14 @@ exports.impersonate = async (req, res, next) => {
     // Resolve features and integrations
     let features = targetUser.features || [];
     let integrations = targetUser.integrations || [];
+    
+    if (targetUser.brandId && targetUser.brandId.features && targetUser.brandId.features.length > 0 && ['brand_super_admin', 'brand_manager'].includes(targetUser.role)) {
+      features = Array.from(new Set([...features, ...targetUser.brandId.features]));
+    }
+    
+    if (targetUser.brandId && targetUser.brandId.integrations && targetUser.brandId.integrations.length > 0 && ['brand_super_admin', 'brand_manager'].includes(targetUser.role)) {
+      integrations = Array.from(new Set([...integrations, ...targetUser.brandId.integrations]));
+    }
     let effectiveLogo = targetUser.logo;
     let effectiveLogoDark = targetUser.logoDark;
     let planDetails = null;
@@ -735,7 +741,6 @@ exports.impersonate = async (req, res, next) => {
         logoDark: effectiveLogoDark,
         contactEmail: targetUser.contactEmail || (targetUser.brandId ? targetUser.brandId.contactEmail : null),
         domain: targetUser.domain || (targetUser.brandId ? targetUser.brandId.domain : null),
-        invoiceSignature: targetUser.invoiceSignature,
         features,
         integrations,
         permissions: rolePermissions,
@@ -746,4 +751,4 @@ exports.impersonate = async (req, res, next) => {
   } catch (error) {
     next(error);
   }
-};
+};

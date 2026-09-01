@@ -137,9 +137,20 @@ exports.getSlas = async (req, res, next) => {
         { clientId: userId }
       ];
     } else if (role === 'agency_manager' || role === 'agency') {
+      const tenantId = req.user.agencyId || userId;
+      const User = require('../auth/user.model');
+      const clients = await User.find({
+        $or: [
+          { agencyId: tenantId },
+          { adminId: tenantId },
+          { brandId: tenantId }
+        ]
+      }).select('_id');
+      const clientIds = clients.map(c => c._id);
+      
       query.$or = [
-        { agencyId: req.user.agencyId || userId },
-        { clientId: userId }
+        { agencyId: { $in: [tenantId, ...clientIds] } },
+        { clientId: { $in: [tenantId, ...clientIds] } }
       ];
     } else if (role === 'client' || role === 'agency_client' || role === 'brand_manager' || role === 'brand_super_admin') {
       query.clientId = req.user.brandId || userId;

@@ -105,7 +105,7 @@ const BrandAdminDashboardTab = () => {
           headStyle={{ borderBottom: '1px solid var(--border-color)', padding: '20px 24px' }}
           bodyStyle={{ padding: 0 }}
         >
-          <Table columns={columns} dataSource={users.slice(0, 5)} loading={loading} rowKey="_id" pagination={false} className="custom-table" />
+          <Table columns={columns} dataSource={users.slice(0, 5)} loading={loading} rowKey="_id" pagination={false}  />
         </Card>
       </motion.div>
     </motion.div>

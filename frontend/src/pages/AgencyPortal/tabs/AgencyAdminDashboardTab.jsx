@@ -194,7 +194,7 @@ const AgencyAdminDashboardTab = () => {
           headStyle={{ borderBottom: '1px solid var(--border-color)', padding: '20px 24px' }}
           bodyStyle={{ padding: 0 }}
         >
-          <Table columns={columns} dataSource={dashboardData.teamPerformance} pagination={false} className="custom-table" />
+          <Table columns={columns} dataSource={dashboardData.teamPerformance} pagination={false}  />
         </Card>
       </motion.div>
     </motion.div>

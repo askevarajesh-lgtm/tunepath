@@ -3,6 +3,7 @@ const SlaRecord = require('./sla.model');
 const Task = require('../tasks/task.model');
 const Invoice = require('../invoices/invoice.model');
 const Project = require('../projects/project.model');
+const { dispatchSystemNotification } = require('../tasks/notification.service');
 
 // Run every hour
 const startSlaScheduler = () => {
@@ -44,11 +45,15 @@ const startSlaScheduler = () => {
           status = 'At Risk';
         }
 
+        // Check existing status to determine if we should send a notification
+        const existingSla = await SlaRecord.findOne({ entityId: task._id, entityType: 'Task' });
+        const oldStatus = existingSla ? existingSla.status : 'Normal';
+
         // Upsert SLA Record
-        await SlaRecord.findOneAndUpdate(
+        const updatedSla = await SlaRecord.findOneAndUpdate(
           { entityId: task._id, entityType: 'Task' },
           {
-            slaId: `SLA-TSK-${task._id.toString().substring(0, 8).toUpperCase()}`,
+            slaId: existingSla ? existingSla.slaId : `SLA-TSK-${task._id.toString().substring(0, 8).toUpperCase()}`,
             clientId: task.companyId,
             agencyId: task.tenantCompanyId,
             clientType: task.taskType === 'own_brand' ? 'Agency' : 'Direct User Client',
@@ -64,6 +69,18 @@ const startSlaScheduler = () => {
           },
           { upsert: true, returnDocument: 'after' }
         );
+
+        // Dispatch notification if status escalated to At Risk or Breached
+        if (updatedSla && (status === 'At Risk' || status === 'Breached') && status !== oldStatus) {
+          await dispatchSystemNotification(
+            task.tenantCompanyId,
+            status === 'Breached' ? 'sla_breached' : 'sla_at_risk',
+            'SLA Trigger',
+            `SLA ${status}: ${updatedSla.title}`,
+            `The SLA for ${updatedSla.title} is now ${status}.`,
+            { slaId: updatedSla._id, entityId: task._id, entityType: 'Task' }
+          );
+        }
       }
 
       // 2. Check Due Dates for Projects
@@ -131,12 +148,16 @@ const startSlaScheduler = () => {
           }
         }
 
-        await SlaRecord.findOneAndUpdate(
+        // Check existing status to determine if we should send a notification
+        const existingSla = await SlaRecord.findOne({ entityId: project._id, entityType: 'Project' });
+        const oldStatus = existingSla ? existingSla.status : 'Normal';
+
+        const updatedSla = await SlaRecord.findOneAndUpdate(
           { entityId: project._id, entityType: 'Project' },
           {
-            slaId: `SLA-PRJ-${project._id.toString().substring(0, 8).toUpperCase()}`,
-            clientId: project.companyId,
-            agencyId: project.tenantCompanyId,
+            slaId: existingSla ? existingSla.slaId : `SLA-PRJ-${project._id.toString().substring(0, 8).toUpperCase()}`,
+            clientId: project.clientId,
+            agencyId: project.companyId,
             clientType: 'Direct User Client',
             triggerType: triggerType,
             entityId: project._id,
@@ -149,6 +170,18 @@ const startSlaScheduler = () => {
           },
           { upsert: true, returnDocument: 'after' }
         );
+
+        // Dispatch notification if status escalated to At Risk or Breached
+        if (updatedSla && (status === 'At Risk' || status === 'Breached') && status !== oldStatus) {
+          await dispatchSystemNotification(
+            project.companyId,
+            status === 'Breached' ? 'sla_breached' : 'sla_at_risk',
+            'SLA Trigger',
+            `SLA ${status}: ${updatedSla.title}`,
+            `The SLA for ${updatedSla.title} is now ${status}.`,
+            { slaId: updatedSla._id, entityId: project._id, entityType: 'Project' }
+          );
+        }
       }
 
       // 3. Check Payments for Invoices
