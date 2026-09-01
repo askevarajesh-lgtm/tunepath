@@ -115,6 +115,26 @@ const Meeting = MeetingAsset.discriminator('Meeting', new mongoose.Schema({
     type: String,
     default: null,
   },
+  notes: [{
+    content: { type: String, required: true },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    createdAt: { type: Date, default: Date.now }
+  }],
+  followUps: [{
+    taskId: { type: mongoose.Schema.Types.ObjectId, ref: 'Task' },
+    description: { type: String, required: true },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    dueDate: { type: Date, required: true },
+    status: { type: String, enum: ['pending', 'completed'], default: 'pending' },
+    createdAt: { type: Date, default: Date.now }
+  }],
+  attachments: [{
+    url: { type: String, required: true },
+    fileName: { type: String, required: true },
+    fileType: { type: String },
+    uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    createdAt: { type: Date, default: Date.now }
+  }]
 }), 'meeting');
 
 MeetingAssetSchema.index({ host: 1, status: 1 }, { sparse: true });

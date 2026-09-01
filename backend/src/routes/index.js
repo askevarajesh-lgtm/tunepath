@@ -68,6 +68,7 @@ const expenseRoutes = require('../modules/expenses/expense.routes');
 const transactionRoutes = require('../modules/transactions/transaction.routes');
 const salesRoutes = require('../modules/sales/sales.routes');
 const plAnalyticsRoutes = require('../modules/pl-analytics/pl.routes');
+const campaignExpensesRoutes = require('../modules/campaigns/campaign.routes');
 
 // Mount routes
 router.use('/health', healthRoutes);
@@ -145,6 +146,7 @@ router.use('/expenses', expenseRoutes);
 router.use('/transactions', transactionRoutes);
 router.use('/sales', salesRoutes);
 router.use('/pl-analytics', plAnalyticsRoutes);
+router.use('/campaign-expenses', campaignExpensesRoutes);
 
 // Meetings Mount
 router.use('/meetings', require('../modules/meetings/meeting.routes'));

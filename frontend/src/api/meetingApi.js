@@ -81,7 +81,7 @@ export const useUpdateMeetingMutation = createMutationHook('put')((arg) => {
   const { id, ...rest } = arg;
   return { url: `/meetings/${id}`, body: rest };
 });
-export const useDeleteMeetingMutation = createMutationHook('delete')((id) => `/meetings/${id}`);
+export const useDeleteMeetingMutation = createMutationHook('delete')((id) => ({ url: `/meetings/${id}`, body: {} }));
 export const useUpdateMeetingStatusMutation = createMutationHook('put')(({ id, status }) => ({
   url: `/meetings/${id}/status`,
   body: { status }

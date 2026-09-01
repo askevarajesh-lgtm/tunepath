@@ -445,6 +445,7 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
   const [websiteName, setWebsiteName] = useState(activeWebsite.name || "");
   const [description, setDescription] = useState(activeWebsite.description || "");
   const [status, setStatus] = useState(activeWebsite.status || "Draft");
+  const [faviconUrl, setFaviconUrl] = useState(activeWebsite.faviconUrl || "");
   const [fontFamily, setFontFamily] = useState(activeWebsite.theme?.fontFamily || "Inter");
   const [primaryColor, setPrimaryColor] = useState(activeWebsite.theme?.primaryColor || "var(--accent-primary)");
   const [syncingTheme, setSyncingTheme] = useState(false);
@@ -458,6 +459,9 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
   const [headCodeInput, setHeadCodeInput] = useState("");
   const [bodyCodeInput, setBodyCodeInput] = useState("");
   const [savingScript, setSavingScript] = useState(false);
+  const [isConnectDomainModalOpen, setIsConnectDomainModalOpen] = useState(false);
+  const [customDomain, setCustomDomain] = useState("");
+  const [connectingDomain, setConnectingDomain] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -634,6 +638,85 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
   };
 
 
+  const [uploadingFavicon, setUploadingFavicon] = useState(false);
+  const handleFaviconUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    if (file.size > 1024 * 1024) {
+      message.error("File size must be less than 1MB");
+      return;
+    }
+
+    setUploadingFavicon(true);
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch('/api/media/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: formData
+      });
+      const data = await res.json();
+      const uploadedUrl = data.url || (data.data && data.data.url);
+      if (data.success && uploadedUrl) {
+        setFaviconUrl(uploadedUrl);
+        message.success("Favicon uploaded successfully");
+      } else {
+        message.error(data.error || "Failed to upload favicon");
+      }
+    } catch (error) {
+      console.error(error);
+      message.error("Error uploading favicon");
+    } finally {
+      setUploadingFavicon(false);
+    }
+  };
+
+  const handleConnectDomain = async () => {
+    if (!customDomain) {
+      message.error("Please enter a domain");
+      return;
+    }
+    
+    if (customDomain.includes("tunepath.askeva.io") || customDomain.includes("m1.workforce.themilabs.com")) {
+      message.error("That hostname is reserved for this application.");
+      return;
+    }
+
+    try {
+      setConnectingDomain(true);
+      const res = await fetch("/api/domains", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem("token")}`
+        },
+        body: JSON.stringify({
+          customDomain,
+          propertyType: "Website",
+          property: activeWebsite._id || activeWebsite.key
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        message.success("Domain connected! Please go to Domains tab to verify DNS.");
+        setIsConnectDomainModalOpen(false);
+        setCustomDomain("");
+      } else {
+        message.error(data.error || "Failed to connect domain");
+      }
+    } catch (error) {
+      message.error("Error connecting domain");
+    } finally {
+      setConnectingDomain(false);
+    }
+  };
+
   const handleSaveSettings = async () => {
     try {
       const token = localStorage.getItem("token");
@@ -643,12 +726,13 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
           "Content-Type": "application/json",
           "Authorization": token ? `Bearer ${token}` : ""
         },
-        body: JSON.stringify({ name: websiteName, description, status, pages, theme: { fontFamily, primaryColor } })
+        body: JSON.stringify({ name: websiteName, description, status, faviconUrl, pages, theme: { fontFamily, primaryColor } })
       });
       const data = await res.json();
       if (data.success) {
         message.success("Changes saved successfully!");
         activeWebsite.theme = { fontFamily, primaryColor };
+        activeWebsite.faviconUrl = faviconUrl;
         // Update local activeWebsite to reflect new saved pages (backend returns updated pages)
         if (data.data && data.data.pages) {
            setPages(data.data.pages);
@@ -808,14 +892,21 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
 
                 <div style={{ marginBottom: 24 }}>
                   <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text-tertiary)", letterSpacing: 0.5, marginBottom: 8 }}>FAVICON URL</div>
-                  <Input size="large" placeholder="https://example.com/favicon.png" style={{ borderRadius: 8 }} disabled={!canEdit} />
+                  <Input size="large" placeholder="https://example.com/favicon.png" style={{ borderRadius: 8 }} disabled={!canEdit} value={faviconUrl} onChange={e => setFaviconUrl(e.target.value)} />
                 </div>
 
                 {canEdit && (
                   <div style={{ marginBottom: 32 }}>
                     <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text-tertiary)", letterSpacing: 0.5, marginBottom: 8 }}>UPLOAD FAVICON</div>
                     <div style={{ border: "1px dashed var(--border-color)", borderRadius: 12, padding: "16px", textAlign: 'center', background: "var(--bg-primary)" }}>
-                      <Button size="middle" style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)", color: "var(--text-primary)", fontWeight: 600, marginBottom: 8 }}>Choose File</Button>
+                      <input 
+                        type="file" 
+                        accept="image/png, image/jpeg, image/x-icon, image/svg+xml" 
+                        style={{ display: 'none' }} 
+                        id="favicon-upload" 
+                        onChange={handleFaviconUpload}
+                      />
+                      <Button size="middle" loading={uploadingFavicon} onClick={() => document.getElementById('favicon-upload').click()} style={{ background: "var(--bg-secondary)", border: "1px solid var(--border-color)", color: "var(--text-primary)", fontWeight: 600, marginBottom: 8 }}>Choose File</Button>
                       <div style={{ fontSize: 12, color: "var(--text-tertiary)", fontWeight: 500 }}>Max 1MB. Recommended 32x32px.</div>
                     </div>
                   </div>
@@ -957,7 +1048,7 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
                   Connect a domain so visitors reach this property without /shop/ or /p/ paths.
                 </div>
                 {canEdit && (
-                  <Button size="large" type="primary" block style={{ background: "var(--accent-primary)", border: "none", borderRadius: 12, fontWeight: 700, height: 48 }}>
+                  <Button size="large" type="primary" block onClick={() => setIsConnectDomainModalOpen(true)} style={{ background: "var(--accent-primary)", border: "none", borderRadius: 12, fontWeight: 700, height: 48 }}>
                     Connect Domain
                   </Button>
                 )}
@@ -1023,7 +1114,7 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
                         const displayedPages = pages.slice((pagesCurrentPage - 1) * pagesPageSize, pagesCurrentPage * pagesPageSize);
                         return displayedPages.map((page, index) => (
                           <div key={page._id || page.key || index} style={{ borderBottom: index < displayedPages.length - 1 ? "1px solid var(--border-color)" : "none", paddingBottom: 24, marginBottom: 24 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 16 }}>
                               <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                                 <div style={{ width: 48, height: 48, borderRadius: 12, background: page.isHome ? 'rgba(59, 130, 246, 0.1)' : 'var(--bg-primary)', border: page.isHome ? 'none' : '1px solid var(--border-color)', color: page.isHome ? 'var(--accent-primary)' : 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                   <FileText size={24} />
@@ -1036,62 +1127,60 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
                                   <div style={{ color: "var(--text-tertiary)", fontSize: 13, fontWeight: 500 }}>{page.path}</div>
                                 </div>
                               </div>
-                              <Select
-                                size="large"
-                                value={page.status || "Draft"}
-                                onChange={(val) => {
-                                  setPages(pages.map(p => (p._id === page._id || p.key === page._id) ? { ...p, status: val } : p));
-                                }}
-                                style={{ width: 120 }}
-                                disabled={!canEdit}
-                              >
-                                <Option value="Draft">Draft</Option>
-                                <Option value="Published">Published</Option>
-                              </Select>
-                            </div>
-                            <div style={{ display: 'flex', gap: 12, paddingLeft: hideText ? 16 : 64, flexWrap: 'wrap' }}>
-                              {canEdit && (
-                                <Tooltip title={hideText ? "Edit in Builder" : ""}>
-                                  <Button type="primary" style={{ background: "var(--accent-primary)", border: "none", borderRadius: 8, fontWeight: 700, padding: hideText ? "0 12px" : "0 20px" }} icon={<PenTool size={14} />} onClick={() => {
-                                    const match = location.pathname.match(/^(.*?\/website)(?=\/|$)/);
-                                    const basePath = match ? match[0] : '/workspace/website';
-                                    navigate(`${basePath}/${activeWebsite.key}/pages/${page._id}/edit`);
-                                  }}>{!hideText && "Edit in Builder"}</Button>
+                              <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                                {canEdit && (
+                                  <Tooltip title="Edit in Builder">
+                                    <Button type="primary" style={{ background: "var(--accent-primary)", border: "none", borderRadius: 12, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }} icon={<PenTool size={18} />} onClick={() => {
+                                      const match = location.pathname.match(/^(.*?\/website)(?=\/|$)/);
+                                      const basePath = match ? match[0] : '/workspace/website';
+                                      navigate(`${basePath}/${activeWebsite.key}/pages/${page._id}/edit`);
+                                    }} />
+                                  </Tooltip>
+                                )}
+                                <Tooltip title="Preview">
+                                  <Button style={{ background: "var(--bg-primary)", borderColor: "var(--border-color)", color: 'var(--text-primary)', borderRadius: 12, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }} icon={<Monitor size={18} />} onClick={() => window.open(`/preview/website/${activeWebsite.key}/page/${page._id || page.key}`, '_blank')} />
                                 </Tooltip>
-                              )}
-                              <Tooltip title={hideText ? "Preview" : ""}>
-                                <Button style={{ background: "var(--bg-primary)", borderColor: "var(--border-color)", color: 'var(--text-primary)', borderRadius: 8, fontWeight: 600, padding: hideText ? "0 12px" : "0 20px" }} icon={<Monitor size={14} />} onClick={() => window.open(`/preview/website/${activeWebsite.key}/page/${page._id || page.key}`, '_blank')}>{!hideText && "Preview"}</Button>
-                              </Tooltip>
-                              {canEdit && (
-                                <Tooltip title={hideText ? "AI Edit" : ""}>
-                                  <Button 
-                                    style={{ background: "rgba(13, 148, 136, 0.1)", borderColor: "transparent", color: 'var(--accent-secondary)', borderRadius: 8, fontWeight: 700, padding: hideText ? "0 12px" : "0 20px" }} 
-                                    icon={<Sparkles size={14} />} 
-                                    onClick={() => {
-                                      setAiEditContextPage(page);
-                                      setAiEditPrompt("");
-                                      setIsAiEditModalOpen(true);
-                                    }}
-                                  >
-                                    {!hideText && "AI Edit"}
-                                  </Button>
-                                </Tooltip>
-                              )}
-                              {canAdd && (
-                                <Tooltip title={hideText ? "Duplicate" : ""}>
-                                  <Button style={{ background: "var(--bg-primary)", borderColor: "var(--border-color)", color: 'var(--text-primary)', borderRadius: 8, fontWeight: 600, padding: hideText ? "0 12px" : "0 20px" }} icon={<Copy size={14} />} onClick={() => handleDuplicatePage(page._id)}>{!hideText && "Duplicate"}</Button>
-                                </Tooltip>
-                              )}
-                              {canEdit && (
-                                <Tooltip title={hideText ? "Script" : ""}>
-                                  <Button style={{ background: "var(--bg-primary)", borderColor: "var(--border-color)", color: 'var(--text-primary)', borderRadius: 8, fontWeight: 600, padding: hideText ? "0 12px" : "0 20px" }} icon={<Code2 size={14} />} onClick={() => handleOpenScriptModal(page)}>{!hideText && "Script"}</Button>
-                                </Tooltip>
-                              )}
-                              {(canDelete && !page.isHome) && (
-                                <Tooltip title={hideText ? "Delete" : ""}>
-                                  <Button danger style={{ background: "rgba(239, 68, 68, 0.1)", border: "none", color: "var(--accent-danger)", borderRadius: 8, fontWeight: 700, padding: hideText ? "0 12px" : "0 20px" }} icon={<Trash2 size={14} />} onClick={() => handleDeletePage(page._id)}>{!hideText && "Delete"}</Button>
-                                </Tooltip>
-                              )}
+                                {canEdit && (
+                                  <Tooltip title="AI Edit">
+                                    <Button 
+                                      style={{ background: "rgba(13, 148, 136, 0.1)", borderColor: "transparent", color: 'var(--accent-secondary)', borderRadius: 12, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }} 
+                                      icon={<Sparkles size={18} />} 
+                                      onClick={() => {
+                                        setAiEditContextPage(page);
+                                        setAiEditPrompt("");
+                                        setIsAiEditModalOpen(true);
+                                      }}
+                                    />
+                                  </Tooltip>
+                                )}
+                                {canAdd && (
+                                  <Tooltip title="Duplicate">
+                                    <Button style={{ background: "var(--bg-primary)", borderColor: "var(--border-color)", color: 'var(--text-primary)', borderRadius: 12, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }} icon={<Copy size={18} />} onClick={() => handleDuplicatePage(page._id)} />
+                                  </Tooltip>
+                                )}
+                                {canEdit && (
+                                  <Tooltip title="Script">
+                                    <Button style={{ background: "var(--bg-primary)", borderColor: "var(--border-color)", color: 'var(--text-primary)', borderRadius: 12, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }} icon={<Code2 size={18} />} onClick={() => handleOpenScriptModal(page)} />
+                                  </Tooltip>
+                                )}
+                                {(canDelete && !page.isHome) && (
+                                  <Tooltip title="Delete">
+                                    <Button danger style={{ background: "rgba(239, 68, 68, 0.1)", border: "none", color: "var(--accent-danger)", borderRadius: 12, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center' }} icon={<Trash2 size={18} />} onClick={() => handleDeletePage(page._id)} />
+                                  </Tooltip>
+                                )}
+                                <Select
+                                  size="large"
+                                  value={page.status || "Draft"}
+                                  onChange={(val) => {
+                                    setPages(pages.map(p => (p._id === page._id || p.key === page._id) ? { ...p, status: val } : p));
+                                  }}
+                                  style={{ width: 120 }}
+                                  disabled={!canEdit}
+                                >
+                                  <Option value="Draft">Draft</Option>
+                                  <Option value="Published">Published</Option>
+                                </Select>
+                              </div>
                             </div>
                           </div>
                         ));
@@ -1160,46 +1249,40 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
                                     <div style={{ display: 'flex', gap: 8 }}>
                                       {canEdit && (
                                         <>
-                                          <Tooltip title={hideText ? "Edit in Builder" : ""}>
+                                          <Tooltip title="Edit in Builder">
                                             <Button
                                               size="small"
                                               type="primary"
-                                              icon={<PenTool size={12} />}
-                                              style={{ background: "var(--accent-primary)", border: "none", borderRadius: 6, fontWeight: 700, padding: hideText ? "0 8px" : undefined }}
+                                              icon={<PenTool size={16} />}
+                                              style={{ background: "var(--accent-primary)", border: "none", borderRadius: 8, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}
                                               onClick={() => {
                                                 const match = location.pathname.match(/^(.*?\/website)(?=\/|$)/);
                                                 const basePath = match ? match[0] : '/workspace/website';
                                                 navigate(`${basePath}/${activeWebsite.key}/blogs/${blog._id}/posts/${post._id}/edit`);
                                               }}
-                                            >
-                                              {!hideText && "Edit in Builder"}
-                                            </Button>
+                                            />
                                           </Tooltip>
-                                          <Tooltip title={hideText ? "AI Edit" : ""}>
+                                          <Tooltip title="✨ AI Edit">
                                             <Button
                                               size="small"
                                               type="primary"
-                                              icon={<Sparkles size={12} />}
-                                              style={{ background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', border: "none", borderRadius: 6, fontWeight: 700, padding: hideText ? "0 8px" : undefined }}
+                                              icon={<Sparkles size={16} />}
+                                              style={{ background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)', border: "none", borderRadius: 8, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}
                                               onClick={() => {
                                                 setBlogAiEditTarget({ blogId: blog._id, postId: post._id });
                                                 setIsBlogAiEditModalOpen(true);
                                               }}
-                                            >
-                                              {!hideText && "✨ AI Edit"}
-                                            </Button>
+                                            />
                                           </Tooltip>
                                         </>
                                       )}
-                                      <Tooltip title={hideText ? "Preview" : ""}>
+                                      <Tooltip title="Preview">
                                         <Button
                                           size="small"
-                                          icon={<Monitor size={12} />}
-                                          style={{ background: "var(--bg-secondary)", borderColor: "var(--border-color)", color: 'var(--text-primary)', borderRadius: 6, fontWeight: 600, padding: hideText ? "0 8px" : undefined }}
+                                          icon={<Monitor size={16} />}
+                                          style={{ background: "var(--bg-secondary)", borderColor: "var(--border-color)", color: 'var(--text-primary)', borderRadius: 8, width: 36, height: 36, display: "flex", alignItems: "center", justifyContent: "center" }}
                                           onClick={() => window.open(`/preview/website/${activeWebsite.key}/blog-post/${post._id}`, '_blank')}
-                                        >
-                                          {!hideText && "Preview"}
-                                        </Button>
+                                        />
                                       </Tooltip>
                                     </div>
                                   </div>
@@ -1322,6 +1405,44 @@ const ManageWebsiteView = ({ activeWebsite, setView, itemVariants, role }) => {
           <Button size="large" disabled={isAiEditing} onClick={() => setIsAiEditModalOpen(false)} style={{ borderRadius: 8, fontWeight: 700, borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>Cancel</Button>
           <Button size="large" type="primary" loading={isAiEditing} disabled={!aiEditPrompt.trim()} onClick={handleAiEdit} style={{ background: "var(--accent-secondary)", border: "none", borderRadius: 8, fontWeight: 800 }}>
             {isAiEditing ? "Generating Changes..." : "Apply Changes"}
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={isConnectDomainModalOpen}
+        onCancel={() => { if (!connectingDomain) setIsConnectDomainModalOpen(false); }}
+        footer={null}
+        width={480}
+        title={
+          <div style={{ fontSize: 20, fontWeight: 900, color: 'var(--text-primary)' }}>
+            Connect Custom Domain
+          </div>
+        }
+        className="glassmorphism-modal"
+        closable={!connectingDomain}
+        maskClosable={!connectingDomain}
+      >
+        <div style={{ color: "var(--text-secondary)", fontSize: 13, marginBottom: 24, fontWeight: 500 }}>
+          Enter the custom domain you want to connect to this website. You will need to configure DNS settings afterward.
+        </div>
+        
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: "var(--text-tertiary)", letterSpacing: 0.5, marginBottom: 8 }}>CUSTOM DOMAIN</div>
+          <Input 
+            size="large" 
+            placeholder="e.g. www.mywebsite.com" 
+            value={customDomain} 
+            onChange={(e) => setCustomDomain(e.target.value.toLowerCase())} 
+            style={{ borderRadius: 8 }}
+            disabled={connectingDomain}
+          />
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+          <Button size="large" disabled={connectingDomain} onClick={() => setIsConnectDomainModalOpen(false)} style={{ borderRadius: 8, fontWeight: 700, borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>Cancel</Button>
+          <Button size="large" type="primary" loading={connectingDomain} onClick={handleConnectDomain} style={{ background: "var(--accent-primary)", border: "none", borderRadius: 8, fontWeight: 800 }}>
+            Connect
           </Button>
         </div>
       </Modal>

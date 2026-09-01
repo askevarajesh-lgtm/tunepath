@@ -16,7 +16,7 @@ function buildTenantUserFilter(tenantObjectId) {
 
 /** Roles that are considered trackable employees */
 const EMPLOYEE_ROLES = [
-  'user', 'brand_team_user', 'agency_manager', 'agency_super_admin',
+  'user', 'brand_team_user',
   'coordinator', 'digital_marketing_manager', 'digital_marketing_coordinator', 'website_coordinator'
 ];
 
@@ -533,8 +533,10 @@ exports.getTeamTaskPerformance = async (req, res) => {
       ...timeSpentAgg.map(p => p._id.toString())
     ])];
 
-    const users = await User.find({ _id: { $in: allUserIds } })
-      .select('name role departmentId departmentName').lean();
+    const users = await User.find({ 
+      _id: { $in: allUserIds },
+      role: { $in: EMPLOYEE_ROLES }
+    }).select('name role departmentId departmentName').lean();
 
     // Fetch departments for label mapping
     const departments = await Department.find({ agencyId: tenantObjectId }).select('_id name').lean();

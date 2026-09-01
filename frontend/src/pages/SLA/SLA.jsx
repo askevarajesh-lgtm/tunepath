@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Download, Settings, Search, AlertCircle, Target, CheckCircle, AlertOctagon, AlertTriangle, MessageSquare, ArrowUpRight } from 'lucide-react';
 import { slaTrendData } from '../../data/mock'; // keep mock for the trend chart as we don't have historical data yet
 import { slaApi } from '../../api/slaApi';
+import { exportToCSV } from '../../utils/exportUtils';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -142,6 +143,31 @@ const SLA = () => {
   const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.1 } } };
   const itemVariants = { hidden: { y: 20, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } } };
 
+  const handleExport = () => {
+    if (!slas || slas.length === 0) {
+      message.warning("No data to export");
+      return;
+    }
+
+    const exportColumns = [
+      { title: "SLA ID", getValue: (r) => r.slaId },
+      { 
+        title: "Client", 
+        getValue: (r) => {
+          const entity = r.clientId || r.agencyId;
+          return entity?.companyName || entity?.name || 'Unknown';
+        }
+      },
+      { title: "Trigger Type", dataIndex: "triggerType" },
+      { title: "Due Date", getValue: (r) => new Date(r.dueDate).toLocaleDateString() },
+      { title: "Priority", dataIndex: "priority" },
+      { title: "Status", dataIndex: "status" },
+      { title: "Description", dataIndex: "description" }
+    ];
+
+    exportToCSV(slas, exportColumns, `SLA_Report_${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
   const columns = [
     { 
       title: 'SLA ID', 
@@ -209,7 +235,7 @@ const SLA = () => {
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
 
-          <Button icon={<Download size={16} />} style={{ borderRadius: 8, borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-secondary)' }}>Export Report</Button>
+          <Button icon={<Download size={16} />} onClick={handleExport} style={{ borderRadius: 8, borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-secondary)' }}>Export Report</Button>
         </div>
       </motion.div>
 

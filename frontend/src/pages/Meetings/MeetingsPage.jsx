@@ -831,10 +831,10 @@ const MeetingsPage = () => {
           {isClientRole ? (
             <Form.Item
               name="participants"
-              label="Agency Manager"
-              rules={[{ required: true, message: 'Please select an Agency Manager' }]}
+              label="Agency Manager / Agency Admin"
+              rules={[{ required: true, message: 'Please select at least one Agency Manager or Agency Admin' }]}
             >
-              <Select placeholder="Select Agency Manager">
+              <Select mode="multiple" placeholder="Select Agency Manager / Agency Admin">
                 {users.filter(u => u.role === 'agency_manager' || u.role === 'agency_super_admin').map(u => (
                   <Option key={u._id} value={u._id}>{u.name} ({u.role})</Option>
                 ))}
@@ -1095,7 +1095,7 @@ const MeetingsPage = () => {
                       </Col>
                     </Row>
                     
-                    {!editingFollowUpId && (
+                    {/* {!editingFollowUpId && (
                       <Form.Item>
                         <Checkbox 
                           checked={followUpCreateTask} 
@@ -1104,7 +1104,7 @@ const MeetingsPage = () => {
                           Auto-generate and link with Task Management module (assigned user gets notified)
                         </Checkbox>
                       </Form.Item>
-                    )}
+                    )} */}
 
                     <Space>
                       <Button 

@@ -1150,4 +1150,35 @@ Require stack:
     at async model.$__save (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:434:16)
     at async maybeTracedSave (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:675:7)
     at async Function.create (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:2763:5)
-    at async exports.createUser (E:\Office Projects\M1\tunepath\backend\src\modules\auth\user.controller.js:257:18)\n\n
+    at async exports.createUser (E:\Office Projects\M1\tunepath\backend\src\modules\auth\user.controller.js:257:18)\n\n2026-09-01T12:39:31.144Z\nSyntaxError: Unexpected token '"', ""6a96c5b2b"... is not valid JSON
+    at JSON.parse (<anonymous>)
+    at createStrictSyntaxError (E:\Office Projects\M1\tunepath\backend\node_modules\body-parser\lib\types\json.js:137:10)
+    at parse (E:\Office Projects\M1\tunepath\backend\node_modules\body-parser\lib\types\json.js:86:15)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\body-parser\lib\read.js:162:18
+    at AsyncResource.runInAsyncScope (node:async_hooks:211:14)
+    at invokeCallback (E:\Office Projects\M1\tunepath\backend\node_modules\raw-body\index.js:238:16)
+    at done (E:\Office Projects\M1\tunepath\backend\node_modules\raw-body\index.js:227:7)
+    at IncomingMessage.onEnd (E:\Office Projects\M1\tunepath\backend\node_modules\raw-body\index.js:287:7)
+    at IncomingMessage.emit (node:events:524:28)
+    at endReadableNT (node:internal/streams/readable:1698:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)\n\n2026-09-01T12:39:38.015Z\nSyntaxError: Unexpected token '"', ""6a96c5a7b"... is not valid JSON
+    at JSON.parse (<anonymous>)
+    at createStrictSyntaxError (E:\Office Projects\M1\tunepath\backend\node_modules\body-parser\lib\types\json.js:137:10)
+    at parse (E:\Office Projects\M1\tunepath\backend\node_modules\body-parser\lib\types\json.js:86:15)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\body-parser\lib\read.js:162:18
+    at AsyncResource.runInAsyncScope (node:async_hooks:211:14)
+    at invokeCallback (E:\Office Projects\M1\tunepath\backend\node_modules\raw-body\index.js:238:16)
+    at done (E:\Office Projects\M1\tunepath\backend\node_modules\raw-body\index.js:227:7)
+    at IncomingMessage.onEnd (E:\Office Projects\M1\tunepath\backend\node_modules\raw-body\index.js:287:7)
+    at IncomingMessage.emit (node:events:524:28)
+    at endReadableNT (node:internal/streams/readable:1698:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:90:21)\n\nDEBUG WORKFLOW ERROR:\nTypeError: next is not a function
+    at model.<anonymous> (E:\Office Projects\M1\tunepath\backend\src\modules\tasks\workflowConfig.model.js:99:3)
+    at Kareem.execPre (E:\Office Projects\M1\tunepath\backend\node_modules\kareem\index.js:59:39)
+    at model._execDocumentPreHooks (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:3204:29)
+    at model.$__save (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:403:16)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async maybeTracedSave (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:675:7)
+    at async Function.create (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:2763:5)
+    at async Object.createOrUpdateWorkflowConfig (E:\Office Projects\M1\tunepath\backend\src\modules\tasks\task.service.js:5048:10)
+    at async createOrUpdateWorkflowConfig (E:\Office Projects\M1\tunepath\backend\src\modules\tasks\task.controller.js:427:20)\n

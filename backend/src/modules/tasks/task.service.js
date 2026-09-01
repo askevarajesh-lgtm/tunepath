@@ -1849,7 +1849,7 @@ const updateTask = async (
         const diffMs = now - task.workStartedAt;
         const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
         task.workDurationMinutes = (task.workDurationMinutes || 0) + diffMinutes;
-        await recordTimerStop(task, diffMinutes, userId);
+        await recordTimerStop(task, diffMinutes, updatedByUserId);
         task.workStartedAt = null;
         logger.info(
           `Timing (updateTask): Added ${diffMinutes}m to task ${task._id}. New total: ${task.workDurationMinutes}m`,
@@ -2392,6 +2392,19 @@ const submitTask = async (
   // Only allow submission if task is in progress
   if (task.status !== "in_progress") {
     throw new Error(`Task cannot be submitted. Current status: ${task.status}`);
+  }
+
+  // ── [CUMULATIVE TIMING LOGIC] ──────────────────────────────────────────────
+  if (task.workStartedAt) {
+    const now = new Date();
+    const diffMs = now - task.workStartedAt;
+    const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+    task.workDurationMinutes = (task.workDurationMinutes || 0) + diffMinutes;
+    await recordTimerStop(task, diffMinutes, submittedByUserId || task.assignedTo);
+    task.workStartedAt = null;
+    logger.info(
+      `Timing (submitTask): Added ${diffMinutes}m to task ${task._id}. New total: ${task.workDurationMinutes}m`,
+    );
   }
 
   task.status = "submitted";
@@ -3390,11 +3403,9 @@ const updateTaskStatusAndOrder = async (
   if (wasCompletedStatus && finalStatus === "in_progress") {
     task.workStartedAt = new Date();
     task.workCompletedAt = null;
-    task.workDurationMinutes = null;
   } else if (wasCompletedStatus && (finalStatus === "assigned" || finalStatus === "to_do" || finalStatus === "backlog")) {
     task.workStartedAt = null;
     task.workCompletedAt = null;
-    task.workDurationMinutes = null;
   }
 
   // If moving FROM in_progress TO something else -> Add elapsed time to total

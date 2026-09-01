@@ -196,9 +196,9 @@ const getMeetingById = async (meetingId, companyId, userRole, userId) => {
   }
 
   // Preserve prior response shape: notes newest-first, attachments/followUps as embedded
-  const notes = [...meeting.notes].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  const followUps = meeting.followUps;
-  const attachments = meeting.attachments;
+  const notes = [...(meeting.notes || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const followUps = meeting.followUps || [];
+  const attachments = meeting.attachments || [];
 
   return {
     meeting,

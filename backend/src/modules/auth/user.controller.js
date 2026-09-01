@@ -74,9 +74,17 @@ exports.getUsersDropdown = async (req, res, next) => {
       queryFilter.adminId = req.user._id;
       queryFilter.agencyId = null;
       queryFilter.brandId = null;
-    } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
-      queryFilter.brandId = req.user.brandId || (req.user.role === 'agency_client' ? req.user._id : null);
-      if (req.user.role === 'brand_manager' || req.user.role === 'agency_client' || req.user.role === 'user') {
+    } else if (req.user.role === 'agency_client') {
+      const clientBrandId = req.user.brandId || req.user._id;
+      const clientAgencyId = req.companyId || req.user.agencyId;
+      queryFilter.$or = [
+        { brandId: clientBrandId, role: { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'brand_super_admin'] } },
+        { _id: clientBrandId, role: 'agency_client' },
+        { agencyId: clientAgencyId, role: { $in: ['agency_super_admin', 'agency_manager'] } }
+      ];
+    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
+      queryFilter.brandId = req.user.brandId;
+      if (req.user.role === 'brand_manager' || req.user.role === 'user') {
         queryFilter.role = { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'brand_super_admin'] };
       } else {
         queryFilter.role = { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin'] };
@@ -91,6 +99,16 @@ exports.getUsersDropdown = async (req, res, next) => {
         queryFilter.brandId = null;
       }
       queryFilter.role = { $nin: ['supreme_super_admin', 'commander_admin'] };
+    }
+
+    // Preserve requested role filter safely
+    if (req.query.role) {
+      if (queryFilter.role) {
+        queryFilter = { $and: [{ ...queryFilter }, { role: req.query.role }] };
+        delete queryFilter.role; // Remove the top level role since it's now in $and
+      } else {
+        queryFilter.role = req.query.role;
+      }
     }
 
     const users = await User.find(queryFilter).select('name email role').sort({ name: 1 });

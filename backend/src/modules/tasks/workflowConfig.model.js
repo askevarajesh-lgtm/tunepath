@@ -88,7 +88,7 @@ const workflowConfigSchema = new mongoose.Schema(
 );
 
 // Pre-save hook to ensure projectType is always slugified
-workflowConfigSchema.pre("save", function (next) {
+workflowConfigSchema.pre("save", function () {
   if (this.projectType && typeof this.projectType === "string") {
     this.projectType = this.projectType
       .trim()
@@ -96,7 +96,6 @@ workflowConfigSchema.pre("save", function (next) {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
   }
-  next();
 });
 
 // Indexes
