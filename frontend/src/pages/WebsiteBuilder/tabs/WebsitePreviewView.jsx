@@ -219,11 +219,11 @@ const WebsitePreviewView = () => {
       try {
         const token = localStorage.getItem("token");
         const headers = { Authorization: token ? `Bearer ${token}` : "" };
-        const res = await fetch(`/api/websites/${websiteId}`, { headers });
+        const res = await fetch(`/api/websites/${websiteId}/public`, { headers });
         const data = await res.json();
         if (data.success && data.data && data.data.pages) {
           const page = data.data.pages.find(
-            (p) => p._id === pageId || p.key === pageId,
+            (p) => p._id === pageId || p.key === pageId || (pageId === 'home' && p.isHome) || p.path === `/${pageId}` || p.path === pageId
           );
           setPageData(page);
 

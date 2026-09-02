@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import JSZip from "jszip";
-import { Modal, Input, Button, Typography, Space, Row, Col, Card, Tag, message, Spin } from "antd";
-import { Globe, X as CloseIcon, Search as SearchIcon, CheckCircle, Upload as UploadIcon } from "lucide-react";
+import { Modal, Input, Button, Typography, Space, Row, Col, Card, Tag, message, Spin, Popconfirm } from "antd";
+import { Globe, X as CloseIcon, Search as SearchIcon, CheckCircle, Upload as UploadIcon, Trash2 } from "lucide-react";
 
 const { Title, Text } = Typography;
 
@@ -143,6 +143,28 @@ const WebsiteTemplateLibraryModal = ({ open, onCancel, onCreate, initialWebsiteN
       setSelectedTemplate(null);
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleDeleteTemplate = async (e, id) => {
+    e.stopPropagation();
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`/api/templates/${id}`, {
+        method: 'DELETE',
+        headers: { "Authorization": token ? `Bearer ${token}` : "" }
+      });
+      const data = await res.json();
+      if (data.success) {
+        message.success("Template deleted successfully");
+        if (selectedTemplate === id) setSelectedTemplate(null);
+        await fetchTemplates();
+      } else {
+        message.error(data.error || "Failed to delete template");
+      }
+    } catch (error) {
+      console.error(error);
+      message.error("An error occurred while deleting the template");
     }
   };
 
@@ -342,11 +364,30 @@ const WebsiteTemplateLibraryModal = ({ open, onCancel, onCreate, initialWebsiteN
                           <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text-primary)" }}>{template.name}</div>
                           <div style={{ color: "var(--text-secondary)", fontSize: 12, fontWeight: 500 }}>{template.category}</div>
                         </div>
-                        {isSelected && (
-                          <div style={{ color: "var(--accent-info)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center" }}>
-                            <CheckCircle size={16} style={{ marginRight: 6 }} /> SELECTED
-                          </div>
-                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          {template.canDelete && (
+                            <Popconfirm
+                              title="Delete template"
+                              description="Are you sure to delete this template?"
+                              onConfirm={(e) => handleDeleteTemplate(e, template._id)}
+                              onCancel={(e) => e.stopPropagation()}
+                              okText="Yes"
+                              cancelText="No"
+                            >
+                              <Button
+                                type="text"
+                                icon={<Trash2 size={16} />}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ color: "var(--accent-error)", padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                              />
+                            </Popconfirm>
+                          )}
+                          {isSelected && (
+                            <div style={{ color: "var(--accent-info)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center" }}>
+                              <CheckCircle size={16} style={{ marginRight: 6 }} /> SELECTED
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </Card>
                   </Col>

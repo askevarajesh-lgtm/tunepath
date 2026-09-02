@@ -30,7 +30,7 @@ const createQueryHook = (endpointFn) => {
       refetch();
     }, [refetch]);
 
-    return { data, isLoading, error, refetch };
+    return { data, isLoading, error, refetch, isFetching: isLoading };
   };
 };
 
@@ -74,7 +74,10 @@ const createMutationHook = (endpointFn) => {
   };
 };
 
-export const useGetIntegrationsQuery = createQueryHook(() => "/integrations");
+export const useGetIntegrationsQuery = createQueryHook((params) => ({
+  url: "/integrations",
+  params,
+}));
 export const useCreateIntegrationMutation = createMutationHook((data) => ({ url: "/integrations", method: "POST", body: data }));
 export const useUpdateIntegrationMutation = createMutationHook(({ id, ...data }) => ({ url: `/integrations/${id}`, method: "PUT", body: data }));
 export const useSendMessageMutation = createMutationHook(({ id, ...data }) => ({ url: `/integrations/${id}/send`, method: "POST", body: data }));
@@ -155,3 +158,8 @@ export const useUpsertEventConfigMutation = createMutationHook((data) => ({ url:
 export const useTestEmailConnectionMutation = createMutationHook((data) => ({ url: `/integrations/email/test-connection`, method: "POST", body: data }));
 export const useSendTestEmailMutation = createMutationHook((data) => ({ url: `/integrations/email/test-send`, method: "POST", body: data }));
 export const useConnectFacebookManualPageMutation = createMutationHook((data) => ({ url: "/facebook/integrations/manual-page", method: "POST", body: data }));
+
+export const useGetCanvaStatusQuery = createQueryHook(() => `/auth/canva/status`);
+export const useConnectCanvaMutation = createMutationHook(() => ({ url: `/auth/canva/auth`, method: "GET" }));
+export const useDisconnectCanvaMutation = createMutationHook(() => ({ url: `/auth/canva/disconnect`, method: "DELETE" }));
+export const useGetCanvaDesignsQuery = createQueryHook((params) => ({ url: `/auth/canva/designs`, params }));

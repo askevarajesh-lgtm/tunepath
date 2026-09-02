@@ -1863,7 +1863,7 @@ const ClientChatGPTPage = () => {
   useEffect(() => {
     settingsForm.setFieldsValue({
       isEnabled: aiSettings.isEnabled ?? true,
-      model: aiSettings.model || "gpt-4o-mini",
+      model: ['gpt-4o-mini', 'gpt-4o'].includes(aiSettings.model) ? aiSettings.model : 'gpt-4o-mini',
       apiKey: "",
     });
   }, [aiSettings, settingsForm]);
@@ -2351,8 +2351,10 @@ const ClientChatGPTPage = () => {
             </div>
 
             <div className="cgpt-topbar-right">
-              {aiSettings.model ? (
-                <Tag className="cgpt-key-tag">{aiSettings.model}</Tag>
+              {aiSettings ? (
+                <Tag className="cgpt-key-tag">
+                  {['gpt-4o-mini', 'gpt-4o'].includes(aiSettings.model) ? aiSettings.model : 'gpt-4o-mini'}
+                </Tag>
               ) : null}
               {aiSettings.hasCustomKey ? (
                 <Tag className="cgpt-key-tag">Custom API key</Tag>
@@ -2531,7 +2533,7 @@ const ClientChatGPTPage = () => {
           setShouldClearCustomKey(false);
           settingsForm.setFieldsValue({
             isEnabled: aiSettings.isEnabled ?? true,
-            model: aiSettings.model || "gpt-4o-mini",
+            model: ['gpt-4o-mini', 'gpt-4o'].includes(aiSettings.model) ? aiSettings.model : 'gpt-4o-mini',
             apiKey: "",
           });
           setIsSettingsOpen(false);
@@ -2568,7 +2570,7 @@ const ClientChatGPTPage = () => {
             label="OpenAI model"
             rules={[{ required: true, message: "Please choose a model" }]}
           >
-            <Select showSearch options={AI_MODEL_OPTIONS} optionFilterProp="label" />
+            <Select options={AI_MODEL_OPTIONS} />
           </Form.Item>
 
           <div

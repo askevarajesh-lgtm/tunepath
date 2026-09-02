@@ -10,4 +10,7 @@ router.get('/', authMiddleware, templateController.getTemplates);
 // Upload a new template zip
 router.post('/upload', authMiddleware, zipUpload.single('file'), templateController.uploadTemplate);
 
+// Delete a template
+router.delete('/:id', authMiddleware, templateController.deleteTemplate);
+
 module.exports = router;

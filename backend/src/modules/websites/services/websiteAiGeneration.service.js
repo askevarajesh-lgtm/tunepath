@@ -143,28 +143,13 @@ EXPECTED JSON STRUCTURE:
       "html": "...",
       "css": "..."
     },
-    {
-      "title": "About",
-      "slug": "about",
-      "isHome": false,
-      "metaTitle": "...",
-      "metaDescription": "...",
-      "html": "...",
-      "css": "..."
-    },
-    {
-      "title": "Contact",
-      "slug": "contact",
-      "isHome": false,
-      "metaTitle": "...",
-      "metaDescription": "...",
-      "html": "...",
-      "css": "..."
-    }
   ]
 }
 
-Ensure you generate at least Home, About, and Contact pages. Make them look cohesive and professional.`;
+IMPORTANT:
+- Keep the HTML and CSS extremely concise to prevent truncation.
+- Only generate the Home page unless the business brief explicitly demands multiple pages.
+- Avoid repetitive CSS rules. You are constrained by strict token limits. Do not exceed 8000 tokens.`;
 
 async function generateWebsite({ workspaceId, user, name, industry, businessBrief, tone }) {
   const { client, model } = await getClaudeClient(workspaceId, user);
@@ -190,6 +175,7 @@ Remember to return ONLY valid JSON.`;
       model,
       messages,
       max_tokens: 16000,
+      timeout: 300000, // 5 minutes
       response_format: { type: 'json_object' }
     });
 
@@ -215,10 +201,11 @@ Remember to return ONLY valid JSON.`;
   let websiteData = null;
   const parseJson = (text) => {
     let cleanText = text.trim();
-    if (cleanText.startsWith('\`\`\`json')) cleanText = cleanText.substring(7);
-    if (cleanText.startsWith('\`\`\`')) cleanText = cleanText.substring(3);
-    if (cleanText.endsWith('\`\`\`')) cleanText = cleanText.substring(0, cleanText.length - 3);
-    cleanText = cleanText.trim();
+    const firstBrace = cleanText.indexOf('{');
+    const lastBrace = cleanText.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+      cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+    }
     return JSON.parse(cleanText);
   };
 
@@ -233,6 +220,7 @@ Remember to return ONLY valid JSON.`;
   try {
     websiteData = parseJson(responseText);
   } catch (e) {
+    require('fs').writeFileSync('ai_raw_response.txt', responseText);
     console.error("=== AI WEBSITE JSON PARSE ERROR ===");
     console.error("error:", e.message);
     console.error("response_length:", responseText?.length);
@@ -246,6 +234,7 @@ Remember to return ONLY valid JSON.`;
       if (!responseText || typeof responseText !== "string") throw new Error("Invalid response format on retry");
       websiteData = parseJson(responseText);
     } catch (retryError) {
+      require('fs').appendFileSync('ai_raw_response.txt', '\n\nRETRY:\n' + responseText);
       console.error("AI WEBSITE JSON PARSE ERROR (RETRY):", retryError.message);
       throw new Error('Claude returned invalid JSON structure. Please try again.');
     }
@@ -257,8 +246,8 @@ Remember to return ONLY valid JSON.`;
   }
 
   const hasHome = websiteData.pages.some(p => p.slug === 'home' || p.isHome);
-  if (!hasHome || websiteData.pages.length < 3) {
-    throw new Error('Claude did not generate the minimum required pages (Home, About, Contact). Please try again.');
+  if (!hasHome) {
+    throw new Error('Claude did not generate the minimum required Home page. Please try again.');
   }
 
   console.log(

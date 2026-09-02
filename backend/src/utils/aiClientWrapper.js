@@ -56,6 +56,8 @@ class AiClientWrapper {
             let msg;
             const fallbackModels = [
               anthropicParams.model,
+              'claude-sonnet-5',
+              'claude-opus-5',
               'claude-3-5-sonnet-latest',
               'claude-3-5-sonnet-20241022',
               'claude-3-5-sonnet-20240620',

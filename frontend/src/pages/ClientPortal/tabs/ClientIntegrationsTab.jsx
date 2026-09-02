@@ -341,7 +341,8 @@ const SUPPORTED_INTEGRATIONS = ['whatsapp', 'sms', 'email', 'website', 'payment'
 
 const ClientIntegrationsTab = ({ user }) => {
   const [selectedConfig, setSelectedConfig] = useState(null);
-  const { data, refetch, isLoading } = useGetIntegrationsQuery();
+  const activeClientId = user?.activeClientId || user?.clientId || user?._id;
+  const { data, refetch, isLoading } = useGetIntegrationsQuery({ clientId: activeClientId }, { skip: !activeClientId });
   const [updateIntegration] = useUpdateIntegrationMutation();
 
   const integrations = data?.data?.integrations || [];
@@ -398,12 +399,12 @@ const ClientIntegrationsTab = ({ user }) => {
     const id = integration?._id || 'new';
     
     switch (selectedConfig) {
-      case 'whatsapp': return <WhatsAppConfigPage integrationId={id} onBack={() => { setSelectedConfig(null); refetch(); }} />;
-      case 'sms': return <SmsConfigPage integrationId={id} onBack={() => { setSelectedConfig(null); refetch(); }} />;
-      case 'email': return <EmailConfigPage integrationId={id} onBack={() => { setSelectedConfig(null); refetch(); }} />;
-      case 'website': return <WebsiteConfigPage integrationId={id} onBack={() => { setSelectedConfig(null); refetch(); }} />;
-      case 'payment': return <PaymentConfigPage integrationId={id} onBack={() => { setSelectedConfig(null); refetch(); }} />;
-      case 'ekta': return <EktaHrInlineConfigPage onBack={() => { setSelectedConfig(null); refetch(); }} />;
+      case 'whatsapp': return <WhatsAppConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
+      case 'sms': return <SmsConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
+      case 'email': return <EmailConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
+      case 'website': return <WebsiteConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
+      case 'payment': return <PaymentConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
+      case 'ekta': return <EktaHrInlineConfigPage clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
       default: return null;
     }
   };

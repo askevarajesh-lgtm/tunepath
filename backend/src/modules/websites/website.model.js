@@ -4,7 +4,8 @@ const WebsiteSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
   name: { type: String, required: true, trim: true },
   description: { type: String, trim: true, default: "" },
-  status: { type: String, enum: ['Draft', 'Published'], default: 'Draft', required: true },
+  status: { type: String, enum: ['Draft', 'Published', 'Creating', 'Failed'], default: 'Draft', required: true },
+  failReason: { type: String, default: null },
   faviconUrl: { type: String, default: "" },
   trackingPixels: {
     metaPixelId: { type: String, default: "" },

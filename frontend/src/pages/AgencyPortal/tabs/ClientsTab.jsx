@@ -1039,7 +1039,7 @@ const ClientsTab = () => {
               loading={loading}
               style={{ background: 'var(--accent-primary)', fontWeight: 700, borderRadius: 8, height: 44, padding: '0 24px' }}
             >
-              Provision Workspace
+              Save
             </Button>
           </div>
         </Form>

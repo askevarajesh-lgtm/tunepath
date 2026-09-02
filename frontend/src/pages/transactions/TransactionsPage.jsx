@@ -105,14 +105,17 @@ const TransactionsPage = () => {
       skip: activeTab !== "payments",
     },
   );
-  const { data: domainPurchasesData, isLoading: isLoadingDomainPurchases } =
-    useGetAllDomainPurchasesQuery(
-      {
-        ...queryParams,
-        ...(selectedClientId ? { companyId: selectedClientId } : {}),
-      },
-      { skip: activeTab !== "domain-purchases" },
-    );
+  const {
+    data: domainPurchasesData,
+    isLoading: isLoadingDomainPurchases,
+    refetch: refetchDomainPurchases,
+  } = useGetAllDomainPurchasesQuery(
+    {
+      ...queryParams,
+      ...(selectedClientId ? { companyId: selectedClientId } : {}),
+    },
+    { skip: activeTab !== "domain-purchases" },
+  );
 
   const handleItemNameFilterChange = useCallback(
     (value) => {
@@ -735,7 +738,9 @@ const TransactionsPage = () => {
         }}
         domainPurchaseId={selectedDomainPurchaseId}
         onSuccess={() => {
-          // Refresh will happen automatically via RTK Query cache invalidation
+          if (refetchDomainPurchases) {
+            refetchDomainPurchases();
+          }
         }}
       />
     </div>

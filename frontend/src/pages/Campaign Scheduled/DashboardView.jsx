@@ -50,7 +50,7 @@ const { Title, Text } = Typography;
 
 const COLORS = ["#6366f1", "#10b981", "#f43f5e", "#f59e0b", "#8b5cf6", "#06b6d4"];
 
-export default function DashboardView({ posts, accounts, activeClientId }) {
+export default function DashboardView({ posts, accounts, activeClientId, refreshTrigger }) {
   const { isDark } = useTheme();
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState(null);
@@ -70,7 +70,7 @@ export default function DashboardView({ posts, accounts, activeClientId }) {
     };
 
     fetchAnalytics();
-  }, [activeClientId]);
+  }, [activeClientId, refreshTrigger]);
 
   const platformIcons = {
     facebook: <FacebookOutlined style={{ color: "#1877F2" }} />,

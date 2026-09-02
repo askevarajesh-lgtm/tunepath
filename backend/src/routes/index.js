@@ -69,10 +69,14 @@ const transactionRoutes = require('../modules/transactions/transaction.routes');
 const salesRoutes = require('../modules/sales/sales.routes');
 const plAnalyticsRoutes = require('../modules/pl-analytics/pl.routes');
 const campaignExpensesRoutes = require('../modules/campaigns/campaign.routes');
+const domainPurchaseRoutes = require('../modules/domain-purchases/domainPurchase.routes');
+const canvaRoutes = require('../modules/canva/canva.routes');
 
 // Mount routes
+router.use('/', domainPurchaseRoutes);
 router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
+router.use('/auth/canva', canvaRoutes);
 router.use('/agencies', agencyRoutes);
 router.use('/brands', brandRoutes);
 

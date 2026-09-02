@@ -296,7 +296,8 @@ exports.getAuditStatus = async (req, res) => {
       jobId: job._id,
       progress: job.progress,
       startedAt: job.startedAt,
-      completedAt: job.completedAt
+      completedAt: job.completedAt,
+      error: job.error
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

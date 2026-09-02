@@ -1546,6 +1546,8 @@ const WebsitesTab = ({ itemVariants, initialAction, onActionComplete }) => {
           key: w._id,
           name: w.name,
           description: w.description,
+          status: w.status,
+          failReason: w.failReason,
           lastUpdated: new Date(w.updatedAt).toLocaleDateString(),
           pages: w.pagesCount || 1,
           blogs: w.blogsCount || 0,
@@ -1592,6 +1594,16 @@ const WebsitesTab = ({ itemVariants, initialAction, onActionComplete }) => {
   useEffect(() => {
     fetchWebsites();
   }, [view]);
+
+  useEffect(() => {
+    let interval;
+    if (websites.some(w => w.status === 'Creating')) {
+      interval = setInterval(() => {
+        fetchWebsites();
+      }, 15000);
+    }
+    return () => clearInterval(interval);
+  }, [websites]);
 
   const handleDeleteWebsite = async (id, isWordpress = false) => {
     try {
@@ -1642,8 +1654,6 @@ const WebsitesTab = ({ itemVariants, initialAction, onActionComplete }) => {
   const handleCreateWebsite = async (data) => {
     if (data.type === "blank" || data.type === "template" || data.type === "ai") {
       try {
-        if (data.type === "ai") setIsGeneratingAi(true);
-
         const token = localStorage.getItem("token");
         const res = await fetch("/api/websites", {
           method: "POST",
@@ -1661,8 +1671,6 @@ const WebsitesTab = ({ itemVariants, initialAction, onActionComplete }) => {
           })
         });
         const resData = await res.json();
-        
-        if (data.type === "ai") setIsGeneratingAi(false);
 
         if (resData.success) {
           if (resData.warning) {
@@ -1672,6 +1680,7 @@ const WebsitesTab = ({ itemVariants, initialAction, onActionComplete }) => {
             key: resData.data._id,
             name: resData.data.name,
             description: resData.data.description,
+            status: resData.data.status,
             lastUpdated: "Just now",
             pages: resData.data.pages ? resData.data.pages.length : 1,
             isNew: true
@@ -1679,9 +1688,14 @@ const WebsitesTab = ({ itemVariants, initialAction, onActionComplete }) => {
           setWebsites([newWebsite, ...websites]);
           setIsModalOpen(false);
           setIsTemplateModalOpen(false);
-          // Navigate to the new website to load it properly
-          const basePath = location.pathname.substring(0, location.pathname.indexOf('/websites') + 9);
-          navigate(`${basePath}/${newWebsite.key}`);
+          
+          if (data.type === "ai") {
+            message.success("Website is being generated in the background. Please wait.");
+          } else {
+            // Navigate to the new website to load it properly
+            const basePath = location.pathname.substring(0, location.pathname.indexOf('/websites') + 9);
+            navigate(`${basePath}/${newWebsite.key}`);
+          }
         } else {
            message.error(resData.error || "Failed to create website");
         }
@@ -1749,6 +1763,12 @@ const WebsitesTab = ({ itemVariants, initialAction, onActionComplete }) => {
       render: (t, r) => (
         <div>
           <span style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 15 }}>{t}</span>
+          {r.status === 'Creating' && <Tag style={{ marginLeft: 8, background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent-primary)', border: 'none', fontWeight: 700, borderRadius: 12 }}>Generating...</Tag>}
+          {r.status === 'Failed' && (
+            <Tooltip title={r.failReason || "An unknown error occurred during generation"} color="red">
+              <Tag style={{ marginLeft: 8, background: 'rgba(239, 68, 68, 0.1)', color: 'var(--accent-danger)', border: 'none', fontWeight: 700, borderRadius: 12, cursor: 'help' }}>Failed</Tag>
+            </Tooltip>
+          )}
           {r.description && <div style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 4, fontWeight: 500 }}>{r.description}</div>}
         </div>
       )
@@ -1791,6 +1811,7 @@ const WebsitesTab = ({ itemVariants, initialAction, onActionComplete }) => {
             icon: <Edit2 size={16} />,
             label: 'Manage',
             onClick: handleManage,
+            disabled: r.status === 'Creating',
             style: { fontWeight: 600, color: 'var(--text-primary)', padding: '8px 12px' }
           },
           ...(r.isWordpress || !canAdd ? [] : [
@@ -1799,6 +1820,7 @@ const WebsitesTab = ({ itemVariants, initialAction, onActionComplete }) => {
               icon: <Copy size={16} />,
               label: 'Clone',
               onClick: () => handleCloneWebsite(r.key),
+              disabled: r.status === 'Creating',
               style: { fontWeight: 600, color: 'var(--text-primary)', padding: '8px 12px' }
             }
           ]),

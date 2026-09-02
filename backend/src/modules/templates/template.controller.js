@@ -19,11 +19,31 @@ exports.getTemplates = async (req, res, next) => {
       }
     }
 
-    const templates = await Template.find(query).sort({ createdAt: -1 });
+    const templates = await Template.find(query).sort({ createdAt: -1 }).lean();
+
+    const mappedTemplates = templates.map(t => {
+      let canDelete = false;
+      if (req.user) {
+        if (req.user.role === 'commander_admin') {
+          canDelete = true;
+        } else {
+          const isClientSideUpload = !!t.brandId;
+          const isAgencySideUpload = !!t.agencyId && !t.brandId;
+          const currentIsClientSide = req.isClientRole;
+          
+          if (isClientSideUpload && currentIsClientSide && t.brandId.toString() === (req.user.brandId?.toString() || req.user._id?.toString())) {
+            canDelete = true;
+          } else if (isAgencySideUpload && !currentIsClientSide && t.agencyId?.toString() === (req.user.agencyId?.toString() || req.user._id?.toString())) {
+            canDelete = true;
+          }
+        }
+      }
+      return { ...t, canDelete };
+    });
 
     // Group by category to help frontend UI easily
     const categories = {};
-    templates.forEach(t => {
+    mappedTemplates.forEach(t => {
       const cat = t.category || 'Uncategorized';
       if (!categories[cat]) {
         categories[cat] = [];
@@ -39,7 +59,7 @@ exports.getTemplates = async (req, res, next) => {
     res.json({
       success: true,
       data: {
-        templates,
+        templates: mappedTemplates,
         categories: categoryList
       }
     });
@@ -81,6 +101,52 @@ exports.uploadTemplate = async (req, res, next) => {
       success: true,
       data: savedTemplate,
       message: 'Template uploaded successfully'
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+exports.deleteTemplate = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const template = await Template.findById(id);
+
+    if (!template) {
+      return res.status(404).json({ success: false, error: 'Template not found' });
+    }
+
+    if (req.user.role !== 'commander_admin') {
+      const isClientSideUpload = !!template.brandId;
+      const isAgencySideUpload = !!template.agencyId && !template.brandId;
+      
+      const currentIsClientSide = req.isClientRole;
+      
+      if (isClientSideUpload) {
+        if (!currentIsClientSide) {
+           return res.status(403).json({ success: false, error: 'This template was uploaded by a client and can only be deleted from the client portal' });
+        }
+        if (template.brandId.toString() !== (req.user.brandId?.toString() || req.user._id?.toString())) {
+           return res.status(403).json({ success: false, error: 'You do not have permission to delete this template' });
+        }
+      } else if (isAgencySideUpload) {
+        if (currentIsClientSide) {
+           return res.status(403).json({ success: false, error: 'This template was uploaded by the agency and can only be deleted from the agency portal' });
+        }
+        if (template.agencyId.toString() !== (req.user.agencyId?.toString() || req.user._id?.toString())) {
+           return res.status(403).json({ success: false, error: 'You do not have permission to delete this template' });
+        }
+      } else {
+         return res.status(403).json({ success: false, error: 'You do not have permission to delete this template' });
+      }
+    }
+
+    template.isDeleted = true;
+    await template.save();
+
+    res.json({
+      success: true,
+      message: 'Template deleted successfully'
     });
   } catch (err) {
     next(err);

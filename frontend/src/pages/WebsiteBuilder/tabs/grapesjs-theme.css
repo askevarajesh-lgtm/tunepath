@@ -178,15 +178,43 @@
 
 /* Inputs & Selects inside Style Manager */
 .gjs-field {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+.gjs-sm-property:not(.gjs-sm-stack) .gjs-field,
+.gjs-sm-layer .gjs-field {
   background-color: #ffffff !important;
   border: 1px solid #cbd5e1 !important;
   border-radius: 6px !important;
-  box-shadow: none !important;
 }
 .gjs-field input, .gjs-field select {
   color: #334155 !important;
   font-family: var(--gjs-font-family) !important;
   font-size: 12px !important;
+  background-color: transparent !important;
+}
+
+/* Stack Properties (Box Shadow, Background) */
+.gjs-sm-stack #gjs-sm-add {
+  color: var(--gjs-font-color-active) !important;
+  fill: var(--gjs-font-color-active) !important;
+  opacity: 1 !important;
+  cursor: pointer !important;
+  position: absolute !important;
+  right: 16px !important;
+  top: 12px !important;
+  z-index: 10 !important;
+}
+.gjs-sm-stack .gjs-sm-layers {
+  margin-top: 10px !important;
+  background-color: transparent !important;
+}
+.gjs-sm-stack .gjs-sm-layer {
+  background-color: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 6px !important;
+  margin-bottom: 8px !important;
+  padding: 10px !important;
 }
 
 /* 6. Buttons & Toolbar Icons */

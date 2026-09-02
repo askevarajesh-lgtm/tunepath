@@ -41,7 +41,7 @@ import FacebookLeadsTab from "./FacebookLeadsTab";
 
 const { Title, Text, Paragraph } = Typography;
 
-const WebsiteConfigPage = ({ integrationId: propId, initialTab, onBack }) => {
+const WebsiteConfigPage = ({ integrationId: propId, initialTab, onBack, clientId }) => {
   const navigate = useNavigate();
   const { id: paramId } = useParams();
   const id = propId || paramId;
@@ -51,7 +51,7 @@ const WebsiteConfigPage = ({ integrationId: propId, initialTab, onBack }) => {
     data: integrationsData,
     refetch: refetchIntegrations,
     isLoading: isIntegrationsLoading,
-  } = useGetIntegrationsQuery();
+  } = useGetIntegrationsQuery(clientId ? { clientId } : undefined, { skip: isNew && !clientId });
   const [updateIntegration] = useUpdateIntegrationMutation();
   const [createIntegration] = useCreateIntegrationMutation();
   const [fetchWhatsAppLeads, { isLoading: isFetchingLeads }] =
@@ -140,6 +140,10 @@ const WebsiteConfigPage = ({ integrationId: propId, initialTab, onBack }) => {
           customFields: values.customFields || [],
         },
       };
+
+      if (clientId) {
+        configData.companyId = clientId;
+      }
 
       if (websiteIntegration) {
         await updateIntegration({

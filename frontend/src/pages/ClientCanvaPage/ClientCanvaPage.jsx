@@ -12,6 +12,7 @@ import {
   Spin,
   Typography,
   message,
+  Tag,
 } from "antd";
 import {
   AppstoreOutlined,
@@ -36,25 +37,17 @@ import {
   VideoCameraFilled,
 } from "@ant-design/icons";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import {
+  useConnectCanvaMutation,
+  useDisconnectCanvaMutation,
+  useGetCanvaStatusQuery,
+  useGetCanvaDesignsQuery
+} from "../../api/integrationApi";
+
 // Mocking APIs that don't exist in the current project structure yet
-const useConnectCanvaMutation = () => [
-  () => ({
-    unwrap: async () => ({ authUrl: window.location.pathname + '?canva_connected=true' })
-  }), 
-  { isLoading: false }
-];
 const useCreateCanvaDesignMutation = () => [
   () => ({
     unwrap: async () => ({ design: { canvaDesignId: 'mock-' + Date.now(), title: 'New Mock Design' } })
-  }), 
-  { isLoading: false }
-];
-const useDisconnectCanvaMutation = () => [
-  () => ({
-    unwrap: async () => {
-      window.location.assign(window.location.pathname);
-      return { success: true };
-    }
   }), 
   { isLoading: false }
 ];
@@ -64,15 +57,10 @@ const useExportCanvaDesignMutation = () => [
   }), 
   { isLoading: false }
 ];
-const useGetCanvaDesignsQuery = () => ({ data: { designs: [] }, isLoading: false });
-const useGetCanvaStatusQuery = () => {
-  const isConnected = new URLSearchParams(window.location.search).get('canva_connected') === 'true';
-  return { data: { connected: isConnected }, isLoading: false };
-};
 
 import { useTheme } from "../../contexts/ThemeContext";
 
-const { Text, Title } = Typography;
+const { Text, Title, Paragraph } = Typography;
 
 const DESIGN_TYPE_OPTIONS = [
   {
@@ -1351,17 +1339,8 @@ const ClientCanvaPage = () => {
   };
 
   const handleConnect = async () => {
-    try {
-      const result = await connectCanva().unwrap();
-      if (!result?.authUrl) {
-        throw new Error("Canva authorization URL was not returned.");
-      }
-      window.location.assign(result.authUrl);
-    } catch (error) {
-      message.error(
-        getApiErrorMessage(error, "Unable to start the Canva connection."),
-      );
-    }
+    message.info("Canva integration is coming soon!");
+    return;
   };
 
   const handleDisconnect = () => {
@@ -2148,7 +2127,6 @@ const ClientCanvaPage = () => {
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
                 <Button
-                  type="primary"
                   className="canva-pill-action"
                   onClick={handleConnect}
                   loading={isConnecting}
@@ -2281,6 +2259,9 @@ const ClientCanvaPage = () => {
           <Title level={2} style={{ margin: 0 }}>
             Canva Workspace
           </Title>
+          <Tag color="orange" style={{ margin: 0, fontSize: 14, padding: "2px 8px" }}>
+            Coming Soon
+          </Tag>
         </div>
         <Text type="secondary">
           A Canva-style client workspace for My designs, templates, create, export, and connection.

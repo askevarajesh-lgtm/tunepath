@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Button, Table, Typography, Space, Input, Select, Card, Row, Col, Popconfirm, Divider, message } from "antd";
+import { Button, Table, Typography, Space, Input, Select, Card, Row, Col, Popconfirm, Divider, message, ColorPicker } from "antd";
 import { Plus, Trash2, Link2, MessageSquare, Phone, Mail, CreditCard, FormInput, User, FileText, Wifi, QrCode, ArrowRight, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import QRCode from "qrcode";
@@ -38,14 +38,17 @@ const resolveColor = (color) => {
     return '#10b981';
   };
 
-  if (!color) return getCssVar('--accent-primary');
-  if (color === 'var(--accent-primary)') return getCssVar('--accent-primary');
-  if (color.startsWith('var(')) {
-    const match = color.match(/var\((.*?)\)/);
-    const varName = match ? match[1] : '--accent-primary';
-    return getCssVar(varName);
+  if (typeof color === 'string') {
+    if (color === 'var(--accent-primary)') return getCssVar('--accent-primary');
+    if (color.startsWith('var(')) {
+      const match = color.match(/var\((.*?)\)/);
+      const varName = match ? match[1] : '--accent-primary';
+      return getCssVar(varName);
+    }
+    if (color.startsWith('#') || color.startsWith('rgb') || color.startsWith('hsl') || /^[a-z]+$/i.test(color)) {
+      return color;
+    }
   }
-  if (color.startsWith('#')) return color;
   return getCssVar('--accent-primary');
 };
 
@@ -235,23 +238,28 @@ const CreateQRView = ({ setView, handleCreateQR, itemVariants, forms = [], websi
             <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: 'var(--text-primary)' }}>Select Destination Type</div>
             <Select 
               size="large" 
-              value={formData.customUrl.startsWith(window.location.origin) ? "workspace" : "custom"} 
+              value={formData.destinationType || (formData.customUrl.startsWith(window.location.origin) ? "workspace" : "custom")} 
               style={{ width: "100%" }}
               onChange={(val) => {
-                if (val === 'custom') setFormData({...formData, customUrl: ''});
+                if (val === 'custom') {
+                  setFormData({...formData, destinationType: 'custom', customUrl: ''});
+                } else {
+                  setFormData({...formData, destinationType: 'workspace', customUrl: websites.length > 0 ? `${window.location.origin}/preview/website/${websites[0]._id}/page/home` : window.location.origin});
+                }
               }}
             >
               <Option value="custom">Custom External URL</Option>
               <Option value="workspace">Existing Website</Option>
             </Select>
           </div>
-          {formData.customUrl.startsWith(window.location.origin) || websites.length > 0 && (
+          {(formData.destinationType === 'workspace' || formData.customUrl.startsWith(window.location.origin)) && websites.length > 0 && (
             <div style={{ marginBottom: 24 }}>
               <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: 'var(--text-primary)' }}>Select Website</div>
               <Select 
                 size="large" 
                 style={{ width: "100%" }}
                 placeholder="Choose website..."
+                value={formData.customUrl.startsWith(window.location.origin) && formData.customUrl.length > window.location.origin.length ? formData.customUrl : undefined}
                 onChange={(val) => setFormData({...formData, customUrl: val})}
               >
                 {websites.map(w => (
@@ -260,16 +268,18 @@ const CreateQRView = ({ setView, handleCreateQR, itemVariants, forms = [], websi
               </Select>
             </div>
           )}
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: 'var(--text-primary)' }}>Target URL</div>
-            <Input 
-              size="large"
-              placeholder="https://yoursite.com/offer" 
-              value={formData.customUrl}
-              onChange={e => setFormData({...formData, customUrl: e.target.value})}
-              style={{ borderRadius: 8 }}
-            />
-          </div>
+          {(!formData.destinationType || formData.destinationType === 'custom') && (
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: 'var(--text-primary)' }}>Target URL</div>
+              <Input 
+                size="large"
+                placeholder="https://yoursite.com/offer" 
+                value={formData.customUrl}
+                onChange={e => setFormData({...formData, customUrl: e.target.value})}
+                style={{ borderRadius: 8 }}
+              />
+            </div>
+          )}
         </div>
       );
     }
@@ -545,8 +555,16 @@ const CreateQRView = ({ setView, handleCreateQR, itemVariants, forms = [], websi
         <Row gutter={24} style={{ marginBottom: 32 }}>
           <Col span={12}>
             <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8, color: 'var(--text-primary)' }}>FOREGROUND</div>
-            <div style={{ display: "flex", gap: 12 }}>
-              <div style={{ width: 44, height: 44, background: resolveColor(formData.foreground), borderRadius: 8, border: "1px solid var(--border-color)" }}></div>
+            <div style={{ display: "flex", gap: 12, alignItems: 'center' }}>
+              <ColorPicker 
+                value={resolveColor(formData.foreground)}
+                onChange={(color) => {
+                  const colorStr = (color && typeof color === 'object' && color.toHexString) 
+                    ? color.toHexString() 
+                    : (typeof color === 'string' ? color : '#000000');
+                  setFormData({...formData, foreground: colorStr});
+                }}
+              />
               <Input 
                 size="large"
                 value={formData.foreground} 
@@ -557,8 +575,16 @@ const CreateQRView = ({ setView, handleCreateQR, itemVariants, forms = [], websi
           </Col>
           <Col span={12}>
             <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8, color: 'var(--text-primary)' }}>BACKGROUND</div>
-            <div style={{ display: "flex", gap: 12 }}>
-              <div style={{ width: 44, height: 44, background: resolveColor(formData.background), borderRadius: 8, border: "1px solid var(--border-color)" }}></div>
+            <div style={{ display: "flex", gap: 12, alignItems: 'center' }}>
+              <ColorPicker 
+                value={resolveColor(formData.background)}
+                onChange={(color) => {
+                  const colorStr = (color && typeof color === 'object' && color.toHexString) 
+                    ? color.toHexString() 
+                    : (typeof color === 'string' ? color : '#ffffff');
+                  setFormData({...formData, background: colorStr});
+                }}
+              />
               <Input 
                 size="large"
                 value={formData.background} 
@@ -655,7 +681,9 @@ const ManageQRView = ({ activeQR, setView, handleDeleteQR, itemVariants }) => {
   const [qrUrl, setQrUrl] = useState("");
   const [svgContent, setSvgContent] = useState("");
 
-  const trackingUrl = activeQR.scanLink;
+  const trackingUrl = ['Website', 'Form', 'Survey', 'Quiz', 'Review Link'].includes(activeQR.type) 
+    ? `${window.location.origin}/api/qrs/scan/${activeQR.slug}`
+    : activeQR.scanLink;
 
   useEffect(() => {
     const fg = resolveColor(activeQR.foreground);

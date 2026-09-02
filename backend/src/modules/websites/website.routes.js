@@ -4,6 +4,9 @@ const websiteController = require('./website.controller');
 const websiteSeoAgentController = require('./websiteSeoAgent.controller');
 const authMiddleware = require('../../middlewares/authMiddleware');
 
+// Public Website Details
+router.get('/:id/public', websiteController.getPublicWebsiteDetails);
+
 router.use(authMiddleware);
 
 // Website CRUD

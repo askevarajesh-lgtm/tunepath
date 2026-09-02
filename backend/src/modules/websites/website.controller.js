@@ -230,74 +230,80 @@ exports.createWebsite = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'Website name is required' });
     }
 
-    let aiGeneratedData = null;
-    if (type === 'ai') {
-      try {
-        const canonicalBrief = businessBrief || description;
-        aiGeneratedData = await aiGenerationService.generateWebsite({
-          workspaceId,
-          user: req.user,
-          name,
-          industry,
-          businessBrief: canonicalBrief,
-          tone
-        });
-      } catch (error) {
-        return res.status(400).json({ success: false, error: error.message });
-      }
-    }
-
     const website = new Website({
       workspaceId,
       name,
       description: description || "",
-      status: 'Draft',
+      status: type === 'ai' ? 'Creating' : 'Draft',
       createdBy: req.user?._id,
       updatedBy: req.user?._id,
       agencyId: req.user?.agencyId || null,
       brandId: req.isClientRole ? req.clientUserId : (req.user?.brandId || null)
     });
 
-    if (aiGeneratedData && aiGeneratedData.site) {
-      if (aiGeneratedData.site.fontFamily || aiGeneratedData.site.primaryColor) {
-        website.theme = {
-          fontFamily: aiGeneratedData.site.fontFamily || website.theme.fontFamily,
-          primaryColor: aiGeneratedData.site.primaryColor || website.theme.primaryColor
-        };
-      }
-    }
-
     const savedWebsite = await website.save();
 
-    // Initialize default pages
+    if (type === 'ai') {
+      const canonicalBrief = businessBrief || description;
+      
+      // Kick off background generation
+      (async () => {
+        try {
+          const aiGeneratedData = await aiGenerationService.generateWebsite({
+            workspaceId,
+            user: req.user,
+            name,
+            industry,
+            businessBrief: canonicalBrief,
+            tone
+          });
+
+          if (aiGeneratedData && aiGeneratedData.site) {
+            if (aiGeneratedData.site.fontFamily || aiGeneratedData.site.primaryColor) {
+              savedWebsite.theme = {
+                fontFamily: aiGeneratedData.site.fontFamily || savedWebsite.theme.fontFamily,
+                primaryColor: aiGeneratedData.site.primaryColor || savedWebsite.theme.primaryColor
+              };
+            }
+          }
+
+          if (aiGeneratedData && aiGeneratedData.pages) {
+            for (const aiPage of aiGeneratedData.pages) {
+              const newPage = new Page({
+                websiteId: savedWebsite._id,
+                title: aiPage.title,
+                path: aiPage.slug === 'home' ? '/home' : `/${aiPage.slug.toLowerCase()}`,
+                status: 'Draft',
+                isHome: aiPage.isHome || aiPage.slug === 'home',
+                html: aiPage.html,
+                css: aiPage.css,
+                metaTitle: aiPage.metaTitle || '',
+                metaDescription: aiPage.metaDescription || '',
+                layoutJson: { sections: [] }
+              });
+              await newPage.save();
+            }
+          }
+
+          savedWebsite.status = 'Draft';
+          await savedWebsite.save();
+        } catch (error) {
+          console.error("AI Website generation failed:", error.message);
+          require('fs').appendFileSync('ai_error.log', new Date().toISOString() + ' ' + (error.stack || error.message) + '\n');
+          savedWebsite.status = 'Failed';
+          savedWebsite.failReason = error.message || "Unknown error occurred";
+          await savedWebsite.save();
+        }
+      })();
+
+      // Return immediately
+      return res.status(201).json({ success: true, data: savedWebsite });
+    }
+
+
+    // If not AI, we continue with normal creation (template or blank)
     let newPages = [];
     let templateImportWarning = null;
-
-    try {
-      if (type === 'ai' && aiGeneratedData && aiGeneratedData.pages) {
-        for (const aiPage of aiGeneratedData.pages) {
-          const newPage = new Page({
-            websiteId: savedWebsite._id,
-            title: aiPage.title,
-            path: aiPage.slug === 'home' ? '/home' : `/${aiPage.slug.toLowerCase()}`,
-            status: 'Draft',
-            isHome: aiPage.isHome || aiPage.slug === 'home',
-            html: aiPage.html,
-            css: aiPage.css,
-            metaTitle: aiPage.metaTitle || '',
-            metaDescription: aiPage.metaDescription || '',
-            layoutJson: { sections: [] }
-          });
-          await newPage.save();
-          newPages.push(newPage);
-        }
-      }
-    } catch (pageError) {
-      // Cleanup on failure
-      await Page.deleteMany({ websiteId: savedWebsite._id });
-      await Website.deleteOne({ _id: savedWebsite._id });
-      return res.status(500).json({ success: false, error: 'Failed to save generated pages. Please try again.' });
-    }
 
     // If template is provided, extract zip and read all html
     if (type === 'template' && templateName) {
@@ -674,6 +680,29 @@ exports.getWebsiteDetails = async (req, res, next) => {
     const { id } = req.params;
     const query = buildWebsiteAuthQuery(req, { _id: id });
     const website = await Website.findOne(query);
+    if (!website) {
+      return res.status(404).json({ success: false, error: 'Website not found' });
+    }
+
+    const pages = await Page.find({ websiteId: id, isDeleted: false }).sort({ createdAt: 1 });
+
+    res.json({
+      success: true,
+      data: {
+        ...website.toObject(),
+        pages
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get Public Website details + Pages (no auth required)
+exports.getPublicWebsiteDetails = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const website = await Website.findOne({ _id: id, isDeleted: false });
     if (!website) {
       return res.status(404).json({ success: false, error: 'Website not found' });
     }

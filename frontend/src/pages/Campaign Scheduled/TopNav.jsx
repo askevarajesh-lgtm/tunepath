@@ -12,6 +12,7 @@ export default function TopNav({
   schedulerStatus,
   onRefreshClick,
   canCreate = true,
+  isRefreshing = false,
 }) {
   return (
     <div className="campaign-scheduler-header">
@@ -29,6 +30,7 @@ export default function TopNav({
           size="large"
           icon={<ReloadOutlined />}
           onClick={onRefreshClick}
+          loading={isRefreshing}
         >
           Refresh
         </Button>

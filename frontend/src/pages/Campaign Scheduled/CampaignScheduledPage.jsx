@@ -41,6 +41,8 @@ const enabledIntegrations = {
 export default function CampaignScheduledPage() {
   const { Text, Paragraph } = Typography;
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [posts, setPosts] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [schedulerStatus, setSchedulerStatus] = useState(null);
@@ -127,7 +129,9 @@ export default function CampaignScheduledPage() {
     Object.keys(connectedPlatforms).length > 0;
 
   const loadInitial = async () => {
+    setIsRefreshing(true);
     try {
+      setRefreshTrigger(prev => prev + 1);
       const [postsData, accountsData, statusData, metaData] = await Promise.all(
         [
           campaignScheduledApi.getPosts(activeClientId),
@@ -149,6 +153,8 @@ export default function CampaignScheduledPage() {
         message.error(nextErrorMessage);
         lastLoadErrorMessageRef.current = nextErrorMessage;
       }
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -500,6 +506,7 @@ export default function CampaignScheduledPage() {
           posts={posts}
           accounts={filteredAccounts}
           activeClientId={activeClientId}
+          refreshTrigger={refreshTrigger}
         />
       );
     return (
@@ -552,6 +559,7 @@ export default function CampaignScheduledPage() {
               schedulerStatus={schedulerStatus}
               onRefreshClick={loadInitial}
               canCreate={canCreate}
+              isRefreshing={isRefreshing}
             />
             {renderMain()}
           </main>
