@@ -285,13 +285,12 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
 
       const { data, error } = await exportCsv(payload);
       if (error) throw error;
-      const res = data;
       
-      const blob = new Blob([res.csv], { type: 'text/csv' });
+      const blob = new Blob([data.blob], { type: 'text/csv' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = res.filename;
+      a.download = data.filename || `leads-export-${new Date().toISOString().split('T')[0]}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();

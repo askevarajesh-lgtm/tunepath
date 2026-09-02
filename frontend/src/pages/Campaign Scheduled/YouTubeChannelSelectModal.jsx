@@ -8,6 +8,7 @@ import {
   Typography,
   Empty,
   Alert,
+  Button,
 } from "antd";
 import { SearchOutlined, YoutubeFilled, PlusOutlined } from "@ant-design/icons";
 
@@ -72,12 +73,29 @@ export default function YouTubeChannelSelectModal({
       }
       open={open}
       onCancel={onCancel}
-      onOk={handleConnect}
-      okText="Connect Selected"
-      confirmLoading={loading}
+      footer={[
+        <Button key="cancel" onClick={onCancel}>
+          Cancel
+        </Button>,
+        <Button 
+          key="connectAnother" 
+          onClick={onConnectAnother} 
+          icon={<PlusOutlined />}
+        >
+          Connect Another Channel
+        </Button>,
+        <Button
+          key="connect"
+          type="primary"
+          onClick={handleConnect}
+          loading={loading}
+          disabled={selectedIds.length === 0}
+        >
+          Connect Selected
+        </Button>,
+      ]}
       width={600}
       centered
-      okButtonProps={{ disabled: selectedIds.length === 0 }}
     >
       <div style={{ marginBottom: 20, marginTop: 10 }}>
         <Input

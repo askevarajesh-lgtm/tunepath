@@ -148,7 +148,17 @@ export const useLazyExportLeadsCsvQuery = () => {
         }
 
         const response = await api.get('/leads/export', { params, responseType: 'blob' });
-        return response.data;
+        
+        let filename = `leads-export-${new Date().toISOString().split('T')[0]}.csv`;
+        const disposition = response.headers && response.headers['content-disposition'];
+        if (disposition && disposition.indexOf('filename=') !== -1) {
+            const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+            if (matches != null && matches[1]) {
+                filename = matches[1].replace(/['"]/g, '');
+            }
+        }
+        
+        return { data: { blob: response.data, filename } };
       };
 
       const promise = execute().finally(() => setIsFetching(false));

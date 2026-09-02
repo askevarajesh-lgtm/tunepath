@@ -503,13 +503,21 @@ async function postToInstagram(account, post, options = {}) {
     platformOption === "video_short" ||
     platformOption === "short";
     
+  const enforceJpegForInstagram = (url) => {
+    if (typeof url === 'string' && url.includes('res.cloudinary.com') && !/\.(mp4|mov|avi|webm|mkv)(\?.*)?$/i.test(url)) {
+      return url.replace(/\.(png|webp|gif|jpeg)(\?.*)?$/i, '.jpg$2');
+    }
+    return url;
+  };
+    
   let creationId;
 
   if (isCarousel) {
     const childrenIds = [];
     for (const url of post.media_url) {
+      const formattedUrl = enforceJpegForInstagram(url);
       const itemRes = await axios.post(`${META_GRAPH}/${account.ig_user_id}/media`, {
-        image_url: url,
+        image_url: formattedUrl,
         is_carousel_item: true,
         access_token: account.access_token
       });
@@ -540,7 +548,7 @@ async function postToInstagram(account, post, options = {}) {
       containerPayload.video_url = firstMedia;
       containerPayload.share_to_feed = true;
     } else {
-      containerPayload.image_url = firstMedia;
+      containerPayload.image_url = enforceJpegForInstagram(firstMedia);
     }
 
     const containerRes = await axios.post(
@@ -1285,7 +1293,8 @@ async function postToYoutube(account, post, options = {}) {
   if (!mediaBuffer && uploadedMedia?.path) {
     mediaBuffer = await require('fs').promises.readFile(uploadedMedia.path);
   }
-  const mediaUrl = post.media_url;
+  const rawMediaUrl = post.media_url;
+  const mediaUrl = Array.isArray(rawMediaUrl) ? rawMediaUrl[0] : rawMediaUrl;
 
   // Reject blob: or localhost URLs — these are temporary browser URLs the server cannot access
   if (
