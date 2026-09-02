@@ -630,36 +630,62 @@ exports.syncLeads = async (req, res, next) => {
             for (const fbLead of leadsRes.data.data) {
               const leadgenId = fbLead.id;
               
-              const existing = await Lead.findOne({ 
-                companyId, 
-                'customData.leadgenId': leadgenId 
-              });
-              
-              if (existing) {
-                if (clientId && !existing.clientId) {
-                  existing.clientId = clientId;
-                  existing.isClientLead = true;
-                  await existing.save();
-                }
-                duplicateCount++;
-                continue;
-              }
-              
               let fullName = 'Facebook Lead';
               let email = '';
               let phoneNumber = '';
               let companyName = '';
+              let formResponses = {};
               
               if (Array.isArray(fbLead.field_data)) {
                 fbLead.field_data.forEach(field => {
                   const name = (field.name || '').toLowerCase();
+                  const rawName = field.name || '';
                   const val = field.values && field.values.length > 0 ? field.values[0] : '';
+                  
+                  formResponses[rawName] = val;
                   
                   if (name === 'full_name' || name === 'name' || name === 'first_name') fullName = val;
                   else if (name === 'email') email = val;
                   else if (name === 'phone_number' || name === 'phone') phoneNumber = val;
                   else if (name === 'company_name' || name === 'company') companyName = val;
                 });
+              }
+
+              const existing = await Lead.findOne({ 
+                companyId, 
+                'customData.leadgenId': leadgenId 
+              });
+              
+              if (existing) {
+                let updated = false;
+                if (clientId && !existing.clientId) {
+                  existing.clientId = clientId;
+                  existing.isClientLead = true;
+                  updated = true;
+                }
+                
+                // Backfill formResponses if they exist
+                if (!existing.customData) existing.customData = {};
+                
+                let hasNewResponses = false;
+                for (const [key, value] of Object.entries(formResponses)) {
+                  if (existing.customData[key] === undefined) {
+                    existing.customData[key] = value;
+                    hasNewResponses = true;
+                  }
+                }
+                
+                if (hasNewResponses) {
+                  existing.markModified('customData');
+                  updated = true;
+                }
+
+                if (updated) {
+                  await existing.save();
+                }
+                
+                duplicateCount++;
+                continue;
               }
               
               await Lead.create({
@@ -679,11 +705,12 @@ exports.syncLeads = async (req, res, next) => {
                   leadgenId,
                   formId: form.id,
                   formName: form.name || 'Unknown Form',
-                  pageId: pageId,
+                  pageId: integration.pageId,
                   adId: fbLead.ad_id,
                   adSetId: fbLead.adset_id,
                   campaignId: fbLead.campaign_id,
-                  createdTime: fbLead.created_time
+                  createdTime: fbLead.created_time,
+                  ...formResponses
                 },
                 activityLogs: [{ message: 'Imported from Facebook Lead Ads' }]
               });
@@ -1021,11 +1048,15 @@ exports.handleWebhook = async (req, res) => {
             let email = '';
             let phoneNumber = '';
             let companyName = '';
+            let formResponses = {};
             
             if (Array.isArray(fbLead.field_data)) {
               fbLead.field_data.forEach(field => {
                 const name = (field.name || '').toLowerCase();
+                const rawName = field.name || '';
                 const val = field.values && field.values.length > 0 ? field.values[0] : '';
+                
+                formResponses[rawName] = val;
                 
                 if (name === 'full_name' || name === 'name' || name === 'first_name') fullName = val;
                 else if (name === 'email') email = val;
@@ -1054,7 +1085,8 @@ exports.handleWebhook = async (req, res) => {
                 adId: fbLead.ad_id,
                 adSetId: fbLead.adset_id,
                 campaignId: fbLead.campaign_id,
-                createdTime: fbLead.created_time || createdTime
+                createdTime: fbLead.created_time || createdTime,
+                ...formResponses
               },
               activityLogs: [{ message: 'Imported from Facebook Webhook' }]
             });

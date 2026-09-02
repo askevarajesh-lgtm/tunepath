@@ -667,18 +667,26 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                     <Descriptions.Item label="Last Interaction" span={3}>{currentViewingLead?.updatedAt ? dayjs(currentViewingLead.updatedAt).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
                     
                     <Descriptions.Item label="Notes" span={3}>{currentViewingLead?.notes || '—'}</Descriptions.Item>
-
-                    {currentViewingLead?.customData && typeof currentViewingLead.customData === 'object' && Object.entries(currentViewingLead.customData).map(([key, value]) => {
-                      const ignoredKeys = ['form_name', 'formname', 'formid', 'form_id', 'pageid', 'page_id', 'leadgenid', 'leadgen_id', 'adid', 'ad_id', 'adsetid', 'adset_id', 'campaignid', 'campaign_id', 'createdtime', 'created_time', 'id', 'is_organic', 'platform'];
-                      if (ignoredKeys.includes(key.toLowerCase())) return null;
-                      const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                      return (
-                        <Descriptions.Item label={formattedKey} key={key}>
-                          {typeof value === 'object' ? JSON.stringify(value) : String(value || '—')}
-                        </Descriptions.Item>
-                      );
-                    })}
                   </Descriptions>
+
+                  {currentViewingLead?.customData && typeof currentViewingLead.customData === 'object' && Object.keys(currentViewingLead.customData).filter(key => !['form_name', 'formname', 'formid', 'form_id', 'pageid', 'page_id', 'leadgenid', 'leadgen_id', 'adid', 'ad_id', 'adsetid', 'adset_id', 'campaignid', 'campaign_id', 'createdtime', 'created_time', 'id', 'is_organic', 'platform'].includes(key.toLowerCase())).length > 0 && (
+                    <div style={{ marginTop: 24 }}>
+                      <Title level={5} style={{ marginBottom: 16 }}>Form Responses & Custom Data</Title>
+                      <Descriptions bordered column={1} size="middle" labelStyle={{ width: '40%', fontWeight: 600, color: 'var(--text-secondary)', background: 'transparent' }} contentStyle={{ color: 'var(--text-primary)' }}>
+                        {Object.entries(currentViewingLead.customData).map(([key, value]) => {
+                          const ignoredKeys = ['form_name', 'formname', 'formid', 'form_id', 'pageid', 'page_id', 'leadgenid', 'leadgen_id', 'adid', 'ad_id', 'adsetid', 'adset_id', 'campaignid', 'campaign_id', 'createdtime', 'created_time', 'id', 'is_organic', 'platform'];
+                          if (ignoredKeys.includes(key.toLowerCase())) return null;
+                          const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                          const formattedValue = typeof value === 'object' ? JSON.stringify(value) : String(value || '—').replace(/_/g, ' ');
+                          return (
+                            <Descriptions.Item label={formattedKey} key={key}>
+                              {formattedValue}
+                            </Descriptions.Item>
+                          );
+                        })}
+                      </Descriptions>
+                    </div>
+                  )}
                 </div>
               )
             },

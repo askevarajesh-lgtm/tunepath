@@ -114,31 +114,56 @@ const syncFacebookIntegrationLeads = async (integration) => {
                   'customData.leadgenId': leadgenId
                 });
 
-                if (existingLead) {
-                  // Ensure client binding if not set
-                  if (clientId && !existingLead.clientId) {
-                    existingLead.clientId = clientId;
-                    existingLead.isClientLead = true;
-                    await existingLead.save();
-                  }
-                  continue;
-                }
-
                 let fullName = 'Facebook Lead';
                 let email = '';
                 let phoneNumber = '';
                 let companyName = '';
+                let formResponses = {};
 
                 if (Array.isArray(fbLead.field_data)) {
                   fbLead.field_data.forEach(field => {
                     const name = (field.name || '').toLowerCase();
+                    const rawName = field.name || '';
                     const val = field.values && field.values.length > 0 ? field.values[0] : '';
+
+                    formResponses[rawName] = val;
 
                     if (name === 'full_name' || name === 'name' || name === 'first_name') fullName = val;
                     else if (name === 'email') email = val;
                     else if (name === 'phone_number' || name === 'phone') phoneNumber = val;
                     else if (name === 'company_name' || name === 'company') companyName = val;
                   });
+                }
+
+                if (existingLead) {
+                  let updated = false;
+                  // Ensure client binding if not set
+                  if (clientId && !existingLead.clientId) {
+                    existingLead.clientId = clientId;
+                    existingLead.isClientLead = true;
+                    updated = true;
+                  }
+                  
+                  // Backfill formResponses if they exist
+                  if (!existingLead.customData) existingLead.customData = {};
+                  
+                  let hasNewResponses = false;
+                  for (const [key, value] of Object.entries(formResponses)) {
+                    if (existingLead.customData[key] === undefined) {
+                      existingLead.customData[key] = value;
+                      hasNewResponses = true;
+                    }
+                  }
+                  
+                  if (hasNewResponses) {
+                    existingLead.markModified('customData');
+                    updated = true;
+                  }
+                  
+                  if (updated) {
+                    await existingLead.save();
+                  }
+                  continue;
                 }
 
                 await Lead.create({
@@ -162,7 +187,8 @@ const syncFacebookIntegrationLeads = async (integration) => {
                     adId: fbLead.ad_id,
                     adSetId: fbLead.adset_id,
                     campaignId: fbLead.campaign_id,
-                    createdTime: fbLead.created_time
+                    createdTime: fbLead.created_time,
+                    ...formResponses
                   },
                   activityLogs: [{ message: 'Imported via 5-Minute Facebook Auto-Sync' }]
                 });
