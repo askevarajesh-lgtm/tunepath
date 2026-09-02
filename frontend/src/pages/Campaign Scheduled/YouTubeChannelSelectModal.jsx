@@ -108,16 +108,6 @@ export default function YouTubeChannelSelectModal({
         />
       </div>
 
-      {missingPermissions.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <Alert
-            message="Required permissions (Upload/Manage) missing. Please reconnect and check all boxes."
-            type="warning"
-            showIcon
-          />
-        </div>
-      )}
-
       <div style={{ maxHeight: 400, overflowY: "auto", paddingRight: 8 }}>
         <div
           style={{

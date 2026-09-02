@@ -1098,7 +1098,7 @@ router.get("/auth/youtube", (req, res) => {
     url.searchParams.set("scope", YOUTUBE_SCOPES);
     url.searchParams.set("state", encodedState);
     url.searchParams.set("access_type", "offline");
-    url.searchParams.set("prompt", "consent");
+    url.searchParams.set("prompt", "select_account consent");
     url.searchParams.set("include_granted_scopes", "true");
 
     res.redirect(url.toString());
@@ -1114,7 +1114,7 @@ router.get("/oauth/youtube-debug", (_req, res) => {
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", YOUTUBE_SCOPES);
   authUrl.searchParams.set("access_type", "offline");
-  authUrl.searchParams.set("prompt", "consent");
+  authUrl.searchParams.set("prompt", "select_account consent");
   authUrl.searchParams.set("include_granted_scopes", "true");
 
   res.json({

@@ -195,9 +195,15 @@ async function buildAnalyticsDashboard({ agencyId, projectId, rawDateRange, attr
     return cleaned;
   };
   const gscClients = projects.filter(p => p.domain).map(p => {
-    const bareDomain = getBareDomain(p.domain);
+    let gscSiteUrl;
+    if (p.credentials?.gscServiceAccount && (p.credentials.gscServiceAccount.startsWith('http') || p.credentials.gscServiceAccount.startsWith('sc-domain:'))) {
+      gscSiteUrl = p.credentials.gscServiceAccount;
+    } else {
+      const bareDomain = getBareDomain(p.domain);
+      gscSiteUrl = p.credentials?.gscServiceAccount ? `sc-domain:${bareDomain}` : `https://${bareDomain}/`;
+    }
     return {
-      gscSiteUrl: p.credentials?.gscServiceAccount ? `sc-domain:${bareDomain}` : `https://${bareDomain}/`,
+      gscSiteUrl,
       ...p.toObject()
     };
   });
