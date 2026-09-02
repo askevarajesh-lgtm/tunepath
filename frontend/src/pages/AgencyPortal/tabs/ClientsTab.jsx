@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Typography, Input, Button, Tag, Row, Col, Drawer, Tabs, Progress, Switch, Select, message, Modal, Form, Checkbox, Table, Dropdown, Menu, Popconfirm, Tooltip , Card} from 'antd';
+import { Typography, Input, Button, Tag, Row, Col, Drawer, Tabs, Progress, Switch, Select, message, Modal, Form, Checkbox, Table, Dropdown, Menu, Popconfirm, Tooltip, Card } from 'antd';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useGetIntegrationsQuery } from '../../../api/integrationApi';
 import { Search, AlertTriangle, CheckCircle, ExternalLink, MoreHorizontal, Circle, ArrowUpRight, Shield, Zap, Globe, Users, Plus } from 'lucide-react';
@@ -45,7 +45,7 @@ const ClientsTab = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState(null);
   const [createDealId, setCreateDealId] = useState(null);
-  
+
   // Assign Users State
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assigningClient, setAssigningClient] = useState(null);
@@ -113,7 +113,7 @@ const ClientsTab = () => {
         headers
       });
       const data = await res.json();
-      
+
       if (data.success) {
         if (currentToken && currentUserStr) {
           localStorage.setItem('original_token', currentToken);
@@ -123,7 +123,7 @@ const ClientsTab = () => {
         localStorage.setItem('user', JSON.stringify(data.user));
         message.success(`Logged in as ${data.user.name}`);
         login(data.user);
-        
+
         // Redirect to the client's dashboard path based on their role
         navigate('/client');
       } else {
@@ -543,9 +543,9 @@ const ClientsTab = () => {
                     ]}
                     style={{ marginBottom: 0 }}
                   >
-                    <PhoneInput 
-                      size="large" 
-                      style={{ borderRadius: 8 }} 
+                    <PhoneInput
+                      size="large"
+                      style={{ borderRadius: 8 }}
                       countryCodeValue={clientCountryCode}
                       onCountryCodeChange={setClientCountryCode}
                       isoCountryValue={clientCountryIso}
@@ -637,11 +637,11 @@ const ClientsTab = () => {
 
       <Card>
         <Table
-          
+
           dataSource={filteredClients}
           rowKey="_id"
           pagination={{
-            pageSize: 10,
+            defaultPageSize: 10,
             showSizeChanger: true,
             pageSizeOptions: ['10', '20', '50', '100'],
             showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
@@ -825,10 +825,10 @@ const ClientsTab = () => {
                 {selectedClient.packageName && <Tag style={{ margin: 0, borderRadius: 8, fontWeight: 600, fontSize: 11 }}>{selectedClient.packageName}</Tag>}
               </div>
             </div>
-            <Button 
-              type="primary" 
-              size="small" 
-              icon={<ArrowUpRight size={14} />} 
+            <Button
+              type="primary"
+              size="small"
+              icon={<ArrowUpRight size={14} />}
               style={{ background: 'var(--accent-primary)', borderRadius: 8, fontWeight: 700 }}
               onClick={() => handleImpersonate(selectedClient._id)}
             >
@@ -944,9 +944,9 @@ const ClientsTab = () => {
                       }
                     ]}
                   >
-                    <PhoneInput 
-                      size="large" 
-                      style={{ borderRadius: 8 }} 
+                    <PhoneInput
+                      size="large"
+                      style={{ borderRadius: 8 }}
                       countryCodeValue={clientEditCountryCode}
                       onCountryCodeChange={setClientEditCountryCode}
                       isoCountryValue={clientEditCountryIso}

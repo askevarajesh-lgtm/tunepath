@@ -61,9 +61,9 @@ const PerformanceTab = () => {
   };
 
   const columns = [
-    { 
-      title: 'CLIENT', 
-      key: 'client', 
+    {
+      title: 'CLIENT',
+      key: 'client',
       render: (_, record) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 28, height: 28, borderRadius: 8, background: getStatusColor(record.mos), color: '#fff', fontSize: 10, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -73,7 +73,7 @@ const PerformanceTab = () => {
         </div>
       )
     },
-    ...['MOS', 'SEO', 'ADS', 'LEADS', 'SOCIAL', 'WEB', 'GEO'].map(col => ({
+    ...['MOS', 'SEO', 'AEO', 'ADS', 'LEADS', 'SOCIAL', 'WEB', 'GEO', 'REV', 'CX'].map(col => ({
       title: col,
       dataIndex: col.toLowerCase(),
       key: col.toLowerCase(),
@@ -87,13 +87,13 @@ const PerformanceTab = () => {
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" >
-      
+
       <motion.div variants={itemVariants} style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Agency Performance</Title>
-        <DatePicker 
-          picker="month" 
-          value={selectedDate} 
-          onChange={(date) => { if(date) setSelectedDate(date); }} 
+        <DatePicker
+          picker="month"
+          value={selectedDate}
+          onChange={(date) => { if (date) setSelectedDate(date); }}
           size="large"
           style={{ borderRadius: 8, fontWeight: 600, width: 200 }}
           allowClear={false}
@@ -108,7 +108,7 @@ const PerformanceTab = () => {
                 <Text type="secondary" style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1, display: 'block', marginBottom: 16 }}>{stat.label}</Text>
                 <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8, lineHeight: 1 }}>{stat.value}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, fontWeight: 700, color: stat.color }}>
-                  {stat.trend === 'up' ? <ArrowUpRight size={16} /> : (stat.trend === 'down' ? <ArrowDownRight size={16} /> : <div style={{width: 16}}></div>)}
+                  {stat.trend === 'up' ? <ArrowUpRight size={16} /> : (stat.trend === 'down' ? <ArrowDownRight size={16} /> : <div style={{ width: 16 }}></div>)}
                   {stat.sub}
                 </div>
               </SlabCard>
@@ -130,7 +130,7 @@ const PerformanceTab = () => {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} dy={10} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} />
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', boxShadow: '0 8px 24px rgba(0,0,0,0.05)', fontWeight: 600 }}
                       itemStyle={{ fontSize: 13 }}
                       labelStyle={{ fontWeight: 800, marginBottom: 8, color: 'var(--text-primary)' }}
@@ -155,7 +155,7 @@ const PerformanceTab = () => {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} dy={10} />
                     <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} />
-                    <Tooltip 
+                    <Tooltip
                       contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', boxShadow: '0 8px 24px rgba(0,0,0,0.05)', fontWeight: 600 }}
                       itemStyle={{ fontSize: 13 }}
                       labelStyle={{ fontWeight: 800, marginBottom: 8, color: 'var(--text-primary)' }}
@@ -204,17 +204,17 @@ const PerformanceTab = () => {
               <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>Live computed scores based on tasks and delays</Text>
             </div>
           </div>
-          <Table 
-            dataSource={clients} 
-            columns={columns} 
-            pagination={false} 
+          <Table
+            dataSource={clients}
+            columns={columns}
+            pagination={false}
             rowKey="code"
             style={{ width: '100%' }}
-            
+
           />
         </SlabCard>
       </motion.div>
-      
+
     </motion.div>
   );
 };

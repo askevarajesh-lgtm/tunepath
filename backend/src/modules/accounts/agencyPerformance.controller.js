@@ -33,11 +33,11 @@ exports.getAgencyPerformance = async (req, res, next) => {
 
     // 2. Fetch Team Members
     const teamData = await User.find({ agencyId, role: { $in: ['agency_manager', 'user'] } }).select('_id name');
-    
+
     // 3. Overall Stats
     // Leads
     const totalLeads = await Lead.countDocuments({ clientId: { $in: clientIds } });
-    
+
     // ROAS
     const ads = await PerformanceAd.find({ clientId: { $in: clientIds } });
     let totalSpend = 0;
@@ -65,7 +65,7 @@ exports.getAgencyPerformance = async (req, res, next) => {
     // Projects Analytics
     const allProjects = await Project.find({ agencyId });
     const completedProjects = allProjects.filter(p => p.status === 'completed').length;
-    
+
     // Profit & Loss and Chart Data
     const invoices = await Invoice.find({ agencyId, isDeleted: false });
     // Expenses uses companyId. For agencies, companyId is typically the agencyId
@@ -106,13 +106,13 @@ exports.getAgencyPerformance = async (req, res, next) => {
     });
 
     clientsData.forEach(client => {
-        if (client.createdAt) {
-            const d = new Date(client.createdAt);
-            const key = `${d.getFullYear()}-${d.getMonth()}`;
-            if (chartDataMap[key]) {
-                chartDataMap[key].clients += 1;
-            }
+      if (client.createdAt) {
+        const d = new Date(client.createdAt);
+        const key = `${d.getFullYear()}-${d.getMonth()}`;
+        if (chartDataMap[key]) {
+          chartDataMap[key].clients += 1;
         }
+      }
     });
 
     let currentMonthRevenue = 0;
@@ -125,33 +125,33 @@ exports.getAgencyPerformance = async (req, res, next) => {
     const lastMonthKey = `${lastMonthDate.getFullYear()}-${lastMonthDate.getMonth()}`;
 
     if (chartDataMap[currentKey]) {
-        currentMonthRevenue = chartDataMap[currentKey].revenue;
-        currentMonthExpenses = chartDataMap[currentKey].expenses;
+      currentMonthRevenue = chartDataMap[currentKey].revenue;
+      currentMonthExpenses = chartDataMap[currentKey].expenses;
     }
     if (chartDataMap[lastMonthKey]) {
-        lastMonthRevenue = chartDataMap[lastMonthKey].revenue;
-        lastMonthExpenses = chartDataMap[lastMonthKey].expenses;
+      lastMonthRevenue = chartDataMap[lastMonthKey].revenue;
+      lastMonthExpenses = chartDataMap[lastMonthKey].expenses;
     }
 
     const currentProfit = currentMonthRevenue - currentMonthExpenses;
     const lastProfit = lastMonthRevenue - lastMonthExpenses;
     const profitGrowth = lastProfit !== 0 ? (((currentProfit - lastProfit) / Math.abs(lastProfit)) * 100).toFixed(1) : (currentProfit > 0 ? 100 : 0);
-    
+
     // Format profit text
     const profitFormatted = `₹${currentProfit.toLocaleString('en-IN')}`;
 
     const chartData = Object.values(chartDataMap).sort((a, b) => a.sortOrder - b.sortOrder);
-    
+
     // Accumulate clients for growth chart
     let cumulativeClients = 0;
     chartData.forEach(point => {
-        cumulativeClients += point.clients;
-        point.totalClients = cumulativeClients;
+      cumulativeClients += point.clients;
+      point.totalClients = cumulativeClients;
     });
 
     // MOS Aggregation (Real data from MosScoreHistory)
     const mosHistories = await MosScoreHistory.find({ agencyId, clientId: { $in: clientIds } }).sort({ createdAt: -1 });
-    
+
     // Group by clientId to get the latest score
     const latestMosByClient = {};
     mosHistories.forEach(hist => {
@@ -192,7 +192,7 @@ exports.getAgencyPerformance = async (req, res, next) => {
       { $match: { assignee: { $in: teamData.map(t => t._id) } } },
       { $group: { _id: '$assignee', total: { $sum: 1 }, completed: { $sum: { $cond: [{ $eq: ['$status', 'done'] }, 1, 0] } } } }
     ]);
-    
+
     const teamSlas = await SlaRecord.aggregate([
       { $match: { assignedTo: { $in: teamData.map(t => t._id) } } },
       { $group: { _id: '$assignedTo', total: { $sum: 1 }, breached: { $sum: { $cond: [{ $eq: ['$status', 'Breached'] }, 1, 0] } } } }
@@ -202,7 +202,7 @@ exports.getAgencyPerformance = async (req, res, next) => {
       const taskObj = teamTasks.find(tk => tk._id.toString() === t._id.toString());
       const tasksAssigned = taskObj ? taskObj.total : 0;
       const tasksCompleted = taskObj ? taskObj.completed : 0;
-      
+
       const slaObj = teamSlas.find(sl => sl._id.toString() === t._id.toString());
       let slaPerc = 100;
       if (slaObj && slaObj.total > 0) {
@@ -237,8 +237,8 @@ exports.getAgencyPerformance = async (req, res, next) => {
         team,
         chartData,
         projectStats: {
-            total: allProjects.length,
-            completed: completedProjects
+          total: allProjects.length,
+          completed: completedProjects
         }
       }
     });

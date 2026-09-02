@@ -28,15 +28,15 @@ exports.calculateAgencyMOS = async (user, targetClientId = null) => {
     });
   } else {
     const query = { role: { $in: ['brand_super_admin', 'brand_manager', 'agency_client'] } };
-    
+
     if (isAgency) {
       query.agencyId = user.agencyId || user._id;
     } else {
       query.isDirect = true;
     }
-    
+
     brands = await User.find(query);
-    
+
     // Also include the agency itself so their own internal projects/integrations (like Askeva/Tunepath) are scored
     if (isAgency) {
       brands.push(user);
@@ -78,7 +78,7 @@ exports.calculateAgencyMOS = async (user, targetClientId = null) => {
     // In a full implementation, you'd query each module's models here based on brandId (or workspaceId)
     // For now, we simulate pulling from available collections with some jitter or fallback values 
     // to ensure the system is robust even if some collections don't have data yet.
-    
+
     // 1. Website Score
     let websiteScore = 0;
     try {
@@ -102,20 +102,20 @@ exports.calculateAgencyMOS = async (user, targetClientId = null) => {
     let seoScore = 0;
     let geoScore = 0;
     let aeoScore = 0;
-    
+
     try {
       const SemrushProject = mongoose.model('SemrushProject');
       const OptimizationScore = mongoose.model('OptimizationScore');
 
       const projects = await SemrushProject.find({ clientId: brandId, isActive: true });
       const projectIds = projects.map(p => p._id);
-      
+
       if (projectIds.length > 0) {
         const scores = await OptimizationScore.find({ projectId: { $in: projectIds } }).sort({ createdAt: -1 });
-        
+
         let totalSeo = 0, totalGeo = 0, totalAeo = 0;
         let countSeo = 0, countGeo = 0, countAeo = 0;
-        
+
         // We only take the latest score per project
         const latestScoresMap = new Map();
         for (const s of scores) {
@@ -123,7 +123,7 @@ exports.calculateAgencyMOS = async (user, targetClientId = null) => {
             latestScoresMap.set(s.projectId.toString(), s);
           }
         }
-        
+
         latestScoresMap.forEach(scoreDoc => {
           if (scoreDoc.seoScore !== undefined) {
             totalSeo += scoreDoc.seoScore;
@@ -154,13 +154,13 @@ exports.calculateAgencyMOS = async (user, targetClientId = null) => {
     try {
       const PerformanceAd = mongoose.model('PerformanceAd');
       const perfAd = await PerformanceAd.findOne({ agency: brandId });
-      
+
       if (perfAd) {
         const hasCampaigns = perfAd.activeCampaigns && perfAd.activeCampaigns.length > 0;
         const metrics = perfAd.metrics || {};
         const spend = parseFloat(metrics.adSpendMTD || 0);
         const leads = parseInt(metrics.totalLeads || 0, 10);
-        
+
         if (hasCampaigns || spend > 0) {
           adsScore = 60; // Base active score
           if (leads > 0) adsScore += Math.min(25, leads * 2);
@@ -226,7 +226,7 @@ exports.calculateAgencyMOS = async (user, targetClientId = null) => {
       // weight is a percentage (e.g. 15 for 15%)
       overallMos += (rawScores[key] * (weights[key] / 100));
     });
-    
+
     overallMos = Math.round(overallMos);
 
     // Identify weakest signals

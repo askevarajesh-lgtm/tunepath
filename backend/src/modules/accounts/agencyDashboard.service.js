@@ -157,8 +157,12 @@ exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, q
   const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
   
   // Get all client IDs under this agency to query their tasks and projects
-  const clientsData = await User.find({ agencyId, role: { $in: ['brand_super_admin', 'brand_manager', 'agency_client', 'client'] } }).select('_id');
+  const clientsData = await User.find({ agencyId, role: { $in: ['brand_super_admin', 'brand_manager', 'agency_client', 'client'] } }).select('_id companyName name');
   const clientIds = clientsData.map(c => c._id);
+  const clients = clientsData.map(c => ({
+    id: c._id,
+    name: c.companyName || c.name || 'Unnamed Client'
+  }));
   
   // Tasks Due Today & Overdue
   let taskQuery = { tenantCompanyId: { $in: [agencyId, ...clientIds] }, status: { $nin: ['done', 'complete', 'completed'] } };
@@ -195,6 +199,7 @@ exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, q
       atRiskSlas: atRiskSlas.slice(0, 5),
       pendingApprovals: pendingApprovals.slice(0, 5)
     },
-    upcomingDeadlines: activeProjects.filter(p => p.endDate).slice(0, 5)
+    upcomingDeadlines: activeProjects.filter(p => p.endDate).slice(0, 5),
+    clients
   };
 };

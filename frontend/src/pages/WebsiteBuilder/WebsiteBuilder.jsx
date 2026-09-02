@@ -46,10 +46,25 @@ const WebsiteBuilder = () => {
         if (data.success && data.data) {
           const websites = data.data;
           const totalPages = websites.reduce((acc, w) => acc + (w.pagesCount || 1), 0);
+          
+          const sortedWebsites = [...websites].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 5);
+          const recentActivity = sortedWebsites.map(w => {
+            const isNew = Math.abs(new Date(w.createdAt).getTime() - new Date(w.updatedAt).getTime()) < 1000;
+            const dateStr = new Date(w.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return {
+              user: w.updatedBy?.name || 'User',
+              action: isNew ? 'created the website' : 'updated the website',
+              site: w.name,
+              time: dateStr,
+              dot: isNew ? 'var(--accent-primary)' : 'var(--accent-warning)'
+            };
+          });
+
           setDashboardStats(prev => ({
             ...prev,
             totalWebsites: websites.length,
-            totalPages: totalPages
+            totalPages: totalPages,
+            recentActivity
           }));
         }
       } catch (err) {
@@ -216,7 +231,6 @@ const WebsiteBuilder = () => {
       <motion.div variants={itemVariants}>
         <Card
           title={<div style={{ paddingTop: 8 }}><Title level={5} style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>Recent Activity</Title><Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>Changes across all sites — last 7 days</Text></div>}
-          extra={<Button type="link" style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-secondary)' }}>View Full History →</Button>}
           className="glassmorphism" style={{ borderRadius: 16, marginBottom: 40, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: 24 }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingLeft: 8 }}>
