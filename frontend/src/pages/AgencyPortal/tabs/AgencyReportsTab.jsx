@@ -199,7 +199,7 @@ const AgencyReportsTab = () => {
           columns={columns} 
           dataSource={reports} 
           rowKey="id" 
-          pagination={{ pageSize: 5 }} 
+          pagination={{ defaultPageSize: 5, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} 
           scroll={{ x: 800 }}
         />
       </Card>

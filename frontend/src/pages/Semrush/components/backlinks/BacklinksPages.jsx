@@ -81,7 +81,7 @@ const BacklinksPages = () => {
           dataSource={pages}
           columns={columns}
           rowKey={(record, idx) => record.url + idx}
-          pagination={{ pageSize: 20, showSizeChanger: false }}
+          pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], showSizeChanger: false }}
           className="bl-table-minimal"
           scroll={{ x: 1300 }}
        />

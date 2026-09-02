@@ -98,7 +98,7 @@ const ClientBilling = ({ clientId }) => {
         dataSource={invoices} 
         rowKey="_id" 
         loading={loading}
-        pagination={{ pageSize: 5 }}
+        pagination={{ defaultPageSize: 5, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
         locale={{ emptyText: 'No invoices found for this client.' }}
       />
     </div>

@@ -172,7 +172,7 @@ const KeywordMagicToolTab = () => {
             columns={columns} 
             loading={loading}
             rowKey={(record) => record.Keyword || record.Ph}
-            pagination={{ pageSize: 20 }}
+            pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
             scroll={{ x: 'max-content' }}
           />
         ) : (

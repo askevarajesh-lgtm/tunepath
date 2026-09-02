@@ -394,7 +394,7 @@ const TimeTracking = () => {
           bodyStyle={{ padding: 0 }}
         >
           <Table
-            columns={tsCols} dataSource={timesheetData} pagination={{ pageSize: 10 }}
+            columns={tsCols} dataSource={timesheetData} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
             rowKey={(r) => r.name + r.department} size="middle" scroll={{ x: 1100 }}
             rowClassName={() => 'hover-bg'} loading={loading}
             locale={{ emptyText: 'No department members found. Add team members with agencyId linked to this company.' }}
@@ -542,7 +542,7 @@ const TimeTracking = () => {
           bodyStyle={{ padding: 0 }}
         >
           <Table
-            columns={entryCols} dataSource={recentEntries} pagination={{ pageSize: 10 }}
+            columns={entryCols} dataSource={recentEntries} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
             rowKey="id" size="middle" scroll={{ x: 1100 }} rowClassName={() => 'hover-bg'}
           />
         </Card>

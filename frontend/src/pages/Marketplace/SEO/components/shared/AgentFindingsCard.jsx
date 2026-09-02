@@ -138,7 +138,7 @@ const AgentFindingsCard = ({
             size="small"
             columns={columns}
             dataSource={findings}
-            pagination={{ pageSize: 10 }}
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
             locale={{ emptyText: <Empty description="No findings on this run" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
           />
 
@@ -172,7 +172,7 @@ const AgentFindingsCard = ({
                 <Table
                   rowKey={(r, i) => r._id || i}
                   size="small"
-                  pagination={{ pageSize: 5 }}
+                  pagination={{ defaultPageSize: 5, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                   dataSource={history || []}
                   locale={{ emptyText: <Empty description="No previous runs" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
                   columns={[

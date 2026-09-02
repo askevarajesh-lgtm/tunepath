@@ -436,7 +436,7 @@ const KeywordsTab = () => {
                 columns={columns}
                 sticky={true}
                 scroll={{ x: 'max-content' }}
-                pagination={{ pageSize: 20, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '500'] }}
+                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '500'] }}
                 rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
                 footer={() => {
                   const hiddenCount = keywords.length - filteredKeywords.length;
@@ -478,7 +478,7 @@ const KeywordsTab = () => {
                       rowKey="keyword"
                       size="small"
                       dataSource={related}
-                      pagination={{ pageSize: 5 }}
+                      pagination={{ defaultPageSize: 5, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                       locale={{ emptyText: <Empty description="No candidates found" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
                       columns={[
                         { title: 'Keyword', dataIndex: 'keyword', key: 'keyword' },

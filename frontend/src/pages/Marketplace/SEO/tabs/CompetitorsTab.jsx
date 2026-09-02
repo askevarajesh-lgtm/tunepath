@@ -589,7 +589,7 @@ const CompetitorsTab = () => {
           size="small"
           dataSource={competitors}
           rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, getCheckboxProps: (r) => ({ disabled: r.status !== 'Suggested' }) }}
-          pagination={{ pageSize: 10, showSizeChanger: false }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], showSizeChanger: false }}
           columns={[
             {
               title: 'Competitor', key: 'domain',
@@ -768,7 +768,7 @@ const CompetitorsTab = () => {
               size="small"
               dataSource={filteredGapRows}
               columns={cols[gapType] || cols.keyword_gap}
-              pagination={{ pageSize: 25, showSizeChanger: true }}
+              pagination={{ defaultPageSize: 25, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], showSizeChanger: true }}
               scroll={{ x: 'max-content' }}
             />
           </>
@@ -821,7 +821,7 @@ const CompetitorsTab = () => {
                 rowKey="url"
                 size="small"
                 dataSource={pages}
-                pagination={{ pageSize: 20 }}
+                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                 columns={[
                   { title: 'URL', dataIndex: 'url', key: 'url', render: (v) => (
                     <a href={v} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
@@ -1083,7 +1083,7 @@ const CompetitorsTab = () => {
           size="small"
           dataSource={recommendations}
           rowSelection={{ selectedRowKeys: selectedRecKeys, onChange: setSelectedRecKeys }}
-          pagination={{ pageSize: 20 }}
+          pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           columns={[
             { title: 'Type', dataIndex: 'type', key: 'type', render: (v) => <Tag>{GAP_TYPE_LABELS[v] || v}</Tag> },
             { title: 'Opportunity', key: 'item',
@@ -1188,7 +1188,7 @@ const CompetitorsTab = () => {
         <Table
           rowKey={(r, i) => r._id || i}
           size="small"
-          pagination={{ pageSize: 15 }}
+          pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           dataSource={history}
           columns={[
             { title: 'Status', dataIndex: 'status', key: 'status', render: (s) => (

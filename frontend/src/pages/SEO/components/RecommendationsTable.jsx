@@ -103,7 +103,7 @@ const RecommendationsTable = ({ recommendations = [], loading = false }) => {
         columns={columns} 
         dataSource={recommendations} 
         rowKey={(record, index) => record._id || index}
-        pagination={{ pageSize: 5 }} 
+        pagination={{ defaultPageSize: 5, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} 
         loading={loading}
         size="middle"
         style={{ margin: 0 }}

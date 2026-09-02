@@ -228,7 +228,7 @@ const BacklinkTab = ({ projects }) => {
               <Table 
                 dataSource={backlinks.items}
                 rowKey="url_from"
-                pagination={{ pageSize: 10 }}
+                pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                 style={{ borderTop: '1px solid var(--border-color)' }}
                 columns={[
                   { title: 'Referring Domain', dataIndex: 'url_from', key: 'url_from', render: text => <a href={text.startsWith('http') ? text : `https://${text}`} target="_blank" rel="noreferrer" style={{ fontWeight: 500, color: 'var(--accent-primary)' }}>{text}</a> },
@@ -494,7 +494,7 @@ const DashboardTab = ({ projects, stats, handleDelete, handleEdit, handleCreateP
                 columns={columns} 
                 dataSource={projects} 
                 rowKey="_id" 
-                pagination={{ pageSize: 5 }} 
+                pagination={{ defaultPageSize: 5, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} 
                 style={{ borderRadius: '0 0 16px 16px', overflow: 'hidden' }}
               />
             </Card>

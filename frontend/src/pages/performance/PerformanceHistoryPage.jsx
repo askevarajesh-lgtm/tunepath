@@ -443,7 +443,7 @@ const PerformanceHistoryPage = () => {
           dataSource={history}
           rowKey="_id"
           loading={isLoading}
-          pagination={{ pageSize: 10 }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           scroll={{ x: "max-content" }}
           locale={{ emptyText: "No performance history found" }}
         />

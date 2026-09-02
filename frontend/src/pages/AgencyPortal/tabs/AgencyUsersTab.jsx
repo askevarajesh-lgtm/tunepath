@@ -201,7 +201,7 @@ const AgencyUsersTab = () => {
           columns={columns} 
           dataSource={users} 
           rowKey="_id" 
-          pagination={{ pageSize: 10 }} 
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} 
           loading={loading}
           scroll={{ x: 800 }}
         />

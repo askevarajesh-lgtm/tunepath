@@ -392,7 +392,7 @@ const Reports = () => {
             loading={loading} 
             columns={recentCols} 
             dataSource={filteredReports.length > 0 ? filteredReports : []} // Can add mock table data here if needed, but keeping real is better for lists
-            pagination={{ pageSize: 8, style: { padding: '0 24px 16px' } }} 
+            pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], style: { padding: '0 24px 16px' } }} 
             rowKey="_id" 
             size="middle" 
             scroll={{ x: 1000 }} 

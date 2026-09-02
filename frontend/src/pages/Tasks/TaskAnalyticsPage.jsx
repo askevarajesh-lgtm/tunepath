@@ -1591,7 +1591,7 @@ const TaskAnalyticsPage = () => {
                   onClick: () => setSelectedUser(record.id),
                   style: { cursor: "pointer" },
                 })}
-                pagination={{ pageSize: 10, hideOnSinglePage: true }}
+                pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], hideOnSinglePage: true }}
                 style={{
                   background: tokens.SURFACE,
                   borderRadius: 12,
@@ -2020,7 +2020,7 @@ const TaskAnalyticsPage = () => {
                     dataSource={performanceTasksList}
                     size="large"
                     rowKey="_id"
-                    pagination={{ pageSize: 5 }}
+                    pagination={{ defaultPageSize: 5, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                     scroll={{ x: 1100 }}
                     onRow={(record) => ({
                       onClick: () => {

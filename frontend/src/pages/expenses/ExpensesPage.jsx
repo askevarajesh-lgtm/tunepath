@@ -133,7 +133,7 @@ const ExpensesPage = () => {
           columns={expenseColumns}
           dataSource={[]}
           rowKey="_id"
-          pagination={{ pageSize: 10 }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           locale={{
             emptyText: 'No expenses found. Click "Add Expense" to create one.',
           }}

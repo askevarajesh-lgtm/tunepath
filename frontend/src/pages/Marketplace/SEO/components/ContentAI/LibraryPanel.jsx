@@ -101,7 +101,7 @@ const LibraryPanel = () => {
         dataSource={pieces}
         size="small"
         locale={{ emptyText: <Empty description="No content pieces yet — generate something in the Generate tab." /> }}
-        pagination={{ pageSize: 10 }}
+        pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
       />
 
       <Drawer

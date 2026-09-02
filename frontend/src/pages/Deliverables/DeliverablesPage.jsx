@@ -333,7 +333,7 @@ const DeliverablesPage = () => {
           dataSource={clientData}
           rowKey="clientId"
           expandable={{ expandedRowRender }}
-          pagination={{ pageSize: 15 }}
+          pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           className="deliverables-table"
         />
       </Card>

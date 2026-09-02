@@ -723,7 +723,7 @@ const PositionTrackingTab = () => {
                 dataSource={rankings}
                 columns={columns}
                 rowKey="keyword"
-                pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `Total ${total} keywords` }}
+                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], showSizeChanger: true, showTotal: (total) => `Total ${total} keywords` }}
                 size="middle"
                 style={{ margin: 0 }}
                 rowClassName="semrush-table-row"

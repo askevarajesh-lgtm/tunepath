@@ -464,7 +464,7 @@ const SalesTrackingPageEnhanced = () => {
                 columns={teamWiseColumns}
                 dataSource={filteredTeamWise}
                 rowKey="team"
-                pagination={{ pageSize: 10 }}
+                pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                 scroll={{ x: "max-content" }}
                 locale={{ emptyText: "No team data available" }}
               />
@@ -481,7 +481,7 @@ const SalesTrackingPageEnhanced = () => {
                 columns={individualColumns}
                 dataSource={filteredIndividual}
                 rowKey={(record) => record._id || record.userId?._id}
-                pagination={{ pageSize: 10 }}
+                pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                 scroll={{ x: "max-content" }}
                 locale={{ emptyText: "No individual data available" }}
               />
