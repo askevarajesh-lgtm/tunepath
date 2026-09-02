@@ -338,6 +338,10 @@ const pageStyles = `
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
   }
 
+  .cgpt-mobile-close-btn {
+    display: none;
+  }
+
   .cgpt-ghost-button.ant-btn {
     color: #d4d4d4;
     border-color: var(--cgpt-line);
@@ -1423,6 +1427,10 @@ const pageStyles = `
       justify-content: center;
     }
 
+    .cgpt-mobile-close-btn {
+      display: inline-flex;
+    }
+
     .cgpt-bubble-wrap,
     .cgpt-message-row.user .cgpt-bubble-wrap {
       max-width: 100%;
@@ -2174,7 +2182,7 @@ const ClientChatGPTPage = () => {
               </div>
 
               <Button
-                className="cgpt-ghost-button"
+                className="cgpt-ghost-button cgpt-mobile-close-btn"
                 shape="circle"
                 icon={<ArrowLeftOutlined />}
                 onClick={() => setIsMobileSidebarOpen(false)}

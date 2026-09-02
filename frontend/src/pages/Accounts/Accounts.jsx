@@ -42,7 +42,7 @@ const Accounts = () => {
   const [editingAgency, setEditingAgency] = useState(null);
   const [selectedPackageId, setSelectedPackageId] = useState(null);
   const [form] = Form.useForm();
-  
+
   const [agencyCountryCode, setAgencyCountryCode] = useState('91');
   const [agencyCountryIso, setAgencyCountryIso] = useState('IN');
 
@@ -90,12 +90,12 @@ const Accounts = () => {
       setEditingAgency(agency);
       const pkgId = agency.plan?._id || agency.plan;
       setSelectedPackageId(pkgId);
-      
+
       const selectedPkgObj = packages.find(p => p._id === pkgId);
       const pkgIntegrations = selectedPkgObj?.integrations || [];
       const disabledPackageIntegrations = agency.disabledPackageIntegrations || [];
       const additionalIntegrations = agency.additionalIntegrations || [];
-      
+
       const effectiveIntegrations = [
         ...new Set([
           ...pkgIntegrations.filter(i => !disabledPackageIntegrations.includes(i)),
@@ -415,7 +415,7 @@ const Accounts = () => {
             dataSource={filteredAgencies}
             rowKey="_id"
             pagination={{
-              pageSize: 10,
+              defaultPageSize: 10,
               showSizeChanger: true,
               pageSizeOptions: ['10', '20', '50', '100'],
               showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
@@ -444,8 +444,8 @@ const Accounts = () => {
             <Input placeholder="e.g. Acme Corp" style={{ borderRadius: 8 }} size="large" />
           </Form.Item>
 
-          <Form.Item 
-            name="phone" 
+          <Form.Item
+            name="phone"
             label={<Text style={{ fontWeight: 600 }}>Phone Number</Text>}
             rules={[
               {
@@ -459,9 +459,9 @@ const Accounts = () => {
               }
             ]}
           >
-            <PhoneInput 
-              size="large" 
-              style={{ borderRadius: 8 }} 
+            <PhoneInput
+              size="large"
+              style={{ borderRadius: 8 }}
               countryCodeValue={agencyCountryCode}
               onCountryCodeChange={setAgencyCountryCode}
               isoCountryValue={agencyCountryIso}
@@ -491,7 +491,7 @@ const Accounts = () => {
                 const selectedPkg = packages.find(p => p._id === value);
                 if (selectedPkg) {
                   form.setFieldsValue({ features: selectedPkg.features || [] });
-                  
+
                   const pkgIntegrations = selectedPkg.integrations || [];
                   form.setFieldsValue({ integrations: pkgIntegrations });
                 }
@@ -504,14 +504,14 @@ const Accounts = () => {
           </Form.Item>
 
           <Form.Item label={<Text style={{ fontWeight: 600 }}>Included Modules</Text>} name="features">
-            <Checkbox.Group 
+            <Checkbox.Group
               style={{ width: '100%' }}
               onChange={(checkedFeatures) => {
                 const currentIntegrations = form.getFieldValue('integrations') || [];
                 let newIntegrations = [...currentIntegrations];
 
                 const AUTO_MAP = { hrms: 'ekta', crm: 'website' };
-                
+
                 Object.keys(AUTO_MAP).forEach(feat => {
                   const mappedInt = AUTO_MAP[feat];
                   if (checkedFeatures.includes(feat)) {

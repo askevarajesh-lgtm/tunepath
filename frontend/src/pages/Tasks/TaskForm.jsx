@@ -1263,6 +1263,13 @@ const TaskForm = () => {
                 >
                   <DatePicker
                     style={{ width: "100%" }}
+                    disabledDate={(current) => current && current < dayjs().startOf("day")}
+                    onChange={(date) => {
+                      const dueDate = form.getFieldValue("dueDate");
+                      if (date && dueDate && date.startOf("day") > dueDate.startOf("day")) {
+                        form.setFieldsValue({ dueDate: null });
+                      }
+                    }}
                   />
                 </Form.Item>
               </div>
@@ -1276,9 +1283,9 @@ const TaskForm = () => {
                   style={{ width: "100%" }}
                   disabledDate={(current) => {
                     const startDate = form.getFieldValue("startDate");
-                    return (
-                      current && startDate && current < startDate.startOf("day")
-                    );
+                    const isBeforeToday = current && current < dayjs().startOf("day");
+                    const isBeforeStartDate = current && startDate && current < startDate.startOf("day");
+                    return isBeforeToday || isBeforeStartDate;
                   }}
                 />
               </Form.Item>
