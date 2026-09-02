@@ -226,7 +226,7 @@ const getAllUsersLatestReports = async (tenantId, reqQuery = {}) => {
     isActive: true,
     role: "user",
   })
-    .select("_id name email role")
+    .select("_id name email role googleSheetUrl")
     .lean();
 
   const latestReports = [];
@@ -246,6 +246,7 @@ const getAllUsersLatestReports = async (tenantId, reqQuery = {}) => {
         userName: user.name,
         userEmail: user.email,
         userRole: user.role,
+        googleSheetUrl: user.googleSheetUrl,
         noteId: latestNote._id,
         content: latestNote.content,
         noteDate: latestNote.noteDate,
@@ -260,6 +261,7 @@ const getAllUsersLatestReports = async (tenantId, reqQuery = {}) => {
         userName: user.name,
         userEmail: user.email,
         userRole: user.role,
+        googleSheetUrl: user.googleSheetUrl,
         noteId: null,
         content: null,
         noteDate: null,
@@ -325,7 +327,7 @@ const getAllUsersReportHistory = async (tenantId, reqQuery = {}) => {
     isActive: true,
     role: "user",
   })
-    .select("_id name email role")
+    .select("_id name email role googleSheetUrl")
     .lean();
 
   const userReports = [];
@@ -365,6 +367,7 @@ const getAllUsersReportHistory = async (tenantId, reqQuery = {}) => {
         userName: user.name,
         userEmail: user.email,
         userRole: user.role,
+        googleSheetUrl: user.googleSheetUrl,
         notes: notesWithEditability,
         totalNotes: notes.length,
         latestNoteDate: notes.length > 0 ? notes[0].noteDate : null,

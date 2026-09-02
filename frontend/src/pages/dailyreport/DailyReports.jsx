@@ -27,6 +27,7 @@ import {
   CalendarOutlined,
   ReloadOutlined,
   BellOutlined,
+  LinkOutlined,
 } from "@ant-design/icons";
 import {
   useGetAllUsersLatestReportsQuery,
@@ -81,16 +82,12 @@ const DailyReports = () => {
     data: reportsData,
     isLoading: isLoadingReports,
     refetch: refetchReports,
-  } = useGetAllUsersLatestReportsQuery(reportsParams, {
-    skip: activeTab !== "reports",
-  });
+  } = useGetAllUsersLatestReportsQuery(reportsParams);
   const {
     data: historyData,
     isLoading: isLoadingHistory,
     refetch: refetchHistory,
-  } = useGetAllUsersReportHistoryQuery(historyParams, {
-    skip: activeTab !== "history",
-  });
+  } = useGetAllUsersReportHistoryQuery(historyParams);
   const [notifyMissingReports, { isLoading: isNotifying }] =
     useNotifyMissingYesterdayReportsMutation();
 
@@ -231,7 +228,7 @@ const DailyReports = () => {
       ellipsis: {
         showTitle: false,
       },
-      render: (content) => {
+      render: (content, record) => {
         if (!content) {
           return (
             <Text type="secondary" italic>
@@ -242,10 +239,19 @@ const DailyReports = () => {
         const preview =
           content.length > 150 ? `${content.substring(0, 150)}...` : content;
         return (
-          <LinkifiedText
-            text={preview}
-            style={{ display: "inline-block", maxWidth: "100%" }}
-          />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <LinkifiedText
+              text={preview}
+              style={{ display: "inline-block", maxWidth: "100%" }}
+            />
+            {record.googleSheetUrl && (
+              <div>
+                <a href={record.googleSheetUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 500, color: '#1890ff' }}>
+                  <LinkOutlined /> Google Sheet
+                </a>
+              </div>
+            )}
+          </div>
         );
       },
     },
@@ -492,6 +498,14 @@ const DailyReports = () => {
                                   >
                                     <LinkifiedText text={note.content} />
                                   </div>
+                                  {userReport.googleSheetUrl && (
+                                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #f0f0f0' }}>
+                                      <Text strong style={{ display: 'block', marginBottom: 4 }}>Google Sheet:</Text>
+                                      <a href={userReport.googleSheetUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                        <LinkOutlined /> Open Spreadsheet
+                                      </a>
+                                    </div>
+                                  )}
                                 </Descriptions.Item>
                                 <Descriptions.Item label="Created At">
                                   {dayjs(note.createdAt).format(

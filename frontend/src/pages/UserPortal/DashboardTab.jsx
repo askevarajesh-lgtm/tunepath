@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Typography, Card, Row, Col, Spin, Button, Modal, Tabs, Input, message, DatePicker, Avatar, Progress, List, Tag, Space } from 'antd';
 import { motion } from 'framer-motion';
-import { CheckSquare, Clock, AlertCircle, FileText, ChevronLeft, ChevronRight, User, Activity, Edit2, RefreshCw } from 'lucide-react';
+import { CheckSquare, Clock, AlertCircle, FileText, ChevronLeft, ChevronRight, User, Activity, Edit2, RefreshCw, ExternalLink } from 'lucide-react';
 import { useGetTasksQuery } from '../../api/taskApi';
 import { useGetTodayNoteQuery, useCreateOrUpdateTodayNoteMutation } from '../../api/notepadApi';
 import { useAuth } from '../../contexts/AuthContext';
@@ -34,7 +34,7 @@ const UserDashboard = () => {
   };
 
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const isUserRole = user?.role === 'user';
 
   const { data: tasksData, isLoading } = useGetTasksQuery({ limit: 1000 });
@@ -95,7 +95,10 @@ const UserDashboard = () => {
 
   // Daily Reports State
   const [isReportModalVisible, setIsReportModalVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState("note");
   const [noteContent, setNoteContent] = useState("");
+  const [googleSheetUrl, setGoogleSheetUrl] = useState(user?.googleSheetUrl || "");
+  const [isSavingUrl, setIsSavingUrl] = useState(false);
 
   const { data: noteData, isLoading: isNoteLoading, refetch: refetchNote } = useGetTodayNoteQuery();
   const [createOrUpdateNote, { isLoading: isSavingNote }] = useCreateOrUpdateTodayNoteMutation();
@@ -114,6 +117,37 @@ const UserDashboard = () => {
       message.success("Daily report saved successfully!");
       setIsReportModalVisible(false);
       refetchNote();
+    }
+  };
+
+  const handleSaveUrl = async () => {
+    setIsSavingUrl(true);
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch(`/api/users/${user._id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": token ? `Bearer ${token}` : ""
+        },
+        body: JSON.stringify({ googleSheetUrl })
+      });
+      const data = await res.json();
+      if (data.success) {
+        message.success("Google Sheet link saved successfully!");
+        if (data.data && data.data.googleSheetUrl !== undefined) {
+           const updatedUser = { ...user, googleSheetUrl: data.data.googleSheetUrl };
+           setUser(updatedUser);
+           localStorage.setItem('user', JSON.stringify(updatedUser));
+        }
+      } else {
+        message.error(data.message || "Failed to save Google Sheet link");
+      }
+    } catch (error) {
+      console.error(error);
+      message.error("An error occurred while saving the Google Sheet link");
+    } finally {
+      setIsSavingUrl(false);
     }
   };
 
@@ -419,22 +453,48 @@ const UserDashboard = () => {
           <Button key="cancel" onClick={() => setIsReportModalVisible(false)} style={{ borderRadius: 6 }}>
             Cancel
           </Button>,
-          <Button
-            key="submit"
-            type="primary"
-            danger
-            loading={isSavingNote}
-            onClick={handleSaveNote}
-            icon={<FileText size={14} />}
-            style={{ borderRadius: 6, display: 'inline-flex', alignItems: 'center' }}
-          >
-            Save Note
-          </Button>,
+          activeTab === 'note' ? (
+            <Button
+              key="submit"
+              type="primary"
+              danger
+              loading={isSavingNote}
+              onClick={handleSaveNote}
+              icon={<FileText size={14} />}
+              style={{ borderRadius: 6, display: 'inline-flex', alignItems: 'center' }}
+            >
+              Save Note
+            </Button>
+          ) : (
+            <>
+              {googleSheetUrl && (
+                <Button
+                  key="open-tab"
+                  onClick={() => window.open(googleSheetUrl, '_blank')}
+                  icon={<ExternalLink size={14} />}
+                  style={{ borderRadius: 6, display: 'inline-flex', alignItems: 'center' }}
+                >
+                  Open in New Tab
+                </Button>
+              )}
+              <Button
+                key="submit-url"
+                type="primary"
+                danger
+                loading={isSavingUrl}
+                onClick={handleSaveUrl}
+                icon={<CheckSquare size={14} />}
+                style={{ borderRadius: 6, display: 'inline-flex', alignItems: 'center' }}
+              >
+                Save Link
+              </Button>
+            </>
+          ),
         ]}
         width={700}
         styles={{ header: { borderBottom: '1px solid #f0f0f0' } }}
       >
-        <Tabs defaultActiveKey="note" tabBarStyle={{ marginBottom: 16 }}>
+        <Tabs activeKey={activeTab} onChange={setActiveTab} tabBarStyle={{ marginBottom: 16 }}>
           <TabPane 
             tab={
               <span style={{  fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -463,8 +523,28 @@ const UserDashboard = () => {
             } 
             key="sheet"
           >
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-secondary)' }}>
-              <Text>Google Sheet integration coming soon...</Text>
+            <div style={{ padding: '20px 0' }}>
+              <div style={{ marginBottom: 16 }}>
+                <Text strong>Google Sheet Link</Text>
+                <Input 
+                  placeholder="https://docs.google.com/spreadsheets/d/..." 
+                  value={googleSheetUrl}
+                  onChange={(e) => setGoogleSheetUrl(e.target.value)}
+                  style={{ marginTop: 8, borderRadius: 8 }}
+                  size="large"
+                />
+              </div>
+              {googleSheetUrl && googleSheetUrl.includes('docs.google.com') && (
+                <div style={{ marginTop: 16, height: 400, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-color)' }}>
+                  <iframe 
+                    src={googleSheetUrl.includes('?') ? googleSheetUrl + '&widget=true&headers=false' : googleSheetUrl + '?widget=true&headers=false'} 
+                    width="100%" 
+                    height="100%" 
+                    frameBorder="0"
+                    title="Google Sheet View"
+                  ></iframe>
+                </div>
+              )}
             </div>
           </TabPane>
         </Tabs>

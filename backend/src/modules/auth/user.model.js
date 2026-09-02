@@ -7,6 +7,7 @@ const UserSchema = new mongoose.Schema({
   phone: { type: String, default: null },
   countryCode: { type: String, default: '91' },
   address: { type: mongoose.Schema.Types.Mixed, default: null },
+  googleSheetUrl: { type: String, default: null },
   password: { type: String, required: false }, // Optional for migrated organizations
   role: { 
     type: String, 
