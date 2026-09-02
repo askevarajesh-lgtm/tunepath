@@ -22,23 +22,49 @@ const syncFacebookIntegrationLeads = async (integration) => {
       if (!selectedForms || selectedForms.length === 0) continue;
 
       let targetAccessToken = page.accessToken;
-      if (!targetAccessToken || !targetAccessToken.startsWith('EAA') || targetAccessToken.length < 50) {
+      if (!targetAccessToken || !targetAccessToken.startsWith('EAA') || targetAccessToken.length < 50 || targetAccessToken === accessToken) {
         try {
-          const accountsRes = await axios.get(`https://graph.facebook.com/v18.0/me/accounts`, {
+          const pageRes = await axios.get(`https://graph.facebook.com/v18.0/${page.pageId}`, {
             params: { access_token: accessToken, fields: 'id,access_token' },
             timeout: 10000
           });
-          if (accountsRes.data && accountsRes.data.data) {
-            const match = accountsRes.data.data.find(a => a.id === page.pageId);
-            if (match && match.access_token) {
-              targetAccessToken = match.access_token;
-              page.accessToken = match.access_token;
-            }
+          if (pageRes.data && pageRes.data.access_token) {
+            targetAccessToken = pageRes.data.access_token;
+            page.accessToken = targetAccessToken;
           }
-        } catch (tokenErr) {}
+        } catch (pageErr) {}
+
+        if (!targetAccessToken || targetAccessToken === accessToken) {
+          try {
+            let url = `https://graph.facebook.com/v18.0/me/accounts`;
+            let params = { access_token: accessToken, fields: 'id,access_token', limit: 100 };
+            let hasNext = true;
+            while (hasNext) {
+              const accountsRes = await axios.get(url, { params, timeout: 10000 });
+              if (accountsRes.data && accountsRes.data.data) {
+                const match = accountsRes.data.data.find(a => a.id === page.pageId);
+                if (match && match.access_token) {
+                  targetAccessToken = match.access_token;
+                  page.accessToken = match.access_token;
+                  break;
+                }
+                if (accountsRes.data.paging && accountsRes.data.paging.next) {
+                  url = accountsRes.data.paging.next;
+                  params = {};
+                } else {
+                  hasNext = false;
+                }
+              } else {
+                hasNext = false;
+              }
+            }
+          } catch (tokenErr) {}
+        }
       }
-      if (!targetAccessToken) {
-        targetAccessToken = accessToken;
+
+      if (!targetAccessToken || targetAccessToken === accessToken) {
+        console.error(`[Lead AutoSync] Missing or invalid page access token for page ${page.pageId}, skipping sync to prevent impersonation errors.`);
+        continue;
       }
 
       for (const formId of selectedForms) {

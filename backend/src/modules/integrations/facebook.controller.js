@@ -563,14 +563,6 @@ exports.syncLeads = async (req, res, next) => {
           forms = formsRes.data.data;
         }
       } catch (err) {
-        if (integration.config.accessToken && targetAccessToken !== integration.config.accessToken) {
-          try {
-            const fallbackRes = await fetchFormsForSync(integration.config.accessToken);
-            if (fallbackRes.data && fallbackRes.data.data) {
-              forms = fallbackRes.data.data;
-            }
-          } catch (e) {}
-        }
         if (forms.length === 0) {
           let errMsg = err.response?.data?.error?.message || err.message || err.toString();
           if (errMsg.includes('Error fetching /me/accounts') || err.response?.data?.error?.code === 190 || errMsg.includes('permission') || errMsg.includes('impersonating') || err.response?.data?.error?.code === 100) {
@@ -827,41 +819,59 @@ exports.getAds = async (req, res, next) => {
 const resolvePageAccessToken = async (integration, pageId, forceRefresh = false) => {
   const pages = integration.config?.pages || [];
   const page = pages.find(p => p.pageId === pageId);
+  const userAccessToken = integration.config?.accessToken;
   
-  if (!forceRefresh && page && page.accessToken && page.accessToken.startsWith('EAA') && page.accessToken.length > 50) {
+  if (!forceRefresh && page && page.accessToken && page.accessToken.startsWith('EAA') && page.accessToken !== userAccessToken && page.accessToken.length > 50) {
     return page.accessToken;
   }
 
-  const userAccessToken = integration.config?.accessToken;
   if (!userAccessToken) return null;
 
-  // Fetch /me/accounts with userAccessToken to obtain valid page access tokens
   try {
-    const accountsRes = await axios.get(`https://graph.facebook.com/v18.0/me/accounts`, {
-      params: {
-        access_token: userAccessToken,
-        fields: 'id,name,access_token',
-        limit: 100
-      },
+    const pageRes = await axios.get(`https://graph.facebook.com/v18.0/${pageId}`, {
+      params: { access_token: userAccessToken, fields: 'id,access_token' },
       timeout: 10000
     });
-    if (accountsRes.data && accountsRes.data.data) {
-      const match = accountsRes.data.data.find(a => a.id === pageId);
-      if (match && match.access_token) {
-        if (page) {
-          page.accessToken = match.access_token;
-          integration.markModified('config');
-          await integration.save().catch(() => {});
+    if (pageRes.data && pageRes.data.access_token) {
+      if (page) {
+        page.accessToken = pageRes.data.access_token;
+        integration.markModified('config');
+        await integration.save().catch(() => {});
+      }
+      return pageRes.data.access_token;
+    }
+  } catch (err) {}
+
+  try {
+    let url = `https://graph.facebook.com/v18.0/me/accounts`;
+    let params = { access_token: userAccessToken, fields: 'id,name,access_token', limit: 100 };
+    let hasNext = true;
+    while (hasNext) {
+      const accountsRes = await axios.get(url, { params, timeout: 10000 });
+      if (accountsRes.data && accountsRes.data.data) {
+        const match = accountsRes.data.data.find(a => a.id === pageId);
+        if (match && match.access_token) {
+          if (page) {
+            page.accessToken = match.access_token;
+            integration.markModified('config');
+            await integration.save().catch(() => {});
+          }
+          return match.access_token;
         }
-        return match.access_token;
+        if (accountsRes.data.paging && accountsRes.data.paging.next) {
+          url = accountsRes.data.paging.next;
+          params = {};
+        } else {
+          hasNext = false;
+        }
+      } else {
+        hasNext = false;
       }
     }
   } catch (err) {
     console.error('Error fetching /me/accounts for page access token:', err.response?.data?.error?.message || err.message);
-    throw new Error(err.response?.data?.error?.message || err.message);
   }
 
-  // Do NOT return userAccessToken as a fallback here, it causes confusing Facebook permission errors on Page endpoints
   return null;
 };
 
@@ -906,14 +916,6 @@ exports.getForms = async (req, res, next) => {
       }
       return res.status(200).json({ success: true, data: formsRes.data.data || [] });
     } catch (fbErr) {
-      // If page token failed, try user token as fallback
-      if (integration.config.accessToken && targetAccessToken !== integration.config.accessToken) {
-        try {
-          const fallbackRes = await fetchFormsWithToken(integration.config.accessToken);
-          return res.status(200).json({ success: true, data: fallbackRes.data.data || [] });
-        } catch (e) {}
-      }
-
       console.error('Get Forms FB Error:', fbErr.response?.data || fbErr.message);
       let errMsg = fbErr.response?.data?.error?.message || fbErr.message || fbErr.toString();
       if (errMsg.includes('Error fetching /me/accounts') || fbErr.response?.data?.error?.code === 190 || errMsg.includes('permission') || errMsg.includes('impersonating') || fbErr.response?.data?.error?.code === 100) {
