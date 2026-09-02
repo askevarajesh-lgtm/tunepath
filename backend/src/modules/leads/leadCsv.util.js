@@ -60,10 +60,10 @@ const escapeCsvField = (value) => {
 
 const EXPORT_HEADERS = [
   "Name",
-  "Company Name",
   "Phone Number",
   "Email",
-  "Project Type",
+  "Lead Date",
+  "Form Name",
   "Lead Source",
   "Status",
   "Assigned To",
@@ -83,15 +83,29 @@ const phoneFromLead = (lead) => {
   return (lead.mobile && String(lead.mobile).trim()) || "";
 };
 
+const formatLeadDate = (lead) => {
+  const customDate = lead?.customData?.created_time || lead?.customData?.createdTime || lead?.customData?.createdtime;
+  const dateStr = customDate || lead?.createdAt;
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(d.getDate())}-${pad(d.getMonth() + 1)}-${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+const getFormName = (lead) => {
+  return lead?.customData?.form_name || lead?.customData?.formName || lead?.formName || "";
+};
+
 const leadsToCsv = (leads) => {
   const lines = [EXPORT_HEADERS.join(",")];
   for (const lead of leads) {
     const row = [
       fullNameFromLead(lead),
-      (lead.companyName && String(lead.companyName).trim()) || "",
       phoneFromLead(lead),
       (lead.email && String(lead.email).trim()) || "",
-      (lead.projectType && String(lead.projectType).trim()) || "",
+      formatLeadDate(lead),
+      (getFormName(lead) && String(getFormName(lead)).trim()) || "",
       (lead.source && String(lead.source).trim()) || "",
       (lead.status && String(lead.status).trim()) || "new",
       (lead.assignedTo && String(lead.assignedTo).trim()) || "",
