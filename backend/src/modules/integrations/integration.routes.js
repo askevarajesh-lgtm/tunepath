@@ -71,6 +71,18 @@ router.post(
   integrationController.sendMessage,
 );
 
+// Email / SendPulse Integration Routes
+router.post(
+  "/email/test-connection",
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
+  integrationController.testEmailConnection,
+);
+router.post(
+  "/email/test-send",
+  rbacMiddleware(...ALLOWED_INTEGRATION_ROLES),
+  integrationController.sendTestEmail,
+);
+
 // Twilio SMS Integration Routes
 router.post(
   "/twilio/test",

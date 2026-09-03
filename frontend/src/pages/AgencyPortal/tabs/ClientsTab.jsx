@@ -188,14 +188,19 @@ const ClientsTab = () => {
   useEffect(() => {
     if (location.state?.openCreateClientModal) {
       setIsCreateModalOpen(true);
-      if (location.state.dealName) {
-        form.setFieldsValue({ name: location.state.dealName });
+      form.setFieldsValue({
+        name: location.state.name || location.state.dealName || '',
+        email: location.state.email || '',
+        phone: location.state.phone || ''
+      });
+      if (location.state.countryCode) {
+        setClientCountryCode(location.state.countryCode);
       }
       if (location.state.dealId) {
         setCreateDealId(location.state.dealId);
       }
       // Clean up state so refresh doesn't reopen modal
-      window.history.replaceState({}, document.title)
+      window.history.replaceState({}, document.title);
     }
   }, [location.state, form]);
 

@@ -249,12 +249,12 @@ const getAllIntegrations = async (companyId, role, user) => {
     query.$or = [{ companyId: null }];
     if (companyId) query.$or.push({ companyId });
   } else {
-    query.companyId = companyId;
+    query.$or = [{ companyId }];
+    if (companyId) {
+      query.$or.push({ clientId: companyId });
+    }
     if (role === "user" && user.brandId) {
       query.ownerId = user._id; // Sub-users only see their own integrations
-    } else {
-      // Admins see all company integrations (ownerId: null or anything)
-      // We don't filter by ownerId, so they see sub-users' integrations too
     }
   }
 
@@ -1608,6 +1608,45 @@ const processWhatsAppLeads = async (leads, companyId, integrationCompanyId) => {
   };
 };
 
+const testEmailConnection = async (companyId, payload = {}) => {
+  const integration = await Integration.findOne({ type: "email", companyId });
+  const clientId = payload.clientId || integration?.config?.clientId || process.env.SENDPULSE_CLIENT_ID;
+  const clientSecret = payload.clientSecret || integration?.config?.clientSecret || process.env.SENDPULSE_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    throw new Error("SendPulse Client ID and Client Secret are missing. Please configure them first.");
+  }
+
+  await sendpulseService.testConnection({ clientId, clientSecret });
+  return { connected: true, success: true };
+};
+
+const sendTestEmail = async (companyId, payload = {}) => {
+  const { to, subject, body } = payload;
+  if (!to) {
+    throw new Error("Recipient email address is required.");
+  }
+
+  const integration = await Integration.findOne({ type: "email", companyId });
+  const clientId = payload.clientId || integration?.config?.clientId || process.env.SENDPULSE_CLIENT_ID;
+  const clientSecret = payload.clientSecret || integration?.config?.clientSecret || process.env.SENDPULSE_CLIENT_SECRET;
+  const fromEmail = payload.fromEmail || integration?.config?.fromEmail || process.env.SENDPULSE_FROM_EMAIL || "dev@askeva.io";
+  const fromName = payload.fromName || integration?.config?.fromName || process.env.SENDPULSE_FROM_NAME || "Tunepath Technologies";
+
+  await sendpulseService.sendEmail({
+    to,
+    subject: subject || "Test Email from ASKEVA HRMS",
+    html: body ? `<div style="font-family: sans-serif; padding: 20px;">${body}</div>` : "<p>This is a test email from the email configuration system.</p>",
+    text: body || "This is a test email from the email configuration system.",
+    fromName,
+    fromEmail,
+    clientId,
+    clientSecret,
+  });
+
+  return { success: true };
+};
+
 module.exports = {
   getAllIntegrations,
   createIntegration,
@@ -1624,6 +1663,8 @@ module.exports = {
   testTwilioConnection,
   saveTwilioIntegration,
   getTwilioIntegration,
+  testEmailConnection,
+  sendTestEmail,
 };
 
 async function syncAllWhatsAppLeads(requestingCompanyId = null) {

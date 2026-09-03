@@ -85,10 +85,10 @@ const BrandUsersTab = ({ user }) => {
         setUserCountryIso('IN');
         fetchUsers();
       } else {
-        message.error(data.message || 'Failed to create user');
+        message.error(data.message || data.error || 'Failed to create user');
       }
     } catch (error) {
-      message.error('An error occurred');
+      message.error(error?.message || 'An error occurred');
     } finally {
       setSubmitLoading(false);
     }

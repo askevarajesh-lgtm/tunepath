@@ -13,8 +13,12 @@ const errorMiddleware = (err, req, res, next) => {
   // Mongoose duplicate key
   if (err.code === 11000) {
     statusCode = 400;
-    const field = Object.keys(err.keyValue)[0];
-    message = `An account with that ${field} already exists.`;
+    const field = err.keyValue ? Object.keys(err.keyValue)[0] : 'field';
+    let fieldName = 'field';
+    if (field === 'phone') fieldName = 'phone number';
+    else if (field === 'email') fieldName = 'email address';
+    else fieldName = field;
+    message = `An account with that ${fieldName} already exists. Please use a different ${fieldName}.`;
   }
 
   // Mongoose validation error

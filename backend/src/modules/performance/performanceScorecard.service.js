@@ -79,21 +79,6 @@ const submitSelfAssessment = async (selfAssessmentData, companyId, userId) => {
     throw new Error("Cannot modify self-assessment after review is completed");
   }
 
-  // Check if user has been notified by admin for this month/year
-  const Notification = require("../tasks/notification.model");
-  const hasNotification = await Notification.findOne({
-    userId,
-    type: "performance_self_assessment_pending",
-    "metadata.month": month,
-    "metadata.year": year,
-  });
-
-  if (!hasNotification) {
-    throw new Error(
-      "You can only submit self-assessment after receiving a notification from admin. Please wait for admin notification.",
-    );
-  }
-
   // Prepare self-assessment data (only self grades)
   const performanceCategories = {};
   const categoryKeys = Object.keys(
@@ -408,9 +393,11 @@ const getPerformanceHistory = async (userId, companyId, filters = {}) => {
  * @returns {Promise<Array>} Array of scorecards
  */
 const getAllScorecards = async (companyId, filters = {}) => {
-  if (!companyId) throw new Error("Company ID is required");
+  const query = {};
 
-  const query = { companyId };
+  if (companyId) {
+    query.$or = [{ companyId }, { agencyId: companyId }];
+  }
 
   if (filters.userId) {
     query.userId = filters.userId;
@@ -422,9 +409,20 @@ const getAllScorecards = async (companyId, filters = {}) => {
     query.year = parseInt(filters.year);
   }
 
-  const scorecards = await PerformanceScorecard.find(query)
+  let scorecards = await PerformanceScorecard.find(query)
     .populate("userId", "name email role team")
     .sort({ year: -1, month: -1, createdAt: -1 });
+
+  // Fallback: If no scorecards found for companyId filter, search by month/year
+  if (scorecards.length === 0 && (filters.month || filters.year)) {
+    const fallbackQuery = {};
+    if (filters.userId) fallbackQuery.userId = filters.userId;
+    if (filters.month) fallbackQuery.month = parseInt(filters.month);
+    if (filters.year) fallbackQuery.year = parseInt(filters.year);
+    scorecards = await PerformanceScorecard.find(fallbackQuery)
+      .populate("userId", "name email role team")
+      .sort({ year: -1, month: -1, createdAt: -1 });
+  }
 
   return scorecards;
 };
@@ -487,18 +485,47 @@ const getUsersWithoutSelfAssessment = async (companyId, month, year) => {
   if (!month || month < 1 || month > 12) throw new Error("Invalid month");
   if (!year) throw new Error("Year is required");
 
-  const User = require("../users/user.model");
+  const User = require("../auth/user.model");
 
-  // Get all active users in the company (excluding admin and super_admin)
-  const allUsers = await User.find({
-    companyId,
+  const excludeRoles = [
+    "admin",
+    "superadmin",
+    "super_admin",
+    "supreme_super_admin",
+    "commander_admin",
+    "agency_super_admin",
+    "agency_manager",
+    "agency",
+    "brand_super_admin",
+    "brand_admin",
+    "brand_manager",
+    "agency_client",
+    "client",
+  ];
+
+  // Get all active staff users in the company/agency
+  let allUsers = await User.find({
     isActive: true,
-    role: { $nin: ["admin", "super_admin"] },
+    role: { $nin: excludeRoles },
+    $or: [
+      { agencyId: companyId },
+      { adminId: companyId },
+      { companyId: companyId },
+      { _id: companyId },
+      { createdBy: companyId },
+    ],
   }).select("_id name email role team");
+
+  // Fallback: If tenant query yields 0 users, search all active staff users
+  if (allUsers.length === 0) {
+    allUsers = await User.find({
+      isActive: true,
+      role: { $nin: excludeRoles },
+    }).select("_id name email role team");
+  }
 
   // Get users who have submitted self-assessment for this month/year
   const usersWithAssessment = await PerformanceScorecard.find({
-    companyId,
     month,
     year,
     status: { $in: ["self_submitted", "review_completed"] },
@@ -536,7 +563,7 @@ const notifyPendingSelfAssessment = async (
   if (!year) throw new Error("Year is required");
 
   const Notification = require("../tasks/notification.model");
-  const User = require("../users/user.model");
+  const User = require("../auth/user.model");
 
   let usersToNotify = [];
 
@@ -544,7 +571,6 @@ const notifyPendingSelfAssessment = async (
     // Notify specific users
     usersToNotify = await User.find({
       _id: { $in: userIds },
-      companyId,
       isActive: true,
     }).select("_id name email role");
   } else {

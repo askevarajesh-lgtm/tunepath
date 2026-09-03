@@ -41,11 +41,24 @@ const PerformanceHistoryPage = () => {
   const location = useLocation();
   const { userId: userIdParam } = useParams();
   const { user } = useAuth();
-  const isAdmin =
-    user?.role === "admin" ||
-    user?.role === "sales_manager" ||
-    user?.role === "operations_head" ||
-    user?.role === "commander_admin";
+  const effectiveRole = user?.originalRole || user?.role;
+  const isAdmin = [
+    "admin",
+    "superadmin",
+    "super_admin",
+    "supreme_super_admin",
+    "commander_admin",
+    "agency_super_admin",
+    "agency_manager",
+    "agency",
+    "operations_head",
+    "sales_manager",
+    "brand_super_admin",
+    "brand_admin",
+    "brand_manager",
+    "hr",
+    "hr_manager",
+  ].includes(effectiveRole);
 
   // Default to current month and year
   const getCurrentMonthYear = () => {

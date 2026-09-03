@@ -404,7 +404,6 @@ const ProfessionalProposal = ({ proposal }) => {
           color: #111111;
           font-size: clamp(58px, 9vw, 80px);
           font-weight: 900;
-          letter-spacing: -0.08em;
           line-height: 0.9;
         }
 

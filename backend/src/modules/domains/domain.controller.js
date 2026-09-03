@@ -26,8 +26,11 @@ exports.connectDomain = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'That hostname is reserved for this application.' });
     }
 
+    // Clean up any legacy soft-deleted records for this domain name to prevent duplicate key constraint issues
+    await Domain.deleteMany({ domain: domainName, isDeleted: true });
+
     // Check if domain is already connected
-    const domainExists = await Domain.findOne({ domain: domainName, isDeleted: false });
+    const domainExists = await Domain.findOne({ domain: domainName });
     if (domainExists) {
       return res.status(400).json({ success: false, error: 'This domain name is already connected to a project' });
     }
@@ -90,7 +93,7 @@ exports.getDomains = async (req, res, next) => {
     const workspaceId = req.workspaceId;
     const { search } = req.query;
 
-    const query = { workspaceId, isDeleted: false };
+    const query = { workspaceId, isDeleted: { $ne: true } };
     if (search) {
       query.domain = { $regex: search, $options: 'i' };
     }
@@ -122,7 +125,7 @@ exports.getDomains = async (req, res, next) => {
 exports.getDomainDetails = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const domain = await Domain.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const domain = await Domain.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: { $ne: true } });
     if (!domain) {
       return res.status(404).json({ success: false, error: 'Domain connection not found' });
     }
@@ -136,21 +139,19 @@ exports.getDomainDetails = async (req, res, next) => {
 exports.disconnectDomain = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const domain = await Domain.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const domain = await Domain.findOne({ _id: id, workspaceId: req.workspaceId });
     if (!domain) {
       return res.status(404).json({ success: false, error: 'Domain connection not found' });
     }
 
-    domain.isDeleted = true;
-    domain.updatedBy = req.user?._id;
-    await domain.save();
-
     // Clear domain references in the connected property
     if (domain.propertyType === 'Website') {
-      await Website.updateOne({ _id: domain.propertyId }, { domainId: null });
-
-
+      await Website.updateOne({ _id: domain.propertyId }, { $unset: { domainId: "" } });
+      await Website.updateMany({ domainId: domain._id }, { $unset: { domainId: "" } });
     }
+
+    // Permanently delete the domain document from DB
+    await Domain.deleteOne({ _id: domain._id });
 
     res.json({ success: true, message: 'Domain disconnected successfully' });
   } catch (error) {
@@ -162,7 +163,7 @@ exports.disconnectDomain = async (req, res, next) => {
 exports.verifyDNS = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const domain = await Domain.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const domain = await Domain.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: { $ne: true } });
     if (!domain) {
       return res.status(404).json({ success: false, error: 'Domain connection not found' });
     }

@@ -10,7 +10,7 @@ import EmailConfigPage from '../../integrations/EmailConfigPage';
 import PaymentConfigPage from '../../integrations/PaymentConfigPage';
 import EktaHrInlineConfigPage from '../../integrations/EktaHrInlineConfigPage';
 
-import { useGetIntegrationsQuery, useUpdateIntegrationMutation } from '../../../api/integrationApi';
+import { useGetIntegrationsQuery, useUpdateIntegrationMutation, useCreateIntegrationMutation } from '../../../api/integrationApi';
 
 const { Title, Text } = Typography;
 
@@ -344,6 +344,7 @@ const ClientIntegrationsTab = ({ user }) => {
   const activeClientId = user?.activeClientId || user?.clientId || user?._id;
   const { data, refetch, isLoading } = useGetIntegrationsQuery({ clientId: activeClientId }, { skip: !activeClientId });
   const [updateIntegration] = useUpdateIntegrationMutation();
+  const [createIntegration] = useCreateIntegrationMutation();
 
   const integrations = data?.data?.integrations || [];
 
@@ -360,33 +361,36 @@ const ClientIntegrationsTab = ({ user }) => {
   const handleToggle = async (integrationType, checked) => {
     try {
       let toggled = false;
-      const integration = integrations.find(i => i.type === integrationType);
-      
-      if (integration) {
-        await updateIntegration({
-          id: integration._id,
+      const targetIntegrations = [];
+
+      if (integrationType === 'website') {
+        const webInt = integrations.find(i => i.type === 'website');
+        const fbInt = integrations.find(i => i.type === 'facebook_leads');
+        if (webInt) targetIntegrations.push(webInt);
+        if (fbInt) targetIntegrations.push(fbInt);
+      } else {
+        const intg = integrations.find(i => i.type === integrationType);
+        if (intg) targetIntegrations.push(intg);
+      }
+
+      if (targetIntegrations.length > 0) {
+        for (const item of targetIntegrations) {
+          await updateIntegration({
+            id: item._id,
+            isActive: checked,
+          }).unwrap();
+        }
+        toggled = true;
+      } else {
+        await createIntegration({
+          type: integrationType,
           isActive: checked,
+          clientId: activeClientId !== user?._id ? activeClientId : undefined,
         }).unwrap();
         toggled = true;
       }
-      
-      if (integrationType === 'website') {
-        const fbIntegration = integrations.find(i => i.type === 'facebook_leads');
-        if (fbIntegration) {
-          await updateIntegration({
-            id: fbIntegration._id,
-            isActive: checked,
-          }).unwrap();
-          toggled = true;
-        }
-      }
 
-      if (!toggled) {
-        console.warn("Integration not found to toggle");
-        message.warning("Please configure the integration first before enabling it.");
-      } else {
-        message.success(`Integration ${checked ? 'enabled' : 'disabled'} successfully`);
-      }
+      message.success(`Integration ${checked ? 'enabled' : 'disabled'} successfully`);
       refetch();
     } catch (error) {
       console.error("Failed to toggle integration", error);
@@ -429,20 +433,33 @@ const ClientIntegrationsTab = ({ user }) => {
             if (!meta) return null;
             
             const integrationRecord = integrations.find(i => i.type === type);
-            let isActive = integrationRecord?.isActive || false;
-            
+            let isActive = false;
             let isConfigured = false;
+            
             if (type === 'website') {
               const fbIntegration = integrations.find(i => i.type === 'facebook_leads');
-              isConfigured = Boolean(integrationRecord?.config?.apiKey?.trim() || integrationRecord?.config?.whatsappLeads?.token?.trim()) || Boolean(fbIntegration?.config && Object.keys(fbIntegration.config).length > 0);
-              isActive = (integrationRecord?.isActive) || (fbIntegration?.isActive) || false;
+              const isWebConfigured = Boolean(integrationRecord?.config?.apiKey?.trim() || integrationRecord?.config?.whatsappLeads?.token?.trim());
+              const isFbConfigured = Boolean(
+                fbIntegration?.config &&
+                (fbIntegration.config.accessToken || (fbIntegration.config.pages && fbIntegration.config.pages.length > 0))
+              );
+              isConfigured = isWebConfigured || isFbConfigured;
+
+              const webActive = integrationRecord?.isActive;
+              const fbActive = fbIntegration?.isActive;
+
+              if (webActive !== undefined || fbActive !== undefined) {
+                isActive = Boolean(webActive || fbActive);
+              } else if (isConfigured) {
+                isActive = true;
+              }
             } else {
               isConfigured = Boolean(integrationRecord?.config && Object.keys(integrationRecord.config).length > 0);
-            }
-
-            // As per user request: "If any integration is configured inside the Integrations section, its corresponding card should show Active."
-            if (isConfigured) {
-              isActive = true;
+              if (integrationRecord?.isActive !== undefined) {
+                isActive = integrationRecord.isActive;
+              } else if (isConfigured) {
+                isActive = true;
+              }
             }
 
             return (

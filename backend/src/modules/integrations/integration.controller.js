@@ -258,6 +258,24 @@ const getTwilioIntegration = async (req, res) => {
   }
 };
 
+const testEmailConnection = async (req, res) => {
+  try {
+    const result = await integrationService.testEmailConnection(req.companyId, req.body);
+    return sendSuccess(res, "Email connection successful!", result);
+  } catch (error) {
+    return sendError(res, 400, error.message || "Email connection failed.");
+  }
+};
+
+const sendTestEmail = async (req, res) => {
+  try {
+    const result = await integrationService.sendTestEmail(req.companyId, req.body);
+    return sendSuccess(res, "Test email sent successfully!", result);
+  } catch (error) {
+    return sendError(res, 400, error.message || "Failed to send test email.");
+  }
+};
+
 module.exports = {
   getAllIntegrations,
   createIntegration,
@@ -276,4 +294,6 @@ module.exports = {
   testTwilioConnection,
   saveTwilioIntegration,
   getTwilioIntegration,
+  testEmailConnection,
+  sendTestEmail,
 };

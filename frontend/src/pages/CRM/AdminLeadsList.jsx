@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Table, Tag, Space, Button, Typography, Input, Card, Modal, Select, Form, message, Upload, Row, Col, Tabs, Descriptions, Empty, DatePicker } from 'antd';
-import { EyeOutlined, EditOutlined, DeleteOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, FileTextOutlined, AudioOutlined, PictureOutlined, VideoCameraOutlined, FileOutlined, WhatsAppOutlined, FacebookOutlined, CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import { EyeOutlined, EditOutlined, DeleteOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, FileTextOutlined, AudioOutlined, PictureOutlined, VideoCameraOutlined, FileOutlined, WhatsAppOutlined, FacebookOutlined, CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, UserAddOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { 
   useCreateLeadMutation, 
@@ -52,6 +52,79 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
   
   const [dateRangeFilter, setDateRangeFilter] = useState(null);
   const [formNameFilter, setFormNameFilter] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
+  const [convertingLead, setConvertingLead] = useState(null);
+  const [convertForm] = Form.useForm();
+  const [convertCountryCode, setConvertCountryCode] = useState('91');
+  const [convertCountryIso, setConvertCountryIso] = useState('IN');
+  const [isConvertingLoading, setIsConvertingLoading] = useState(false);
+
+  const handleOpenConvertModal = (lead) => {
+    if (!lead) return;
+    setConvertingLead(lead);
+    setViewingLead(null);
+    setConvertCountryCode(lead.countryCode || '91');
+    setConvertCountryIso(lead.countryIso || 'IN');
+
+    convertForm.setFieldsValue({
+      name: lead.fullName || '',
+      email: lead.email || '',
+      phone: lead.phoneNumber || '',
+      password: '',
+      address: ''
+    });
+
+    setIsConvertModalOpen(true);
+  };
+
+  const handleConvertSubmit = async (values) => {
+    try {
+      setIsConvertingLoading(true);
+      const payload = {
+        name: values.name,
+        email: values.email,
+        password: values.password,
+        phone: values.phone,
+        countryCode: convertCountryCode,
+        address: values.address || ''
+      };
+
+      const res = await fetch('/api/brands', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        if (convertingLead?._id) {
+          try {
+            await updateLead({ id: convertingLead._id, status: 'converted' }).unwrap();
+          } catch (e) {
+            console.error('Failed to update lead status:', e);
+          }
+        }
+
+        message.success(`Client "${values.name}" created and lead converted successfully!`);
+        setIsConvertModalOpen(false);
+        setConvertingLead(null);
+        convertForm.resetFields();
+        refetch?.();
+      } else {
+        message.error(data.message || 'Failed to create client');
+      }
+    } catch (error) {
+      console.error(error);
+      message.error(error?.message || 'Error creating client');
+    } finally {
+      setIsConvertingLoading(false);
+    }
+  };
 
   const currentViewingLead = viewingLead ? leads.find(l => l._id === viewingLead._id) || viewingLead : null;
   
@@ -199,8 +272,28 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
       const formName = getFormName(lead).toLowerCase();
       formMatch = formNameFilter.some(filterItem => formName.includes(filterItem.toLowerCase()));
     }
+
+    let searchMatch = true;
+    if (searchQuery && searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const name = (lead.fullName || '').toLowerCase();
+      const email = (lead.email || '').toLowerCase();
+      const phone = (lead.phoneNumber || '').toLowerCase();
+      const formName = getFormName(lead).toLowerCase();
+      const source = (lead.source || '').toLowerCase();
+      const status = (lead.status || '').toLowerCase();
+      const assignedTo = (lead.assignedTo || '').toLowerCase();
+
+      searchMatch = name.includes(q) ||
+                    email.includes(q) ||
+                    phone.includes(q) ||
+                    formName.includes(q) ||
+                    source.includes(q) ||
+                    status.includes(q) ||
+                    assignedTo.includes(q);
+    }
     
-    return dateMatch && formMatch;
+    return dateMatch && formMatch && searchMatch;
   }).sort((a, b) => getActualLeadDate(b).valueOf() - getActualLeadDate(a).valueOf());
 
   const handleEditClick = (record) => {
@@ -466,6 +559,13 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
             {canAdd && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingLead(null); form.resetFields(); setLeadCountryCode('91'); setLeadCountryIso('IN'); setIsModalOpen(true); }} style={{ borderRadius: 8, fontWeight: 600, background: '#0e4ca2', border: 'none' }}>Add Lead</Button>
             )}
+            <Input
+              allowClear
+              placeholder="Search lead"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{ width: 220, borderRadius: 8 }}
+            />
           </Space>
         </div>
         
@@ -590,7 +690,29 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
 
       {/* View Lead Modal */}
       <Modal
-        title={<Title level={4} style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>Lead — {currentViewingLead?.fullName}</Title>}
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: 28 }}>
+            <Title level={4} style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>
+              Lead — {currentViewingLead?.fullName}
+            </Title>
+            {currentViewingLead && (
+              <Button
+                type="primary"
+                icon={<UserAddOutlined />}
+                onClick={() => handleOpenConvertModal(currentViewingLead)}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  borderColor: '#10b981',
+                  borderRadius: 8,
+                  fontWeight: 700,
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
+                }}
+              >
+                Convert to Client
+              </Button>
+            )}
+          </div>
+        }
         open={!!viewingLead}
         onCancel={() => setViewingLead(null)}
         footer={null}
@@ -687,6 +809,24 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                       </Descriptions>
                     </div>
                   )}
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
+                    <Button
+                      type="primary"
+                      size="large"
+                      icon={<UserAddOutlined />}
+                      onClick={() => handleOpenConvertModal(currentViewingLead)}
+                      style={{
+                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                        borderColor: '#10b981',
+                        borderRadius: 8,
+                        fontWeight: 700,
+                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                      }}
+                    >
+                      Convert to Client
+                    </Button>
+                  </div>
                 </div>
               )
             },
@@ -723,18 +863,23 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                     </div>
                   )}
 
-                  <TextArea rows={4} value={noteContent} onChange={e => setNoteContent(e.target.value)} placeholder={noteType === 'text' ? "Enter your note here..." : "Enter an optional description for the file..."} style={{ borderRadius: 6, marginBottom: 16 }} />
+                  <Row gutter={16} style={{ marginBottom: 16 }}>
+                    <Col span={24}>
+                      <TextArea rows={3} value={noteContent} onChange={e => setNoteContent(e.target.value)} placeholder="Enter note details..." style={{ borderRadius: 6 }} />
+                    </Col>
+                  </Row>
                   
-                  <Button type="primary" loading={isAddingNote} onClick={handleAddNote} style={{ borderRadius: 6, fontWeight: 600, background: '#0e4ca2' }} disabled={!noteContent.trim() && !noteFile}>Add Note</Button>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 32 }}>
+                    <Button type="primary" loading={isAddingNote} onClick={handleAddNote} style={{ borderRadius: 6, fontWeight: 600, background: '#0e4ca2' }}>Add Note</Button>
+                  </div>
                   
-                  <div style={{ marginTop: 32 }}>
-                    <Title level={5} style={{ marginBottom: 16 }}>All Notes ({currentViewingLead?.leadNotes?.length || 0})</Title>
+                  <div>
+                    <Title level={5} style={{ marginBottom: 16 }}>Existing Notes</Title>
                     <Table 
                       dataSource={currentViewingLead?.leadNotes || []} 
                       rowKey="_id"
                       columns={[
-                        { title: 'S.No', render: (t,r,i) => i+1 },
-                        { title: 'Date & Time', dataIndex: 'createdAt', render: d => dayjs(d).format('YYYY-MM-DD HH:mm') },
+                        { title: 'Date', dataIndex: 'createdAt', render: d => dayjs(d).format('YYYY-MM-DD HH:mm') },
                         { title: 'Type', dataIndex: 'noteType', render: t => <Tag color="blue">{t?.toUpperCase()}</Tag> },
                         { 
                           title: 'Content', 
@@ -779,6 +924,133 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
             }
           ]}
         />
+      </Modal>
+
+      {/* Convert Lead to Client Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+              <UserAddOutlined style={{ fontSize: 20 }} />
+            </div>
+            <div>
+              <Title level={4} style={{ margin: 0, fontWeight: 800 }}>Create New Client</Title>
+              <Text type="secondary" style={{ fontSize: 13 }}>Provision a new workspace and admin account</Text>
+            </div>
+          </div>
+        }
+        open={isConvertModalOpen}
+        onCancel={() => { setIsConvertModalOpen(false); setConvertingLead(null); }}
+        footer={null}
+        width={520}
+        closeIcon={<span style={{ color: 'var(--text-tertiary)', fontSize: 20 }}>×</span>}
+        className="glassmorphism-modal"
+        styles={{
+          header: { padding: '24px 24px 16px 24px', borderBottom: '1px solid var(--border-color)' },
+          body: { padding: '24px', maxHeight: '550px', overflowY: 'auto' },
+          content: { borderRadius: 16, overflow: 'hidden' }
+        }}
+      >
+        <Form
+          form={convertForm}
+          layout="vertical"
+          onFinish={handleConvertSubmit}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div>
+              <Text style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, display: 'block' }}>
+                COMPANY DETAILS
+              </Text>
+              <Form.Item
+                name="name"
+                label={<span style={{ fontWeight: 600 }}>Client Company Name</span>}
+                rules={[{ required: true, message: 'Please enter client name' }]}
+                style={{ marginBottom: 0 }}
+              >
+                <Input placeholder="e.g. Acme Corp" size="large" style={{ borderRadius: 8 }} />
+              </Form.Item>
+            </div>
+
+            <div>
+              <Text style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, display: 'block' }}>
+                ADMIN ACCOUNT
+              </Text>
+              <Row gutter={16}>
+                <Col span={24}>
+                  <Form.Item
+                    name="email"
+                    label={<span style={{ fontWeight: 600 }}>Admin Email</span>}
+                    rules={[{ required: true, type: 'email', message: 'Please enter a valid email' }]}
+                  >
+                    <Input type="email" placeholder="manager@client.com" size="large" style={{ borderRadius: 8 }} />
+                  </Form.Item>
+                </Col>
+                <Col span={24}>
+                  <Form.Item
+                    name="password"
+                    label={<span style={{ fontWeight: 600 }}>Initial Password</span>}
+                    rules={[{ required: true, message: 'Please enter initial password' }]}
+                  >
+                    <Input.Password placeholder="Enter a secure password" size="large" style={{ borderRadius: 8 }} />
+                  </Form.Item>
+                </Col>
+                <Col span={24}>
+                  <Form.Item
+                    name="phone"
+                    label={<span style={{ fontWeight: 600 }}>Phone Number</span>}
+                    rules={[
+                      {
+                        validator: (_, value) => {
+                          if (!value) return Promise.resolve();
+                          if (isValidPhoneNumber(value, convertCountryIso)) {
+                            return Promise.resolve();
+                          }
+                          return Promise.reject(new Error('Please enter a valid phone number for the selected country'));
+                        }
+                      }
+                    ]}
+                  >
+                    <PhoneInput
+                      size="large"
+                      style={{ borderRadius: 8 }}
+                      countryCodeValue={convertCountryCode}
+                      onCountryCodeChange={setConvertCountryCode}
+                      isoCountryValue={convertCountryIso}
+                      onCountryIsoChange={setConvertCountryIso}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col span={24}>
+                  <Form.Item
+                    name="address"
+                    label={<span style={{ fontWeight: 600 }}>Address</span>}
+                  >
+                    <TextArea rows={2} placeholder="e.g. 123 Main St, City, Country" style={{ borderRadius: 8 }} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+              <Button
+                onClick={() => { setIsConvertModalOpen(false); setConvertingLead(null); }}
+                style={{ borderRadius: 8, fontWeight: 600 }}
+                size="large"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={isConvertingLoading}
+                style={{ borderRadius: 8, background: '#10b981', borderColor: '#10b981', fontWeight: 700, padding: '0 24px' }}
+                size="large"
+              >
+                Convert to Client
+              </Button>
+            </div>
+          </div>
+        </Form>
       </Modal>
 
       <Modal

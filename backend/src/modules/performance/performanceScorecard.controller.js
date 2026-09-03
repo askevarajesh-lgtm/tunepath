@@ -4,12 +4,14 @@ const { sendSuccess, sendError } = require("../../utils/response");
 /**
  * Submit self-assessment (user fills their own grades)
  */
-const submitSelfAssessment = async (req, res) => {
+const submitSelfAssessment = async (req, res, next) => {
   try {
+    const companyId = req.companyId || req.user?.agencyId || req.user?.brandId || req.user?.workspaceId || req.user?._id;
+    const userId = req.user?._id || req.user?.id;
     const scorecard = await performanceScorecardService.submitSelfAssessment(
       req.body,
-      req.companyId,
-      req.user._id,
+      companyId,
+      userId,
     );
     return sendSuccess(res, "Self-assessment submitted successfully", {
       scorecard,
@@ -21,16 +23,9 @@ const submitSelfAssessment = async (req, res) => {
     ) {
       return sendError(res, 404, error.message);
     }
-    if (
-      error.message.includes("Invalid") ||
-      error.message.includes("required") ||
-      error.message.includes("Cannot modify")
-    ) {
-      return sendError(res, 400, error.message);
-    }
     return sendError(
       res,
-      500,
+      400,
       error.message || "Failed to submit self-assessment",
     );
   }
@@ -185,11 +180,23 @@ const getPerformanceHistory = async (req, res) => {
     // For non-admin users, always use their own userId
     // For admin users, use userId from query or default to req.user.id
     const userRole = req.user.role;
-    const isAdmin =
-      userRole === "admin" ||
-      userRole === "super_admin" ||
-      userRole === "sales_manager" ||
-      userRole === "operations_head";
+    const isAdmin = [
+      "admin",
+      "superadmin",
+      "super_admin",
+      "supreme_super_admin",
+      "commander_admin",
+      "agency_super_admin",
+      "agency_manager",
+      "agency",
+      "operations_head",
+      "sales_manager",
+      "brand_super_admin",
+      "brand_admin",
+      "brand_manager",
+      "hr",
+      "hr_manager",
+    ].includes(userRole);
 
     let userId = req.query.userId;
 
@@ -318,9 +325,11 @@ const getUsersWithoutSelfAssessment = async (req, res) => {
       return sendError(res, 400, "Year is required");
     }
 
+    const companyId = req.companyId || req.user?.agencyId || req.user?._id;
+
     const users =
       await performanceScorecardService.getUsersWithoutSelfAssessment(
-        req.companyId,
+        companyId,
         month,
         year,
       );

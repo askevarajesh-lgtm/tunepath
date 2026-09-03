@@ -339,13 +339,22 @@ const calculatePerformanceForAllUsers = async (companyId, month, year) => {
     throw new Error("Invalid month. Must be between 1 and 12");
   if (!year || year < 2000 || year > 2100) throw new Error("Invalid year");
 
-  const User = require("../users/user.model");
+  const User = require("../auth/user.model");
 
-  // Get all active users in the company
-  const users = await User.find({
-    companyId,
+  // Get all active users in the company/agency
+  let users = await User.find({
     isActive: true,
+    $or: [
+      { agencyId: companyId },
+      { adminId: companyId },
+      { companyId: companyId },
+      { _id: companyId },
+    ],
   }).select("_id role");
+
+  if (users.length === 0) {
+    users = await User.find({ isActive: true }).select("_id role");
+  }
 
   if (users.length === 0) {
     return [];

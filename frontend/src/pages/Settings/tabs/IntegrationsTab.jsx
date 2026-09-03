@@ -4,6 +4,7 @@ import { ArrowRightOutlined } from "@ant-design/icons";
 import {
   useGetIntegrationsQuery,
   useUpdateIntegrationMutation,
+  useCreateIntegrationMutation,
 } from "../../../api/integrationApi";
 import useCompanyIntegrations from "../../../hooks/useCompanyIntegrations";
 import { useAuth } from "../../../contexts/AuthContext";
@@ -323,6 +324,7 @@ const PLATFORM_ADMIN_ROLES = ["super_admin", "supreme_super_admin", "commander_a
 const IntegrationsTab = () => {
   const { data, refetch } = useGetIntegrationsQuery();
   const [updateIntegration] = useUpdateIntegrationMutation();
+  const [createIntegration] = useCreateIntegrationMutation();
   const companyIntegrations = useCompanyIntegrations();
   const { role, user } = useAuth();
   
@@ -381,33 +383,35 @@ const IntegrationsTab = () => {
   const handleToggle = async (integrationType, checked) => {
     try {
       let toggled = false;
-      const integration = integrations.find(i => i.type === integrationType);
-      
-      if (integration) {
-        await updateIntegration({
-          id: integration._id,
+      const targetIntegrations = [];
+
+      if (integrationType === 'website') {
+        const webInt = integrations.find(i => i.type === 'website');
+        const fbInt = integrations.find(i => i.type === 'facebook_leads');
+        if (webInt) targetIntegrations.push(webInt);
+        if (fbInt) targetIntegrations.push(fbInt);
+      } else {
+        const intg = integrations.find(i => i.type === integrationType);
+        if (intg) targetIntegrations.push(intg);
+      }
+
+      if (targetIntegrations.length > 0) {
+        for (const item of targetIntegrations) {
+          await updateIntegration({
+            id: item._id,
+            isActive: checked,
+          }).unwrap();
+        }
+        toggled = true;
+      } else {
+        await createIntegration({
+          type: integrationType,
           isActive: checked,
         }).unwrap();
         toggled = true;
       }
-      
-      if (integrationType === 'website') {
-        const fbIntegration = integrations.find(i => i.type === 'facebook_leads');
-        if (fbIntegration) {
-          await updateIntegration({
-            id: fbIntegration._id,
-            isActive: checked,
-          }).unwrap();
-          toggled = true;
-        }
-      }
 
-      if (!toggled) {
-        console.warn("Integration not found to toggle");
-        message.warning("Please configure the integration first before enabling it.");
-      } else {
-        message.success(`Integration ${checked ? 'enabled' : 'disabled'} successfully`);
-      }
+      message.success(`Integration ${checked ? 'enabled' : 'disabled'} successfully`);
       refetch();
     } catch (error) {
       console.error("Failed to toggle integration", error);
@@ -421,7 +425,7 @@ const IntegrationsTab = () => {
     
     // As per user request: "If any integration is configured inside the Integrations section, its corresponding card should show Active."
     // Force the UI to show Active if it's configured, ensuring consistent logic across all integrations.
-    if (isConfigured) {
+    if (isConfigured && integration?.isActive !== false) {
       isActive = true;
     }
 

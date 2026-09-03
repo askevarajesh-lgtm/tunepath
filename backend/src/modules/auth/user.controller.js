@@ -134,11 +134,28 @@ exports.createUser = async (req, res, next) => {
   try {
     const userData = { ...req.body };
     
-    // Validate Phone Number
+    // Validate Email & Check for Duplicates
+    if (userData.email) {
+      const emailQuery = userData.email.trim();
+      const existingEmailUser = await User.findOne({
+        email: { $regex: new RegExp(`^${emailQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      });
+      if (existingEmailUser) {
+        return res.status(400).json({ success: false, message: 'Email address is already in use. Please use a different email.' });
+      }
+    }
+
+    // Validate Phone Number & Check for Duplicates
     if (userData.phone) {
       const validation = validatePhoneNumber(userData.phone, userData.countryCode);
       if (!validation.isValid) {
         return res.status(400).json({ success: false, message: validation.message });
+      }
+
+      const phoneQuery = userData.phone.trim();
+      const existingPhoneUser = await User.findOne({ phone: phoneQuery });
+      if (existingPhoneUser) {
+        return res.status(400).json({ success: false, message: 'Phone number is already in use. Please use a different phone number.' });
       }
     }
     
@@ -306,13 +323,33 @@ exports.updateUser = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Validate Phone Number if updated
+    // Check if Email already exists for another user
+    if (updateData.email) {
+      const emailQuery = updateData.email.trim();
+      const existingEmailUser = await User.findOne({
+        email: { $regex: new RegExp(`^${emailQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+        _id: { $ne: req.params.id }
+      });
+      if (existingEmailUser) {
+        return res.status(400).json({ success: false, message: 'Email address is already in use. Please use a different email.' });
+      }
+    }
+
+    // Validate Phone Number & Check for Duplicates if updated
     if (updateData.phone !== undefined && updateData.phone !== null && updateData.phone !== '') {
-      // Use provided countryCode or fallback to existing
       const cCode = req.body.countryCode || existingUser.countryCode;
       const validation = validatePhoneNumber(updateData.phone, cCode);
       if (!validation.isValid) {
         return res.status(400).json({ success: false, message: validation.message });
+      }
+
+      const phoneQuery = updateData.phone.trim();
+      const existingPhoneUser = await User.findOne({
+        phone: phoneQuery,
+        _id: { $ne: req.params.id }
+      });
+      if (existingPhoneUser) {
+        return res.status(400).json({ success: false, message: 'Phone number is already in use. Please use a different phone number.' });
       }
     }
     

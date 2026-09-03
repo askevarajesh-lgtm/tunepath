@@ -18,7 +18,6 @@ const AdminDashboard = ({ leads = [] }) => {
   const [sourceFilter, setSourceFilter] = useState(null);
   const [formNameFilter, setFormNameFilter] = useState(null);
   const [ownerFilter, setOwnerFilter] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
 
   const handleClearAll = () => {
     setTimeframe('All Time');
@@ -26,7 +25,6 @@ const AdminDashboard = ({ leads = [] }) => {
     setSourceFilter(null);
     setFormNameFilter(null);
     setOwnerFilter(null);
-    setSearchQuery('');
   };
 
   const getFormName = (lead) => {
@@ -81,17 +79,9 @@ const AdminDashboard = ({ leads = [] }) => {
           if (l.assignedTo !== ownerFilter) return false;
         }
       }
-      
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        const matchesName = l.fullName?.toLowerCase().includes(q);
-        const matchesCompany = l.companyName?.toLowerCase().includes(q);
-        const matchesPhone = l.phoneNumber?.toLowerCase().includes(q);
-        if (!matchesName && !matchesCompany && !matchesPhone) return false;
-      }
       return true;
     });
-  }, [leads, timeframe, statusFilter, sourceFilter, formNameFilter, ownerFilter, searchQuery]);
+  }, [leads, timeframe, statusFilter, sourceFilter, formNameFilter, ownerFilter]);
 
   const {
     totalLeads,
@@ -260,7 +250,7 @@ const AdminDashboard = ({ leads = [] }) => {
           <Title level={4} style={{ margin: '0 0 20px 0', fontWeight: 800 }}>View performance by week, month or pipeline stage</Title>
           
           <Row gutter={[16, 16]}>
-            <Col xs={12} md={4}>
+            <Col style={{ flex: '1 1 160px' }}>
               <Select value={timeframe} onChange={setTimeframe} style={{ width: '100%' }} size="large">
                 <Select.Option value="Today">Today</Select.Option>
                 <Select.Option value="Week">This Week</Select.Option>
@@ -268,7 +258,7 @@ const AdminDashboard = ({ leads = [] }) => {
                 <Select.Option value="All Time">All Time</Select.Option>
               </Select>
             </Col>
-            <Col xs={12} md={4}>
+            <Col style={{ flex: '1 1 160px' }}>
               <Select value={statusFilter} onChange={setStatusFilter} style={{ width: '100%' }} size="large">
                 <Select.Option value="All">All ({filteredLeads.length})</Select.Option>
                 <Select.Option value="New">New</Select.Option>
@@ -276,24 +266,21 @@ const AdminDashboard = ({ leads = [] }) => {
                 <Select.Option value="Converted">Converted</Select.Option>
               </Select>
             </Col>
-            <Col xs={12} md={4}>
+            <Col style={{ flex: '1 1 160px' }}>
               <Select allowClear value={sourceFilter} onChange={setSourceFilter} placeholder="Source" style={{ width: '100%' }} size="large">
                 {sourceOptions.map(s => <Select.Option key={s} value={s}>{s}</Select.Option>)}
               </Select>
             </Col>
-            <Col xs={12} md={4}>
+            <Col style={{ flex: '1 1 160px' }}>
               <Select allowClear showSearch value={formNameFilter} onChange={setFormNameFilter} placeholder="Form Name" style={{ width: '100%' }} size="large">
                 {formNames.map(f => <Select.Option key={f} value={f}>{f}</Select.Option>)}
               </Select>
             </Col>
-            <Col xs={12} md={4}>
+            <Col style={{ flex: '1 1 160px' }}>
               <Select allowClear showSearch value={ownerFilter} onChange={setOwnerFilter} placeholder="Owner" style={{ width: '100%' }} size="large">
                 {ownerOptions.map(o => <Select.Option key={o} value={o}>{o}</Select.Option>)}
                 <Select.Option value="Unassigned">Unassigned</Select.Option>
               </Select>
-            </Col>
-            <Col xs={12} md={4}>
-              <Input allowClear value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search lead" style={{ width: '100%', borderRadius: 8 }} size="large" />
             </Col>
           </Row>
         </Card>

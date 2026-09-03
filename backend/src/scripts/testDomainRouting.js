@@ -80,7 +80,7 @@ async function testDomainRouting() {
         domainVariants.push(`www.${domainStr}`);
       }
 
-      const foundDomain = await Domain.findOne({ domain: { $in: domainVariants }, isDeleted: false });
+      const foundDomain = await Domain.findOne({ domain: { $in: domainVariants }, isDeleted: { $ne: true } });
       if (!foundDomain) {
         return { success: false, status: 404, error: 'Website not found for domain' };
       }

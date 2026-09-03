@@ -771,72 +771,160 @@ const UserManagementTab = () => {
             
             if (activeModules.length === 0) return null;
 
+            const isFieldApplicable = (module, field) => {
+              if (field === 'All' && module !== 'Accounts') return false;
+              if (['Google Analytics', 'ChatGPT', 'Canva', 'Performance', 'Calendar'].includes(module) && field !== 'Read') return false;
+              if (module === 'Performance Ads' && ['Create', 'Edit', 'Delete'].includes(field)) return false;
+              if (module === 'Task Analytics' && ['Create', 'Edit', 'Delete'].includes(field)) return false;
+              if (module === 'Deliverables' && !['Read', 'Create', 'Edit'].includes(field)) return false;
+              return true;
+            };
+
+            const isFieldDisabled = (module, field) => {
+              if (isManagerRole && ['Create', 'Edit', 'Delete'].includes(field)) return true;
+              if (module === 'Dashboard' && field === 'Read') return true;
+              if (['Task Management', 'Performance'].includes(module) && ['Read', 'View'].includes(field)) return true;
+              return false;
+            };
+
+            const isFieldChecked = (module, field) => {
+              if (isManagerRole && ['Create', 'Edit', 'Delete'].includes(field)) return true;
+              if (module === 'Dashboard' && field === 'Read') return true;
+              if (['Task Management', 'Performance'].includes(module) && ['Read', 'View'].includes(field)) return true;
+              return !!draftPermissions[`${group}-${module}`]?.[field];
+            };
+
+            const fieldsList = ['Read', 'View', 'All', 'Create', 'Edit', 'Delete'];
+            let totalSelectable = 0;
+            let checkedCount = 0;
+
+            activeModules.forEach(module => {
+              fieldsList.forEach(field => {
+                if (isFieldApplicable(module, field) && !isFieldDisabled(module, field)) {
+                  totalSelectable++;
+                  if (isFieldChecked(module, field)) {
+                    checkedCount++;
+                  }
+                }
+              });
+            });
+
+            const isAllTabChecked = totalSelectable > 0 && checkedCount === totalSelectable;
+            const isTabIndeterminate = checkedCount > 0 && checkedCount < totalSelectable;
+
+            const handleToggleSelectAllTab = (shouldCheck) => {
+              setDraftPermissions(prev => {
+                const updated = { ...prev };
+                activeModules.forEach(module => {
+                  const key = `${group}-${module}`;
+                  if (!updated[key]) updated[key] = {};
+                  fieldsList.forEach(field => {
+                    if (isFieldApplicable(module, field) && !isFieldDisabled(module, field)) {
+                      updated[key][field] = shouldCheck;
+                    }
+                  });
+                });
+
+                if (group === 'HRMS' && activeModules.includes('Performance')) {
+                  const perf = updated['HRMS-Performance'] || {};
+                  const isManagerPerf = isManagerRole;
+                  const isAllChecked = (perf.Read || true) && (perf.View || true) && (perf.Create || isManagerPerf) && (perf.Edit || isManagerPerf) && (perf.Delete || isManagerPerf);
+                  updated['HRMS-Ekta HR Integration'] = {
+                    Read: isAllChecked, View: isAllChecked, Create: isAllChecked, Edit: isAllChecked, Delete: isAllChecked
+                  };
+                }
+
+                return updated;
+              });
+            };
+
             return {
               key: group,
               label: <strong style={{ fontWeight: 600 }}>{group}</strong>,
               children: (
-                <Table
-                  rowKey="module"
-                  dataSource={activeModules.map(m => ({ module: m }))}
-                  pagination={false}
-                  scroll={{ y: 400 }}
-                  rowClassName={() => 'hover-bg'}
-                  columns={[
-                    { title: <strong style={{ color: 'var(--text-secondary)' }}>Module</strong>, dataIndex: 'module', key: 'module', render: t => <span style={{ fontWeight: 500 }}>{t}</span> },
-                    ...['Read', 'View', 'All', 'Create', 'Edit', 'Delete'].map(field => ({
-                      title: <strong style={{ color: 'var(--text-secondary)' }}>{field}</strong>,
-                      key: field,
-                      align: 'center',
-                      render: (_, record) => {
-                        if (field === 'All' && record.module !== 'Accounts') return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
-                        if (['Google Analytics', 'ChatGPT', 'Canva', 'Performance', 'Calendar'].includes(record.module) && field !== 'Read') return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
-                        if (record.module === 'Performance Ads' && ['Create', 'Edit', 'Delete'].includes(field)) return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
-                        if (record.module === 'Task Analytics' && ['Create', 'Edit', 'Delete'].includes(field)) return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
-                        if (record.module === 'Deliverables' && !['Read', 'Create', 'Edit'].includes(field)) return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
-                        return (
-                          <Checkbox
-                            checked={
-                              (isManagerRole && ['Create', 'Edit', 'Delete'].includes(field)) ? true :
-                                (!!draftPermissions[`${group}-${record.module}`]?.[field] ||
+                <div>
+                  <div style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: 12,
+                    padding: '8px 16px',
+                    background: 'var(--bg-tertiary)',
+                    borderRadius: 8,
+                    border: '1px solid var(--border-color)'
+                  }}>
+                    <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                      Tab Modules: <strong style={{ color: 'var(--text-primary)' }}>{group}</strong> ({checkedCount}/{totalSelectable} selected)
+                    </span>
+                    <Checkbox
+                      checked={isAllTabChecked}
+                      indeterminate={isTabIndeterminate}
+                      onChange={(e) => handleToggleSelectAllTab(e.target.checked)}
+                    >
+                      <strong style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>Select All ({group})</strong>
+                    </Checkbox>
+                  </div>
+                  <Table
+                    rowKey="module"
+                    dataSource={activeModules.map(m => ({ module: m }))}
+                    pagination={false}
+                    scroll={{ y: 400 }}
+                    rowClassName={() => 'hover-bg'}
+                    columns={[
+                      { title: <strong style={{ color: 'var(--text-secondary)' }}>Module</strong>, dataIndex: 'module', key: 'module', render: t => <span style={{ fontWeight: 500 }}>{t}</span> },
+                      ...['Read', 'View', 'All', 'Create', 'Edit', 'Delete'].map(field => ({
+                        title: <strong style={{ color: 'var(--text-secondary)' }}>{field}</strong>,
+                        key: field,
+                        align: 'center',
+                        render: (_, record) => {
+                          if (field === 'All' && record.module !== 'Accounts') return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
+                          if (['Google Analytics', 'ChatGPT', 'Canva', 'Performance', 'Calendar'].includes(record.module) && field !== 'Read') return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
+                          if (record.module === 'Performance Ads' && ['Create', 'Edit', 'Delete'].includes(field)) return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
+                          if (record.module === 'Task Analytics' && ['Create', 'Edit', 'Delete'].includes(field)) return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
+                          if (record.module === 'Deliverables' && !['Read', 'Create', 'Edit'].includes(field)) return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
+                          return (
+                            <Checkbox
+                              checked={
+                                (isManagerRole && ['Create', 'Edit', 'Delete'].includes(field)) ? true :
+                                  (!!draftPermissions[`${group}-${record.module}`]?.[field] ||
+                                    (record.module === 'Dashboard' && field === 'Read') ||
+                                    (['Task Management', 'Performance'].includes(record.module) && ['Read', 'View'].includes(field)))
+                              }
+                              disabled={
+                                (isManagerRole && ['Create', 'Edit', 'Delete'].includes(field)) ? true :
                                   (record.module === 'Dashboard' && field === 'Read') ||
-                                  (['Task Management', 'Performance'].includes(record.module) && ['Read', 'View'].includes(field)))
-                            }
-                            disabled={
-                              (isManagerRole && ['Create', 'Edit', 'Delete'].includes(field)) ? true :
-                                (record.module === 'Dashboard' && field === 'Read') ||
-                                (['Task Management', 'Performance'].includes(record.module) && ['Read', 'View'].includes(field))
-                            }
-                            onChange={(e) => {
-                              const isChecked = e.target.checked;
-                              setDraftPermissions(prev => {
-                                const updated = {
-                                  ...prev,
-                                  [`${group}-${record.module}`]: {
-                                    ...(prev[`${group}-${record.module}`] || {}),
-                                    [field]: isChecked
-                                  }
-                                };
-
-
-
-                                if (group === 'HRMS' && record.module === 'Performance') {
-                                  const perf = updated['HRMS-Performance'];
-                                  const isManagerPerf = isManagerRole;
-                                  const isAllChecked = (perf.Read || true) && (perf.View || true) && (perf.Create || isManagerPerf) && (perf.Edit || isManagerPerf) && (perf.Delete || isManagerPerf);
-                                  updated['HRMS-Ekta HR Integration'] = {
-                                    Read: isAllChecked, View: isAllChecked, Create: isAllChecked, Edit: isAllChecked, Delete: isAllChecked
+                                  (['Task Management', 'Performance'].includes(record.module) && ['Read', 'View'].includes(field))
+                              }
+                              onChange={(e) => {
+                                const isChecked = e.target.checked;
+                                setDraftPermissions(prev => {
+                                  const updated = {
+                                    ...prev,
+                                    [`${group}-${record.module}`]: {
+                                      ...(prev[`${group}-${record.module}`] || {}),
+                                      [field]: isChecked
+                                    }
                                   };
-                                }
 
-                                return updated;
-                              });
-                            }}
-                          />
-                        );
-                      }
-                    }))
-                  ]}
-                />
+                                  if (group === 'HRMS' && record.module === 'Performance') {
+                                    const perf = updated['HRMS-Performance'];
+                                    const isManagerPerf = isManagerRole;
+                                    const isAllChecked = (perf.Read || true) && (perf.View || true) && (perf.Create || isManagerPerf) && (perf.Edit || isManagerPerf) && (perf.Delete || isManagerPerf);
+                                    updated['HRMS-Ekta HR Integration'] = {
+                                      Read: isAllChecked, View: isAllChecked, Create: isAllChecked, Edit: isAllChecked, Delete: isAllChecked
+                                    };
+                                  }
+
+                                  return updated;
+                                });
+                              }}
+                            />
+                          );
+                        }
+                      }))
+                    ]}
+                  />
+                </div>
               )
             };
           }).filter(Boolean)}

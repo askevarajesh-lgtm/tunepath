@@ -854,8 +854,9 @@ exports.deleteWebsite = async (req, res, next) => {
             return res.status(404).json({ success: false, error: 'Website not found' });
         }
 
-        // Hard delete associated pages
+        // Hard delete associated pages and domains
         await Page.deleteMany({ websiteId: id });
+        await Domain.deleteMany({ propertyType: 'Website', propertyId: id });
 
         res.json({ success: true, message: 'Website and pages deleted successfully' });
     } catch (error) {
@@ -1329,7 +1330,7 @@ exports.resolveWebsiteByDomain = async (req, res, next) => {
                 { domain: { $in: cleanVariants } },
                 { domain: { $in: domainRegexes } }
             ],
-            isDeleted: false
+            isDeleted: { $ne: true }
         });
 
         let website = null;

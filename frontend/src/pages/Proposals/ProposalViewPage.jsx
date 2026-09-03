@@ -4,10 +4,12 @@ import { Button, message, Spin } from "antd";
 import { ArrowLeftOutlined, PrinterOutlined } from "@ant-design/icons";
 import ProfessionalProposal from "./components/ProfessionalProposal";
 import api from "../../services/api";
+import { useAuth } from "../../contexts/AuthContext";
 
 const ProposalViewPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [proposal, setProposal] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -20,13 +22,23 @@ const ProposalViewPage = () => {
 
   useEffect(() => {
     if (proposal) {
+      const agencyObj = proposal.agencyId || proposal.adminId || proposal.createdBy || {};
+      const agencyName =
+        agencyObj.companyName ||
+        agencyObj.name ||
+        proposal.agencyName ||
+        proposal.companyName ||
+        user?.companyName ||
+        user?.name ||
+        "";
+
       const title = proposal.name || proposal.proposalNumber || "Proposal";
-      document.title = `${title} | M1 Labs`;
+      document.title = agencyName ? `${title} | ${agencyName}` : title;
     }
     return () => {
-      document.title = 'M1 Labs'; // Revert back
+      document.title = user?.companyName || user?.name || "App";
     };
-  }, [proposal]);
+  }, [proposal, user]);
 
   const handleBack = () => {
     navigate(-1);

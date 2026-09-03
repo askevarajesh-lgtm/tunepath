@@ -175,9 +175,21 @@ exports.createBrand = async (req, res, next) => {
 
     // Check if user with this email already exists
     if (email) {
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
-        return res.status(400).json({ success: false, message: 'User with this email already exists' });
+      const emailQuery = email.trim();
+      const existingEmail = await User.findOne({
+        email: { $regex: new RegExp(`^${emailQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      });
+      if (existingEmail) {
+        return res.status(400).json({ success: false, message: 'Email address is already in use. Please use a different email.' });
+      }
+    }
+
+    // Check if user with this phone number already exists
+    if (phone) {
+      const phoneQuery = phone.trim();
+      const existingPhone = await User.findOne({ phone: phoneQuery });
+      if (existingPhone) {
+        return res.status(400).json({ success: false, message: 'Phone number is already in use. Please use a different phone number.' });
       }
     }
 

@@ -319,7 +319,7 @@ const performanceScorecardSchema = new mongoose.Schema(
 
 // Pre-save hook to clean up null/undefined values in performance categories
 // This ensures that null values are removed before validation
-performanceScorecardSchema.pre("save", function (next) {
+performanceScorecardSchema.pre("save", function () {
   if (this.performanceCategories && this.isModified("performanceCategories")) {
     const categoryKeys = Object.keys(this.performanceCategories);
     categoryKeys.forEach((key) => {
@@ -351,7 +351,6 @@ performanceScorecardSchema.pre("save", function (next) {
       }
     });
   }
-  next();
 });
 
 // Index to ensure one entry per user per month
