@@ -183,6 +183,11 @@ router.post(
 );
 
 // Update project milestones
+router.put(
+  "/:id/milestones",
+  permissionMiddleware("edit-project"),
+  projectController.updateProjectMilestones,
+);
 router.post(
   "/:id/milestones",
   permissionMiddleware("edit-project"),

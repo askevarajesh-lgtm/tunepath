@@ -225,47 +225,33 @@ const requestCorrection = async (
     throw new Error("Project not found");
   }
 
-  if (
-    project.status !== "sent_for_client_review" &&
-    project.status !== "in_progress"
-  ) {
-    throw new Error(
-      "Project must be in client review or in progress status to request correction",
-    );
-  }
-
   // Get tenant company ID from project
   const tenantCompanyId = project.companyId;
   const previousStatus = project.status;
 
   // Only count client corrections against the allowed limit
   // Coordinator corrections don't count against the limit
-  let newCorrectionCount = project.correctionCount;
+  let newCorrectionCount = (project.correctionCount || 0);
   let clientCorrectionCount = project.clientCorrectionCount || 0;
 
   if (requestedByType === "client") {
-    // Count client corrections
     clientCorrectionCount += 1;
     newCorrectionCount = clientCorrectionCount;
-
-    // Check if client correction limit is exceeded - REMOVED: Limit is now infinite
-    // if (clientCorrectionCount > project.maxAllowedCorrections) {
-    //   project.correctionExceeded = true;
-    //   throw new Error(`Maximum allowed corrections (${project.maxAllowedCorrections}) have been reached. Please contact the coordinator for additional changes.`);
-    // }
   } else {
-    // Coordinator corrections don't count, but we still increment total count for tracking
-    newCorrectionCount = project.correctionCount + 1;
+    newCorrectionCount = newCorrectionCount + 1;
   }
+
+  const notesText = correctionData.notes || correctionData.correctionNotes || '';
 
   // Create correction record
   const correction = await Correction.create({
     projectId,
     taskId: correctionData.taskId || null,
+    companyId: tenantCompanyId,
     correctionRound: newCorrectionCount,
-    mistakeBy: correctionData.mistakeBy, // 'client' or 'internal_team'
-    category: correctionData.category,
-    notes: correctionData.notes,
+    mistakeBy: correctionData.mistakeBy || 'internal_team', // 'client' or 'internal_team'
+    category: correctionData.category || correctionData.taskType || 'general',
+    notes: notesText,
     attachments: correctionData.attachments || [],
     requestedBy: userId,
     requestedByType: requestedByType, // 'client' or 'coordinator'
@@ -296,8 +282,8 @@ const requestCorrection = async (
         correctionRound: newCorrectionCount,
         mistakeBy: correctionData.mistakeBy,
         requestedByType: requestedByType,
-        category: correctionData.category,
-        notes: correctionData.notes,
+        category: correctionData.category || correctionData.taskType || 'general',
+        notes: notesText,
         taskId: correctionData.taskId ? correctionData.taskId.toString() : null,
         previousStatus: previousStatus,
         currentStatus: "in_progress",

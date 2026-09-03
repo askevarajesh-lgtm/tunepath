@@ -188,9 +188,9 @@ const ProjectDetail = () => {
   };
 
   const { data, isLoading, error, refetch: refetchProject } = useGetProjectByIdQuery(id);
-  const { data: correctionsData } = useGetCorrectionsByProjectQuery(id);
+  const { data: correctionsData, refetch: refetchCorrections } = useGetCorrectionsByProjectQuery(id);
   const { data: plData } = useGetProjectPLQuery(id);
-  const { data: timelineData, isLoading: isLoadingTimeline } =
+  const { data: timelineData, isLoading: isLoadingTimeline, refetch: refetchTimeline } =
     useGetTimelineEventsQuery(
       { entityType: "Project", entityId: id },
       { skip: !id },
@@ -225,9 +225,9 @@ const ProjectDetail = () => {
   const [dynamicReviews, setDynamicReviews] = useState([]);
 
   const project = data?.data?.project;
-  const corrections = correctionsData?.data?.corrections || [];
+  const corrections = Array.isArray(correctionsData) ? correctionsData : (correctionsData?.data?.corrections || correctionsData?.data || []);
   const plEntry = plData?.data?.plEntry;
-  const timelineEvents = timelineData?.data?.timelineEvents || [];
+  const timelineEvents = Array.isArray(timelineData) ? timelineData : (timelineData?.data?.timelineEvents || timelineData?.data || []);
 
   const isRenewable = useMemo(() => {
     if (currentUser?.role === "client") return false;
@@ -369,22 +369,32 @@ const ProjectDetail = () => {
 
   const handleRequestCorrection = async (values) => {
     try {
-      // Determine requestedByType based on user role
       const requestedByType =
         currentUser.role === "client"
           ? "client"
           : values.requestedByType || "coordinator";
 
-      await requestCorrection({
+      const res = await requestCorrection({
         projectId: id,
         ...values,
         requestedByType,
-      }).unwrap();
+      });
+
+      if (res && typeof res.unwrap === 'function') {
+        res.unwrap();
+      } else if (res?.error) {
+        throw res.error;
+      }
+
       message.success("Correction requested successfully");
       setIsCorrectionModalVisible(false);
       correctionForm.resetFields();
+      if (typeof refetchCorrections === 'function') refetchCorrections();
+      if (typeof refetchTimeline === 'function') refetchTimeline();
+      if (typeof refetchProject === 'function') refetchProject();
     } catch (error) {
-      message.error(error?.data?.message || "Failed to request correction");
+      console.error("Correction request error:", error);
+      message.error(error?.response?.data?.message || error?.data?.message || error?.message || "Failed to request correction");
     }
   };
 
@@ -715,6 +725,8 @@ const ProjectDetail = () => {
 
       message.success("Milestones updated successfully");
       setIsMilestoneModalVisible(false);
+      if (typeof refetchProject === 'function') refetchProject();
+      if (typeof refetchTimeline === 'function') refetchTimeline();
     } catch (error) {
       message.error(error?.data?.message || "Failed to update milestones");
     }

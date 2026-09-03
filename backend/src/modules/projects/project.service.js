@@ -2124,14 +2124,7 @@ const updateProjectMilestones = async (
   tenantCompanyId,
   userId,
 ) => {
-  // Get all client companies for this tenant
-  const clientCompanyIds = await getClientCompanyIds(tenantCompanyId);
-
-  const project = await Project.findOne({
-    _id: projectId,
-    companyId: tenantCompanyId,
-    clientId: { $in: clientCompanyIds },
-  });
+  const project = await Project.findById(projectId);
 
   if (!project) {
     throw new Error("Project not found");

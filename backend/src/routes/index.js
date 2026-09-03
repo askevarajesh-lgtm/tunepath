@@ -28,6 +28,8 @@ const mediaRoutes = require('../modules/media/media.routes');
 const taskRoutes = require('../modules/tasks/task.routes');
 const coordinatorTaskRoutes = require('../modules/tasks/coordinatorTask.routes');
 const projectRoutes = require('../modules/projects/project.routes');
+const correctionRoutes = require('../modules/projects/correction.routes');
+const timelineRoutes = require('../modules/projects/timeline.routes');
 const campaignScheduledRoutes = require('../modules/campaign-scheduled/campaignScheduled.routes');
 const slaRoutes = require('../modules/sla/sla.routes');
 const mosRoutes = require('../modules/mos/mos.routes');
@@ -134,6 +136,9 @@ router.use('/media', mediaRoutes);
 router.use('/tasks', taskRoutes);
 router.use('/coordinator-tasks', coordinatorTaskRoutes);
 router.use('/projects', projectRoutes);
+router.use('/corrections', correctionRoutes);
+router.use('/projects/:projectId/corrections', correctionRoutes);
+router.use('/timeline', timelineRoutes);
 router.use('/campaign-scheduled', campaignScheduledRoutes);
 router.use('/sla-success', slaRoutes);
 

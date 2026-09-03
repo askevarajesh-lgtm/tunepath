@@ -40,10 +40,14 @@ const createMutationHook = (endpointFn) => {
       try {
         const config = endpointFn(params);
         const response = await api.request(config);
-        return { data: response.data };
+        const resObj = { data: response.data };
+        resObj.unwrap = () => response.data;
+        return resObj;
       } catch (err) {
         setError(err);
-        return { error: err };
+        const errObj = { error: err };
+        errObj.unwrap = () => { throw err; };
+        return errObj;
       } finally {
         setIsLoading(false);
       }
