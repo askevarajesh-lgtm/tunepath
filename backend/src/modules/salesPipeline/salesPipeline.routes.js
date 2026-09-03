@@ -8,6 +8,7 @@ const router = express.Router();
 router.use(authMiddleware);
 
 router.get("/analytics", salesPipelineController.getPipelineAnalytics);
+router.get("/reps", salesPipelineController.getSalesReps);
 router.get("/", salesPipelineController.getAllDeals);
 router.post("/", salesPipelineController.createDeal);
 router.get("/:id", salesPipelineController.getDealById);

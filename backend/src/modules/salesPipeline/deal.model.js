@@ -77,12 +77,14 @@ const dealSchema = new mongoose.Schema(
     },
     rep: {
       type: String,
-      required: true,
+      required: false,
+      default: "Unassigned",
       trim: true,
     },
     ownerInit: {
       type: String,
-      required: true,
+      required: false,
+      default: "UN",
       trim: true,
     },
     date: {

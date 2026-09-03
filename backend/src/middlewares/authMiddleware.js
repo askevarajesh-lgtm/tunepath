@@ -82,7 +82,8 @@ const authMiddleware = async (req, res, next) => {
     req.originalUrl.includes('/brands') ||
     req.originalUrl.includes('/packages') ||
     req.originalUrl.includes('/users') ||
-    req.originalUrl.includes('/agencies')
+    req.originalUrl.includes('/agencies') ||
+    req.originalUrl.includes('/slas')
   );
 
   if (selectedClientIdHeader && mongoose.Types.ObjectId.isValid(selectedClientIdHeader) && req.user && !isManagementRoute) {

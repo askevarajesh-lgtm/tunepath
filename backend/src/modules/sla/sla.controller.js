@@ -35,33 +35,90 @@ const notifySlaEvent = async (sla, type, title, message, excludeUserId = null) =
 
 exports.notifySlaEvent = notifySlaEvent;
 
+const buildSlaMatchFilter = async (req) => {
+  const role = req.user ? (req.user.originalRole || req.user.role) : null;
+  const userId = req.user ? req.user._id : null;
+  const query = {};
+
+  const userAgencyId = req.user?.agencyId || req.user?.companyId;
+  const userBrandId = req.user?.brandId || req.user?.companyId;
+
+  if (role === 'commander_admin' || role === 'supreme_super_admin' || role === 'superadmin') {
+    query.$or = [
+      { triggerType: 'Payment' },
+      { triggerType: 'Client Issue' },
+      { assignedTo: userId },
+      { agencyId: userId },
+      ...(userAgencyId ? [{ agencyId: userAgencyId }] : [])
+    ];
+  } else if (role === 'agency_super_admin') {
+    // Agency Admin ONLY sees support tickets raised from Client side or Agency Manager panel
+    query.triggerType = { $in: ['Client Issue', 'Payment'] };
+
+    const tenantId = userAgencyId || userId;
+    let clientIds = [];
+    try {
+      const clients = await User.find({
+        $or: [
+          { agencyId: tenantId },
+          { adminId: tenantId },
+          { brandId: tenantId }
+        ]
+      }).select('_id');
+      clientIds = clients.map(c => c._id);
+    } catch (e) {
+      console.error('SLA tenant client fetch error:', e);
+    }
+
+    query.$or = [
+      { assignedTo: userId },
+      { agencyId: { $in: [tenantId, userId, ...clientIds].filter(Boolean) } },
+      { clientId: { $in: [tenantId, userId, ...clientIds].filter(Boolean) } }
+    ];
+  } else if (role === 'agency_manager' || role === 'agency') {
+    // Agency Manager sees Task Due Dates, Client Projects, and Client-raised Tickets
+    const tenantId = userAgencyId || userId;
+    let clientIds = [];
+    try {
+      const clients = await User.find({
+        $or: [
+          { agencyId: tenantId },
+          { adminId: tenantId },
+          { brandId: tenantId }
+        ]
+      }).select('_id');
+      clientIds = clients.map(c => c._id);
+    } catch (e) {
+      console.error('SLA tenant client fetch error:', e);
+    }
+
+    query.$or = [
+      { agencyId: { $in: [tenantId, userId, ...clientIds].filter(Boolean) } },
+      { clientId: { $in: [tenantId, userId, ...clientIds].filter(Boolean) } },
+      { assignedTo: userId }
+    ];
+  } else if (role === 'client' || role === 'agency_client' || role === 'brand_manager' || role === 'brand_super_admin') {
+    query.$or = [
+      { clientId: userBrandId || userId },
+      { clientId: userId },
+      { assignedTo: userId },
+      { agencyId: userId }
+    ];
+  } else {
+    query.$or = [
+      { assignedTo: userId },
+      { agencyId: userId },
+      { clientId: userId }
+    ];
+  }
+
+  return query;
+};
+
 // Utility to generate dynamic SLA dashboard stats
 exports.getSlaDashboardStats = async (req, res, next) => {
   try {
-    const role = req.user ? req.user.role : null;
-    const userId = req.user ? req.user._id : null;
-    
-    // Base match filter
-    const match = {};
-    if (role === 'commander_admin') {
-      match.$or = [
-        { triggerType: 'Payment' }, // In a real app we'd filter by clientType here if schema supported it
-        { triggerType: 'Client Issue' }
-      ];
-      match.entityType = { $nin: ['Project', 'Invoice'] };
-    } else if (role === 'agency_super_admin') {
-      match.triggerType = { $in: ['Payment', 'Client Issue'] };
-      match.agencyId = req.user.agencyId || userId;
-    } else if (role === 'agency_manager' || role === 'agency') {
-      match.agencyId = req.user.agencyId || userId;
-    } else if (role === 'client' || role === 'agency_client' || role === 'brand_manager' || role === 'brand_super_admin') {
-      match.clientId = req.user.brandId || userId;
-    }
-
-    if (req.selectedClientId) {
-      match.clientId = req.selectedClientId;
-    }
-
+    const match = await buildSlaMatchFilter(req);
     const slas = await SlaRecord.find(match);
 
     const stats = {
@@ -96,7 +153,6 @@ exports.getSlaDashboardStats = async (req, res, next) => {
       }
     });
 
-    // Dummy overall compliance calculation for UI
     const compliance = slas.length > 0 
       ? Math.round(((stats.normal + stats.resolved) / slas.length) * 100) 
       : 100;
@@ -118,52 +174,7 @@ exports.getSlaDashboardStats = async (req, res, next) => {
 exports.getSlas = async (req, res, next) => {
   try {
     const { page = 1, limit = 10, status, triggerType, priority, search } = req.query;
-    const role = req.user ? req.user.role : null;
-    const userId = req.user ? req.user._id : null;
-
-    const query = {};
-
-    // Role-based filtering
-    if (role === 'commander_admin') {
-      query.$or = [
-        { triggerType: 'Payment' },
-        { triggerType: 'Client Issue' }
-      ];
-      query.entityType = { $nin: ['Project', 'Invoice'] };
-    } else if (role === 'agency_super_admin') {
-      query.triggerType = { $in: ['Payment', 'Client Issue'] };
-      query.$or = [
-        { agencyId: req.user.agencyId || userId },
-        { clientId: userId }
-      ];
-    } else if (role === 'agency_manager' || role === 'agency') {
-      const tenantId = req.user.agencyId || userId;
-      const User = require('../auth/user.model');
-      const clients = await User.find({
-        $or: [
-          { agencyId: tenantId },
-          { adminId: tenantId },
-          { brandId: tenantId }
-        ]
-      }).select('_id');
-      const clientIds = clients.map(c => c._id);
-      
-      query.$or = [
-        { agencyId: { $in: [tenantId, ...clientIds] } },
-        { clientId: { $in: [tenantId, ...clientIds] } }
-      ];
-    } else if (role === 'client' || role === 'agency_client' || role === 'brand_manager' || role === 'brand_super_admin') {
-      query.clientId = req.user.brandId || userId;
-    }
-
-    if (req.selectedClientId) {
-      query.clientId = req.selectedClientId;
-      if (query.$or) {
-        // Remove agencyId/clientId $or condition if it exists, since we are overriding with clientId
-        query.$or = query.$or.filter(c => !c.agencyId && !c.clientId);
-        if (query.$or.length === 0) delete query.$or;
-      }
-    }
+    const query = await buildSlaMatchFilter(req);
 
     if (status && status !== 'All') query.status = status;
     if (triggerType && triggerType !== 'All') query.triggerType = triggerType;

@@ -1,4 +1,5 @@
 const Invoice = require('../invoices/invoice.model');
+const Transaction = require('../transactions/transaction.model');
 
 // Helper to get agency ID based on role
 const getAgencyId = (req) => req.user.role === 'agency_super_admin' ? req.user._id : req.user.agencyId;
@@ -13,8 +14,12 @@ exports.getBillingData = async (req, res, next) => {
     const agencyId = getAgencyId(req);
     if (!agencyId) return res.status(400).json({ success: false, message: 'Agency context not found' });
 
-    // Fetch invoices and populate client
-    const invoiceData = await Invoice.find({ agencyId, invoiceStatus: { $ne: 'Cancelled' } }).populate('clientId', 'name companyName');
+    // Fetch active non-draft, non-cancelled, non-deleted invoices and populate client
+    const invoiceData = await Invoice.find({ 
+      agencyId, 
+      isDeleted: false, 
+      invoiceStatus: { $nin: ['Draft', 'Cancelled'] } 
+    }).populate('clientId', 'name companyName email');
 
     let totalMrrValue = 0;
     let collectedValue = 0;
@@ -28,7 +33,7 @@ exports.getBillingData = async (req, res, next) => {
     const invoices = invoiceData.map(inv => {
       const amount = inv.grandTotal || 0;
       const paid = inv.totalPaid || 0;
-      const pending = inv.pendingAmount || amount;
+      const pending = inv.pendingAmount || Math.max(0, amount - paid);
 
       totalMrrValue += amount;
       collectedValue += paid;
@@ -43,11 +48,10 @@ exports.getBillingData = async (req, res, next) => {
         }
       }
 
-      // Generate a mock MOS for UI consistency if actual MOS integration isn't present
       const getDeterminMos = (idStr) => {
         let sum = 0;
         for (let i = 0; i < idStr.length; i++) sum += idStr.charCodeAt(i);
-        return 50 + (sum % 40); // 50-90 range
+        return 50 + (sum % 40);
       };
 
       const clientName = inv.clientId?.companyName || inv.clientId?.name || 'Unknown Client';
@@ -89,13 +93,37 @@ exports.triggerBillingAction = async (req, res, next) => {
   try {
     const { action } = req.body;
     const invoiceId = req.params.id;
+    const invoice = await Invoice.findById(invoiceId);
 
-    // This is a stub for Receipt generation / Emailing payment link logic.
-    let message = 'Action processed';
-    if (action === 'Receipt') message = 'Receipt queued for generation and delivery.';
-    else if (action === 'Send Link') message = 'Payment link dispatched to client successfully.';
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' });
+    }
 
-    res.status(200).json({ success: true, message });
+    if (action === 'Send Link') {
+      if (invoice.invoiceStatus === 'Draft') {
+        invoice.invoiceStatus = 'Sent';
+        await invoice.save();
+      }
+
+      // Create a notification for the client
+      const Notification = require('../notifications/notification.model');
+      if (Notification && invoice.clientId) {
+        await Notification.create({
+          userId: invoice.clientId,
+          title: `Invoice Payment Request: ${invoice.invoiceNumber}`,
+          message: `Your invoice ${invoice.invoiceNumber} for ₹${Number(invoice.grandTotal || 0).toLocaleString('en-IN')} is ready for payment in your Client Billing panel.`,
+          type: 'invoice',
+          link: '/client/billing'
+        }).catch(() => {});
+      }
+
+      return res.status(200).json({ 
+        success: true, 
+        message: `Payment link for invoice ${invoice.invoiceNumber} sent to client panel successfully.` 
+      });
+    }
+
+    res.status(200).json({ success: true, message: 'Action processed successfully' });
   } catch (error) {
     next(error);
   }

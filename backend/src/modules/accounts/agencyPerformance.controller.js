@@ -32,7 +32,14 @@ exports.getAgencyPerformance = async (req, res, next) => {
     const clientsOnboardedThisMonth = clientsData.filter(c => c.createdAt >= startOfMonth && c.createdAt <= endOfMonth).length;
 
     // 2. Fetch Team Members
-    const teamData = await User.find({ agencyId, role: { $in: ['agency_manager', 'user'] } }).select('_id name');
+    const teamData = await User.find({
+      $or: [
+        { agencyId },
+        { companyId: agencyId },
+        { adminId: agencyId }
+      ],
+      role: { $in: ['agency_manager', 'user', 'agency_super_admin'] }
+    }).select('_id name role');
 
     // 3. Overall Stats
     // Leads
@@ -55,11 +62,18 @@ exports.getAgencyPerformance = async (req, res, next) => {
     const slaCompliance = totalSlas > 0 ? Math.round(((totalSlas - breachedSlas) / totalSlas) * 100) : 100;
 
     // Task Analytics
-    const allTasks = await Task.find({ agencyId });
+    const completedStatuses = ['completed', 'complete', 'validated', 'done', 'review'];
+    const allTasks = await Task.find({
+      $or: [
+        { agencyId },
+        { tenantCompanyId: agencyId },
+        { companyId: agencyId }
+      ]
+    });
     const totalTasksThisMonth = allTasks.filter(t => t.createdAt >= startOfMonth && t.createdAt <= endOfMonth).length;
-    const completedTasksThisMonth = allTasks.filter(t => t.status === 'done' && t.updatedAt >= startOfMonth && t.updatedAt <= endOfMonth).length;
-    const pendingTasks = allTasks.filter(t => t.status !== 'done').length;
-    const overdueTasks = allTasks.filter(t => t.status !== 'done' && t.dueDate && new Date(t.dueDate) < now).length;
+    const completedTasksThisMonth = allTasks.filter(t => completedStatuses.includes(t.status) && t.updatedAt >= startOfMonth && t.updatedAt <= endOfMonth).length;
+    const pendingTasks = allTasks.filter(t => !completedStatuses.includes(t.status)).length;
+    const overdueTasks = allTasks.filter(t => !completedStatuses.includes(t.status) && t.dueDate && new Date(t.dueDate) < now).length;
     const taskCompletionRate = totalTasksThisMonth > 0 ? Math.round((completedTasksThisMonth / totalTasksThisMonth) * 100) : 100;
 
     // Projects Analytics
@@ -191,25 +205,61 @@ exports.getAgencyPerformance = async (req, res, next) => {
     const avgClientMos = clients.length > 0 ? Math.round(totalMos / clients.length) : 0;
 
     // 4. Team Performance
+    const teamIds = teamData.map(t => t._id);
+
     const teamTasks = await Task.aggregate([
-      { $match: { assignee: { $in: teamData.map(t => t._id) } } },
-      { $group: { _id: '$assignee', total: { $sum: 1 }, completed: { $sum: { $cond: [{ $eq: ['$status', 'done'] }, 1, 0] } } } }
+      { 
+        $match: { 
+          $or: [
+            { assignedTo: { $in: teamIds } },
+            { createdBy: { $in: teamIds } }
+          ] 
+        } 
+      },
+      { 
+        $group: { 
+          _id: '$assignedTo', 
+          total: { $sum: 1 }, 
+          completed: { 
+            $sum: { 
+              $cond: [{ $in: ['$status', completedStatuses] }, 1, 0] 
+            } 
+          } 
+        } 
+      }
     ]);
 
     const teamSlas = await SlaRecord.aggregate([
-      { $match: { assignedTo: { $in: teamData.map(t => t._id) } } },
-      { $group: { _id: '$assignedTo', total: { $sum: 1 }, breached: { $sum: { $cond: [{ $eq: ['$status', 'Breached'] }, 1, 0] } } } }
+      { 
+        $match: { 
+          $or: [
+            { assignedTo: { $in: teamIds } },
+            { agencyId: { $in: teamIds } }
+          ] 
+        } 
+      },
+      { 
+        $group: { 
+          _id: '$assignedTo', 
+          total: { $sum: 1 }, 
+          breached: { $sum: { $cond: [{ $eq: ['$status', 'Breached'] }, 1, 0] } } 
+        } 
+      }
     ]);
 
     const team = teamData.map(t => {
-      const taskObj = teamTasks.find(tk => tk._id.toString() === t._id.toString());
+      const taskObj = teamTasks.find(tk => tk._id && tk._id.toString() === t._id.toString());
       const tasksAssigned = taskObj ? taskObj.total : 0;
       const tasksCompleted = taskObj ? taskObj.completed : 0;
 
-      const slaObj = teamSlas.find(sl => sl._id.toString() === t._id.toString());
-      let slaPerc = 100;
+      const slaObj = teamSlas.find(sl => sl._id && sl._id.toString() === t._id.toString());
+      let slaPerc = 0;
       if (slaObj && slaObj.total > 0) {
         slaPerc = Math.round(((slaObj.total - slaObj.breached) / slaObj.total) * 100);
+      } else if (tasksAssigned > 0) {
+        slaPerc = Math.round((tasksCompleted / tasksAssigned) * 100);
+      } else {
+        slaPerc = 0;
       }
 
       const initials = (t.name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -218,8 +268,8 @@ exports.getAgencyPerformance = async (req, res, next) => {
         id: t._id,
         name: t.name,
         initials,
-        clients: 0, // Unused
-        mos: avgClientMos, // Unused
+        clients: 0,
+        mos: avgClientMos,
         sla: `${slaPerc}%`,
         tasksAssigned,
         tasksCompleted,

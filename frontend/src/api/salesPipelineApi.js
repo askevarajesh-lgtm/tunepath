@@ -86,6 +86,7 @@ const createMutationHook = (method) => {
 
 export const useGetDealsQuery = createQueryHook((params) => ({ url: '/sales-pipeline', params }));
 export const useGetPipelineAnalyticsQuery = createQueryHook('/sales-pipeline/analytics');
+export const useGetSalesRepsQuery = createQueryHook('/sales-pipeline/reps');
 
 export const useCreateDealMutation = createMutationHook('post')('/sales-pipeline');
 export const useUpdateDealMutation = createMutationHook('put')((arg) => {

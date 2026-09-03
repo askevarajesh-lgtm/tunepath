@@ -221,7 +221,21 @@ const AgencyUsersTab = () => {
             <Input placeholder="Enter user's name" style={{ borderRadius: 8 }} size="large" />
           </Form.Item>
           
-          <Form.Item label={<Text style={{ fontWeight: 600 }}>Email Address</Text>} name="email" rules={[{ required: true, type: 'email', message: 'Valid email is required' }]}>
+          <Form.Item label={<Text style={{ fontWeight: 600 }}>Email Address</Text>} name="email" rules={[
+            { required: true, message: 'Email address is required' },
+            {
+              validator: (_, value) => {
+                if (!value) return Promise.resolve();
+                if (/^[^a-zA-Z0-9]/.test(value)) {
+                  return Promise.reject(new Error('Email address cannot start with a special character'));
+                }
+                if (!/^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(value)) {
+                  return Promise.reject(new Error('Please enter a valid email address'));
+                }
+                return Promise.resolve();
+              }
+            }
+          ]}>
             <Input placeholder="user@agency.com" style={{ borderRadius: 8 }} size="large" />
           </Form.Item>
           <Form.Item 

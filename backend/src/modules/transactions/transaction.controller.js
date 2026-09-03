@@ -28,17 +28,26 @@ const updateInvoiceBalance = async (invoiceId) => {
     invoice.totalPaid = totalPaid;
     invoice.pendingAmount = Math.max(0, invoice.grandTotal - totalPaid);
     
-    if (invoice.pendingAmount <= 0) {
+    if (invoice.pendingAmount <= 0 && invoice.grandTotal > 0) {
       invoice.paymentStatus = 'Paid';
+      invoice.invoiceStatus = 'Paid';
     } else if (invoice.totalPaid > 0) {
       invoice.paymentStatus = 'Partially Paid';
+      if (invoice.invoiceStatus === 'Paid') {
+        invoice.invoiceStatus = 'Sent';
+      }
     } else {
       invoice.paymentStatus = 'Pending';
+      if (invoice.invoiceStatus === 'Paid') {
+        invoice.invoiceStatus = 'Sent';
+      }
     }
     
     await invoice.save();
   }
 };
+
+exports.updateInvoiceBalance = updateInvoiceBalance;
 
 exports.createManualTransaction = async (req, res) => {
   try {
@@ -107,6 +116,52 @@ exports.getTransactions = async (req, res) => {
     if (invoiceId) query.invoiceId = invoiceId;
     if (status) query.status = status;
     if (paymentMethod) query.paymentMethod = paymentMethod;
+
+    // Backfill legacy paid invoices missing Transaction records
+    try {
+      let invQuery = { isDeleted: false, $or: [{ paymentStatus: 'Paid' }, { invoiceStatus: 'Paid' }] };
+      if (query.agencyId) invQuery.agencyId = query.agencyId;
+      if (query.brandId) invQuery.clientId = query.brandId;
+      if (query.adminId) invQuery.adminId = query.adminId;
+
+      const legacyPaidInvoices = await Invoice.find(invQuery);
+      for (const inv of legacyPaidInvoices) {
+        const existing = await Transaction.findOne({ invoiceId: inv._id });
+        if (!existing) {
+          const paidAmount = inv.grandTotal || inv.amount || 0;
+          await Transaction.create({
+            invoiceId: inv._id,
+            companyId: inv.clientId || inv.brandId,
+            amount: paidAmount,
+            paymentDate: inv.updatedAt || inv.createdAt || new Date(),
+            closingInvoiceDate: inv.dueDate || inv.updatedAt || new Date(),
+            paymentMethod: inv.paymentMode || 'Bank Transfer',
+            referenceNumber: inv.transactionId || `LEGACY-${inv.invoiceNumber || inv._id}`,
+            transactionType: inv.paymentMode === 'Razorpay' ? 'Online' : 'Manual',
+            status: 'Verified',
+            recordedBy: inv.updatedBy || inv.createdBy || inv.agencyId,
+            verifiedBy: inv.updatedBy || inv.createdBy || inv.agencyId,
+            adminId: inv.adminId,
+            agencyId: inv.agencyId,
+            brandId: inv.brandId
+          });
+
+          await Invoice.updateOne(
+            { _id: inv._id },
+            {
+              $set: {
+                totalPaid: paidAmount,
+                pendingAmount: 0,
+                paymentStatus: 'Paid',
+                invoiceStatus: 'Paid'
+              }
+            }
+          );
+        }
+      }
+    } catch (e) {
+      console.error('Error during getTransactions backfill:', e);
+    }
 
     const transactions = await Transaction.find(query)
       .populate('invoiceId', 'invoiceNumber grandTotal totalPaid pendingAmount')

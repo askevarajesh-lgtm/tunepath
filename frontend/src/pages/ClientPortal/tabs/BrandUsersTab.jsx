@@ -278,7 +278,21 @@ const BrandUsersTab = ({ user }) => {
           <Form.Item name="name" label="Full Name" rules={[{ required: true, message: 'Please enter name' }]}>
             <Input placeholder="e.g. Jane Doe" />
           </Form.Item>
-          <Form.Item name="email" label="Email Address" rules={[{ required: true, type: 'email', message: 'Please enter a valid email' }]}>
+          <Form.Item name="email" label="Email Address" rules={[
+            { required: true, message: 'Please enter an email' },
+            {
+              validator: (_, value) => {
+                if (!value) return Promise.resolve();
+                if (/^[^a-zA-Z0-9]/.test(value)) {
+                  return Promise.reject(new Error('Email address cannot start with a special character'));
+                }
+                if (!/^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(value)) {
+                  return Promise.reject(new Error('Please enter a valid email address'));
+                }
+                return Promise.resolve();
+              }
+            }
+          ]}>
             <Input type="email" placeholder="jane@brand.com" />
           </Form.Item>
           <Form.Item 

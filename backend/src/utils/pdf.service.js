@@ -483,7 +483,7 @@ const generateInvoicePDF = async (invoice, tenantCompany) => {
       doc.text("Subtotal:", totalsX, totalsY, { width: 100, align: "right" });
       doc.font("Helvetica-Bold").fillColor("#000000");
       doc.text(
-        `₹${subtotalVal.toLocaleString("en-IN")}`,
+        `Rs. ${subtotalVal.toLocaleString("en-IN")}`,
         totalsX + 100,
         totalsY,
         { width: 100, align: "right" },
@@ -495,7 +495,7 @@ const generateInvoicePDF = async (invoice, tenantCompany) => {
         doc.text("Tax (GST):", totalsX, doc.y, { width: 100, align: "right" });
         doc.font("Helvetica-Bold").fillColor("#000000");
         doc.text(
-          `₹${(invoice.tax || 0).toLocaleString("en-IN")}`,
+          `Rs. ${(invoice.tax || 0).toLocaleString("en-IN")}`,
           totalsX + 100,
           doc.y,
           { width: 100, align: "right" },
@@ -516,7 +516,7 @@ const generateInvoicePDF = async (invoice, tenantCompany) => {
       doc.fontSize(14).font("Helvetica-Bold").fillColor("#1890ff");
       doc.text("Total Amount:", totalsX, totalY, { width: 100, align: "right" });
       doc.text(
-        `₹${totalVal.toLocaleString("en-IN")}`,
+        `Rs. ${totalVal.toLocaleString("en-IN")}`,
         totalsX + 100,
         totalY,
         { width: 100, align: "right" },
@@ -531,7 +531,7 @@ const generateInvoicePDF = async (invoice, tenantCompany) => {
           align: "right",
         });
         doc.text(
-          `₹${pendingVal.toLocaleString("en-IN")}`,
+          `Rs. ${pendingVal.toLocaleString("en-IN")}`,
           totalsX + 100,
           pendingY,
           { width: 100, align: "right" },

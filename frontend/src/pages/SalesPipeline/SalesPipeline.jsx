@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { Typography, Row, Col, Card, Button, Table, Tag, Avatar, Progress, Drawer, Modal, Form, Input, Select, InputNumber, Divider, Timeline, Space, message, Badge, DatePicker } from 'antd';
 import { motion } from 'framer-motion';
@@ -6,6 +7,7 @@ import { Download, Plus, Target, FileText, TrendingUp, Mail, ExternalLink, Clock
 import {
   useGetDealsQuery,
   useGetPipelineAnalyticsQuery,
+  useGetSalesRepsQuery,
   useCreateDealMutation,
   useUpdateDealMutation,
   useDeleteDealMutation,
@@ -18,6 +20,24 @@ const { Option } = Select;
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import useActionPermissions from '../../hooks/useActionPermissions';
+
+const INDUSTRY_CATEGORIES = [
+  'Healthcare & Wellness',
+  'E-commerce & Retail',
+  'Technology & Software (SaaS)',
+  'Real Estate & Construction',
+  'Finance & Banking (Fintech)',
+  'Education & EdTech',
+  'Automotive',
+  'Hospitality & Tourism',
+  'Media & Entertainment',
+  'Manufacturing & Industrial',
+  'Professional Services',
+  'Food & Beverage',
+  'Fashion & Apparel',
+  'Non-Profit & NGO',
+  'Other'
+];
 
 const SalesPipeline = () => {
   const navigate = useNavigate();
@@ -45,6 +65,8 @@ const SalesPipeline = () => {
   });
 
   const { data: analyticsResponse, isLoading: analyticsLoading, refetch: refetchAnalytics } = useGetPipelineAnalyticsQuery();
+  const { data: repsResponse } = useGetSalesRepsQuery();
+  const reps = repsResponse?.data?.reps || [];
 
   // API Mutations
   const [createDeal, { isLoading: isCreating }] = useCreateDealMutation();
@@ -65,9 +87,11 @@ const SalesPipeline = () => {
 
   const handleCreate = async (values) => {
     try {
-      const repInitials = (values.rep || "SA").split(" ").map(n => n[0]).join("").toUpperCase();
+      const repName = values.rep || "Unassigned";
+      const repInitials = values.rep ? values.rep.split(" ").map(n => n[0]).join("").toUpperCase() : "UN";
       await createDeal({
         ...values,
+        rep: repName,
         ownerInit: repInitials
       }).unwrap();
       message.success("Deal created successfully");
@@ -313,7 +337,11 @@ const SalesPipeline = () => {
 
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#8c8c8c' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><User size={12} /> {deal.rep}</span>
-                        {deal.follow && <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-warning)' }}><Clock size={12} /> {deal.follow}</span>}
+                        {deal.follow && (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-warning)' }}>
+                            <Clock size={12} /> {dayjs(deal.follow).isValid() ? dayjs(deal.follow).format('DD MMM YYYY') : deal.follow}
+                          </span>
+                        )}
                       </div>
                     </Card>
                   ))}
@@ -609,9 +637,13 @@ const SalesPipeline = () => {
               <Form.Item
                 label="Industry Category"
                 name="category"
-                rules={[{ required: true, message: 'Please enter category' }]}
+                rules={[{ required: true, message: 'Please select an industry category' }]}
               >
-                <Input placeholder="e.g. Health & Wellness" />
+                <Select placeholder="Select Industry Category" showSearch allowClear style={{ width: '100%' }}>
+                  {INDUSTRY_CATEGORIES.map(cat => (
+                    <Option key={cat} value={cat}>{cat}</Option>
+                  ))}
+                </Select>
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -653,9 +685,18 @@ const SalesPipeline = () => {
               <Form.Item
                 label="Assigned Rep (Owner)"
                 name="rep"
-                rules={[{ required: true, message: 'Please select or type rep name' }]}
               >
-                <Input placeholder="e.g. Amit Jain" />
+                <Select
+                  placeholder="Select assigned rep (optional)"
+                  allowClear
+                  showSearch
+                  optionFilterProp="children"
+                  style={{ width: '100%' }}
+                >
+                  {reps.map(r => (
+                    <Option key={r._id} value={r.name}>{r.name}</Option>
+                  ))}
+                </Select>
               </Form.Item>
             </Col>
             <Col span={12}>

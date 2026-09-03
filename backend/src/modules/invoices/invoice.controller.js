@@ -1,7 +1,94 @@
 const Invoice = require('./invoice.model');
 const Proposal = require('../proposals/proposal.model');
 const MasterItem = require('../masterItems/masterItem.model');
+const Transaction = require('../transactions/transaction.model');
+const { updateInvoiceBalance } = require('../transactions/transaction.controller');
 const { getNextGenerationDate } = require('./invoiceDateHelper');
+
+const syncInvoiceStatus = async (invoices) => {
+  if (!invoices) return;
+  const list = Array.isArray(invoices) ? invoices : [invoices];
+  for (const inv of list) {
+    if (!inv || !inv._id) continue;
+
+    // Backfill legacy payments marked as Paid without a Transaction record
+    if (inv.paymentStatus === 'Paid' || inv.invoiceStatus === 'Paid') {
+      const existingTxn = await Transaction.findOne({ invoiceId: inv._id });
+      if (!existingTxn) {
+        const paidAmount = inv.grandTotal || inv.amount || 0;
+        await Transaction.create({
+          invoiceId: inv._id,
+          companyId: inv.clientId || inv.brandId,
+          amount: paidAmount,
+          paymentDate: inv.updatedAt || inv.createdAt || new Date(),
+          closingInvoiceDate: inv.dueDate || inv.updatedAt || new Date(),
+          paymentMethod: inv.paymentMode || 'Bank Transfer',
+          referenceNumber: inv.transactionId || `LEGACY-${inv.invoiceNumber || inv._id}`,
+          transactionType: inv.paymentMode === 'Razorpay' ? 'Online' : 'Manual',
+          status: 'Verified',
+          recordedBy: inv.updatedBy || inv.createdBy || inv.agencyId,
+          verifiedBy: inv.updatedBy || inv.createdBy || inv.agencyId,
+          adminId: inv.adminId,
+          agencyId: inv.agencyId,
+          brandId: inv.brandId
+        });
+
+        inv.totalPaid = paidAmount;
+        inv.pendingAmount = 0;
+        inv.paymentStatus = 'Paid';
+        inv.invoiceStatus = 'Paid';
+        await Invoice.updateOne(
+          { _id: inv._id },
+          {
+            $set: {
+              totalPaid: paidAmount,
+              pendingAmount: 0,
+              paymentStatus: 'Paid',
+              invoiceStatus: 'Paid'
+            }
+          }
+        );
+        continue;
+      }
+    }
+
+    const verifiedTxns = await Transaction.find({ invoiceId: inv._id, status: { $in: ['Verified', 'Successful'] } });
+    const actualPaid = verifiedTxns.reduce((sum, t) => sum + (t.amount || 0), 0);
+    const grandTotal = inv.grandTotal || 0;
+
+    let targetPaymentStatus = 'Pending';
+    let targetInvoiceStatus = inv.invoiceStatus;
+
+    if (actualPaid >= grandTotal && grandTotal > 0) {
+      targetPaymentStatus = 'Paid';
+      targetInvoiceStatus = 'Paid';
+    } else if (actualPaid > 0) {
+      targetPaymentStatus = 'Partially Paid';
+      if (targetInvoiceStatus === 'Paid') targetInvoiceStatus = 'Sent';
+    } else {
+      targetPaymentStatus = 'Pending';
+      if (targetInvoiceStatus === 'Paid') targetInvoiceStatus = 'Sent';
+    }
+
+    if (inv.totalPaid !== actualPaid || inv.paymentStatus !== targetPaymentStatus || inv.invoiceStatus !== targetInvoiceStatus) {
+      inv.totalPaid = actualPaid;
+      inv.pendingAmount = Math.max(0, grandTotal - actualPaid);
+      inv.paymentStatus = targetPaymentStatus;
+      inv.invoiceStatus = targetInvoiceStatus;
+      await Invoice.updateOne(
+        { _id: inv._id },
+        {
+          $set: {
+            totalPaid: inv.totalPaid,
+            pendingAmount: inv.pendingAmount,
+            paymentStatus: inv.paymentStatus,
+            invoiceStatus: inv.invoiceStatus
+          }
+        }
+      );
+    }
+  }
+};
 
 // Create Invoice
 exports.createInvoice = async (req, res, next) => {
@@ -25,8 +112,7 @@ exports.createInvoice = async (req, res, next) => {
     if (data.invoiceType === 'Retainer' && data.proposalId) {
       const proposal = await Proposal.findById(data.proposalId).populate('masterItems');
       if (proposal && proposal.masterItems && proposal.masterItems.length > 0) {
-        // Look for the first valid duration in master items
-        let durationString = '1 Month'; // Default
+        let durationString = '1 Month';
         for (const item of proposal.masterItems) {
           if (item.handlingDuration) {
             durationString = item.handlingDuration;
@@ -96,7 +182,6 @@ exports.getInvoices = async (req, res, next) => {
       queryFilter.adminId = req.user._id;
     } else if (isClient) {
       queryFilter.clientId = req.user.brandId || req.user._id;
-      // Clients should not see draft invoices
       queryFilter.invoiceStatus = { $ne: 'Draft' };
     } else {
       queryFilter.agencyId = req.companyId || req.user.agencyId || req.user._id;
@@ -119,6 +204,8 @@ exports.getInvoices = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
+
+    await syncInvoiceStatus(invoices);
 
     res.status(200).json({ 
       success: true, 
@@ -152,6 +239,9 @@ exports.getInvoice = async (req, res, next) => {
     if (!invoice) {
       return res.status(404).json({ success: false, message: 'Invoice not found' });
     }
+
+    await syncInvoiceStatus(invoice);
+
     res.status(200).json({ success: true, data: invoice });
   } catch (error) {
     next(error);
@@ -168,15 +258,36 @@ exports.updatePayment = async (req, res, next) => {
 
     const { paymentMode, transactionId } = req.body;
     
-    invoice.paymentStatus = 'Paid';
-    invoice.invoiceStatus = 'Paid';
-    invoice.paymentMode = paymentMode;
-    invoice.transactionId = transactionId;
-    invoice.updatedBy = req.user._id;
+    // Create a transaction record with status Pending (awaiting verification)
+    const transaction = new Transaction({
+      invoiceId: invoice._id,
+      companyId: invoice.clientId || invoice.brandId,
+      amount: invoice.pendingAmount > 0 ? invoice.pendingAmount : invoice.grandTotal,
+      paymentDate: new Date(),
+      closingInvoiceDate: new Date(),
+      paymentMethod: paymentMode || 'Bank Transfer',
+      referenceNumber: transactionId || `TXN-${Date.now()}`,
+      transactionType: paymentMode === 'Razorpay' ? 'Online' : 'Manual',
+      status: 'Pending',
+      recordedBy: req.user._id,
+      adminId: invoice.adminId,
+      agencyId: invoice.agencyId,
+      brandId: invoice.brandId
+    });
 
-    await invoice.save();
+    await transaction.save();
 
-    res.status(200).json({ success: true, data: invoice, message: 'Payment updated successfully' });
+    // Recalculate invoice balance based on verified transactions
+    await updateInvoiceBalance(invoice._id);
+
+    const updatedInvoice = await Invoice.findById(invoice._id);
+
+    res.status(200).json({ 
+      success: true, 
+      data: updatedInvoice, 
+      transaction,
+      message: 'Payment recorded successfully and submitted for verification' 
+    });
   } catch (error) {
     next(error);
   }

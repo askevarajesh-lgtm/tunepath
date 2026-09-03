@@ -629,7 +629,21 @@ const UserManagementTab = () => {
           <Form.Item name="name" label={<strong style={{ color: 'var(--text-secondary)' }}>Full Name</strong>} rules={[{ required: true }]}>
             <Input size="large" style={{ borderRadius: 8, background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
           </Form.Item>
-          <Form.Item name="email" label={<strong style={{ color: 'var(--text-secondary)' }}>Email Address</strong>} rules={[{ required: true, type: 'email' }]}>
+          <Form.Item name="email" label={<strong style={{ color: 'var(--text-secondary)' }}>Email Address</strong>} rules={[
+            { required: true, message: 'Please enter an email' },
+            {
+              validator: (_, value) => {
+                if (!value) return Promise.resolve();
+                if (/^[^a-zA-Z0-9]/.test(value)) {
+                  return Promise.reject(new Error('Email address cannot start with a special character'));
+                }
+                if (!/^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(value)) {
+                  return Promise.reject(new Error('Please enter a valid email address'));
+                }
+                return Promise.resolve();
+              }
+            }
+          ]}>
             <Input size="large" style={{ borderRadius: 8, background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }} />
           </Form.Item>
           <Form.Item

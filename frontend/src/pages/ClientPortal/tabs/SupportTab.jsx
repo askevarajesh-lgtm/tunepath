@@ -85,6 +85,7 @@ const SupportTab = () => {
   const [assignableUsers, setAssignableUsers] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  const selectedRequestType = Form.useWatch('typeOfRequest', form);
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -140,7 +141,13 @@ const SupportTab = () => {
   const handleSubmitTicket = async (values) => {
     setSubmitting(true);
     try {
-      await supportApi.createSupportTicket(values);
+      const payload = {
+        ...values,
+        typeOfRequest: values.typeOfRequest === 'Other' && values.otherRequestDetails
+          ? `Other: ${values.otherRequestDetails}`
+          : values.typeOfRequest,
+      };
+      await supportApi.createSupportTicket(payload);
       message.success('Ticket raised successfully!');
       setIsModalVisible(false);
       form.resetFields();
@@ -277,6 +284,16 @@ const SupportTab = () => {
               </Form.Item>
             </Col>
           </Row>
+
+          {selectedRequestType === 'Other' && (
+            <Form.Item 
+              name="otherRequestDetails" 
+              label={<span style={{ fontWeight: 600 }}>Specify Request Details</span>} 
+              rules={[{ required: true, message: 'Please enter details for your request' }]}
+            >
+              <Input placeholder="E.g., Custom Integration, Feature Request..." size="large" style={{ borderRadius: 8 }} />
+            </Form.Item>
+          )}
 
           <Form.Item name="assignedToUserId" label={<span style={{ fontWeight: 600 }}>Assign To</span>} rules={[{ required: true, message: 'Please select an assignee' }]}>
             <Select size="large" placeholder="Select a manager or admin" loading={assignableUsers.length === 0} style={{ borderRadius: 8 }}>

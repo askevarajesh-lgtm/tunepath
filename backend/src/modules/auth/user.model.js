@@ -3,7 +3,21 @@ const bcrypt = require('bcryptjs');
 
 const UserSchema = new mongoose.Schema({
   name: { type: String },
-  email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
+  email: { 
+    type: String, 
+    required: true, 
+    unique: true, 
+    lowercase: true, 
+    trim: true, 
+    index: true,
+    validate: {
+      validator: function(v) {
+        if (!v) return false;
+        return /^[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(v);
+      },
+      message: () => 'Email address cannot start with a special character and must be a valid email'
+    }
+  },
   phone: { type: String, default: null },
   countryCode: { type: String, default: '91' },
   address: { type: mongoose.Schema.Types.Mixed, default: null },

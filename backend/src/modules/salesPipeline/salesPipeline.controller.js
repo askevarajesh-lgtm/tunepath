@@ -99,6 +99,68 @@ const convertDealToClient = async (req, res) => {
   }
 };
 
+const hasSalesPipelineEnabled = (userDoc) => {
+  if (userDoc.customRoleId && userDoc.customRoleId.permissions) {
+    const p = userDoc.customRoleId.permissions;
+    const spPerm = p['Agency Ops-Sales Pipeline'] || p['Sales Pipeline'] || p['salespipeline'] || p['Agency Ops'];
+
+    if (!spPerm) return false;
+
+    if (typeof spPerm === 'boolean') return spPerm;
+    if (Array.isArray(spPerm)) return spPerm.includes('Sales Pipeline') || spPerm.includes('salespipeline');
+    if (typeof spPerm === 'object') {
+      return Boolean(spPerm.View || spPerm.Create || spPerm.Edit || spPerm.All || spPerm['Sales Pipeline'] || spPerm.canView || spPerm.canAdd);
+    }
+    return false;
+  }
+
+  if (userDoc.permissions) {
+    const p = userDoc.permissions;
+    const spPerm = p['Agency Ops-Sales Pipeline'] || p['Sales Pipeline'] || p['salespipeline'] || p['Agency Ops'];
+    if (spPerm) {
+      if (typeof spPerm === 'boolean') return spPerm;
+      if (Array.isArray(spPerm)) return spPerm.includes('Sales Pipeline');
+      if (typeof spPerm === 'object') {
+        return Boolean(spPerm.View || spPerm.Create || spPerm.Edit || spPerm.All || spPerm['Sales Pipeline'] || spPerm.canView || spPerm.canAdd);
+      }
+    }
+  }
+
+  return true;
+};
+
+const getSalesReps = async (req, res) => {
+  try {
+    const agencyId = req.user?.agencyId || req.companyId || req.user?._id;
+    
+    // Fetch ONLY sub-users (role: 'user') belonging to this agency.
+    // Explicitly exclude clients (brand_super_admin, brand_manager, agency_client, client)
+    // and agency admins / agency managers.
+    const users = await User.find({
+      $or: [
+        { agencyId: agencyId },
+        { companyId: agencyId },
+        { adminId: agencyId }
+      ],
+      role: 'user'
+    }).populate('customRoleId').select('_id name email role customRoleId permissions');
+
+    // Filter users who have Sales Pipeline enabled in Role Configuration
+    const reps = users.filter(hasSalesPipelineEnabled);
+
+    return sendSuccess(res, "Reps retrieved successfully", {
+      reps: reps.map(r => ({
+        _id: r._id,
+        name: r.name || r.email,
+        email: r.email,
+        role: r.role
+      }))
+    });
+  } catch (error) {
+    return sendError(res, 500, error.message);
+  }
+};
+
 module.exports = {
   createDeal,
   getAllDeals,
@@ -107,5 +169,6 @@ module.exports = {
   deleteDeal,
   addDealNote,
   getPipelineAnalytics,
-  convertDealToClient
+  convertDealToClient,
+  getSalesReps
 };

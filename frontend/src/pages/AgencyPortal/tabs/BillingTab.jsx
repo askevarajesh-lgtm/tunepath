@@ -34,12 +34,39 @@ const BillingTab = () => {
   };
 
   const handleAction = async (action, record) => {
+    if (action === 'Receipt') {
+      try {
+        message.loading({ content: 'Downloading receipt...', key: 'receiptDownload' });
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/invoices/${record.id}/pdf`, {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        if (!response.ok) throw new Error('Failed to download invoice PDF');
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Receipt_${record.invoice || 'Invoice'}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+        message.success({ content: 'Receipt downloaded successfully', key: 'receiptDownload' });
+      } catch (error) {
+        console.error('Receipt download error:', error);
+        message.error({ content: 'Failed to download receipt PDF', key: 'receiptDownload' });
+      }
+      return;
+    }
+
     try {
       const res = await api.post(`/agency/billing/${record.id}/action`, { action });
-      message.success(res.data.message || `${action} dispatched`);
+      message.success(res.data.message || 'Payment link sent to client panel successfully');
     } catch (error) {
       console.error(`Billing action ${action} failed:`, error);
-      message.error(error.response?.data?.message || `Failed to execute action ${action}`);
+      message.error(error.response?.data?.message || `Failed to send payment link`);
     }
   };
 

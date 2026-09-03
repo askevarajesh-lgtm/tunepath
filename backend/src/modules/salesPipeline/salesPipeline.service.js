@@ -2,8 +2,13 @@ const Deal = require("./deal.model");
 const mongoose = require("mongoose");
 
 const createDeal = async (dealData, companyId, username) => {
+  const repName = dealData.rep || "Unassigned";
+  const repInitials = dealData.ownerInit || (dealData.rep ? dealData.rep.split(" ").map(n => n[0]).join("").toUpperCase() : "UN");
+
   const deal = new Deal({
     ...dealData,
+    rep: repName,
+    ownerInit: repInitials,
     companyId,
     activityLogs: [
       { action: "Deal Created", performedBy: username || "User", details: `Deal created with initial stage: ${dealData.stage || 'lead'}` }
@@ -85,19 +90,22 @@ const getPipelineAnalytics = async (companyId) => {
   const deals = await Deal.find({ companyId });
 
   // Compute KPIs
-  const openStages = ['lead', 'qualified', 'proposal', 'negotiation'];
-  const openDeals = deals.filter(d => openStages.includes(d.stage));
+  const activeDeals = deals.filter(d => d.stage !== 'lost');
+  const openDeals = deals.filter(d => ['lead', 'qualified', 'proposal', 'negotiation'].includes(d.stage));
   const wonDeals = deals.filter(d => d.stage === 'won');
   const lostDeals = deals.filter(d => d.stage === 'lost');
 
-  const totalPipelineValue = openDeals.reduce((sum, d) => sum + d.value, 0);
-  const weightedPipelineValue = openDeals.reduce((sum, d) => sum + (d.value * (d.probability || 0) / 100), 0);
+  const totalPipelineValue = activeDeals.reduce((sum, d) => sum + d.value, 0);
+  const weightedPipelineValue = activeDeals.reduce((sum, d) => {
+    if (d.stage === 'won') return sum + d.value;
+    return sum + (d.value * (d.probability || 20) / 100);
+  }, 0);
   
   const totalClosed = wonDeals.length + lostDeals.length;
   const winRate = totalClosed > 0 ? Math.round((wonDeals.length / totalClosed) * 100) : 0;
   
   const avgDealSize = deals.length > 0 ? Math.round(deals.reduce((sum, d) => sum + d.value, 0) / deals.length) : 0;
-  const activeProspects = openDeals.length;
+  const activeProspects = activeDeals.length;
   const proposalsSent = deals.filter(d => d.stage === 'proposal').length;
 
   // Conversion funnel counts
