@@ -112,7 +112,7 @@ const PositionTrackingTab = () => {
   const [step, setStep] = useState(1);
   const [config, setConfig] = useState({
     device: 'Desktop',
-    location: 'us',
+    location: 'in',
     keywordsText: ''
   });
 
@@ -264,7 +264,7 @@ const PositionTrackingTab = () => {
               <Text strong>Search engine</Text>
               <div style={{ marginTop: 8 }}>
                 <Button type="default" style={{ color: 'var(--accent-primary)', borderColor: 'var(--accent-primary)', marginRight: 8, background: 'transparent' }}>Google</Button>
-                <Button disabled style={{ background: 'transparent' }}>Bing</Button>
+                {/* <Button disabled style={{ background: 'transparent' }}>Bing</Button> */}
               </div>
             </Col>
             <Col span={12}>
@@ -297,11 +297,11 @@ const PositionTrackingTab = () => {
                 onChange={(val) => setConfig({...config, location: val})}
                 style={{ width: '100%' }}
               >
+                <Option value="in">India</Option>
                 <Option value="us">United States</Option>
                 <Option value="uk">United Kingdom</Option>
                 <Option value="ca">Canada</Option>
                 <Option value="au">Australia</Option>
-                <Option value="in">India</Option>
               </Select>
             </div>
           </div>

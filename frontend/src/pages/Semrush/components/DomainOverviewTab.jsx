@@ -273,7 +273,7 @@ const DomainOverviewTab = () => {
               { title: 'Traffic %', dataIndex: 'trafficPercent' },
             ]}
           />
-          <div style={{ marginTop: 24 }}><Tag color="default" style={{ padding: '4px 12px', background: 'var(--accent-primary)', color: 'white', border: 'none', cursor: 'pointer' }} onClick={() => navigate(`/intelligence/semrush/${project?._id}/organic-keywords`)}>View details</Tag></div>
+          <div style={{ marginTop: 24 }}><Tag color="default" style={{ padding: '4px 12px', background: 'var(--accent-primary)', color: 'white', border: 'none', cursor: 'pointer' }} onClick={() => navigate('../organic-keywords')}>View details</Tag></div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -329,13 +329,31 @@ const DomainOverviewTab = () => {
             pagination={false}
             rowKey="domain"
             columns={[
-              { title: 'Competitor', dataIndex: 'domain', render: (text) => <span style={{ color: 'var(--accent-primary)', fontWeight: 500 }}>{text} <ExternalLink size={12}/></span> },
+              { 
+                title: 'Competitor', 
+                dataIndex: 'domain', 
+                render: (text) => {
+                  if (!text) return null;
+                  const url = text.startsWith('http://') || text.startsWith('https://') ? text : `https://${text}`;
+                  return (
+                    <a 
+                      href={url} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      style={{ color: 'var(--accent-primary)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {text} <ExternalLink size={12}/>
+                    </a>
+                  );
+                }
+              },
               { title: 'Com. Level', dataIndex: 'comLevel', render: (val) => <Progress percent={val} showInfo={false} strokeColor="var(--accent-primary)" size="small" style={{ width: 60 }} /> },
               { title: 'Com. Keywords', dataIndex: 'commonKeywords', align: 'right', render: formatNumber },
               { title: 'SE Keywords', dataIndex: 'seKeywords', align: 'right', render: formatNumber },
             ]}
           />
-          <div style={{ marginTop: 24 }}><Tag color="default" style={{ padding: '4px 12px', background: 'var(--accent-primary)', color: 'white', border: 'none', cursor: 'pointer' }} onClick={() => navigate(`/intelligence/semrush/${project?._id}/organic-keywords`)}>View details</Tag></div>
+          <div style={{ marginTop: 24 }}><Tag color="default" style={{ padding: '4px 12px', background: 'var(--accent-primary)', color: 'white', border: 'none', cursor: 'pointer' }} onClick={() => navigate('../competitor-analysis')}>View details</Tag></div>
         </div>
         
         <div className="so-card">

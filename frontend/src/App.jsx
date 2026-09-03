@@ -337,6 +337,21 @@ const AppRoutes = () => {
             <Route path="reports" element={<ReportsTab />} />
             <Route path="activity" element={<ActivityTab />} />
           </Route>
+          <Route path="intelligence/semrush" element={<SemrushDashboard />} />
+          <Route path="intelligence/semrush/:projectId" element={<Semrush />}>
+            <Route index element={<Navigate to="dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardTab />} />
+            <Route path="domain-overview" element={<DomainOverviewTab />} />
+            <Route path="position-tracking" element={<PositionTrackingTab />} />
+            <Route path="organic-keywords" element={<OrganicKeywordsTab />} />
+            <Route path="keyword-magic-tool" element={<KeywordMagicToolTab />} />
+            <Route path="competitor-analysis" element={<CompetitorAnalysisTab />} />
+            <Route path="backlinks" element={<BacklinksTab />} />
+            <Route path="site-health" element={<SiteHealthTab />} />
+            <Route path="traffic-analytics" element={<TrafficAnalyticsTab />} />
+            <Route path="reports" element={<ReportsTab />} />
+            <Route path="activity" element={<ActivityTab />} />
+          </Route>
 
 
           <Route path="ops/time" element={<TimeTracking />} />

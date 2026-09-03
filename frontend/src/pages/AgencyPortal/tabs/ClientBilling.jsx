@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Tag, Typography, Button } from 'antd';
+import { Table, Tag, Typography, Button, message } from 'antd';
 import { FileText, Download } from 'lucide-react';
+import api from '../../../services/api';
 import dayjs from 'dayjs';
 
 const { Text } = Typography;
@@ -18,45 +19,50 @@ const ClientBilling = ({ clientId }) => {
   const fetchInvoices = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`/api/invoices?clientId=${clientId}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
-      const data = await res.json();
-      if (data.success) {
-        setInvoices(data.data || data.invoices || []);
+      const res = await api.get(`/invoices/client/${clientId}`);
+      if (res.data?.success) {
+        setInvoices(res.data.data);
       }
-    } catch (error) {
-      console.error('Failed to fetch invoices', error);
+    } catch (err) {
+      console.error('Failed to fetch invoices', err);
     } finally {
       setLoading(false);
     }
   };
 
   const getStatusColor = (status) => {
-    if (status === 'Paid') return 'success';
-    if (status === 'Pending') return 'warning';
-    if (status === 'Overdue') return 'error';
-    return 'default';
+    switch (status) {
+      case 'Paid': return 'green';
+      case 'Overdue': return 'red';
+      case 'Issued': return 'orange';
+      default: return 'default';
+    }
   };
 
   const columns = [
     {
-      title: 'Invoice',
+      title: 'Invoice #',
       dataIndex: 'invoiceNumber',
       key: 'invoiceNumber',
-      render: (text) => <Text style={{ fontWeight: 600 }}>{text}</Text>,
+      render: (text) => <Text style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{text}</Text>,
     },
     {
       title: 'Date',
-      dataIndex: 'invoiceDate',
-      key: 'invoiceDate',
-      render: (date) => date ? dayjs(date).format('MMM DD, YYYY') : 'N/A',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
+      render: (date) => dayjs(date).format('MMM DD, YYYY'),
+    },
+    {
+      title: 'Due Date',
+      dataIndex: 'dueDate',
+      key: 'dueDate',
+      render: (date) => dayjs(date).format('MMM DD, YYYY'),
     },
     {
       title: 'Amount',
-      dataIndex: 'totalAmount',
-      key: 'totalAmount',
-      render: (amount, record) => <Text style={{ fontWeight: 700 }}>{record.currency || '$'}{amount?.toLocaleString()}</Text>,
+      dataIndex: 'grandTotal',
+      key: 'grandTotal',
+      render: (val) => <Text style={{ fontWeight: 700 }}>₹{(val || 0).toLocaleString()}</Text>,
     },
     {
       title: 'Status',
@@ -72,18 +78,27 @@ const ClientBilling = ({ clientId }) => {
           type="text" 
           icon={<Download size={16} />} 
           onClick={async () => {
+            const hide = message.loading('Generating invoice PDF...', 0);
             try {
-              const res = await fetch(`/api/invoices/${record._id}/pdf`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+              const response = await api.get(`/invoices/${record._id}/pdf`, {
+                responseType: 'blob'
               });
-              const data = await res.json();
-              if (data.success && data.url) {
-                window.open(data.url, '_blank');
-              } else {
-                console.error('Failed to get PDF URL');
-              }
+              
+              const blob = new Blob([response.data], { type: 'application/pdf' });
+              const downloadUrl = window.URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = downloadUrl;
+              link.setAttribute('download', `${record.invoiceNumber || 'Invoice'}.pdf`);
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              window.URL.revokeObjectURL(downloadUrl);
+              message.success('PDF downloaded successfully');
             } catch (err) {
-              console.error('Error fetching PDF', err);
+              console.error('Error downloading PDF', err);
+              message.error('Failed to download invoice PDF');
+            } finally {
+              hide();
             }
           }}
         />

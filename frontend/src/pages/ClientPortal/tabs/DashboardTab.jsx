@@ -3,6 +3,7 @@ import { Typography, Row, Col, Button, Tag, Empty, Table, Spin, DatePicker, Avat
 import { motion } from 'framer-motion';
 import { AlertTriangle, Calendar, CheckCircle2, FileText, Receipt, CheckSquare, TrendingUp, DollarSign } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
+import { useFeatures } from '../../../contexts/FeatureContext';
 import BubbleCard from '../../../components/BubbleCard';
 import TaskDetailDrawer from '../../Tasks/TaskDetailDrawer';
 import TaskCompletionCelebrate from '../../Tasks/TaskCompletionCelebrate';
@@ -16,7 +17,18 @@ const { Title, Text } = Typography;
 
 const DashboardTab = () => {
   const { role, user } = useAuth();
+  const { hasFeature } = useFeatures();
   const navigate = useNavigate();
+
+  const isSeoFeatureEnabled = React.useMemo(() => {
+    if (user?.features && Array.isArray(user.features)) {
+      return user.features.includes('seo-aeo-geo') || user.features.includes('seo');
+    }
+    if (typeof hasFeature === 'function') {
+      return hasFeature('seo-aeo-geo') || hasFeature('seo');
+    }
+    return true;
+  }, [user?.features, hasFeature]);
 
   const [loading, setLoading] = useState(true);
   const [overviewData, setOverviewData] = useState(null);
@@ -31,15 +43,17 @@ const DashboardTab = () => {
   }, [selectedDate]);
 
   useEffect(() => {
-    // Fetch Client's SEO/AEO/GEO project to display scores
-    semrushApi.getProjects()
-      .then(res => {
-        if (res.data?.success && res.data.data?.length > 0) {
-          setSemrushProject(res.data.data[0]);
-        }
-      })
-      .catch(err => console.error('Failed to fetch Semrush project:', err));
-  }, []);
+    // Fetch Client's SEO/AEO/GEO project to display scores if feature is enabled
+    if (isSeoFeatureEnabled) {
+      semrushApi.getProjects()
+        .then(res => {
+          if (res.data?.success && res.data.data?.length > 0) {
+            setSemrushProject(res.data.data[0]);
+          }
+        })
+        .catch(err => console.error('Failed to fetch Semrush project:', err));
+    }
+  }, [isSeoFeatureEnabled]);
 
   const fetchOverview = async () => {
     setLoading(true);
@@ -289,82 +303,84 @@ const DashboardTab = () => {
         </motion.div>
 
         {/* AI Optimization Intelligence Scores */}
-        <motion.div variants={itemVariants}>
-          <div style={{ marginBottom: 16 }}>
-            <Title level={2} style={{ margin: '0 0 4px 0', fontWeight: 800 }}>AI Optimization Intelligence</Title>
-            <Text type="secondary" style={{ fontSize: 15, fontWeight: 500 }}>Enterprise SEO, GEO, and AEO tracking and analysis.</Text>
-          </div>
+        {isSeoFeatureEnabled && (
+          <motion.div variants={itemVariants}>
+            <div style={{ marginBottom: 16 }}>
+              <Title level={2} style={{ margin: '0 0 4px 0', fontWeight: 800 }}>AI Optimization Intelligence</Title>
+              <Text type="secondary" style={{ fontSize: 15, fontWeight: 500 }}>Enterprise SEO, GEO, and AEO tracking and analysis.</Text>
+            </div>
 
-          {semrushProject ? (
-            <Row gutter={[24, 24]} style={{ marginBottom: 40, alignItems: 'stretch' }}>
-              <Col xs={24} md={12} xl={8}>
-                <ScoreGaugeCard 
-                  title="SEO Score" 
-                  score={semrushProject.optimizationScore?.seoScore ?? semrushProject.latestSnapshot?.scores?.seo ?? 0} 
-                  previousScore={null} 
-                  color="var(--accent-secondary)"
-                  description="Traditional Search Engine Optimization score based on authority and technical health."
-                  delay={0.1}
-                  details={[
-                    { label: 'Authority Score', ...(semrushProject.latestSnapshot?.seo?.authorityScore || {}) },
-                    { label: 'Technical Health', ...(semrushProject.latestSnapshot?.seo?.technicalScore || {}) },
-                    { label: 'Core Web Vitals', ...(semrushProject.latestSnapshot?.seo?.coreWebVitals || {}) }
-                  ]}
-                />
-              </Col>
-              <Col xs={24} md={12} xl={8}>
-                <ScoreGaugeCard 
-                  title="GEO Score" 
-                  score={semrushProject.optimizationScore?.geoScore ?? semrushProject.latestSnapshot?.scores?.geo ?? 0} 
-                  previousScore={null} 
-                  color="var(--accent-warning)"
-                  description="Generative Engine Optimization readiness for AI summaries."
-                  delay={0.2}
-                  details={[
-                    { label: 'E-E-A-T Signals', ...(semrushProject.latestSnapshot?.geo?.eeatSignals || {}) },
-                    { label: 'AI Readability', ...(semrushProject.latestSnapshot?.geo?.aiReadability || {}) },
-                    { label: 'LLM Formatting', ...(semrushProject.latestSnapshot?.geo?.llmFormatting || {}) }
-                  ]}
-                />
-              </Col>
-              <Col xs={24} md={12} xl={8}>
-                <ScoreGaugeCard 
-                  title="AEO Score" 
-                  score={semrushProject.optimizationScore?.aeoScore ?? semrushProject.latestSnapshot?.scores?.aeo ?? 0} 
-                  previousScore={null} 
-                  color="var(--accent-info)"
-                  description="Answer Engine Optimization for voice and direct answers."
-                  delay={0.3}
-                  details={[
-                    { label: 'Answer Intent', ...(semrushProject.latestSnapshot?.aeo?.answerIntent || {}) },
-                    { label: 'Conversational', ...(semrushProject.latestSnapshot?.aeo?.conversationalContent || {}) },
-                    { label: 'FAQ Schema', ...(semrushProject.latestSnapshot?.aeo?.faqSchema || {}) }
-                  ]}
-                />
-              </Col>
-            </Row>
-          ) : (
-            <BubbleCard large style={{ marginBottom: 40, textAlign: 'center', padding: '48px 24px' }}>
-              <div style={{ maxWidth: 500, margin: '0 auto' }}>
-                <div style={{ background: 'var(--bg-secondary)', width: 80, height: 80, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid var(--border-color)' }}>
-                  <TrendingUp size={36} style={{ color: 'var(--accent-primary)' }} />
+            {semrushProject ? (
+              <Row gutter={[24, 24]} style={{ marginBottom: 40, alignItems: 'stretch' }}>
+                <Col xs={24} md={12} xl={8}>
+                  <ScoreGaugeCard 
+                    title="SEO Score" 
+                    score={semrushProject.optimizationScore?.seoScore ?? semrushProject.latestSnapshot?.scores?.seo ?? 0} 
+                    previousScore={null} 
+                    color="var(--accent-secondary)"
+                    description="Traditional Search Engine Optimization score based on authority and technical health."
+                    delay={0.1}
+                    details={[
+                      { label: 'Authority Score', ...(semrushProject.latestSnapshot?.seo?.authorityScore || {}) },
+                      { label: 'Technical Health', ...(semrushProject.latestSnapshot?.seo?.technicalScore || {}) },
+                      { label: 'Core Web Vitals', ...(semrushProject.latestSnapshot?.seo?.coreWebVitals || {}) }
+                    ]}
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ScoreGaugeCard 
+                    title="GEO Score" 
+                    score={semrushProject.optimizationScore?.geoScore ?? semrushProject.latestSnapshot?.scores?.geo ?? 0} 
+                    previousScore={null} 
+                    color="var(--accent-warning)"
+                    description="Generative Engine Optimization readiness for AI summaries."
+                    delay={0.2}
+                    details={[
+                      { label: 'E-E-A-T Signals', ...(semrushProject.latestSnapshot?.geo?.eeatSignals || {}) },
+                      { label: 'AI Readability', ...(semrushProject.latestSnapshot?.geo?.aiReadability || {}) },
+                      { label: 'LLM Formatting', ...(semrushProject.latestSnapshot?.geo?.llmFormatting || {}) }
+                    ]}
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ScoreGaugeCard 
+                    title="AEO Score" 
+                    score={semrushProject.optimizationScore?.aeoScore ?? semrushProject.latestSnapshot?.scores?.aeo ?? 0} 
+                    previousScore={null} 
+                    color="var(--accent-info)"
+                    description="Answer Engine Optimization for voice and direct answers."
+                    delay={0.3}
+                    details={[
+                      { label: 'Answer Intent', ...(semrushProject.latestSnapshot?.aeo?.answerIntent || {}) },
+                      { label: 'Conversational', ...(semrushProject.latestSnapshot?.aeo?.conversationalContent || {}) },
+                      { label: 'FAQ Schema', ...(semrushProject.latestSnapshot?.aeo?.faqSchema || {}) }
+                    ]}
+                  />
+                </Col>
+              </Row>
+            ) : (
+              <BubbleCard large style={{ marginBottom: 40, textAlign: 'center', padding: '48px 24px' }}>
+                <div style={{ maxWidth: 500, margin: '0 auto' }}>
+                  <div style={{ background: 'var(--bg-secondary)', width: 80, height: 80, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid var(--border-color)' }}>
+                    <TrendingUp size={36} style={{ color: 'var(--accent-primary)' }} />
+                  </div>
+                  <Title level={3} style={{ fontWeight: 800, marginBottom: 12 }}>No Optimization Project Found</Title>
+                  <Text type="secondary" style={{ fontSize: 16, display: 'block', marginBottom: 24, lineHeight: 1.6 }}>
+                    Create an SEO/AEO/GEO project in the Intelligence tab to unlock powerful search engine performance metrics and AI optimization insights.
+                  </Text>
+                  <Button 
+                    type="primary" 
+                    size="large" 
+                    style={{ borderRadius: 8, fontWeight: 600, padding: '0 24px' }}
+                    onClick={() => navigate('/client/intelligence/seo-aeo-geo')}
+                  >
+                    Create Project Now
+                  </Button>
                 </div>
-                <Title level={3} style={{ fontWeight: 800, marginBottom: 12 }}>No Optimization Project Found</Title>
-                <Text type="secondary" style={{ fontSize: 16, display: 'block', marginBottom: 24, lineHeight: 1.6 }}>
-                  Create an SEO/AEO/GEO project in the Intelligence tab to unlock powerful search engine performance metrics and AI optimization insights.
-                </Text>
-                <Button 
-                  type="primary" 
-                  size="large" 
-                  style={{ borderRadius: 8, fontWeight: 600, padding: '0 24px' }}
-                  onClick={() => navigate('/client/intelligence/seo-aeo-geo')}
-                >
-                  Create Project Now
-                </Button>
-              </div>
-            </BubbleCard>
-          )}
-        </motion.div>
+              </BubbleCard>
+            )}
+          </motion.div>
+        )}
 
         {/* Deliverables and Upcoming Row */}
         <motion.div variants={itemVariants}>

@@ -415,9 +415,6 @@ const FormsTab = ({ itemVariants }) => {
               onPressEnter={fetchSubmissions}
             />
           </div>
-          <div style={{ alignSelf: 'flex-end' }}>
-            <Button type="primary" size="large" style={{ borderRadius: 8, fontWeight: 700, background: 'var(--accent-primary)', border: 'none', padding: '0 32px' }}>Filter</Button>
-          </div>
         </div>
         <Card bodyStyle={{ padding: 0 }} style={{ borderRadius: 16, overflow: 'hidden', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
           <Table

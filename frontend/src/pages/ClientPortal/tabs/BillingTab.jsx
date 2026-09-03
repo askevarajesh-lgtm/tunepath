@@ -1,5 +1,5 @@
 import React from 'react';
-import { Typography, Row, Col, Table, Button, Tag } from 'antd';
+import { Typography, Row, Col, Table, Button, Tag, message } from 'antd';
 import { motion } from 'framer-motion';
 import { Download, FileText, Calendar, CreditCard, Box, Wallet, Landmark, ArrowUpRight } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
@@ -9,6 +9,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useTheme } from '../../../contexts/ThemeContext';
 import BrandBillingTab from './BrandBillingTab';
+import api from '../../../services/api';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
@@ -109,18 +110,27 @@ const BillingTab = () => {
             icon={<Download size={12} />} 
             style={{ fontWeight: 600, borderRadius: 6, color: 'var(--text-secondary)' }}
             onClick={async () => {
+              const hide = message.loading('Generating invoice PDF...', 0);
               try {
-                const res = await fetch(`/api/invoices/${record.id}/pdf`, {
-                  headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                const response = await api.get(`/invoices/${record.id || record._id}/pdf`, {
+                  responseType: 'blob'
                 });
-                const data = await res.json();
-                if (data.success && data.url) {
-                  window.open(data.url, '_blank');
-                } else {
-                  console.error('Failed to get PDF URL');
-                }
+                
+                const blob = new Blob([response.data], { type: 'application/pdf' });
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = downloadUrl;
+                link.setAttribute('download', `${record.invoice || 'Invoice'}.pdf`);
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+                message.success('PDF downloaded successfully');
               } catch (err) {
-                console.error('Error fetching PDF', err);
+                console.error('Error downloading PDF', err);
+                message.error('Failed to download invoice PDF');
+              } finally {
+                hide();
               }
             }}
           >

@@ -182,11 +182,62 @@ exports.updatePayment = async (req, res, next) => {
   }
 };
 
-// Generate PDF (Mock implementation)
+// Generate PDF
 exports.generatePDF = async (req, res, next) => {
   try {
-    res.status(200).json({ success: true, url: '/dummy-invoice.pdf' });
+    const Invoice = require('./invoice.model');
+    const User = require('../auth/user.model');
+    const { generateInvoicePDF } = require('../../utils/pdf.service');
+
+    const invoice = await Invoice.findOne({ _id: req.params.id, isDeleted: false })
+      .populate('clientId', 'name email address phone companyName gstin')
+      .populate({
+        path: 'proposalId',
+        populate: { path: 'masterItems' }
+      })
+      .lean();
+    
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' });
+    }
+
+    let tenantCompany = {};
+    const compId = invoice.agencyId || invoice.companyId || req.companyId;
+    if (compId) {
+      tenantCompany = await User.findById(compId).lean() || {};
+    }
+
+    // Ensure items array is populated for PDF generator
+    if (!invoice.items || invoice.items.length === 0) {
+      const prop = invoice.proposalId;
+      if (prop && Array.isArray(prop.masterItems) && prop.masterItems.length > 0) {
+        invoice.items = prop.masterItems.map(item => ({
+          serviceId: { name: typeof item === 'object' ? (item.name || item.title || 'Service Item') : 'Service Item' },
+          description: typeof item === 'object' ? (item.description || '') : '',
+          quantity: 1,
+          rate: typeof item === 'object' ? (item.price || item.cost || (invoice.grandTotal / prop.masterItems.length)) : (invoice.grandTotal / prop.masterItems.length),
+          amount: typeof item === 'object' ? (item.price || item.cost || (invoice.grandTotal / prop.masterItems.length)) : (invoice.grandTotal / prop.masterItems.length)
+        }));
+      } else {
+        invoice.items = [{
+          serviceId: { name: invoice.invoiceType ? `${invoice.invoiceType} Retainer Invoice` : 'Retainer Service' },
+          description: `Invoice ${invoice.invoiceNumber}`,
+          quantity: 1,
+          rate: invoice.grandTotal || invoice.amount || 0,
+          amount: invoice.grandTotal || invoice.amount || 0
+        }];
+      }
+    }
+
+    const pdfBuffer = await generateInvoicePDF(invoice, tenantCompany);
+
+    const filename = `Invoice_${invoice.invoiceNumber || invoice._id}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdfBuffer.length);
+    return res.send(pdfBuffer);
   } catch (error) {
+    console.error('Error generating PDF:', error);
     next(error);
   }
 };

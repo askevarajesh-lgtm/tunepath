@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
-  Table, Button, Form, Input, DatePicker, Select, InputNumber, Drawer, 
+  Table, Button, Form, Input, DatePicker, TimePicker, Select, InputNumber, Drawer, 
   Modal, Tabs, Card, Row, Col, Statistic, Space, Tag, Timeline, List, 
   Divider, Popconfirm, Calendar, Tooltip, Badge, Avatar, Progress, Checkbox,
   Upload, message
@@ -149,8 +149,8 @@ const MeetingsPage = () => {
     setEditingMeeting(meeting);
     form.setFieldsValue({
       title: meeting.title,
-      date: dayjs(meeting.date),
-      time: meeting.time,
+      date: meeting.date ? dayjs(meeting.date) : null,
+      time: meeting.time ? (dayjs.isDayjs(meeting.time) ? meeting.time : dayjs(meeting.time, ['HH:mm', 'h:mm A', 'hh:mm A', 'HH:mm:ss'])) : null,
       duration: meeting.duration,
       meetingType: meeting.meetingType,
       agenda: meeting.agenda,
@@ -174,7 +174,8 @@ const MeetingsPage = () => {
       const payload = {
         ...values,
         participants: finalParticipants,
-        date: values.date.format('YYYY-MM-DD'),
+        date: values.date ? values.date.format('YYYY-MM-DD') : '',
+        time: values.time ? (typeof values.time === 'string' ? values.time : values.time.format('HH:mm')) : '',
       };
 
       if (editingMeeting) {
@@ -775,10 +776,15 @@ const MeetingsPage = () => {
             <Col span={12}>
               <Form.Item
                 name="time"
-                label="Time (e.g. 14:00)"
-                rules={[{ required: true, message: 'Please enter time' }]}
+                label="Time"
+                rules={[{ required: true, message: 'Please select time' }]}
               >
-                <Input placeholder="14:00" />
+                <TimePicker 
+                  format="hh:mm A" 
+                  use12Hours 
+                  style={{ width: '100%' }} 
+                  placeholder="Select time" 
+                />
               </Form.Item>
             </Col>
           </Row>

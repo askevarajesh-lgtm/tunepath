@@ -99,25 +99,23 @@ const generateInvoicePDF = async (invoice, tenantCompany) => {
       const logoBottomY = logoAdded ? 110 : 50;
 
       // Invoice Number and Status (Right aligned) - position at top
-      doc.fontSize(20).font("Helvetica-Bold").fillColor("#1890ff");
-      doc.text(invoice.invoiceNumber, 350, headerStartY, {
+      doc.fontSize(14).font("Helvetica-Bold").fillColor("#1890ff");
+      doc.text(invoice.invoiceNumber || 'INVOICE', 300, headerStartY, {
         align: "right",
-        width: 200,
+        width: 250,
       });
 
       doc.fontSize(10).font("Helvetica").fillColor("#000000");
-      const statusText = invoice.status
-        ? invoice.status.toUpperCase()
-        : "DRAFT";
-      doc.text(`Status: ${statusText}`, 350, headerStartY + 25, {
+      const statusText = (invoice.paymentStatus || invoice.invoiceStatus || invoice.status || "PENDING").toUpperCase();
+      doc.text(`Status: ${statusText}`, 300, headerStartY + 20, {
         align: "right",
-        width: 200,
+        width: 250,
       });
 
-      const typeText = invoice.type === "final" ? "FINAL" : "PROFORMA";
-      doc.text(`Type: ${typeText}`, 350, headerStartY + 37, {
+      const typeText = (invoice.invoiceType || invoice.type || "Retainer").toUpperCase();
+      doc.text(`Type: ${typeText}`, 300, headerStartY + 34, {
         align: "right",
-        width: 200,
+        width: 250,
       });
 
       // Calculate max header Y position (right side header ends at headerStartY + 37 + line height)
@@ -477,11 +475,15 @@ const generateInvoicePDF = async (invoice, tenantCompany) => {
       const totalsX = 350;
       const totalsY = doc.y;
 
+      const subtotalVal = invoice.subtotal || invoice.amount || invoice.grandTotal || 0;
+      const totalVal = invoice.grandTotal || invoice.total || invoice.amount || 0;
+      const pendingVal = invoice.pendingAmount !== undefined ? invoice.pendingAmount : (invoice.paymentStatus === 'Paid' ? 0 : totalVal);
+
       doc.fontSize(11).font("Helvetica").fillColor("#666666");
       doc.text("Subtotal:", totalsX, totalsY, { width: 100, align: "right" });
       doc.font("Helvetica-Bold").fillColor("#000000");
       doc.text(
-        `Rs. ${(invoice.subtotal || 0).toLocaleString("en-IN")}`,
+        `₹${subtotalVal.toLocaleString("en-IN")}`,
         totalsX + 100,
         totalsY,
         { width: 100, align: "right" },
@@ -493,7 +495,7 @@ const generateInvoicePDF = async (invoice, tenantCompany) => {
         doc.text("Tax (GST):", totalsX, doc.y, { width: 100, align: "right" });
         doc.font("Helvetica-Bold").fillColor("#000000");
         doc.text(
-          `Rs. ${(invoice.tax || 0).toLocaleString("en-IN")}`,
+          `₹${(invoice.tax || 0).toLocaleString("en-IN")}`,
           totalsX + 100,
           doc.y,
           { width: 100, align: "right" },
@@ -510,27 +512,28 @@ const generateInvoicePDF = async (invoice, tenantCompany) => {
         .stroke();
       doc.moveDown(0.5);
 
-      doc.fontSize(18).font("Helvetica-Bold").fillColor("#1890ff");
-      doc.text("Total Amount:", totalsX, doc.y, { width: 100, align: "right" });
+      const totalY = doc.y;
+      doc.fontSize(14).font("Helvetica-Bold").fillColor("#1890ff");
+      doc.text("Total Amount:", totalsX, totalY, { width: 100, align: "right" });
       doc.text(
-        `Rs. ${(invoice.total || 0).toLocaleString("en-IN")}`,
+        `₹${totalVal.toLocaleString("en-IN")}`,
         totalsX + 100,
-        doc.y,
+        totalY,
         { width: 100, align: "right" },
       );
 
-      if (invoice.pendingAmount !== undefined && invoice.pendingAmount > 0) {
+      if (pendingVal > 0) {
         doc.moveDown(0.5);
-        doc.fontSize(11).font("Helvetica").fillColor("#cf1322");
-        doc.text("Pending Amount:", totalsX, doc.y, {
+        const pendingY = doc.y;
+        doc.fontSize(11).font("Helvetica-Bold").fillColor("#cf1322");
+        doc.text("Pending Amount:", totalsX, pendingY, {
           width: 100,
           align: "right",
         });
-        doc.font("Helvetica-Bold");
         doc.text(
-          `Rs. ${(invoice.pendingAmount || 0).toLocaleString("en-IN")}`,
+          `₹${pendingVal.toLocaleString("en-IN")}`,
           totalsX + 100,
-          doc.y,
+          pendingY,
           { width: 100, align: "right" },
         );
       }

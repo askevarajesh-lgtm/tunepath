@@ -1181,4 +1181,118 @@ Require stack:
     at async maybeTracedSave (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:675:7)
     at async Function.create (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:2763:5)
     at async Object.createOrUpdateWorkflowConfig (E:\Office Projects\M1\tunepath\backend\src\modules\tasks\task.service.js:5048:10)
-    at async createOrUpdateWorkflowConfig (E:\Office Projects\M1\tunepath\backend\src\modules\tasks\task.controller.js:427:20)\n
+    at async createOrUpdateWorkflowConfig (E:\Office Projects\M1\tunepath\backend\src\modules\tasks\task.controller.js:427:20)\n2026-09-03T11:30:51.814Z\nError: Cannot find module '../company/company.model'
+Require stack:
+- E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.controller.js
+- E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.routes.js
+- E:\Office Projects\M1\tunepath\backend\src\routes\index.js
+- E:\Office Projects\M1\tunepath\backend\src\app.js
+- E:\Office Projects\M1\tunepath\backend\server.js
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+    at Function._load (node:internal/modules/cjs/loader:1075:27)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+    at Module.require (node:internal/modules/cjs/loader:1340:12)
+    at require (node:internal/modules/helpers:138:16)
+    at exports.generatePDF (E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.controller.js:189:21)
+    at Layer.handleRequest (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\layer.js:152:17)
+    at next (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\route.js:117:3)
+    at handle (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\layer.js:152:17)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:295:15
+    at param (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:600:14)
+    at param (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:610:14)
+    at processParams (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:664:3)\n\n2026-09-03T11:30:57.303Z\nError: Cannot find module '../company/company.model'
+Require stack:
+- E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.controller.js
+- E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.routes.js
+- E:\Office Projects\M1\tunepath\backend\src\routes\index.js
+- E:\Office Projects\M1\tunepath\backend\src\app.js
+- E:\Office Projects\M1\tunepath\backend\server.js
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+    at Function._load (node:internal/modules/cjs/loader:1075:27)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+    at Module.require (node:internal/modules/cjs/loader:1340:12)
+    at require (node:internal/modules/helpers:138:16)
+    at exports.generatePDF (E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.controller.js:189:21)
+    at Layer.handleRequest (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\layer.js:152:17)
+    at next (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\route.js:117:3)
+    at handle (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\layer.js:152:17)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:295:15
+    at param (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:600:14)
+    at param (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:610:14)
+    at processParams (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:664:3)\n\n2026-09-03T11:35:26.285Z\nError: Cannot find module '../company/company.model'
+Require stack:
+- E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.controller.js
+- E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.routes.js
+- E:\Office Projects\M1\tunepath\backend\src\routes\index.js
+- E:\Office Projects\M1\tunepath\backend\src\app.js
+- E:\Office Projects\M1\tunepath\backend\server.js
+    at Function._resolveFilename (node:internal/modules/cjs/loader:1249:15)
+    at Function._load (node:internal/modules/cjs/loader:1075:27)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:219:24)
+    at Module.require (node:internal/modules/cjs/loader:1340:12)
+    at require (node:internal/modules/helpers:138:16)
+    at exports.generatePDF (E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.controller.js:189:21)
+    at Layer.handleRequest (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\layer.js:152:17)
+    at next (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\route.js:157:13)
+    at Route.dispatch (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\route.js:117:3)
+    at handle (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:435:11)
+    at Layer.handleRequest (E:\Office Projects\M1\tunepath\backend\node_modules\router\lib\layer.js:152:17)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:295:15
+    at param (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:600:14)
+    at param (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:610:14)
+    at processParams (E:\Office Projects\M1\tunepath\backend\node_modules\router\index.js:664:3)\n\n2026-09-03T11:36:34.530Z\nStrictPopulateError: Cannot populate path `items.masterItem` because it is not in your schema. Set the `strictPopulate` option to false to override.
+    at getModelsMapForPopulate (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:55:12)
+    at _populatePath (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:4496:21)
+    at Function.populate (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:4463:21)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2715:11
+    at _init (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:3394:5)
+    at Document.init (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:660:5)
+    at Document.$init (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:673:42)
+    at Object.createModelAndInit (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\queryHelpers.js:128:12)
+    at completeOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:3372:11)
+    at Query._completeOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2711:3)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2775:10
+    at new Promise (<anonymous>)
+    at model.Query._findOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2774:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async maybeTracedQueryExec (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:4801:65)
+    at async exports.generatePDF (E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.controller.js:192:21)\n\n2026-09-03T11:36:38.378Z\nStrictPopulateError: Cannot populate path `items.masterItem` because it is not in your schema. Set the `strictPopulate` option to false to override.
+    at getModelsMapForPopulate (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:55:12)
+    at _populatePath (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:4496:21)
+    at Function.populate (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:4463:21)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2715:11
+    at _init (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:3394:5)
+    at Document.init (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:660:5)
+    at Document.$init (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:673:42)
+    at Object.createModelAndInit (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\queryHelpers.js:128:12)
+    at completeOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:3372:11)
+    at Query._completeOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2711:3)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2775:10
+    at new Promise (<anonymous>)
+    at model.Query._findOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2774:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async maybeTracedQueryExec (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:4801:65)
+    at async exports.generatePDF (E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.controller.js:192:21)\n\n2026-09-03T11:36:44.140Z\nStrictPopulateError: Cannot populate path `items.masterItem` because it is not in your schema. Set the `strictPopulate` option to false to override.
+    at getModelsMapForPopulate (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\helpers\populate\getModelsMapForPopulate.js:55:12)
+    at _populatePath (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:4496:21)
+    at Function.populate (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\model.js:4463:21)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2715:11
+    at _init (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:3394:5)
+    at Document.init (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:660:5)
+    at Document.$init (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\document.js:673:42)
+    at Object.createModelAndInit (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\queryHelpers.js:128:12)
+    at completeOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:3372:11)
+    at Query._completeOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2711:3)
+    at E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2775:10
+    at new Promise (<anonymous>)
+    at model.Query._findOne (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2774:10)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async maybeTracedQueryExec (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:4801:65)
+    at async exports.generatePDF (E:\Office Projects\M1\tunepath\backend\src\modules\invoices\invoice.controller.js:192:21)\n\n

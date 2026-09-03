@@ -41,11 +41,19 @@ const InvoiceViewPage = () => {
         invoice.adminId?.name ||
         'Invoice';
       document.title = `${agencyName} - ${invoice.invoiceNumber}`;
+
+      const params = new URLSearchParams(location.search);
+      if (params.get('print') === 'true' || params.get('download') === 'true') {
+        const timer = setTimeout(() => {
+          window.print();
+        }, 500);
+        return () => clearTimeout(timer);
+      }
     }
     return () => {
       document.title = 'M1 Labs'; // Revert back
     };
-  }, [invoice]);
+  }, [invoice, location.search]);
 
   const handleBack = () => {
     if (isClientPanel) {
