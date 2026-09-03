@@ -2,6 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity,
+  BarChart2,
   Briefcase,
   Calendar,
   CheckSquare,
@@ -131,17 +132,6 @@ const AgencySidebar = ({ collapsed, setCollapsed }) => {
 
     // Default modules always available
     workspaceChildren.push({ key: '/agency/proposals', icon: getIcon(FileText), label: 'Proposals' });
-    workspaceChildren.push({
-      key: 'task_management',
-      label: 'Task Management',
-      icon: getIcon(CheckSquare),
-      children: [
-        { key: '/agency/projects', label: 'Projects' },
-        { key: '/agency/workspace/tasks', label: 'Tasks' },
-        { key: '/agency/workspace/tasks/analytics', label: 'Task Analytics' },
-        { key: '/agency/workspace/tasks/coordinator', label: 'Coordinator Tasks' },
-      ]
-    });
     if (feats.includes('website')) workspaceChildren.push({ key: '/agency/website', icon: getIcon(LayoutDashboard), label: 'Websites' });
     // Marketplace: hidden when a specific client is selected
     if (!isClientSelected && ['agency_manager', 'agency'].includes(role)) {
@@ -163,6 +153,20 @@ const AgencySidebar = ({ collapsed, setCollapsed }) => {
       label: 'WORKSPACE',
       icon: getIcon(Briefcase),
       children: workspaceChildren,
+    });
+  }
+
+  if (role !== 'agency_super_admin') {
+    menuItems.push({
+      key: 'task_management',
+      label: 'Task Management',
+      icon: getIcon(CheckSquare),
+      children: [
+        { key: '/agency/projects', icon: getIcon(Target), label: 'Projects' },
+        { key: '/agency/workspace/tasks', icon: getIcon(CheckSquare), label: 'Tasks' },
+        { key: '/agency/workspace/tasks/analytics', icon: getIcon(BarChart2), label: 'Task Analytics' },
+        { key: '/agency/workspace/tasks/coordinator', icon: getIcon(Users), label: 'Coordinator Tasks' },
+      ]
     });
   }
 

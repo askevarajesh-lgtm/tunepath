@@ -239,8 +239,8 @@ export default function CalendarView({ posts, accounts = [], onView, onEdit }) {
             const localeData = value.localeData();
             const months = [];
             for (let i = 0; i < 12; i++) {
-              current.month(i);
-              months.push(localeData.monthsShort(current));
+              const monthInstance = current.month(i);
+              months.push(localeData.monthsShort(monthInstance));
             }
 
             for (let i = start; i < end; i++) {

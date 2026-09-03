@@ -31,6 +31,7 @@ import BlogEmbedView from './pages/WebsiteBuilder/tabs/BlogEmbedView';
 import BlogPostEmbedView from './pages/WebsiteBuilder/tabs/BlogPostEmbedView';
 import QREmbedView from './pages/WebsiteBuilder/tabs/QREmbedView';
 import WebsitePreviewView from './pages/WebsiteBuilder/tabs/WebsitePreviewView';
+import CustomDomainWebsiteViewer from './pages/WebsiteBuilder/tabs/CustomDomainWebsiteViewer';
 import BlogPostPreviewView from './pages/WebsiteBuilder/tabs/BlogPostPreviewView';
 import Strategy from './pages/Strategy/Strategy';
 import SeoIntelligence from './pages/SeoIntelligence/SeoIntelligence';
@@ -682,7 +683,26 @@ const AppRoutes = () => {
   );
 };
 
+const isPlatformDomain = (hostname) => {
+  if (!hostname) return true;
+  const host = hostname.toLowerCase();
+  const reserved = [
+    'localhost',
+    '127.0.0.1',
+    'tunepath.askeva.io',
+    'm1.workforce.themilabs.com'
+  ];
+  return reserved.some(plat => host === plat || host.endsWith('.' + plat));
+};
+
 function App() {
+  const currentHostname = window.location.hostname;
+
+  // Render Custom Domain Website directly if visiting via a custom domain
+  if (!isPlatformDomain(currentHostname)) {
+    return <CustomDomainWebsiteViewer />;
+  }
+
   const searchParams = new URLSearchParams(window.location.search);
   const oauthStatus = searchParams.get("facebook_oauth");
   const reason = searchParams.get("reason");

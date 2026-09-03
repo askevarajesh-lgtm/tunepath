@@ -16,7 +16,10 @@ exports.connectDomain = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'All fields (customDomain, propertyType, property) are required' });
     }
 
-    const domainName = customDomain.trim().toLowerCase();
+    let domainName = customDomain.trim().toLowerCase();
+    domainName = domainName.replace(/^https?:\/\//, '');
+    domainName = domainName.split('/')[0];
+    domainName = domainName.split(':')[0];
 
     // Reserved hostname check
     if (domainName.includes('tunepath.askeva.io') || domainName.includes('m1.workforce.themilabs.com')) {
@@ -166,14 +169,27 @@ exports.verifyDNS = async (req, res, next) => {
 
     let isVerified = false;
 
-    try {
-      // 1. Perform CNAME lookup verification
-      const cnameRecords = await dns.resolveCname(domain.domain);
-      if (cnameRecords.some(r => r.includes('tunepath.askeva.io') || r.includes('m1.workforce.themilabs.com'))) {
-        isVerified = true;
+    // Auto-verify local dev domains (.local, .localhost, or NODE_ENV === 'local')
+    if (
+      domain.domain.endsWith('.local') ||
+      domain.domain.endsWith('.localhost') ||
+      domain.domain.includes('localhost') ||
+      process.env.NODE_ENV === 'local' ||
+      process.env.NODE_ENV === 'development'
+    ) {
+      isVerified = true;
+    }
+
+    if (!isVerified) {
+      try {
+        // 1. Perform CNAME lookup verification
+        const cnameRecords = await dns.resolveCname(domain.domain);
+        if (cnameRecords.some(r => r.includes('tunepath.askeva.io') || r.includes('m1.workforce.themilabs.com'))) {
+          isVerified = true;
+        }
+      } catch (e) {
+        // ignore check to fall back to TXT check
       }
-    } catch (e) {
-      // ignore check to fall back to TXT check
     }
 
     if (!isVerified) {

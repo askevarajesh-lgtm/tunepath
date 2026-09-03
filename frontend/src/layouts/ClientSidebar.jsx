@@ -163,18 +163,6 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
     workspaceChildren.push({ key: '/client/workspace/social', icon: getIcon(MessageCircle), label: 'Social Media', featureId: 'social', moduleGroup: 'Workspace', moduleId: 'Social Media' });
     workspaceChildren.push({ key: '/client/workspace/ads', icon: getIcon(Target), label: 'Performance Ads', featureId: 'ads', moduleGroup: 'Workspace', moduleId: 'Performance Ads' });
     workspaceChildren.push({ key: '/client/workspace/crm', icon: getIcon(LineChart), label: getLabel('CRM & Leads', leadsCount), featureId: 'crm', moduleGroup: 'Workspace', moduleId: 'CRM & Leads' });
-    workspaceChildren.push({
-      key: 'task_management',
-      label: 'Task Management',
-      icon: getIcon(CheckSquare),
-      moduleGroup: 'Workspace',
-      moduleId: 'Task Management',
-      children: [
-        { key: '/client/workspace/tasks', label: 'Tasks' },
-        { key: '/client/workspace/tasks/analytics', label: 'Task Analytics', moduleGroup: 'Workspace', moduleId: 'Task Analytics' },
-        { key: '/client/workspace/tasks/coordinator', label: 'Coordinator Tasks', moduleGroup: 'Workspace', moduleId: 'Coordinator Tasks' },
-      ]
-    });
     workspaceChildren.push({ key: '/client/workspace/website', icon: getIcon(Globe), label: 'Websites', featureId: 'website', moduleGroup: 'Workspace', moduleId: 'Websites' });
   } else if (role === 'agency_client') {
     workspaceChildren.push({ key: '/client/workspace/strategy', icon: getIcon(GitMerge), label: 'Strategy', featureId: 'strategy', moduleGroup: 'Workspace', moduleId: 'Strategy' });
@@ -195,6 +183,21 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
       label: 'WORKSPACE',
       icon: getIcon(Briefcase),
       children: workspaceChildren,
+    });
+  }
+
+  if (['brand_super_admin', 'brand_manager', 'user', 'brand_team_user', 'client_user'].includes(role)) {
+    allMenuItems.push({
+      key: 'task_management',
+      label: 'Task Management',
+      icon: getIcon(CheckSquare),
+      moduleGroup: 'Workspace',
+      moduleId: 'Task Management',
+      children: [
+        { key: '/client/workspace/tasks', icon: getIcon(CheckSquare), label: 'Tasks' },
+        { key: '/client/workspace/tasks/analytics', icon: getIcon(BarChart2), label: 'Task Analytics', moduleGroup: 'Workspace', moduleId: 'Task Analytics' },
+        { key: '/client/workspace/tasks/coordinator', icon: getIcon(Users), label: 'Coordinator Tasks', moduleGroup: 'Workspace', moduleId: 'Coordinator Tasks' },
+      ]
     });
   }
 

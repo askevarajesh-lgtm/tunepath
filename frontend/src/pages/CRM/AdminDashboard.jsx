@@ -13,7 +13,7 @@ const AdminDashboard = ({ leads = [] }) => {
     visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
   };
 
-  const [timeframe, setTimeframe] = useState('Month');
+  const [timeframe, setTimeframe] = useState('All Time');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sourceFilter, setSourceFilter] = useState(null);
   const [formNameFilter, setFormNameFilter] = useState(null);
@@ -21,7 +21,7 @@ const AdminDashboard = ({ leads = [] }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
   const handleClearAll = () => {
-    setTimeframe('Month');
+    setTimeframe('All Time');
     setStatusFilter('All');
     setSourceFilter(null);
     setFormNameFilter(null);

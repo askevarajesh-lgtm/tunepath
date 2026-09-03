@@ -423,13 +423,6 @@ const PerformanceAds = () => {
         </div>
       </motion.div>
 
-      <motion.div variants={itemVariants}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 24 }}>
-          <Tag style={{ borderRadius: 4, background: 'rgba(16, 185, 129, 0.1)', color: 'var(--accent-primary)', border: 'none', fontWeight: 700, padding: '2px 8px' }}>PE</Tag>
-          <Text type="secondary" style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', cursor: 'pointer' }} className="hover-link">Viewing {clients.find(c => c._id === selectedClient)?.name || 'Client'} <ExternalLink size={14} style={{ marginLeft: 6, color: 'var(--text-tertiary)' }} /></Text>
-        </div>
-      </motion.div>
-
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {[
           { label: 'AD SPEND (MTD)', val: `₹${(dashboardData.metrics?.adSpendMTD / 100000).toFixed(2)}L`, isProgress: true, pct: dashboardData.metrics?.adSpendPercentage || 0, color: 'var(--accent-secondary)', icon: <IndianRupee size={16} /> },

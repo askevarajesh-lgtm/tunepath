@@ -130,13 +130,17 @@ export default function AccountsView({
                     loading={loadingPlatform === account.id}
                     onClick={() => onConnectPlatform?.(account.id)}
                     style={{ marginTop: 4 }}
+                    disabled={account.id === "google_business"}
                   >
-                    +{" "}
-                    {account.id === "youtube"
-                      ? "Connect Another Channel"
-                      : account.id === "pinterest"
-                      ? "Connect Another Profile"
-                      : "Connect Another Page"}
+                    {account.id === "google_business"
+                      ? "Coming Soon"
+                      : `+ ${
+                          account.id === "youtube"
+                            ? "Connect Another Channel"
+                            : account.id === "pinterest"
+                            ? "Connect Another Profile"
+                            : "Connect Another Page"
+                        }`}
                   </Button>
                 </Space>
               ) : (
@@ -144,12 +148,13 @@ export default function AccountsView({
                 <Space direction="vertical" size={10} style={{ width: "100%" }}>
                   <Badge status="default" text="Not connected" />
                   <Button
-                    type="primary"
+                    type={account.id === "google_business" ? "default" : "primary"}
                     size="small"
                     loading={loadingPlatform === account.id}
                     onClick={() => onConnectPlatform?.(account.id)}
+                    disabled={account.id === "google_business"}
                   >
-                    Connect
+                    {account.id === "google_business" ? "Coming Soon" : "Connect"}
                   </Button>
                 </Space>
               )}

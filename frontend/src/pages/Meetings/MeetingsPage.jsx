@@ -817,6 +817,7 @@ const MeetingsPage = () => {
           <Form.Item
             name="meetingLink"
             label="Meeting Link / Location"
+            rules={[{ required: true, message: 'Please provide a meeting link or location' }]}
           >
             <Input prefix={<LinkOutlined />} placeholder="https://meet.google.com/..." />
           </Form.Item>
@@ -824,6 +825,7 @@ const MeetingsPage = () => {
           <Form.Item
             name="agenda"
             label="Agenda"
+            rules={[{ required: true, message: 'Please provide a meeting agenda or description' }]}
           >
             <TextArea rows={3} placeholder="Provide meeting description/agenda" />
           </Form.Item>
@@ -844,6 +846,7 @@ const MeetingsPage = () => {
             <Form.Item
               name="participants"
               label="Participants"
+              rules={[{ required: true, message: 'Please select at least one participant' }]}
             >
               <Select mode="multiple" placeholder="Select participants" filterOption={(input, option) => option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0}>
                 {users.map(u => (

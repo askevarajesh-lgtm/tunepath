@@ -20,7 +20,7 @@ const items = [
     label: "Campaign Logs",
     icon: <DatabaseOutlined />,
   },
-  { key: "reviews", label: "Reviews", icon: <MessageOutlined /> },
+  // { key: "reviews", label: "Reviews", icon: <MessageOutlined /> },
   { key: "accounts", label: "Accounts", icon: <SettingOutlined /> },
 ];
 

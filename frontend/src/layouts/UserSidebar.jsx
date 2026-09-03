@@ -60,21 +60,21 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   if (hasPerm('Workspace-Projects')) workspaceChildren.push({ key: '/user/workspace/projects', icon: getIcon(Target), label: 'Projects' });
   if (hasPerm('Workspace-SEO Panel')) workspaceChildren.push({ key: '/user/workspace/seo-panel', icon: getIcon(Search), label: 'SEO Panel' });
 
-  if (hasPerm('Workspace-Task Management') || taskManagementChildren.length > 0) {
-    workspaceChildren.push({
-      key: 'task_management',
-      label: 'Task Management',
-      icon: getIcon(CheckSquare),
-      children: taskManagementChildren
-    });
-  }
-
   if (workspaceChildren.length > 0) {
     menuItems.push({
       key: 'workspace',
       label: 'WORKSPACE',
       icon: getIcon(Briefcase),
       children: workspaceChildren
+    });
+  }
+
+  if (hasPerm('Workspace-Task Management') || taskManagementChildren.length > 0) {
+    menuItems.push({
+      key: 'task_management',
+      label: 'Task Management',
+      icon: getIcon(CheckSquare),
+      children: taskManagementChildren
     });
   }
 

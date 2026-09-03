@@ -47,10 +47,13 @@ const PINTEREST_REDIRECT_URI = (
 const META_GRAPH = "https://graph.facebook.com/v20.0";
 
 const FB_SCOPES = [
+  "public_profile",
   "pages_manage_posts",
   "pages_read_engagement",
   "pages_show_list",
   "pages_manage_metadata",
+  "pages_manage_ads",
+  "pages_read_user_content",
   "instagram_basic",
   "instagram_content_publish",
   "business_management"
@@ -342,6 +345,73 @@ async function upsertAccount(data, companyId, clientCompanyId = null) {
   }
 }
 
+async function refreshFacebookPageToken(account) {
+  const pageId = account.page_id;
+  let userToken = account.refresh_token || null;
+
+  if (!userToken && account.clientCompanyId) {
+    try {
+      const clientCompany = await ClientCompany.findById(account.clientCompanyId).lean();
+      userToken = clientCompany?.configuration?.campaignScheduled?.facebook?.accessToken || null;
+    } catch (e) {
+      console.warn("[Meta Token Refresh] Could not query ClientCompany token:", e.message);
+    }
+  }
+
+  if (!userToken) return null;
+
+  try {
+    if (pageId) {
+      const res = await axios.get(`${META_GRAPH}/${pageId}`, {
+        params: {
+          fields: "access_token",
+          access_token: userToken,
+        },
+      });
+      const freshToken = res.data?.access_token;
+      if (freshToken) {
+        account.access_token = freshToken;
+        await Account.updateOne({ _id: account._id }, { $set: { access_token: freshToken } });
+        console.log(`[Meta Token Refresh] Successfully updated Page Access Token for ${account.id} (${account.page_name})`);
+        return freshToken;
+      }
+    } else {
+      account.access_token = userToken;
+      await Account.updateOne({ _id: account._id }, { $set: { access_token: userToken } });
+      return userToken;
+    }
+  } catch (err) {
+    console.warn(`[Meta Token Refresh] Failed to fetch fresh token for page ${pageId}:`, err?.response?.data?.error?.message || err.message);
+  }
+
+  return null;
+}
+
+async function executeMetaGraphApi(apiCallFn, account) {
+  try {
+    return await apiCallFn(account.access_token);
+  } catch (err) {
+    const errCode = err?.response?.data?.error?.code;
+    const errType = err?.response?.data?.error?.type;
+    const errMsg = err?.response?.data?.error?.message || "";
+
+    const isTokenError =
+      errCode === 190 ||
+      errCode === 200 ||
+      errType === "OAuthException" ||
+      /impersonating a user's page|Permissions error|Session has expired|invalid token/i.test(errMsg);
+
+    if (isTokenError) {
+      console.warn(`[Meta Graph API] Encountered OAuth exception (${errMsg}). Attempting token recovery/refresh for account: ${account.id}...`);
+      const freshToken = await refreshFacebookPageToken(account);
+      if (freshToken) {
+        return await apiCallFn(freshToken);
+      }
+    }
+    throw err;
+  }
+}
+
 async function postToFacebook(account, post) {
   const options = post.post_option || {};
   const platformOption =
@@ -363,12 +433,13 @@ async function postToFacebook(account, post) {
 
   if (isVideo && isReel) {
     // Facebook Reels Flow
-    const startRes = await axios.post(
-      `${META_GRAPH}/${account.page_id}/video_reels`,
-      {
-        upload_phase: "start",
-        access_token: account.access_token,
-      },
+    const startRes = await executeMetaGraphApi(
+      (token) =>
+        axios.post(`${META_GRAPH}/${account.page_id}/video_reels`, {
+          upload_phase: "start",
+          access_token: token,
+        }),
+      account,
     );
 
     const { upload_url, video_reel_id } = startRes.data;
@@ -385,15 +456,16 @@ async function postToFacebook(account, post) {
     });
 
     // Finish publishing
-    const finishRes = await axios.post(
-      `${META_GRAPH}/${account.page_id}/video_reels`,
-      {
-        upload_phase: "finish",
-        video_reel_id,
-        video_state: "PUBLISHED",
-        description: post.caption,
-        access_token: account.access_token,
-      },
+    await executeMetaGraphApi(
+      (token) =>
+        axios.post(`${META_GRAPH}/${account.page_id}/video_reels`, {
+          upload_phase: "finish",
+          video_reel_id,
+          video_state: "PUBLISHED",
+          description: post.caption,
+          access_token: token,
+        }),
+      account,
     );
 
     return {
@@ -404,11 +476,15 @@ async function postToFacebook(account, post) {
 
   if (isVideo) {
     // Standard Video Flow
-    const res = await axios.post(`${META_GRAPH}/${account.page_id}/videos`, {
-      file_url: firstMedia,
-      description: post.caption,
-      access_token: account.access_token,
-    });
+    const res = await executeMetaGraphApi(
+      (token) =>
+        axios.post(`${META_GRAPH}/${account.page_id}/videos`, {
+          file_url: firstMedia,
+          description: post.caption,
+          access_token: token,
+        }),
+      account,
+    );
     const postId = res.data.id;
     return {
       externalId: postId,
@@ -419,18 +495,26 @@ async function postToFacebook(account, post) {
   if (isCarousel) {
     const attached_media = [];
     for (const url of post.media_url) {
-      const res = await axios.post(`${META_GRAPH}/${account.page_id}/photos`, {
-        url: url,
-        published: false,
-        access_token: account.access_token,
-      });
+      const res = await executeMetaGraphApi(
+        (token) =>
+          axios.post(`${META_GRAPH}/${account.page_id}/photos`, {
+            url: url,
+            published: false,
+            access_token: token,
+          }),
+        account,
+      );
       attached_media.push({ media_fbid: res.data.id });
     }
-    const res = await axios.post(`${META_GRAPH}/${account.page_id}/feed`, {
-      message: post.caption,
-      attached_media: attached_media,
-      access_token: account.access_token,
-    });
+    const res = await executeMetaGraphApi(
+      (token) =>
+        axios.post(`${META_GRAPH}/${account.page_id}/feed`, {
+          message: post.caption,
+          attached_media: attached_media,
+          access_token: token,
+        }),
+      account,
+    );
     const postId = res.data.id;
     return {
       externalId: postId,
@@ -438,11 +522,15 @@ async function postToFacebook(account, post) {
     };
   } else if (hasMedia) {
     // Photo Flow
-    const res = await axios.post(`${META_GRAPH}/${account.page_id}/photos`, {
-      url: firstMedia,
-      message: post.caption,
-      access_token: account.access_token,
-    });
+    const res = await executeMetaGraphApi(
+      (token) =>
+        axios.post(`${META_GRAPH}/${account.page_id}/photos`, {
+          url: firstMedia,
+          message: post.caption,
+          access_token: token,
+        }),
+      account,
+    );
     // For photos, the id returned is the Photo ID, and post_id is the Feed Post ID.
     const postId = res.data.post_id || res.data.id;
     return {
@@ -452,11 +540,14 @@ async function postToFacebook(account, post) {
   }
 
   // Text-only Flow
-  const body = {
-    message: post.caption,
-    access_token: account.access_token,
-  };
-  const res = await axios.post(`${META_GRAPH}/${account.page_id}/feed`, body);
+  const res = await executeMetaGraphApi(
+    (token) =>
+      axios.post(`${META_GRAPH}/${account.page_id}/feed`, {
+        message: post.caption,
+        access_token: token,
+      }),
+    account,
+  );
   const postId = res.data.id;
   return {
     externalId: postId,
@@ -490,11 +581,6 @@ async function postToInstagram(account, post, options = {}) {
     mediaType = options.mediaType.toUpperCase();
   }
 
-  const containerPayload = {
-    caption: post.caption || "",
-    access_token: account.access_token,
-  };
-
   const postOptions = post.post_option || {};
   const platformOption =
     postOptions.instagram || postOptions.standard || "feed";
@@ -516,33 +602,51 @@ async function postToInstagram(account, post, options = {}) {
     const childrenIds = [];
     for (const url of post.media_url) {
       const formattedUrl = enforceJpegForInstagram(url);
-      const itemRes = await axios.post(`${META_GRAPH}/${account.ig_user_id}/media`, {
-        image_url: formattedUrl,
-        is_carousel_item: true,
-        access_token: account.access_token
-      });
+      const itemRes = await executeMetaGraphApi(
+        (token) =>
+          axios.post(`${META_GRAPH}/${account.ig_user_id}/media`, {
+            image_url: formattedUrl,
+            is_carousel_item: true,
+            access_token: token,
+          }),
+        account,
+      );
       childrenIds.push(itemRes.data.id);
     }
     
     for (const id of childrenIds) {
       let ready = false;
       for (let i = 0; i < 10; i += 1) {
-        const statusRes = await axios.get(`${META_GRAPH}/${id}`, { params: { fields: "status_code", access_token: account.access_token }});
+        const statusRes = await executeMetaGraphApi(
+          (token) =>
+            axios.get(`${META_GRAPH}/${id}`, {
+              params: { fields: "status_code", access_token: token },
+            }),
+          account,
+        );
         if (statusRes.data.status_code === "FINISHED") { ready = true; break; }
         await new Promise(r => setTimeout(r, 1500));
       }
       if (!ready) throw new Error("Carousel item did not finish processing");
     }
 
-    const carouselRes = await axios.post(`${META_GRAPH}/${account.ig_user_id}/media`, {
-      media_type: "CAROUSEL",
-      caption: post.caption || "",
-      children: childrenIds.join(","),
-      access_token: account.access_token
-    });
+    const carouselRes = await executeMetaGraphApi(
+      (token) =>
+        axios.post(`${META_GRAPH}/${account.ig_user_id}/media`, {
+          media_type: "CAROUSEL",
+          caption: post.caption || "",
+          children: childrenIds.join(","),
+          access_token: token,
+        }),
+      account,
+    );
     
     creationId = carouselRes.data.id;
   } else {
+    const containerPayload = {
+      caption: post.caption || "",
+    };
+
     if (mediaType === "VIDEO") {
       containerPayload.media_type = "REELS";
       containerPayload.video_url = firstMedia;
@@ -551,9 +655,13 @@ async function postToInstagram(account, post, options = {}) {
       containerPayload.image_url = enforceJpegForInstagram(firstMedia);
     }
 
-    const containerRes = await axios.post(
-      `${META_GRAPH}/${account.ig_user_id}/media`,
-      containerPayload,
+    const containerRes = await executeMetaGraphApi(
+      (token) =>
+        axios.post(`${META_GRAPH}/${account.ig_user_id}/media`, {
+          ...containerPayload,
+          access_token: token,
+        }),
+      account,
     );
 
     creationId = containerRes.data.id;
@@ -563,9 +671,13 @@ async function postToInstagram(account, post, options = {}) {
       const maxAttempts = 20;
       for (let i = 0; i < maxAttempts; i++) {
         await new Promise((r) => setTimeout(r, 3000));
-        const statusRes = await axios.get(`${META_GRAPH}/${creationId}`, {
-          params: { fields: "status_code", access_token: account.access_token },
-        });
+        const statusRes = await executeMetaGraphApi(
+          (token) =>
+            axios.get(`${META_GRAPH}/${creationId}`, {
+              params: { fields: "status_code", access_token: token },
+            }),
+          account,
+        );
         if (statusRes.data.status_code === "FINISHED") break;
         if (statusRes.data.status_code === "ERROR") {
           throw new Error("Video processing failed on Instagram");
@@ -575,9 +687,13 @@ async function postToInstagram(account, post, options = {}) {
       // For images, wait a bit then check status
       let ready = false;
       for (let i = 0; i < 10; i += 1) {
-        const statusRes = await axios.get(`${META_GRAPH}/${creationId}`, {
-          params: { fields: "status_code", access_token: account.access_token },
-        });
+        const statusRes = await executeMetaGraphApi(
+          (token) =>
+            axios.get(`${META_GRAPH}/${creationId}`, {
+              params: { fields: "status_code", access_token: token },
+            }),
+          account,
+        );
         if (statusRes.data.status_code === "FINISHED") {
           ready = true;
           break;
@@ -589,20 +705,25 @@ async function postToInstagram(account, post, options = {}) {
     }
   }
 
-  const publishRes = await axios.post(
-    `${META_GRAPH}/${account.ig_user_id}/media_publish`,
-    {
-      creation_id: creationId,
-      access_token: account.access_token,
-    },
+  const publishRes = await executeMetaGraphApi(
+    (token) =>
+      axios.post(`${META_GRAPH}/${account.ig_user_id}/media_publish`, {
+        creation_id: creationId,
+        access_token: token,
+      }),
+    account,
   );
   const mediaId = publishRes.data.id;
 
   let permalink = null;
   try {
-    const mediaInfo = await axios.get(`${META_GRAPH}/${mediaId}`, {
-      params: { fields: "permalink", access_token: account.access_token },
-    });
+    const mediaInfo = await executeMetaGraphApi(
+      (token) =>
+        axios.get(`${META_GRAPH}/${mediaId}`, {
+          params: { fields: "permalink", access_token: token },
+        }),
+      account,
+    );
     permalink = mediaInfo.data.permalink;
   } catch (err) {
     console.error(

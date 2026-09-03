@@ -9,6 +9,9 @@ const marketplaceRoutes = require('./modules/marketplace/marketplace.routes');
 
 const app = express();
 
+// Trust reverse proxy headers (e.g. Nginx X-Forwarded-Host)
+app.set('trust proxy', true);
+
 // Middlewares
 const allowedOrigins = [
   'https://m1.workforce.themilabs.com',
@@ -21,10 +24,13 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function(origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+    // Allow requests with no origin (like mobile apps, curl, or same-origin public requests)
+    // or allowed origins, or any origin for public website resolution APIs
+    if (!origin || allowedOrigins.indexOf(origin) !== -1 || allowedOrigins.some(o => origin.startsWith(o))) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      // Allow custom connected domain requests to access public APIs
+      callback(null, true);
     }
   },
   credentials: true

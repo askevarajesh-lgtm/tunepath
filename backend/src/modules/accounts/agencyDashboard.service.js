@@ -4,6 +4,7 @@ const Project = require('../projects/project.model');
 const SlaRecord = require('../sla/sla.model');
 const Invoice = require('../invoices/invoice.model');
 const { MosScoreHistory } = require('../mos/mos.model');
+const Proposal = require('../proposals/proposal.model');
 
 exports.getAgencyExecutiveDashboard = async (agencyId, queryMonth, queryYear, queryClientId) => {
   const now = (queryMonth && queryYear) ? new Date(parseInt(queryYear), parseInt(queryMonth), 15) : new Date();
@@ -69,7 +70,7 @@ exports.getAgencyExecutiveDashboard = async (agencyId, queryMonth, queryYear, qu
 
   const revenueChartData = Object.values(chartDataMap).sort((a, b) => a.sortOrder - b.sortOrder);
 
-  // 5. Client Health (MOS) & Client MRR (from User model, NOT Invoice as per instructions)
+  // 5. Client Health (MOS) & Client MRR (from Proposals)
   const mosHistories = await MosScoreHistory.find({ agencyId, clientId: { $in: clientIds } }).sort({ createdAt: -1 });
   const latestMosByClient = {};
   mosHistories.forEach(hist => {
@@ -79,13 +80,21 @@ exports.getAgencyExecutiveDashboard = async (agencyId, queryMonth, queryYear, qu
     }
   });
 
+  const proposals = await Proposal.find({ clientId: { $in: clientIds }, isDeleted: false });
+  const proposalMrrByClient = {};
+  proposals.forEach(prop => {
+    const cid = prop.clientId.toString();
+    if (!proposalMrrByClient[cid]) proposalMrrByClient[cid] = 0;
+    proposalMrrByClient[cid] += prop.grandTotal || 0;
+  });
+
   const clients = clientsData.map(c => {
     const cidStr = c._id.toString();
     const hist = latestMosByClient[cidStr];
     const mos = hist && hist.overallMos ? hist.overallMos : null;
     
-    // Client MRR from the User schema directly
-    let mrr = c.mrr || 0;
+    // Client MRR from Proposals
+    let mrr = proposalMrrByClient[cidStr] || 0;
     
     const clientProjects = allProjects.filter(p => p.clientId && p.clientId.toString() === cidStr && p.status !== 'completed');
 

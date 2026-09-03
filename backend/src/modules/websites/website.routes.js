@@ -5,6 +5,7 @@ const websiteSeoAgentController = require('./websiteSeoAgent.controller');
 const authMiddleware = require('../../middlewares/authMiddleware');
 
 // Public Website Details
+router.get('/public/by-domain', websiteController.resolveWebsiteByDomain);
 router.get('/:id/public', websiteController.getPublicWebsiteDetails);
 
 router.use(authMiddleware);

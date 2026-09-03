@@ -166,7 +166,7 @@ exports.getAgencyPerformance = async (req, res, next) => {
       const hist = latestMosByClient[c._id.toString()];
       const mos = hist && hist.overallMos ? hist.overallMos : 0;
       const signals = hist && hist.signals ? hist.signals : {
-        seo: 0, ads: 0, leads: 0, social: 0, website: 0, geo: 0
+        website: 0, seo: 0, aeo: 0, geo: 0, social: 0, ads: 0, leads: 0, revenue: 0, cx: 0
       };
 
       totalMos += mos;
@@ -177,11 +177,14 @@ exports.getAgencyPerformance = async (req, res, next) => {
         name: c.companyName || c.name || 'Unnamed Client',
         mos: Math.round(mos),
         seo: Math.round(signals.seo || 0),
+        aeo: Math.round(signals.aeo || 0),
         ads: Math.round(signals.ads || 0),
         leads: Math.round(signals.leads || 0),
         social: Math.round(signals.social || 0),
         web: Math.round(signals.website || 0),
         geo: Math.round(signals.geo || 0),
+        rev: Math.round(signals.revenue || 0),
+        cx: Math.round(signals.cx || 0),
       };
     }).sort((a, b) => b.mos - a.mos);
 

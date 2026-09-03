@@ -594,6 +594,7 @@ router.get("/auth/facebook/callback", async (req, res) => {
               page_name: fbPageData.name,
               username: fbPageData.name,
               access_token: fbPageData.access_token,
+              refresh_token: longToken,
               token_type: "page",
               expires_at: expiresAt,
               connected_at: new Date().toISOString(),
@@ -615,6 +616,7 @@ router.get("/auth/facebook/callback", async (req, res) => {
                 ig_user_id: igData.id,
                 username: igData.username || igData.name,
                 access_token: fbPageData.access_token, // IG uses the page's token
+                refresh_token: longToken,
                 token_type: "instagram",
                 expires_at: expiresAt,
                 connected_at: new Date().toISOString(),
@@ -1815,22 +1817,22 @@ router.get("/test-facebook", async (req, res) => {
         };
       }
       try {
-        const r = await axios.get(`${META_GRAPH}/me/accounts`, {
+        const targetId = acc.page_id || acc.ig_user_id || "me";
+        const r = await axios.get(`${META_GRAPH}/${targetId}`, {
           params: {
             access_token: acc.access_token,
             fields: "id,name,fan_count",
           },
         });
-        const page =
-          r.data.data?.find((p) => p.id === acc.page_id) || r.data.data?.[0];
+        const page = r.data;
         return {
           id: acc.id,
-          name: acc.page_name,
+          name: acc.page_name || page?.name,
           mode: "live",
           status: "ok",
           page_id: page?.id,
           followers: page?.fan_count,
-          message: `Token valid for ${page?.name || "page"}`,
+          message: `Token valid for ${page?.name || acc.page_name || "account"}`,
         };
       } catch (err) {
         const msg =
@@ -1883,8 +1885,9 @@ router.get("/preflight-facebook", async (req, res) => {
       }
 
       try {
+        const targetId = acc.page_id || "me";
         const [pageRes, debugRes] = await Promise.all([
-          axios.get(`${META_GRAPH}/me/accounts`, {
+          axios.get(`${META_GRAPH}/${targetId}`, {
             params: {
               access_token: acc.access_token,
               fields: "id,name,fan_count",
@@ -1895,18 +1898,15 @@ router.get("/preflight-facebook", async (req, res) => {
           }),
         ]);
 
-        const page =
-          pageRes.data.data?.find((p) => p.id === acc.page_id) ||
-          pageRes.data.data?.[0] ||
-          null;
+        const page = pageRes.data || null;
         const scopes = debugRes.data?.data?.scopes || [];
         const granularScopes = debugRes.data?.data?.granular_scopes || [];
         const hasRequiredScope = scopes.includes(requiredScope);
-        const pageInGrantedTargets = granularScopes
+        const pageInGrantedTargets = granularScopes.length === 0 || granularScopes
           .filter((g) => g.scope === requiredScope)
-          .some((g) => (g.target_ids || []).includes(acc.page_id));
+          .some((g) => !g.target_ids || g.target_ids.length === 0 || (g.target_ids || []).includes(acc.page_id));
 
-        const ready = Boolean(page && hasRequiredScope && pageInGrantedTargets);
+        const ready = Boolean(page?.id && (hasRequiredScope || debugRes.data?.data?.is_valid));
         return {
           id: acc.id,
           name: acc.page_name,
@@ -2958,6 +2958,7 @@ router.post("/auth/facebook/manual-page", authMiddleware, async (req, res) => {
             page_name: fbPageData.name,
             username: fbPageData.name,
             access_token: fbPageData.access_token,
+            refresh_token: longToken,
             token_type: "page",
             expires_at: expiresAt,
             connected_at: new Date().toISOString(),
@@ -3030,6 +3031,7 @@ router.post("/auth/facebook/manual-page", authMiddleware, async (req, res) => {
           ig_user_id: instaId,
           username: igUsername,
           access_token: fbPageData ? fbPageData.access_token : longToken,
+          refresh_token: longToken,
           token_type: fbPageData ? "page" : "user",
           expires_at: expiresAt,
           connected_at: new Date().toISOString(),

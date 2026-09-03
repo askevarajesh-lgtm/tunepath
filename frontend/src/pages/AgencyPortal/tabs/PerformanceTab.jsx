@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Row, Col, Table, Button, Avatar, message, Skeleton, DatePicker } from 'antd';
+import { Typography, Row, Col, Table, Button, Avatar, message, Skeleton, DatePicker, List } from 'antd';
 import dayjs from 'dayjs';
 import { ArrowUpRight, ArrowDownRight, CheckSquare, AlertTriangle } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -173,30 +173,34 @@ const PerformanceTab = () => {
       <motion.div variants={itemVariants} style={{ marginBottom: 40 }}>
         <SlabCard bodyStyle={{ padding: '32px' }}>
           <Text style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', display: 'block', marginBottom: 24 }}>Team Performance — Top Performers</Text>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {team.map((member, idx) => (
-              <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', background: 'var(--bg-tertiary)', borderRadius: 12, border: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, width: 220 }}>
-                  <Avatar style={{ backgroundColor: 'var(--text-tertiary)', fontWeight: 700 }}>{member.initials}</Avatar>
-                  <Text style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{member.name}</Text>
+          <List
+            dataSource={team}
+            pagination={{ defaultPageSize: 5, showSizeChanger: true, pageSizeOptions: ['5', '10', '20'] }}
+            renderItem={(member, idx) => (
+              <List.Item style={{ padding: 0, border: 'none', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', background: 'var(--bg-tertiary)', borderRadius: 12, border: '1px solid var(--border-color)', width: '100%' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, width: 220 }}>
+                    <Avatar style={{ backgroundColor: 'var(--text-tertiary)', fontWeight: 700 }}>{member.initials}</Avatar>
+                    <Text style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{member.name}</Text>
+                  </div>
+                  <Text style={{ color: 'var(--text-primary)', fontWeight: 800, width: 120 }}>Tasks Completed: {member.tasksCompleted}</Text>
+                  <Text style={{ color: 'var(--text-secondary)', fontWeight: 600, width: 120 }}>Assigned: {member.tasksAssigned}</Text>
+                  <Text style={{ color: 'var(--text-secondary)', fontWeight: 600, width: 100 }}>SLA {member.sla}</Text>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 80, color: 'var(--text-primary)', fontWeight: 600 }}>
+                    {member.status === 'good' ? (
+                      <div style={{ background: 'var(--accent-primary)', color: '#fff', borderRadius: 4, padding: 2, display: 'flex' }}><CheckSquare size={14} /></div>
+                    ) : (
+                      <div style={{ background: 'var(--accent-warning)', color: '#fff', borderRadius: 4, padding: 2, display: 'flex' }}><AlertTriangle size={14} /></div>
+                    )}
+                  </div>
                 </div>
-                <Text style={{ color: 'var(--text-primary)', fontWeight: 800, width: 120 }}>Tasks Completed: {member.tasksCompleted}</Text>
-                <Text style={{ color: 'var(--text-secondary)', fontWeight: 600, width: 120 }}>Assigned: {member.tasksAssigned}</Text>
-                <Text style={{ color: 'var(--text-secondary)', fontWeight: 600, width: 100 }}>SLA {member.sla}</Text>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 80, color: 'var(--text-primary)', fontWeight: 600 }}>
-                  {member.status === 'good' ? (
-                    <div style={{ background: 'var(--accent-primary)', color: '#fff', borderRadius: 4, padding: 2, display: 'flex' }}><CheckSquare size={14} /></div>
-                  ) : (
-                    <div style={{ background: 'var(--accent-warning)', color: '#fff', borderRadius: 4, padding: 2, display: 'flex' }}><AlertTriangle size={14} /></div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              </List.Item>
+            )}
+          />
         </SlabCard>
       </motion.div>
 
-      <motion.div variants={itemVariants} style={{ marginBottom: 40 }}>
+      {/* <motion.div variants={itemVariants} style={{ marginBottom: 40 }}>
         <SlabCard bodyStyle={{ padding: 0 }}>
           <div style={{ padding: '24px 32px', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
@@ -207,13 +211,13 @@ const PerformanceTab = () => {
           <Table
             dataSource={clients}
             columns={columns}
-            pagination={false}
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
             rowKey="code"
             style={{ width: '100%' }}
 
           />
         </SlabCard>
-      </motion.div>
+      </motion.div> */}
 
     </motion.div>
   );

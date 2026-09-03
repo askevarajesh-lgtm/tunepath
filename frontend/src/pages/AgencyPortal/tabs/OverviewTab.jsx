@@ -12,7 +12,7 @@ import { ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveCon
 const { Title, Text } = Typography;
 
 const OverviewTab = () => {
-  const { user } = useAuth();
+  const { user, login } = useAuth();
   const navigate = useNavigate();
   
   const [loading, setLoading] = useState(true);
@@ -48,6 +48,28 @@ const OverviewTab = () => {
     };
     fetchOverview();
   }, [selectedDate, selectedClient]);
+
+  const handleImpersonate = async (clientId) => {
+    try {
+      const currentToken = localStorage.getItem('token');
+      const currentUserStr = localStorage.getItem('user');
+
+      const res = await api.post(`/auth/impersonate/${clientId}`);
+      if (res.data && res.data.success) {
+        if (currentToken && currentUserStr) {
+          localStorage.setItem('original_token', currentToken);
+          localStorage.setItem('original_user', currentUserStr);
+        }
+        localStorage.setItem('token', res.data.token);
+        localStorage.setItem('user', JSON.stringify(res.data.user));
+        message.success(`Logged in as ${res.data.user.name}`);
+        login(res.data.user);
+      }
+    } catch (err) {
+      console.error('Impersonation error:', err);
+      message.error(err.response?.data?.error || 'Failed to login as client');
+    }
+  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -211,46 +233,51 @@ const OverviewTab = () => {
           <Title level={3} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Client Health Portfolio</Title>
           <Text type="secondary" style={{ display: 'block', marginBottom: 32, fontSize: 14, fontWeight: 500 }}>All {clients.length} active clients - ranked by overall health</Text>
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {clients.map(client => {
-              const statusText = getStatusText(client.mos);
-              const statusColor = getCodeColor(client.mos);
-              
-              return (
-                <SlabCard key={client.id} shadowColor={statusColor} bodyStyle={{ padding: '24px 32px' }} style={{ borderLeft: `6px solid ${statusColor}` }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 24 }}>
-                    
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, minWidth: 200 }}>
-                      <div style={{ width: 44, height: 44, borderRadius: 12, background: statusColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15 }}>{client.code}</div>
-                      <div>
-                        <Text style={{ fontWeight: 800, display: 'block', color: 'var(--text-primary)', fontSize: 16, marginBottom: 2 }}>{client.name}</Text>
-                        <Tag style={{ margin: 0, background: 'transparent', border: `1px solid ${statusColor}40`, color: statusColor, fontWeight: 700 }}>MOS: {client.mos !== null ? client.mos : 'N/A'} ({statusText})</Tag>
+          <div style={{ background: 'var(--bg-tertiary)', borderRadius: 16, border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+            <Table
+              dataSource={clients}
+              rowKey="id"
+              pagination={{ pageSize: 5, showSizeChanger: false, position: ['bottomCenter'] }}
+              columns={[
+                {
+                  title: 'Client',
+                  key: 'client',
+                  render: (_, client) => {
+                    const statusText = getStatusText(client.mos);
+                    const statusColor = getCodeColor(client.mos);
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 12, background: statusColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 800, fontSize: 15 }}>{client.code}</div>
+                        <div>
+                          <Text style={{ fontWeight: 800, display: 'block', color: 'var(--text-primary)', fontSize: 16, marginBottom: 2 }}>{client.name}</Text>
+                          <Tag style={{ margin: 0, background: 'transparent', border: `1px solid ${statusColor}40`, color: statusColor, fontWeight: 700 }}>MOS: {client.mos !== null ? client.mos : 'N/A'} ({statusText})</Tag>
+                        </div>
                       </div>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 4 }}>MONTHLY MRR</Text>
-                        <Text style={{ fontWeight: 800, fontSize: 16 }}>₹{(client.mrr/100000).toFixed(1)}L</Text>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, marginBottom: 4 }}>ACTIVE PROJECTS</Text>
-                        <Text style={{ fontWeight: 800, fontSize: 16 }}>{client.activeProjects}</Text>
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 20, justifyContent: 'flex-end' }}>
-                      <Button type="text" icon={<ExternalLink size={18} />} style={{ fontWeight: 700, color: 'var(--accent-secondary)' }}>View Dashboard</Button>
-                    </div>
-                  </div>
-                </SlabCard>
-              );
-            })}
-            {clients.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-secondary)' }}>
-                No clients found.
-              </div>
-            )}
+                    );
+                  }
+                },
+                {
+                  title: 'Monthly MRR',
+                  dataIndex: 'mrr',
+                  key: 'mrr',
+                  render: (mrr) => <Text style={{ fontWeight: 800, fontSize: 16 }}>₹{(mrr/100000).toFixed(1)}L</Text>
+                },
+                {
+                  title: 'Active Projects',
+                  dataIndex: 'activeProjects',
+                  key: 'activeProjects',
+                  render: (activeProjects) => <Text style={{ fontWeight: 800, fontSize: 16 }}>{activeProjects}</Text>
+                },
+                {
+                  title: '',
+                  key: 'action',
+                  align: 'right',
+                  render: (_, client) => (
+                    <Button type="text" icon={<ExternalLink size={18} />} onClick={() => handleImpersonate(client.id)} style={{ fontWeight: 700, color: 'var(--accent-secondary)' }}>View Dashboard</Button>
+                  )
+                }
+              ]}
+            />
           </div>
         </motion.div>
       </motion.div>
