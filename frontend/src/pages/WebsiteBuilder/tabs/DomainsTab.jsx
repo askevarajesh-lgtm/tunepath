@@ -184,7 +184,7 @@ const ManageDomainView = ({ activeDomain, setView, handleDisconnect, handleVerif
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
                 <span style={{ color: "var(--text-secondary)", fontSize: 14, fontWeight: 600 }}>Target</span>
-                <span style={{ color: "var(--accent-primary)", fontWeight: 800, fontSize: 14 }}>tunepath.askeva.io</span>
+                <span style={{ color: "var(--accent-primary)", fontWeight: 800, fontSize: 14 }}>{window.location.hostname}</span>
               </div>
             </div>
 
