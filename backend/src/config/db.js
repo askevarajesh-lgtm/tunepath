@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
 
+// Set default returnDocument to resolve findOneAndUpdate deprecation warnings
+mongoose.set('returnDocument', 'after');
+
 const connectDB = async () => {
   try {
     console.log(process.env.MONGODB_URI,"-----------------")

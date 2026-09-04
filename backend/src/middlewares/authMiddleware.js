@@ -35,11 +35,11 @@ const authMiddleware = async (req, res, next) => {
           }
         }
       } catch (error) {
-        if (process.env.NODE_ENV === 'production') {
-          return res.status(401).json({ success: false, error: 'Unauthorized: Invalid token' });
-        }
-        // In development/sandbox, allow continuing with mock user fallback
-        console.warn('AuthMiddleware Error:', error.message, 'Token:', token);
+        return res.status(401).json({
+          success: false,
+          error: error.message === 'jwt expired' ? 'jwt expired' : 'Unauthorized: Invalid token',
+          message: error.message
+        });
       }
     }
   }

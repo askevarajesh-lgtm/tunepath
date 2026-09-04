@@ -138,7 +138,7 @@ exports.signin = async (req, res, next) => {
         workspaceId: user.workspaceId
       },
       process.env.JWT_SECRET || 'super_secret_jwt_key_12345',
-      { expiresIn: '7d' }
+      { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
     );
 
     let features = user.features || [];

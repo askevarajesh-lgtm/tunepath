@@ -87,7 +87,7 @@ exports.updateProfile = async (req, res, next) => {
     const updatedUser = await User.findByIdAndUpdate(
       req.user._id,
       { companyName, email, phone, domain, logo, logoDark },
-      { new: true, runValidators: true }
+      { new: true, returnDocument: 'after', runValidators: true }
     ).select('-password');
 
     res.status(200).json({ success: true, data: updatedUser });
