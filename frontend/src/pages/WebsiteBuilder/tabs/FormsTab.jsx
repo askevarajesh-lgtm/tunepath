@@ -37,6 +37,7 @@ const FormsTab = ({ itemVariants }) => {
   const [isLoadingAnalytics, setIsLoadingAnalytics] = useState(false);
 
   const [submissionFormId, setSubmissionFormId] = useState("all");
+  const [formSearch, setFormSearch] = useState("");
   const [submissionSearch, setSubmissionSearch] = useState("");
 
   const [viewSubmission, setViewSubmission] = useState(null);
@@ -238,17 +239,26 @@ const FormsTab = ({ itemVariants }) => {
       { title: "ACTIONS", key: "actions", align: "right", render: (_, record) => canEdit ? <Button type="link" onClick={() => setActiveForm(record)} style={{ padding: 0, fontWeight: 700 }}>Edit</Button> : null },
     ];
 
+    const filteredForms = forms.filter(f => (f.name || '').toLowerCase().includes(formSearch.toLowerCase()));
+
     return (
       <motion.div variants={itemVariants}>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
           <Space>
-            <Input placeholder="Search forms..." prefix={<Search size={16} color="var(--text-tertiary)" />} size="large" style={{ width: 280, borderRadius: 8 }} />
+            <Input
+              placeholder="Search forms..."
+              value={formSearch}
+              onChange={e => setFormSearch(e.target.value)}
+              prefix={<Search size={16} color="var(--text-tertiary)" />}
+              size="large"
+              style={{ width: 280, borderRadius: 8 }}
+            />
           </Space>
         </div>
         <Card bodyStyle={{ padding: 0 }} style={{ borderRadius: 16, overflow: 'hidden', border: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
           <Table
             columns={columns}
-            dataSource={forms}
+            dataSource={filteredForms}
             loading={isLoadingForms}
             pagination={{
               defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'],

@@ -50,6 +50,8 @@ const UserManagementTab = () => {
 
   // Search states
   const [userSearch, setUserSearch] = useState('');
+  const [deptSearch, setDeptSearch] = useState('');
+  const [roleSearch, setRoleSearch] = useState('');
 
   // Modals state
   const [userModal, setUserModal] = useState({ open: false, record: null });
@@ -475,6 +477,18 @@ const UserManagementTab = () => {
     (u.email || '').toLowerCase().includes((userSearch || '').toLowerCase())
   );
 
+  const filteredDepartments = departments.filter(d =>
+    (d.name || '').toLowerCase().includes((deptSearch || '').toLowerCase()) ||
+    (d.slug || '').toLowerCase().includes((deptSearch || '').toLowerCase()) ||
+    (d.status || '').toLowerCase().includes((deptSearch || '').toLowerCase())
+  );
+
+  const filteredRoles = roles.filter(r =>
+    (r.roleName || '').toLowerCase().includes((roleSearch || '').toLowerCase()) ||
+    (r.roleKey || '').toLowerCase().includes((roleSearch || '').toLowerCase()) ||
+    (r.status || '').toLowerCase().includes((roleSearch || '').toLowerCase())
+  );
+
   const activeRoleForMatrix = roles.find(r => r._id === permissionRoleId);
   const isManagerRole = activeRoleForMatrix && ['agency_manager', 'admin', 'brand_admin', 'brand_manager'].includes(activeRoleForMatrix.roleKey);
 
@@ -550,6 +564,8 @@ const UserManagementTab = () => {
                   <div style={{ padding: '24px 24px 0 24px', display: 'flex', justifyContent: 'space-between' }}>
                     <Input
                       placeholder="Search departments..."
+                      value={deptSearch}
+                      onChange={e => setDeptSearch(e.target.value)}
                       prefix={<Search size={16} color="var(--text-tertiary)" />}
                       style={{ borderRadius: 10, maxWidth: 400, height: 44, fontWeight: 500 }}
                     />
@@ -559,7 +575,7 @@ const UserManagementTab = () => {
                   </div>
                   <Table
                     columns={deptColumns}
-                    dataSource={departments}
+                    dataSource={filteredDepartments}
                     rowKey="_id"
                     pagination={{
                       defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'],
@@ -584,6 +600,8 @@ const UserManagementTab = () => {
                   <div style={{ padding: '24px 24px 0 24px', display: 'flex', justifyContent: 'space-between' }}>
                     <Input
                       placeholder="Search roles..."
+                      value={roleSearch}
+                      onChange={e => setRoleSearch(e.target.value)}
                       prefix={<Search size={16} color="var(--text-tertiary)" />}
                       style={{ borderRadius: 10, maxWidth: 400, height: 44, fontWeight: 500 }}
                     />
@@ -593,7 +611,7 @@ const UserManagementTab = () => {
                   </div>
                   <Table
                     columns={roleColumns}
-                    dataSource={roles}
+                    dataSource={filteredRoles}
                     rowKey="_id"
                     pagination={{
                       defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'],
