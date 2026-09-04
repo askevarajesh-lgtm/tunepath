@@ -1,6 +1,6 @@
 import React from "react";
 import { Button, Space, Typography } from "antd";
-import { ReloadOutlined } from "@ant-design/icons";
+import { ReloadOutlined, FilePdfOutlined } from "@ant-design/icons";
 // import SchedulerStatusPanel from "./SchedulerStatusPanel";
 
 const { Title, Text } = Typography;
@@ -11,6 +11,7 @@ export default function TopNav({
   isConnected,
   schedulerStatus,
   onRefreshClick,
+  onOpenReportModal,
   canCreate = true,
   isRefreshing = false,
 }) {
@@ -34,6 +35,22 @@ export default function TopNav({
         >
           Refresh
         </Button>
+        {onOpenReportModal && (
+          <Button
+            size="large"
+            type="primary"
+            icon={<FilePdfOutlined />}
+            onClick={onOpenReportModal}
+            style={{
+              background: "linear-gradient(135deg, #1677ff 0%, #0050b3 100%)",
+              borderColor: "transparent",
+              fontWeight: 600,
+              boxShadow: "0 4px 12px rgba(22, 119, 255, 0.25)"
+            }}
+          >
+            Generate MoM Report
+          </Button>
+        )}
         {canCreate && (
           <Button
             size="large"

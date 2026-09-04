@@ -13,4 +13,7 @@ router.get('/projects', analyticsController.getProjects);
 router.post('/projects', analyticsController.createProject);
 router.put('/projects/:id/ga4', analyticsController.updateGa4Property);
 
+// Send Report Email
+router.post('/send-email', analyticsController.sendReportEmail);
+
 module.exports = router;

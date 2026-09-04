@@ -2,12 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { Row, Col, Card, Typography, Select, Progress, Space, Avatar, Table, Button, Tag, Input } from 'antd';
 import { motion } from 'framer-motion';
 import { PieChart, Pie, Cell, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { TeamOutlined, FireOutlined, RiseOutlined, CheckCircleOutlined, TrophyOutlined, FilterOutlined, CalendarOutlined } from '@ant-design/icons';
+import { TeamOutlined, FireOutlined, RiseOutlined, CheckCircleOutlined, TrophyOutlined, FilterOutlined, CalendarOutlined, FilePdfOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
-const AdminDashboard = ({ leads = [] }) => {
+const AdminDashboard = ({ leads = [], onOpenReportModal }) => {
   const itemVariants = {
     hidden: { y: 20, opacity: 0 },
     visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
@@ -245,9 +245,23 @@ const AdminDashboard = ({ leads = [] }) => {
               <FilterOutlined style={{ color: 'var(--accent-primary)' }} />
               <strong style={{ color: 'var(--accent-primary)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 }}>Dashboard Filters</strong>
             </div>
-            <Button size="small" onClick={handleClearAll} style={{ borderRadius: 6, fontWeight: 600 }}>Clear all</Button>
+            <Space>
+              {onOpenReportModal && (
+                <Button 
+                  type="primary" 
+                  size="small" 
+                  icon={<FilePdfOutlined />} 
+                  onClick={onOpenReportModal}
+                  style={{ borderRadius: 6, fontWeight: 600, background: '#1677ff' }}
+                >
+                  Generate MoM Report
+                </Button>
+              )}
+              <Button size="small" onClick={handleClearAll} style={{ borderRadius: 6, fontWeight: 600 }}>Clear all</Button>
+            </Space>
           </div>
           <Title level={4} style={{ margin: '0 0 20px 0', fontWeight: 800 }}>View performance by week, month or pipeline stage</Title>
+
           
           <Row gutter={[16, 16]}>
             <Col style={{ flex: '1 1 160px' }}>

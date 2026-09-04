@@ -154,10 +154,10 @@ const DashboardFilters = React.memo(function DashboardFilters({
             icon={<Download size={16} />}
             onClick={onExport}
             size="large"
-            aria-label="Export KPI summary as CSV"
+            aria-label="Export Analytics PDF Report"
             style={{ borderRadius: 8, height: 40, background: 'var(--accent-primary)', color: '#fff', border: 'none', boxShadow: 'var(--shadow-md)', fontWeight: 600 }}
           >
-            Export
+            Export PDF
           </Button>
         )}
       </div>

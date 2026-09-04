@@ -28,6 +28,7 @@ import { useClientContext } from "../../contexts/ClientContext";
 import NoClientSelected from "./NoClientSelected";
 import DashboardView from "./DashboardView";
 import useActionPermissions from "../../hooks/useActionPermissions";
+import GenerateSocialReportModal from "../SocialMedia/components/GenerateSocialReportModal";
 
 const enabledIntegrations = {
   googleBusiness: true,
@@ -58,6 +59,7 @@ export default function CampaignScheduledPage() {
   const [disconnectingAccountId, setDisconnectingAccountId] = useState(null);
   const [viewPostOpen, setViewPostOpen] = useState(false);
   const [viewingPost, setViewingPost] = useState(null);
+  const [reportModalOpen, setReportModalOpen] = useState(false);
   const [liDiscoveryOpen, setLiDiscoveryOpen] = useState(false);
   const [liDiscoveryData, setLiDiscoveryData] = useState(null);
   const [liDiscoveryId, setLiDiscoveryId] = useState(null);
@@ -128,21 +130,25 @@ export default function CampaignScheduledPage() {
   const isConnected =
     Object.keys(connectedPlatforms).length > 0;
 
+  const [analytics, setAnalytics] = useState(null);
+
   const loadInitial = async () => {
     setIsRefreshing(true);
     try {
       setRefreshTrigger(prev => prev + 1);
-      const [postsData, accountsData, statusData, metaData] = await Promise.all(
+      const [postsData, accountsData, statusData, metaData, analyticsData] = await Promise.all(
         [
           campaignScheduledApi.getPosts(activeClientId),
           campaignScheduledApi.getAccounts(activeClientId),
           campaignScheduledApi.getSchedulerStatus(activeClientId),
           campaignScheduledApi.getMetaStatus(activeClientId),
+          campaignScheduledApi.getAnalytics(activeClientId).catch(() => null),
         ],
       );
       setPosts(postsData);
       setAccounts(accountsData);
       setSchedulerStatus(statusData);
+      setAnalytics(analyticsData);
       setMetaConfigured(Boolean(metaData.configured));
       setLinkedInConfigured(Boolean(metaData.linkedInConfigured));
       setYoutubeConfigured(Boolean(metaData.youtubeConfigured));
@@ -558,6 +564,7 @@ export default function CampaignScheduledPage() {
               isConnected={isConnected}
               schedulerStatus={schedulerStatus}
               onRefreshClick={loadInitial}
+              onOpenReportModal={() => setReportModalOpen(true)}
               canCreate={canCreate}
               isRefreshing={isRefreshing}
             />
@@ -719,6 +726,14 @@ export default function CampaignScheduledPage() {
         loading={gbConnecting}
         onCancel={() => setGbDiscoveryOpen(false)}
         onConnect={handleConnectGoogleBusinessSelected}
+      />
+      <GenerateSocialReportModal
+        open={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        posts={posts}
+        analytics={analytics}
+        accounts={filteredAccounts}
+        clientName={selectedClient?.companyName || selectedClient?.name || 'Selected Client Account'}
       />
     </>
   );

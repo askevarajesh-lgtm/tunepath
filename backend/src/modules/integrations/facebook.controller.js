@@ -547,15 +547,25 @@ exports.syncLeads = async (req, res, next) => {
           if (!targetAccessToken) throw new Error('Missing page access token');
           formsRes = await fetchFormsForSync(targetAccessToken);
         } catch (firstErr) {
+          const userAccessToken = integration.config?.accessToken;
           try {
             targetAccessToken = await resolvePageAccessToken(integration, pageId, true);
           } catch (refreshErr) {
-            throw refreshErr;
+            targetAccessToken = userAccessToken;
           }
-          if (targetAccessToken) {
-            formsRes = await fetchFormsForSync(targetAccessToken);
-          } else {
-            throw firstErr;
+
+          try {
+            if (targetAccessToken) {
+              formsRes = await fetchFormsForSync(targetAccessToken);
+            } else {
+              throw firstErr;
+            }
+          } catch (secondErr) {
+            if (userAccessToken && userAccessToken !== targetAccessToken) {
+              formsRes = await fetchFormsForSync(userAccessToken);
+            } else {
+              throw secondErr;
+            }
           }
         }
         
@@ -614,8 +624,9 @@ exports.syncLeads = async (req, res, next) => {
       try {
         let hasNextPage = true;
         let url = `https://graph.facebook.com/v18.0/${form.id}/leads`;
+        let currentTokenToUse = targetAccessToken;
         let leadsParams = { 
-          access_token: targetAccessToken, 
+          access_token: currentTokenToUse, 
           fields: 'id,created_time,ad_id,form_id,field_data,adset_id,campaign_id',
           limit: 500 
         };
@@ -624,7 +635,19 @@ exports.syncLeads = async (req, res, next) => {
         let duplicateCount = 0;
 
         while (hasNextPage) {
-          const leadsRes = await axios.get(url, { params: leadsParams });
+          let leadsRes;
+          try {
+            leadsRes = await axios.get(url, { params: leadsParams });
+          } catch (leadFetchErr) {
+            const userAccessToken = integration.config?.accessToken;
+            if (userAccessToken && userAccessToken !== currentTokenToUse) {
+              currentTokenToUse = userAccessToken;
+              leadsParams.access_token = currentTokenToUse;
+              leadsRes = await axios.get(url, { params: leadsParams });
+            } else {
+              throw leadFetchErr;
+            }
+          }
           
           if (leadsRes.data && leadsRes.data.data) {
             for (const fbLead of leadsRes.data.data) {
@@ -854,21 +877,7 @@ const resolvePageAccessToken = async (integration, pageId, forceRefresh = false)
 
   if (!userAccessToken) return null;
 
-  try {
-    const pageRes = await axios.get(`https://graph.facebook.com/v18.0/${pageId}`, {
-      params: { access_token: userAccessToken, fields: 'id,access_token' },
-      timeout: 10000
-    });
-    if (pageRes.data && pageRes.data.access_token) {
-      if (page) {
-        page.accessToken = pageRes.data.access_token;
-        integration.markModified('config');
-        await integration.save().catch(() => {});
-      }
-      return pageRes.data.access_token;
-    }
-  } catch (err) {}
-
+  // 1. Try fetching page access token via /me/accounts first (most reliable for impersonation)
   try {
     let url = `https://graph.facebook.com/v18.0/me/accounts`;
     let params = { access_token: userAccessToken, fields: 'id,name,access_token', limit: 100 };
@@ -899,7 +908,24 @@ const resolvePageAccessToken = async (integration, pageId, forceRefresh = false)
     console.error('Error fetching /me/accounts for page access token:', err.response?.data?.error?.message || err.message);
   }
 
-  return null;
+  // 2. Fallback to direct page endpoint
+  try {
+    const pageRes = await axios.get(`https://graph.facebook.com/v18.0/${pageId}`, {
+      params: { access_token: userAccessToken, fields: 'id,access_token' },
+      timeout: 10000
+    });
+    if (pageRes.data && pageRes.data.access_token) {
+      if (page) {
+        page.accessToken = pageRes.data.access_token;
+        integration.markModified('config');
+        await integration.save().catch(() => {});
+      }
+      return pageRes.data.access_token;
+    }
+  } catch (err) {}
+
+  // 3. Fallback to userAccessToken if no page-specific token could be retrieved
+  return userAccessToken;
 };
 
 exports.getForms = async (req, res, next) => {
@@ -929,16 +955,27 @@ exports.getForms = async (req, res, next) => {
         if (!targetAccessToken) throw new Error('Missing page access token');
         formsRes = await fetchFormsWithToken(targetAccessToken);
       } catch (firstErr) {
-        // If first attempt fails (e.g., token expired), force refresh the page token and try again
+        // If first attempt fails (e.g., token expired or impersonation error), force refresh the page token or try user token
+        const userAccessToken = integration.config?.accessToken;
         try {
           targetAccessToken = await resolvePageAccessToken(integration, pageId, true);
         } catch (refreshErr) {
-          throw refreshErr;
+          targetAccessToken = userAccessToken;
         }
-        if (targetAccessToken) {
-          formsRes = await fetchFormsWithToken(targetAccessToken);
-        } else {
-          throw firstErr;
+
+        try {
+          if (targetAccessToken) {
+            formsRes = await fetchFormsWithToken(targetAccessToken);
+          } else {
+            throw firstErr;
+          }
+        } catch (secondErr) {
+          // If page token failed with impersonation/permission error, try userAccessToken directly
+          if (userAccessToken && userAccessToken !== targetAccessToken) {
+            formsRes = await fetchFormsWithToken(userAccessToken);
+          } else {
+            throw secondErr;
+          }
         }
       }
       return res.status(200).json({ success: true, data: formsRes.data.data || [] });

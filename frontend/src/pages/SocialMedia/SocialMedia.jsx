@@ -5,11 +5,14 @@ import { motion } from 'framer-motion';
 import { Download, Calendar as CalendarIcon, Camera, MessageSquare, Briefcase, Video, Image as ImageIcon, Edit3, X, Heart, MessageCircle, Share2, TrendingUp } from 'lucide-react';
 import { socialPosts, organicTrafficSparkline } from '../../data/mock';
 
+import GenerateSocialReportModal from './components/GenerateSocialReportModal';
+
 const { Title, Text } = Typography;
 const { Option } = Select;
 
 const SocialMedia = () => {
   const [activeTab, setActiveTab] = useState('Instagram');
+  const [reportModalOpen, setReportModalOpen] = useState(false);
 
   // Expand to 30 days
   const expandedReach = Array.from({ length: 30 }, (_, i) => ({ day: i + 1, reach: 10000 + Math.random() * 10000 + (i > 15 ? 5000 : 0) }));
@@ -48,7 +51,13 @@ const SocialMedia = () => {
         </div>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <Select defaultValue="Prestige Estates" style={{ width: 200, fontWeight: 600 }} size="large"><Option value="Prestige Estates">Prestige Estates</Option></Select>
-          <Button icon={<Download size={16} />} style={{ borderRadius: 8, height: 40, borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-secondary)', fontWeight: 600 }}>Export Report</Button>
+          <Button 
+            icon={<Download size={16} />} 
+            onClick={() => setReportModalOpen(true)}
+            style={{ borderRadius: 8, height: 40, borderColor: 'var(--border-color)', color: 'var(--text-primary)', background: 'var(--bg-secondary)', fontWeight: 600 }}
+          >
+            Export Report
+          </Button>
           <Button type="primary" icon={<CalendarIcon size={16} />} style={{ borderRadius: 8, height: 40, background: 'var(--accent-primary)', border: 'none', boxShadow: 'var(--shadow-md)', fontWeight: 600 }}>Schedule Post</Button>
         </div>
       </motion.div>
@@ -223,6 +232,12 @@ const SocialMedia = () => {
           </div>
         </Card>
       </motion.div>
+
+      <GenerateSocialReportModal
+        open={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        posts={socialPosts}
+      />
     </motion.div>
   );
 };

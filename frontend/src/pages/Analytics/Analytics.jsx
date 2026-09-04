@@ -5,9 +5,10 @@ import { BarChart2, PieChart as PieChartIcon, Sparkles, LineChart as LineChartIc
 import dayjs from 'dayjs';
 
 
+import { useAuth } from '../../contexts/AuthContext';
 import { useAnalyticsData } from './hooks/useAnalyticsData';
 import { useDebouncedValue } from './hooks/useDebouncedValue';
-import { exportRowsAsCsv, exportDetailedReportAsCsv } from './utils/csvExport';
+import { downloadAnalyticsPdf } from './utils/pdfExport';
 
 import DashboardFilters from './components/DashboardFilters';
 import DashboardSkeleton from './components/DashboardSkeleton';
@@ -35,6 +36,7 @@ const itemVariants = {
 };
 
 const Analytics = () => {
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState('analytics');
   const [selectedProject, setSelectedProject] = useState('');
   const [dateRange, setDateRange] = useState([dayjs().subtract(30, 'day'), dayjs()]);
@@ -67,15 +69,20 @@ const Analytics = () => {
   const handleExport = useCallback(() => {
     if (!data) return message.warning('No data to export');
     try {
-      exportDetailedReportAsCsv({
-        filename: `detailed_analytics_report_${dayjs().format('YYYY-MM-DD')}`,
-        data: data
+      const currentProject = projects.find(p => p._id === selectedProject);
+      const companyName = user?.companyName || user?.agencyName || user?.brandName || user?.name || 'Tunepath';
+      downloadAnalyticsPdf({
+        data,
+        projectInfo: currentProject,
+        companyName,
+        dateRange
       });
-      message.success('Detailed report exported successfully');
-    } catch {
-      message.error('Export failed');
+      message.success('Analytics PDF report downloaded successfully');
+    } catch (err) {
+      console.error('Export PDF error:', err);
+      message.error('Failed to export PDF report');
     }
-  }, [data]);
+  }, [data, projects, selectedProject, dateRange, user]);
 
   const activeTabMeta = TABS.find(t => t.key === activeTab);
 

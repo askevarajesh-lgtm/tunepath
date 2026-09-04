@@ -74,7 +74,7 @@ exports.generateAndSendReport = async (agencyId, clientId, template, scheduleId 
     let pages = 1;
     if (template === 'MOS Score Report') pages = 12;
     else if (template === 'SEO & Web Analytics') pages = 7;
-    else if (template === 'Lead Generation & Conversion') pages = 5;
+    else if (template === 'Lead Generation & Conversion' || template === 'Leads Performance Report') pages = 6;
     else if (template === 'Social Media Engagement') pages = 8;
 
     // 4. Send via Email/WhatsApp (Mock tracking)

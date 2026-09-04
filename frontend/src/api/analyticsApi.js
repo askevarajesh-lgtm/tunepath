@@ -22,5 +22,9 @@ export const analyticsApi = {
   createProject: async (data) => {
     const response = await api.post('/analytics/projects', data);
     return response.data;
+  },
+  sendReportEmail: async (data) => {
+    const response = await api.post('/analytics/send-email', data);
+    return response.data;
   }
 };

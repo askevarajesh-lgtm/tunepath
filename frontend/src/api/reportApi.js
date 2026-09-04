@@ -29,3 +29,6 @@ export const generateReport = async (reportData) => {
     const response = await api.post('/reports/generate', reportData);
     return response.data.data;
 };
+
+export const generateReportApi = generateReport;
+
