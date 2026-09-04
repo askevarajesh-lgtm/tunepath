@@ -53,17 +53,123 @@ const WorkflowTemplateManager = () => {
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  const { data: allConfigsData, refetch: refetchConfigs } =
-    useGetAllWorkflowConfigsQuery();
+  const isGlobalRole = useMemo(() => {
+    return ["admin", "super_admin", "operations_head", "agency_super_admin", "agency_manager", "commander_admin", "supreme_super_admin"].includes(userRole);
+  }, [userRole]);
+
   const { data: departmentsResp, isLoading: isLoadingDepartments } =
     useGetDepartmentsDynamicQuery();
+  const departments = departmentsResp?.data?.departments || [];
+
+  const userDepartmentSlug = useMemo(() => {
+    if (!user) return null;
+
+    const findMatch = (str) => {
+      if (!str) return null;
+      const norm = String(str).trim().toLowerCase();
+      if (!norm) return null;
+      const match = (departments || []).find((d) => {
+        if (!d) return false;
+        const dSlug = (d.slug || "").toLowerCase();
+        const dName = (d.name || "").toLowerCase();
+        const normSanitized = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        const dNameSanitized = dName.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        return (
+          d._id === str ||
+          dSlug === norm ||
+          dName === norm ||
+          dSlug === normSanitized ||
+          dNameSanitized === normSanitized
+        );
+      });
+      if (match?.slug) return match.slug;
+      return null;
+    };
+
+    if (user.departmentId) {
+      if (typeof user.departmentId === "object" && user.departmentId.slug) {
+        return user.departmentId.slug;
+      }
+      const match = findMatch(user.departmentId);
+      if (match) return match;
+    }
+
+    for (const val of [user.departmentName, user.department, user.team, user.roleName, user.designation, user.title]) {
+      const match = findMatch(val);
+      if (match) return match;
+    }
+
+    const roleSlugMap = {
+      website_coordinator: "website-designing",
+      digital_marketing_coordinator: "digital-marketing",
+      digital_marketing_manager: "digital-marketing",
+      seo_specialist: "seo",
+      seo_manager: "seo",
+      designer: "designer",
+      graphic_designer: "designer",
+      developer: "developer",
+      dev: "developer",
+      video_editor: "video-editor",
+      video_editing: "video-editor",
+      deployment: "deployment",
+      deployer: "deployment",
+      deploy: "deployment",
+    };
+
+    if (user.role && roleSlugMap[user.role]) {
+      const mapped = roleSlugMap[user.role];
+      const match = findMatch(mapped);
+      if (match) return match;
+      return mapped;
+    }
+
+    if (user.role) {
+      const match = findMatch(user.role);
+      if (match) return match;
+    }
+
+    for (const val of [user.roleName, user.departmentName, user.department, user.designation, user.team]) {
+      if (val) {
+        const slugified = String(val).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        if (slugified) return slugified;
+      }
+    }
+
+    if (user.name || user.fullName) {
+      const fullName = String(user.name || user.fullName);
+      const match = (departments || []).find((d) => {
+        if (!d?.name) return false;
+        return fullName.toLowerCase().includes(d.name.toLowerCase());
+      });
+      if (match?.slug) return match.slug;
+    }
+
+    return null;
+  }, [user, departments]);
+
+  const [filterDepartment, setFilterDepartment] = useState(null);
+
+  useEffect(() => {
+    if (userDepartmentSlug) {
+      if (!selectedDepartment && !editingTemplate) {
+        setSelectedDepartment(userDepartmentSlug);
+      }
+      if (!isGlobalRole && filterDepartment !== userDepartmentSlug) {
+        setFilterDepartment(userDepartmentSlug);
+      }
+    }
+  }, [userDepartmentSlug, isGlobalRole, editingTemplate, filterDepartment]);
+
+  const activeDepartmentQueryParam = filterDepartment || (!isGlobalRole ? userDepartmentSlug : null);
+  const { data: allConfigsData, refetch: refetchConfigs } =
+    useGetAllWorkflowConfigsQuery(activeDepartmentQueryParam ? { department: activeDepartmentQueryParam } : undefined);
+
   const [createOrUpdateWorkflow, { isLoading: isSaving }] =
     useCreateOrUpdateWorkflowConfigMutation();
 
   const allConfigs = allConfigsData?.data?.configs || [];
 
   // Department options from dynamic departments
-  const departments = departmentsResp?.data?.departments || [];
   const departmentOptions = useMemo(() => {
     return departments
       .filter((d) => {
@@ -76,7 +182,7 @@ const WorkflowTemplateManager = () => {
       .map((dept) => ({
         value: dept.slug || dept._id,
         label: dept.name,
-        color: "var(--accent-primary)", // Default color for mapping, though individual templates have their own
+        color: "var(--accent-primary)",
       }));
   }, [departments, userRole]);
 
@@ -112,7 +218,14 @@ const WorkflowTemplateManager = () => {
           color: "#722ed1",
           order: 3,
         },
-        { _key: "done", id: "done", name: "Done", color: "#52c41a", order: 4 },
+        {
+          _key: "Rejected",
+          id: "Rejected",
+          name: "Rejected",
+          color: "#ff4d4f",
+          order: 4,
+        },
+        { _key: "done", id: "done", name: "Complete", color: "#52c41a", order: 5 },
       ]);
     }
   }, [editingTemplate]);
@@ -225,7 +338,14 @@ const WorkflowTemplateManager = () => {
         color: "#722ed1",
         order: 3,
       },
-      { _key: "done", id: "done", name: "Done", color: "#52c41a", order: 4 },
+      {
+        _key: "Rejected",
+        id: "Rejected",
+        name: "Rejected",
+        color: "#ff4d4f",
+        order: 4,
+      },
+      { _key: "done", id: "done", name: "Complete", color: "#52c41a", order: 5 },
     ]);
     setEditingTemplate(null);
   };
@@ -305,9 +425,24 @@ const WorkflowTemplateManager = () => {
   ];
 
   // Filter templates by department (projectType)
-  const departmentTemplates = allConfigs.filter(
-    (config) => config.projectType && !config.projectId,
-  );
+  const departmentTemplates = useMemo(() => {
+    let list = allConfigs.filter(
+      (config) => config.projectType && !config.projectId,
+    );
+
+    const activeFilter = filterDepartment || (!isGlobalRole ? userDepartmentSlug : null);
+
+    if (activeFilter && activeFilter !== "all") {
+      const normFilter = activeFilter.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+      list = list.filter((config) => {
+        if (!config.projectType) return false;
+        const normConfig = config.projectType.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        return normConfig === normFilter || normConfig.includes(normFilter) || normFilter.includes(normConfig);
+      });
+    }
+
+    return list;
+  }, [allConfigs, filterDepartment, isGlobalRole, userDepartmentSlug]);
 
   const templateColumns = [
     {
@@ -606,6 +741,35 @@ const WorkflowTemplateManager = () => {
 
       <Card
         title="Department Workflow Templates"
+        extra={
+          isGlobalRole ? (
+            <Space wrap>
+              <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                Filter Department:
+              </span>
+              <Select
+                placeholder="All Departments"
+                value={filterDepartment}
+                onChange={setFilterDepartment}
+                style={{ width: 200 }}
+                allowClear
+              >
+                <Option value="all">All Departments</Option>
+                {departmentOptions.map((opt) => (
+                  <Option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </Option>
+                ))}
+              </Select>
+            </Space>
+          ) : userDepartmentSlug ? (
+            <Tag color="blue">
+              Department:{" "}
+              {departmentOptions.find((o) => o.value === userDepartmentSlug)
+                ?.label || userDepartmentSlug}
+            </Tag>
+          ) : null
+        }
         size={isMobile ? "small" : "default"}
       >
         <Table

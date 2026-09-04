@@ -163,6 +163,33 @@ const TaskForm = () => {
     return Array.from(unique.values());
   }, [users, companyUsers]);
 
+  const selectedDeptObj = useMemo(() => {
+    if (!selectedDepartment || !departments) return null;
+    return departments.find(
+      (d) =>
+        d._id === selectedDepartment ||
+        d.slug === selectedDepartment ||
+        d.name?.toLowerCase() === String(selectedDepartment).toLowerCase()
+    );
+  }, [departments, selectedDepartment]);
+
+  const isProjectsDepartment = useMemo(() => {
+    if (!selectedDepartment) return false;
+    const slug = selectedDeptObj?.slug?.toLowerCase() || "";
+    const name = selectedDeptObj?.name?.toLowerCase() || "";
+    const raw = String(selectedDepartment).toLowerCase();
+
+    return (
+      slug === "projects" ||
+      slug === "project" ||
+      name === "projects" ||
+      name === "project" ||
+      raw === "projects" ||
+      raw === "project" ||
+      raw.includes("project")
+    );
+  }, [selectedDepartment, selectedDeptObj]);
+
   const websiteDeptId = useMemo(() => {
     return departments.find((d) => d.slug === "website-designing")?._id;
   }, [departments]);
@@ -183,13 +210,18 @@ const TaskForm = () => {
       u.role === "admin" && String(uCompanyId) === String(currentUserCompanyId);
     if (isTenantAdmin) return true;
 
-    // 2. Lekashri is fixed for Website/Web App departments
-    const isWebsiteDept =
-      (websiteDeptId && selectedDepartment === websiteDeptId) ||
-      (webAppDeptId && selectedDepartment === webAppDeptId) ||
-      selectedDepartment === "website-designing" ||
-      selectedDepartment === "web-application-development";
-    if (isWebsiteDept && u.email?.toLowerCase() === "leka@tunepath.com")
+    // 2. Agency Manager is fixed / default watcher
+    const isAgencyManager =
+      u.role === "agency_manager" ||
+      u.roleName === "agency_manager" ||
+      (typeof u.roleName === "string" && u.roleName.toLowerCase().includes("agency manager")) ||
+      (typeof u.designation === "string" && u.designation.toLowerCase().includes("agency manager")) ||
+      (typeof u.name === "string" && u.name.toLowerCase().includes("agency manager")) ||
+      u.email?.toLowerCase() === "agencymanager@gmail.com";
+    if (isAgencyManager) return true;
+
+    // 3. Lekashri is fixed ONLY for Projects department
+    if (isProjectsDepartment && u.email?.toLowerCase() === "leka@tunepath.com")
       return true;
 
     return false;
@@ -715,16 +747,13 @@ const TaskForm = () => {
       const fixedWatchers = allAvailableUsers.filter(isFixedWatcher);
       const fixedIds = fixedWatchers.map((a) => a._id);
 
-      // Special handling for Leka: she should be removed if NOT in a website department
+      // Special handling for Leka: she should be removed from default watchers if NOT in Projects department
       const lekaUser = allAvailableUsers.find(
         (u) => u.email?.toLowerCase() === "leka@tunepath.com",
       );
       const lekaId = lekaUser?._id;
-      const isWebsiteDept =
-        selectedDepartment === "website-designing" ||
-        selectedDepartment === "web-application-development";
       const shouldRemoveLeka =
-        !isWebsiteDept && lekaId && currentWatchers.includes(lekaId);
+        !isProjectsDepartment && lekaId && currentWatchers.includes(lekaId);
 
       if (fixedIds.length > 0 || shouldRemoveLeka) {
         const missingFixedIds = fixedIds.filter(
@@ -743,7 +772,7 @@ const TaskForm = () => {
         }
       }
     }
-  }, [allAvailableUsers, isEdit, form, currentUser, selectedDepartment]);
+  }, [allAvailableUsers, isEdit, form, currentUser, selectedDepartment, isProjectsDepartment]);
 
   // Set defaults for SEO users
   useEffect(() => {

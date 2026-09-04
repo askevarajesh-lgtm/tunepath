@@ -1,5 +1,5 @@
 import { useAuth } from "../../contexts/AuthContext";
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Button,
   Space,
@@ -258,30 +258,35 @@ const TasksPage = () => {
     setSelectedTask(null);
   };
 
-  const handleTaskCompleted = async () => {
+  const handleTaskCompleted = async (counts = null) => {
     if (!user?._id) return;
 
-    // Small delay to ensure DB consistency before refetching stats
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    let totalToday = counts?.totalCount;
+    let completedToday = counts?.completedCount;
 
-    try {
-      const result = await refetchTodayStats();
-      const stats = result.data?.data || result.data || {};
-
-      if (stats.totalToday > 0) {
-        if (stats.completedToday >= stats.totalToday) {
-          setShowCelebration(true);
-        } else {
-          setToastCount(stats.completedToday);
-          setToastTotal(stats.totalToday);
-          setShowToast(true);
-        }
-      } else {
-        // Fallback if stats don't return totalToday for some reason
-        setShowToast(true);
+    if (totalToday === undefined || completedToday === undefined) {
+      // Small delay to ensure DB consistency before refetching stats
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      try {
+        const result = await refetchTodayStats();
+        const stats = result.data?.data || result.data || {};
+        totalToday = stats.totalToday || 0;
+        completedToday = stats.completedToday || 0;
+      } catch (error) {
+        console.error("Error fetching stats:", error);
       }
-    } catch (error) {
-      console.error("Error fetching stats:", error);
+    }
+
+    if (totalToday > 0 && completedToday >= totalToday) {
+      // Trigger full celebration overlay ONLY when ALL assigned tasks for today are completed!
+      setShowCelebration(true);
+      setShowToast(false);
+    } else {
+      // Show top-right tooltip toast for intermediate task completions
+      setToastCount(completedToday || 1);
+      setToastTotal(totalToday > 0 ? totalToday : (completedToday || 1) + 1);
+      setShowToast(true);
+      setShowCelebration(false);
     }
   };
 
@@ -342,11 +347,126 @@ const TasksPage = () => {
     },
   ];
 
+  const isUserPortal = location.pathname.startsWith("/user");
   const { data: departmentsResp } = useGetDepartmentsDynamicQuery();
   const departments = departmentsResp?.data?.departments || [];
 
+  const userDepartmentSlug = useMemo(() => {
+    if (!user) return null;
+
+    const findMatch = (str) => {
+      if (!str) return null;
+      const norm = String(str).trim().toLowerCase();
+      if (!norm) return null;
+      const match = (departments || []).find((d) => {
+        if (!d) return false;
+        const dSlug = (d.slug || "").toLowerCase();
+        const dName = (d.name || "").toLowerCase();
+        const normSanitized = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        const dNameSanitized = dName.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        return (
+          d._id === str ||
+          dSlug === norm ||
+          dName === norm ||
+          dSlug === normSanitized ||
+          dNameSanitized === normSanitized
+        );
+      });
+      if (match?.slug) return match.slug;
+      return null;
+    };
+
+    if (user.departmentId) {
+      if (typeof user.departmentId === "object" && user.departmentId.slug) {
+        return user.departmentId.slug;
+      }
+      const match = findMatch(user.departmentId);
+      if (match) return match;
+    }
+
+    for (const val of [user.departmentName, user.department, user.team, user.roleName, user.designation, user.title]) {
+      const match = findMatch(val);
+      if (match) return match;
+    }
+
+    const roleSlugMap = {
+      website_coordinator: "website-designing",
+      digital_marketing_coordinator: "digital-marketing",
+      digital_marketing_manager: "digital-marketing",
+      seo_specialist: "seo",
+      seo_manager: "seo",
+      designer: "designer",
+      graphic_designer: "designer",
+      developer: "developer",
+      dev: "developer",
+      video_editor: "video-editor",
+      video_editing: "video-editor",
+      deployment: "deployment",
+      deployer: "deployment",
+      deploy: "deployment",
+    };
+
+    if (user.role && roleSlugMap[user.role]) {
+      const mapped = roleSlugMap[user.role];
+      const match = findMatch(mapped);
+      if (match) return match;
+      return mapped;
+    }
+
+    if (user.role) {
+      const match = findMatch(user.role);
+      if (match) return match;
+    }
+
+    for (const val of [user.roleName, user.departmentName, user.department, user.designation, user.team]) {
+      if (val) {
+        const slugified = String(val).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        if (slugified) return slugified;
+      }
+    }
+
+    if (user.name || user.fullName) {
+      const fullName = String(user.name || user.fullName);
+      const match = (departments || []).find((d) => {
+        if (!d?.name) return false;
+        return fullName.toLowerCase().includes(d.name.toLowerCase());
+      });
+      if (match?.slug) return match.slug;
+    }
+
+    return null;
+  }, [user, departments]);
+
+  const isGlobalAdmin = useMemo(() => {
+    return user && [
+      "super_admin",
+      "admin",
+      "operations_head",
+      "agency_super_admin",
+      "agency_manager",
+      "commander_admin",
+      "supreme_super_admin",
+    ].includes(user.role);
+  }, [user]);
+
+  const hasInitializedDept = useRef(false);
+
+  useEffect(() => {
+    if (!user) return;
+    if (!isGlobalAdmin) {
+      if (userDepartmentSlug && selectedDepartment !== userDepartmentSlug) {
+        setSelectedDepartment(userDepartmentSlug);
+      }
+    } else {
+      if (!hasInitializedDept.current && userDepartmentSlug) {
+        setSelectedDepartment(userDepartmentSlug);
+        hasInitializedDept.current = true;
+      }
+    }
+  }, [user, isGlobalAdmin, userDepartmentSlug, selectedDepartment]);
+
   const departmentTabItems = useMemo(() => {
-    const base = [{ value: "all", label: "All" }];
+    const base = [{ value: "all", label: "All Departments" }];
     const dynamicItems = departments
       .filter((d) => {
         // Hide "General" from non-admin/client roles
@@ -356,7 +476,7 @@ const TasksPage = () => {
         return true;
       })
       .map((d) => ({
-        value: d.slug || d._id,
+        value: d.slug || (d.name ? d.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") : d._id),
         label: d.name,
       }));
     return [...base, ...dynamicItems];
@@ -534,17 +654,14 @@ const TasksPage = () => {
         size={isMobile ? "small" : "default"}
         style={{ marginBottom: 16 }}
         tabBarExtraContent={
-          [
-            "admin",
-            "super_admin",
-            "digital_marketing_coordinator",
-            "website_coordinator",
-          ].includes(userRole) && (
+          userRole !== "client" && (
             <Select
               value={selectedDepartment}
               onChange={setSelectedDepartment}
               style={{ width: isMobile ? 180 : 300 }}
               options={departmentTabItems}
+              placeholder="Filter by Department"
+              disabled={isUserPortal || !isGlobalAdmin}
             />
           )
         }

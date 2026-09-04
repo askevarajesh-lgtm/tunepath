@@ -105,7 +105,7 @@ export const useGetScheduledNotesQuery = createQueryHook((params) => ({ url: '/t
 export const useGetTaskCommentsQuery = createQueryHook((taskId) => `/tasks/${taskId}/comments`);
 export const useGetTaskActivityQuery = createQueryHook((taskId) => `/tasks/${taskId}/activity`);
 export const useGetWorkflowConfigQuery = createQueryHook((params) => ({ url: '/tasks/workflow-config', params }));
-export const useGetAllWorkflowConfigsQuery = createQueryHook(() => '/tasks/workflow-configs');
+export const useGetAllWorkflowConfigsQuery = createQueryHook((params) => ({ url: '/tasks/workflow-configs', params }));
 export const useGetNotificationSettingsQuery = createQueryHook(() => '/tasks/notification-settings');
 export const useGetNotificationsQuery = createQueryHook((params) => ({ url: '/tasks/notifications', params }));
 export const useGetTodayTaskStatsQuery = createQueryHook(() => '/tasks/today-stats');

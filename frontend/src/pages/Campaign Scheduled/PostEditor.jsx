@@ -574,7 +574,7 @@ const PostPreview = ({
             </div>
           )}
           <div className="post-preview-caption">
-            {platform === "youtube" && title && (
+            {(platform === "youtube" || platform === "pinterest") && title && (
               <div
                 style={{
                   fontWeight: 700,
@@ -623,10 +623,10 @@ export default function PostEditor({
   const [platformMediaFiles, setPlatformMediaFiles] = useState({});
   const selectedPlatformIds = Form.useWatch("platforms", form) || [];
   
-  const hasYoutubeSelected = useMemo(() => {
+  const needsTitle = useMemo(() => {
     return selectedPlatformIds.some(id => {
       const account = accounts.find(a => a.id === id);
-      return account && account.platform === "youtube";
+      return account && (account.platform === "youtube" || account.platform === "pinterest");
     });
   }, [selectedPlatformIds, accounts]);
 
@@ -1191,11 +1191,11 @@ export default function PostEditor({
 
 
 
-            {hasYoutubeSelected && (
+            {needsTitle && (
               <Form.Item
                 label="Title"
                 name="campaign"
-                rules={[{ required: true, message: "Title is required for YouTube posts" }]}
+                rules={[{ required: true, message: "Title is required" }]}
               >
                 <Input placeholder="Enter post title" maxLength={100} showCount />
               </Form.Item>

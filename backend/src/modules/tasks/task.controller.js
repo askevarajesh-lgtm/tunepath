@@ -437,7 +437,11 @@ const createOrUpdateWorkflowConfig = async (req, res) => {
 // Get all workflow configurations
 const getAllWorkflowConfigs = async (req, res) => {
   try {
-    const configs = await taskService.getAllWorkflowConfigs(req.companyId);
+    const configs = await taskService.getAllWorkflowConfigs(
+      req.companyId,
+      req.user,
+      req.query,
+    );
     return sendSuccess(res, "Workflow configs retrieved successfully", {
       configs,
     });

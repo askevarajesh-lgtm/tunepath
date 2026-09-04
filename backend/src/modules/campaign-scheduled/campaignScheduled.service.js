@@ -46,6 +46,18 @@ const PINTEREST_REDIRECT_URI = (
 ).trim();
 const META_GRAPH = "https://graph.facebook.com/v20.0";
 
+function extractSingleMediaUrl(mediaVal) {
+  if (!mediaVal) return "";
+  let item = Array.isArray(mediaVal) ? mediaVal[0] : mediaVal;
+  if (item && typeof item === "object") {
+    item = item.url || item.secure_url || item.link || item.path || item.uri || "";
+  }
+  if (typeof item === "string") {
+    return item.trim();
+  }
+  return "";
+}
+
 const FB_SCOPES = [
   "public_profile",
   "pages_manage_posts",
@@ -2170,16 +2182,43 @@ async function refreshPinterestTokenIfNeeded(account) {
 
   return nextToken;
 }
-
 async function postToPinterest(account, post, options = {}) {
   const token = await refreshPinterestTokenIfNeeded(account);
 
-  const boardId = post.boards?.[account.id] || post.platform_options?.pinterest?.boardId || post.post_option?.pinterest?.boardId;
+  let boardId =
+    post.boards?.[account.id] ||
+    post.platform_options?.pinterest?.boardId ||
+    post.post_option?.pinterest?.boardId ||
+    account.boardId ||
+    account.board_id ||
+    account.pinterest_board_id;
+
+  if (!boardId) {
+    try {
+      const boardsRes = await axios.get("https://api.pinterest.com/v5/boards", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const userBoards = boardsRes.data?.items || [];
+      if (userBoards.length > 0) {
+        boardId = userBoards[0].id;
+        console.log(
+          `[Pinterest] Auto-selected board for ${account.username || account.id}: ${boardId} (${userBoards[0].name})`,
+        );
+      }
+    } catch (bErr) {
+      console.error(
+        "[Pinterest] Failed to auto-fetch boards:",
+        bErr?.response?.data || bErr.message,
+      );
+    }
+  }
+
   if (!boardId) {
     throw new Error("A Pinterest board must be selected for this account.");
   }
 
-  const mediaUrl = post.media_url;
+  const rawMediaUrl = post.media_url;
+  const mediaUrl = extractSingleMediaUrl(rawMediaUrl);
   const uploadedMedia = options.uploadedMedia || null;
 
   if (!mediaUrl && !uploadedMedia) {
@@ -2194,10 +2233,6 @@ async function postToPinterest(account, post, options = {}) {
   } else if (uploadedMedia?.buffer) {
     mediaBuffer = uploadedMedia.buffer;
     contentType = uploadedMedia.mimetype || "image/jpeg";
-  } else if (mediaUrl) {
-    // If it's a URL and we don't have it uploaded, we could register a URL based pin, 
-    // but Pinterest V5 API also supports downloading and uploading. Let's just pass the URL directly if we can't buffer it easily.
-    // Actually Pinterest v5 `media` can be `media_type: "image"` and `url`.
   }
 
   const payload = {
@@ -2206,33 +2241,34 @@ async function postToPinterest(account, post, options = {}) {
     board_id: boardId,
     media_source: {
       source_type: "image_url",
-    }
+    },
   };
 
-  if (mediaUrl && mediaUrl.startsWith("http")) {
-      payload.media_source.url = mediaUrl;
+  if (mediaUrl && typeof mediaUrl === "string" && mediaUrl.startsWith("http")) {
+    payload.media_source.url = mediaUrl;
   } else if (mediaBuffer) {
-     // Currently we'll just try to upload binary to cloudinary or something. 
-     // Wait, maybe we upload a binary to Cloudinary then get URL?
-     // We can just rely on the existing Cloudinary upload in `postToYoutube` or from the server logic.
-     // In Tunepath, `post.media_url` is typically an uploaded cloudinary URL. So `mediaUrl` will be present.
-     // If we really need binary upload to pinterest:
-     throw new Error("Please ensure media is fully uploaded to CDN before posting to Pinterest.");
+    throw new Error(
+      "Please ensure media is fully uploaded to CDN before posting to Pinterest.",
+    );
   } else {
-      throw new Error("Could not acquire public image URL for Pinterest");
+    throw new Error("Could not acquire public image URL for Pinterest");
   }
 
   // Create Pin in Production
-  const pinRes = await axios.post("https://api.pinterest.com/v5/pins", payload, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
+  const pinRes = await axios.post(
+    "https://api.pinterest.com/v5/pins",
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
     },
-  });
+  );
 
   return {
-    externalId: pinRes.data.id,
-    url: `https://www.pinterest.com/pin/${pinRes.data.id}/`,
+    externalId: pinRes.data?.id,
+    url: `https://www.pinterest.com/pin/${pinRes.data?.id}/`,
   };
 }
 

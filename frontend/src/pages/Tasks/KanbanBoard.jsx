@@ -61,6 +61,7 @@ import {
 import { useGetClientsQuery } from "../../api/clientApi";
 import { useGetProjectsDropdownQuery } from "../../api/projectApi";
 import { useGetUsersDropdownQuery } from "../../api/userApi";
+import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
@@ -1581,8 +1582,94 @@ const KanbanBoard = ({
     { skip: !isPendingTasksModalVisible },
   );
 
+  const { data: departmentsResp } = useGetDepartmentsDynamicQuery();
+  const departments = departmentsResp?.data?.departments || [];
+
+  const userDeptSlug = useMemo(() => {
+    if (!user) return null;
+    const findMatch = (str) => {
+      if (!str) return null;
+      const norm = String(str).trim().toLowerCase();
+      if (!norm) return null;
+      const match = (departments || []).find((d) => {
+        if (!d) return false;
+        const dSlug = (d.slug || "").toLowerCase();
+        const dName = (d.name || "").toLowerCase();
+        const normSanitized = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        const dNameSanitized = dName.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        return (
+          d._id === str ||
+          dSlug === norm ||
+          dName === norm ||
+          dSlug === normSanitized ||
+          dNameSanitized === normSanitized
+        );
+      });
+      if (match?.slug) return match.slug;
+      return null;
+    };
+
+    if (user.departmentId) {
+      if (typeof user.departmentId === "object" && user.departmentId.slug) {
+        return user.departmentId.slug;
+      }
+      const match = findMatch(user.departmentId);
+      if (match) return match;
+    }
+
+    for (const val of [user.departmentName, user.department, user.team, user.roleName, user.designation, user.title]) {
+      const match = findMatch(val);
+      if (match) return match;
+    }
+
+    const roleMap = {
+      website_coordinator: "website-designing",
+      digital_marketing_coordinator: "digital-marketing",
+      digital_marketing_manager: "digital-marketing",
+      seo_specialist: "seo",
+      seo_manager: "seo",
+      designer: "designer",
+      graphic_designer: "designer",
+      developer: "developer",
+      dev: "developer",
+      video_editor: "video-editor",
+      video_editing: "video-editor",
+      deployment: "deployment",
+      deployer: "deployment",
+      deploy: "deployment",
+    };
+    if (user.role && roleMap[user.role]) {
+      const mapped = roleMap[user.role];
+      const match = findMatch(mapped);
+      if (match) return match;
+      return mapped;
+    }
+
+    if (user.role) {
+      const match = findMatch(user.role);
+      if (match) return match;
+    }
+
+    for (const val of [user.roleName, user.departmentName, user.department, user.designation, user.team]) {
+      if (val) {
+        const slugified = String(val).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        if (slugified) return slugified;
+      }
+    }
+    return null;
+  }, [user, departments]);
+
+  const activeDepartmentSlug = useMemo(() => {
+    if (departmentFilter && departmentFilter !== "all") return departmentFilter;
+    if (!isAdmin) return userDeptSlug || undefined;
+    return undefined;
+  }, [departmentFilter, isAdmin, userDeptSlug]);
+
   const { data: workflowData, isLoading: isLoadingWorkflow } =
-    useGetWorkflowConfigQuery({ projectId: selectedProject });
+    useGetWorkflowConfigQuery({
+      projectId: selectedProject,
+      projectType: activeDepartmentSlug,
+    });
 
   const { data: allWorkflowConfigsData } = useGetAllWorkflowConfigsQuery();
   const { data: projectsData } = useGetProjectsDropdownQuery();
@@ -1703,100 +1790,192 @@ const KanbanBoard = ({
 
   const statuses = useMemo(() => {
     let result = [];
-    const isWebsiteCoordinatorView = userRole === "website_coordinator";
-    // Define roles that should see the "All" view by default if no filter is selected
-    const canSeeAllView = true; // Default-Allow model
 
-    // Determine the department we are currently viewing
-    const rawDept =
-      departmentFilter && departmentFilter !== "all"
-        ? departmentFilter
-        : canSeeAllView
-          ? "all"
-          : (user?.team || user?.department)
-              ?.toLowerCase()
-              ?.replace(/&/g, "") // Remove '&'
-              ?.replace(/[^a-z0-9]+/g, "-") // Replace non-alphanumeric (including underscores/spaces) with hyphen
-              ?.replace(/-+/g, "-") // Remove duplicate hyphens
-              ?.trim()
-              ?.replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
+    // Determine user's assigned department slug if any
+    let userDeptSlug = null;
+    if (user) {
+      const findMatch = (str) => {
+        if (!str) return null;
+        const norm = String(str).trim().toLowerCase();
+        if (!norm) return null;
+        const match = (departments || []).find((d) => {
+          if (!d) return false;
+          const dSlug = (d.slug || "").toLowerCase();
+          const dName = (d.name || "").toLowerCase();
+          const normSanitized = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+          const dNameSanitized = dName.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+          return (
+            d._id === str ||
+            dSlug === norm ||
+            dName === norm ||
+            dSlug === normSanitized ||
+            dNameSanitized === normSanitized
+          );
+        });
+        if (match?.slug) return match.slug;
+        return null;
+      };
 
-    // Normalize to hyphen-based slug for consistent matching
-    // (DB slugs may use underscores like "website_designing" or hyphens like "website-designing")
+      if (user.departmentId) {
+        if (typeof user.departmentId === "object" && user.departmentId.slug) {
+          userDeptSlug = user.departmentId.slug;
+        } else {
+          userDeptSlug = findMatch(user.departmentId);
+        }
+      }
+
+      if (!userDeptSlug) {
+        for (const val of [user.departmentName, user.department, user.team, user.roleName, user.designation, user.title]) {
+          const match = findMatch(val);
+          if (match) {
+            userDeptSlug = match;
+            break;
+          }
+        }
+      }
+
+      if (!userDeptSlug && user.role) {
+        const roleMap = {
+          website_coordinator: "website-designing",
+          digital_marketing_coordinator: "digital-marketing",
+          digital_marketing_manager: "digital-marketing",
+          seo_specialist: "seo",
+          seo_manager: "seo",
+          designer: "designer",
+          graphic_designer: "designer",
+          developer: "developer",
+          dev: "developer",
+          video_editor: "video-editor",
+          video_editing: "video-editor",
+          deployment: "deployment",
+          deployer: "deployment",
+          deploy: "deployment",
+        };
+        const mapped = roleMap[user.role];
+        userDeptSlug = findMatch(mapped) || mapped || findMatch(user.role) || null;
+      }
+
+      if (!userDeptSlug) {
+        for (const val of [user.roleName, user.departmentName, user.department, user.designation, user.team]) {
+          if (val) {
+            userDeptSlug = String(val).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+            if (userDeptSlug) break;
+          }
+        }
+      }
+
+      if (!userDeptSlug && (user.name || user.fullName)) {
+        const fullName = String(user.name || user.fullName);
+        const match = (departments || []).find((d) => {
+          if (!d?.name) return false;
+          return fullName.toLowerCase().includes(d.name.toLowerCase());
+        });
+        if (match?.slug) userDeptSlug = match.slug;
+      }
+    }
+
+    const isGlobalAdminRole =
+      user &&
+      [
+        "super_admin",
+        "admin",
+        "operations_head",
+        "agency_super_admin",
+        "agency_manager",
+        "commander_admin",
+        "supreme_super_admin",
+      ].includes(user.role);
+
+    // Determine rawDept:
+    // For non-global admin users, force their assigned userDeptSlug so they only see their department workflow.
+    // For global admins, allow explicit filter or default to "all".
+    const rawDept = !isGlobalAdminRole
+      ? userDeptSlug || (departmentFilter && departmentFilter !== "all" ? departmentFilter : "all")
+      : (departmentFilter || "all");
+
     const effectiveDept =
       rawDept && rawDept !== "all"
         ? rawDept.toLowerCase().replace(/_/g, "-")
-        : rawDept;
+        : "all";
 
     let hasDbConfig = false;
 
-    // Check for project-specific statuses first (from DB)
+    // 1. Search in allWorkflowConfigs for department template match if effectiveDept is specified
     if (
-      selectedProject &&
-      workflowConfig?.statuses &&
-      workflowConfig.statuses.length > 0
-    ) {
-      result = [...workflowConfig.statuses];
-      hasDbConfig = true;
-    } else if (
       effectiveDept &&
       effectiveDept !== "all" &&
       allWorkflowConfigs.length > 0
     ) {
-      // Use department-specific workflow from DB if available
-      // Normalize the stored projectType as well for comparison
-      const deptWorkflow = allWorkflowConfigs.find(
-        (c) =>
-          c.projectType &&
-          !c.projectId &&
-          c.projectType.toLowerCase().replace(/_/g, "-") === effectiveDept,
-      );
+      const getVariants = (val) => {
+        if (!val) return new Set();
+        const s = String(val).toLowerCase().trim();
+        const norm = s.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        const set = new Set([s, norm, norm.replace(/-/g, "_")]);
+        if (["dev", "developer", "development", "web-application-development", "tech-team", "tech_team"].includes(norm)) {
+          ["dev", "developer", "development", "web-application-development", "web_application_development", "tech_team", "tech-team"].forEach(x => set.add(x));
+        } else if (["video-editor", "video_editor", "video-editing", "video"].includes(norm)) {
+          ["video-editor", "video_editor", "video-editing", "video"].forEach(x => set.add(x));
+        } else if (["designer", "design", "graphic-designer", "graphic_designer"].includes(norm)) {
+          ["designer", "design", "graphic-designer", "graphic_designer"].forEach(x => set.add(x));
+        } else if (["digital-marketing", "digital_marketing", "dm", "marketing"].includes(norm)) {
+          ["digital-marketing", "digital_marketing", "dm", "marketing"].forEach(x => set.add(x));
+        } else if (["deployment", "deploy", "deployer"].includes(norm)) {
+          ["deployment", "deploy", "deployer"].forEach(x => set.add(x));
+        }
+        return set;
+      };
+
+      const effVariants = getVariants(effectiveDept);
+
+      const deptWorkflow = allWorkflowConfigs.find((c) => {
+        if (!c.projectType || c.projectId) return false;
+        const configType = String(c.projectType).toLowerCase().replace(/_/g, "-");
+        if (effVariants.has(configType)) return true;
+
+        const matchingDept = (departments || []).find((d) => {
+          const dSlug = (d.slug || "").toLowerCase();
+          const dNameSlug = (d.name || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
+          return (
+            d._id === c.projectType ||
+            dSlug === configType ||
+            dNameSlug === configType ||
+            d._id === rawDept ||
+            dSlug === effectiveDept ||
+            dNameSlug === effectiveDept ||
+            effVariants.has(dSlug) ||
+            effVariants.has(dNameSlug)
+          );
+        });
+
+        if (matchingDept) {
+          const matchVariants = getVariants(matchingDept.slug || matchingDept.name);
+          if (
+            matchVariants.has(effectiveDept) ||
+            matchVariants.has(configType) ||
+            matchingDept._id === rawDept ||
+            matchingDept._id === c.projectType
+          ) {
+            return true;
+          }
+        }
+        return false;
+      });
+
       if (deptWorkflow?.statuses && deptWorkflow.statuses.length > 0) {
         result = [...deptWorkflow.statuses];
         hasDbConfig = true;
       }
     }
 
-    // Apply hardcoded department-specific defaults if nothing from DB OR to enforce consistency
-    if (result.length === 0 && effectiveDept && effectiveDept !== "all") {
-      const isShortFlow =
-        effectiveDept === "seo" ||
-        effectiveDept === "website-designing" ||
-        effectiveDept === "web-application-development";
-
-      if (isShortFlow) {
-        result = [
-          { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
-          { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
-          {
-            id: "in_progress",
-            name: "In Progress",
-            color: "#f59e0b",
-            order: 2,
-          },
-          { id: "complete", name: "Complete", color: "#22c55e", order: 3 },
-        ];
-      } else if (effectiveDept === "digital-marketing") {
-        result = [
-          { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
-          { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
-          {
-            id: "in_progress",
-            name: "In Progress",
-            color: "#f59e0b",
-            order: 2,
-          },
-          { id: "review", name: "Review", color: "#8b5cf6", order: 3 },
-          { id: "Rejected", name: "Rejected", color: "#ef4444", order: 4 },
-          { id: "complete", name: "Approved", color: "#22c55e", order: 5 },
-        ];
-      }
+    // 2. Check for custom workflow config from DB (for project or specific query)
+    if (!hasDbConfig && workflowConfig?.statuses && workflowConfig.statuses.length > 0 && !workflowConfig.defaultStatuses) {
+      result = [...workflowConfig.statuses];
+      hasDbConfig = true;
     }
 
-    // Now try Global Default from DB if still nothing
+    // 3. Search in allWorkflowConfigs for global default workflow (no project, no projectType)
     if (
       result.length === 0 &&
-      (effectiveDept === "all" || !effectiveDept) &&
       allWorkflowConfigs.length > 0
     ) {
       const defaultWorkflow = allWorkflowConfigs.find(
@@ -1808,87 +1987,46 @@ const KanbanBoard = ({
       }
     }
 
-    // Final Hardcoded Default Fallback (Standard 6-status flow)
+    // 4. Default Fallback if no custom workflow configured (Standard 6-status flow)
     if (result.length === 0) {
       result = [
         { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
         { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
-        { id: "in_progress", name: "In Progress", color: "#f59e0b", order: 2 },
-        { id: "review", name: "Review", color: "#8b5cf6", order: 3 },
-        { id: "Rejected", name: "Rejected", color: "#ef4444", order: 4 },
-        { id: "complete", name: "Approved", color: "#22c55e", order: 5 },
+        { id: "in_progress", name: "In Progress", color: "#faad14", order: 2 },
+        { id: "review", name: "Review", color: "#722ed1", order: 3 },
+        { id: "Rejected", name: "Rejected", color: "#ff4d4f", order: 4 },
+        { id: "complete", name: "Complete", color: "#52c41a", order: 5 },
       ];
     }
 
     const normalizedDept = effectiveDept?.toLowerCase();
     const isDigitalMarketing = normalizedDept === "digital-marketing";
 
-    // If we have database configuration (or specific hardcoded fallback config),
-    // we should map it to rename "backlog" to "Hold", "complete" to "Complete"/"Approved",
-    // but keep EXACTLY the statuses configured/returned!
-    // We should NOT overwrite the status list with a standard template if DB config exists!
-    if (hasDbConfig) {
-      return result.map((status) => {
+    // Return the exact workflow statuses from DB (or fallback) in their exact configured order, ensuring completion status displays as 'Complete' and appears at the end
+    return result
+      .map((status) => {
         let displayName = status.name;
         if (status.id === "backlog") {
           displayName = "Hold";
-        } else if (["complete", "done", "completed", "validated"].includes(status.id)) {
+        } else if (
+          ["complete", "done", "completed", "validated"].includes((status.id || "").toLowerCase()) ||
+          (status.name || "").toLowerCase() === "done" ||
+          (status.name || "").toLowerCase() === "complete"
+        ) {
           displayName = isDigitalMarketing ? "Approved" : "Complete";
         }
         return {
           ...status,
           name: displayName,
         };
-      }).sort((a, b) => a.order - b.order);
-    }
-
-    // Fallback template mapping logic when no DB config exists
-    const dmFlow = [
-      { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
-      { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
-      { id: "in_progress", name: "In Progress", color: "#f59e0b", order: 2 },
-      { id: "review", name: "Review", color: "#8b5cf6", order: 3 },
-      { id: "Rejected", name: "Rejected", color: "#ef4444", order: 4 },
-      { id: "complete", name: "Approved", color: "#22c55e", order: 5 },
-    ];
-
-    const shortFlow = [
-      { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
-      { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
-      { id: "in_progress", name: "In Progress", color: "#f59e0b", order: 2 },
-      { id: "complete", name: "Complete", color: "#22c55e", order: 3 },
-    ];
-
-    const targetFlow =
-      isDigitalMarketing || effectiveDept === "all"
-        ? dmFlow
-        : shortFlow;
-
-    const enforcedResult = targetFlow.map((template) => {
-      let dbStatus = result.find((s) => s.id === template.id);
-      if (!dbStatus && template.id === "complete") {
-        dbStatus = result.find((s) => ["done", "completed", "validated"].includes(s.id));
-      }
-      const displayName =
-        template.id === "backlog"
-          ? "Hold"
-          : template.id === "complete"
-            ? isDigitalMarketing
-              ? "Approved"
-              : "Complete"
-            : dbStatus?.name || template.name;
-
-      return dbStatus
-        ? { ...template, ...dbStatus, name: displayName }
-        : template;
-    });
-
-    return enforcedResult.sort((a, b) => a.order - b.order);
+      })
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   }, [
     selectedProject,
     workflowConfig,
     allWorkflowConfigs,
     departmentFilter,
+    departments,
     user,
     userRole,
   ]);
@@ -2020,88 +2158,34 @@ const KanbanBoard = ({
     const rawStatuses = (() => {
     const canAccessRejected = isAdmin || isCoordinatorRole;
 
-    if (task.department === "digital-marketing") {
-      let allowed = [];
-      if (currentStatusId === "backlog") allowed = ["backlog", "to_do", "in_progress"];
-      else if (currentStatusId === "to_do") allowed = ["to_do", "in_progress"];
-      else if (currentStatusId === "in_progress")
-        allowed = ["in_progress", "review"];
-      else if (currentStatusId === "review")
-        allowed = ["review", "complete", "completed", "done", "validated", "in_progress", "to_do"];
-
-      if (canAccessRejected && !allowed.includes("Rejected")) {
-        allowed.push("Rejected");
-      }
-      if (allowed.length > 0) return allowed;
-    }
-
-    if (task.department === "website-designing") {
-      let allowed = [];
-      if (currentStatusId === "backlog") allowed = ["backlog", "to_do", "in_progress"];
-      else if (currentStatusId === "to_do") allowed = ["to_do", "in_progress"];
-      else if (currentStatusId === "in_progress")
-        allowed = ["in_progress", "complete", "completed", "done", "validated"];
-
-      if (canAccessRejected && !allowed.includes("Rejected")) {
-        allowed.push("Rejected");
-      }
-      if (allowed.length > 0) return allowed;
-    }
-    if (!task.projectId) {
-      const allStatusIds = statuses.map((s) => s.id);
-      if (!canAccessRejected) {
-        return allStatusIds.filter((id) => id !== "Rejected");
-      }
-      return allStatusIds;
-    }
-    const projectId = task.projectId._id || task.projectId;
-    const projectSpecificConfig = allWorkflowConfigs.find(
-      (config) =>
-        config.projectId &&
-        (config.projectId._id?.toString() === projectId.toString() ||
-          config.projectId.toString() === projectId.toString()),
-    );
-    let wfConfig = projectSpecificConfig;
-    if (!wfConfig) {
-      const project = allProjects.find(
-        (p) =>
-          p._id?.toString() === projectId.toString() || p._id === projectId,
+    let wfConfig = null;
+    if (task.projectId) {
+      const projectId = task.projectId._id || task.projectId;
+      wfConfig = allWorkflowConfigs.find(
+        (config) =>
+          config.projectId &&
+          (config.projectId._id?.toString() === projectId.toString() ||
+            config.projectId.toString() === projectId.toString()),
       );
-      if (project) {
-        let projectType = null;
-        if (
-          project.departments &&
-          Array.isArray(project.departments) &&
-          project.departments.length > 0
-        ) {
-          if (
-            project.departments.includes("website-designing") ||
-            project.departments.includes("website-designing")
-          )
-            projectType = "website-designing";
-          else if (project.departments.includes("seo")) projectType = "seo";
-          else if (
-            project.departments.includes("digital-marketing") ||
-            project.departments.includes("digital-marketing")
-          )
-            projectType = "digital-marketing";
-          else if (
-            project.departments.includes("web-application-development") ||
-            project.departments.includes("tech_team")
-          )
-            projectType = "web-application-development";
-        }
-        if (projectType) {
-          wfConfig = allWorkflowConfigs.find(
-            (config) => config.projectType === projectType && !config.projectId,
-          );
-        }
-      }
     }
+    if (!wfConfig && task.department) {
+      const normDept = String(task.department).toLowerCase().replace(/_/g, "-");
+      wfConfig = allWorkflowConfigs.find(
+        (c) =>
+          !c.projectId &&
+          c.projectType &&
+          c.projectType.toLowerCase().replace(/_/g, "-") === normDept,
+      );
+    }
+    if (!wfConfig) {
+      wfConfig = workflowConfig;
+    }
+
     if (!wfConfig || !wfConfig.statuses || wfConfig.statuses.length === 0)
       return statuses.map((s) => s.id);
+
     const sortedStatuses = [...wfConfig.statuses].sort(
-      (a, b) => a.order - b.order,
+      (a, b) => (a.order ?? 0) - (b.order ?? 0),
     );
     const currentStatusIndex = sortedStatuses.findIndex(
       (s) => s.id === currentStatusId,
@@ -2536,18 +2620,51 @@ const KanbanBoard = ({
         id: pendingStatusChange.taskId,
         formData,
       }).unwrap();
-      const completedStatuses = ["review", "done", "completed", "validated"];
-      const isTargetCompleted = completedStatuses.includes(
-        pendingStatusChange.targetStatus,
+      // Determine completion status configured in active workflow template
+      const currentBoardStatuses = statuses || [];
+      const hasReviewStatus = currentBoardStatuses.some(
+        (s) => (s.id || "").toLowerCase() === "review" || (s.name || "").toLowerCase() === "review",
       );
+      const lastWorkflowStatus = currentBoardStatuses.length > 0 ? currentBoardStatuses[currentBoardStatuses.length - 1] : null;
+      const lastStatusId = (lastWorkflowStatus?.id || "").toLowerCase().trim();
+      const targetStatusNorm = (pendingStatusChange.targetStatus || "").toLowerCase().trim();
+
+      const isTargetCompleted =
+        (hasReviewStatus && (targetStatusNorm === "review" || targetStatusNorm === "in_review")) ||
+        (targetStatusNorm === lastStatusId) ||
+        ["complete", "completed", "done", "validated"].includes(targetStatusNorm);
+
       const assignedToId =
         pendingStatusChange.task?.assignedTo?._id ||
         pendingStatusChange.task?.assignedTo ||
         null;
       const isAssignedToMe =
-        assignedToId?.toString?.() === user?._id?.toString?.();
-      if (isTargetCompleted && isAssignedToMe && onTaskCompleted)
-        onTaskCompleted();
+        !assignedToId || assignedToId?.toString?.() === user?._id?.toString?.();
+
+      if (isTargetCompleted && (isAssignedToMe || !isAdmin) && onTaskCompleted) {
+        // Calculate exact counts from current board state
+        const allBoardTasks = Object.values(tasksByStatus).flat();
+        const totalBoardCount = allBoardTasks.length;
+        const targetTaskId = pendingStatusChange.taskId?.toString();
+        
+        let completedCount = 0;
+        allBoardTasks.forEach((t) => {
+          const tId = (t._id || t.id)?.toString();
+          const isThisTaskTarget = tId === targetTaskId;
+          const statusNorm = isThisTaskTarget
+            ? targetStatusNorm
+            : (t.status || "").toLowerCase().trim();
+
+          const isTaskDone =
+            (hasReviewStatus && (statusNorm === "review" || statusNorm === "in_review")) ||
+            (statusNorm === lastStatusId) ||
+            ["complete", "completed", "done", "validated"].includes(statusNorm);
+
+          if (isTaskDone) completedCount++;
+        });
+
+        onTaskCompleted({ completedCount, totalCount: totalBoardCount });
+      }
       try {
         if (typeof refetch === 'function') await refetch();
       } catch (e) {

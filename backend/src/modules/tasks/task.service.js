@@ -126,51 +126,216 @@ const toHyphenatedSlug = (value = "") =>
 const getUserDepartmentSlug = async (user) => {
   if (!user) return null;
 
-  // 1. Check if departmentId is populated and has a slug
+  // 1. Check if departmentId is populated and has a slug or name
   if (user.departmentId) {
-    if (user.departmentId.slug) {
+    if (typeof user.departmentId === "object" && user.departmentId.slug) {
       return user.departmentId.slug;
     }
-    const dept = await Department.findById(user.departmentId).select("slug");
+    const Department = require("../departments/department.model");
+    const dept = await Department.findById(user.departmentId).select("slug name");
     if (dept?.slug) return dept.slug;
+    if (dept?.name) return toHyphenatedSlug(dept.name);
   }
 
-  // 2. Fallback to legacy team field
+  // 2. Check departmentName
+  if (user.departmentName) {
+    return toHyphenatedSlug(user.departmentName);
+  }
+
+  if (user.roleName) {
+    return toHyphenatedSlug(user.roleName);
+  }
+
+  if (user.designation) {
+    return toHyphenatedSlug(user.designation);
+  }
+
+  // 3. Fallback to legacy team field
   if (user.team) {
     return toHyphenatedSlug(user.team);
+  }
+
+  // 4. Role-based fallback mapping
+  if (user.role) {
+    const roleSlugMap = {
+      website_coordinator: "website-designing",
+      digital_marketing_coordinator: "digital-marketing",
+      digital_marketing_manager: "digital-marketing",
+      seo_specialist: "seo",
+      seo_manager: "seo",
+      designer: "designer",
+      developer: "developer",
+      video_editor: "video-editor",
+      deployment: "deployment",
+    };
+    if (roleSlugMap[user.role]) {
+      return roleSlugMap[user.role];
+    }
   }
 
   return null;
 };
 
 const getDepartmentFilterValues = (value) => {
-  const normalized = String(value || "")
-    .trim()
-    .toLowerCase();
+  if (!value) return [];
+  const rawStr = String(value).trim();
+  const normalized = rawStr
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const underscored = rawStr
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$ /g, "");
+
+  const set = new Set([rawStr, normalized, underscored]);
 
   if (
     normalized === "web-application-development" ||
-    normalized === "tech_team" ||
     normalized === "tech-team" ||
-    normalized === "web-app" ||
-    normalized === "application" ||
-    normalized === "development"
+    normalized === "tech_team" ||
+    normalized === "developer" ||
+    normalized === "development" ||
+    normalized === "dev"
   ) {
-    return [
+    [
       "web-application-development",
+      "web_application_development",
       "tech_team",
       "tech-team",
       "web-app",
       "application",
       "development",
-    ];
+      "developer",
+      "dev",
+      "Developer",
+    ].forEach((v) => set.add(v));
+  } else if (
+    normalized === "video-editor" ||
+    normalized === "video_editor" ||
+    normalized === "video-editing" ||
+    normalized === "video_editing" ||
+    normalized === "video"
+  ) {
+    [
+      "video-editor",
+      "video_editor",
+      "video-editing",
+      "video_editing",
+      "video",
+      "Video editor",
+      "Video Editor",
+      "Video Editing",
+    ].forEach((v) => set.add(v));
+  } else if (
+    normalized === "designer" ||
+    normalized === "graphic-designer" ||
+    normalized === "design"
+  ) {
+    [
+      "designer",
+      "design",
+      "graphic-designer",
+      "graphic_designer",
+      "Designer",
+    ].forEach((v) => set.add(v));
+  } else if (
+    normalized === "digital-marketing" ||
+    normalized === "digital_marketing" ||
+    normalized === "marketing"
+  ) {
+    [
+      "digital-marketing",
+      "digital_marketing",
+      "marketing",
+      "Digital Marketing",
+    ].forEach((v) => set.add(v));
+  } else if (
+    normalized === "website-designing" ||
+    normalized === "website_designing" ||
+    normalized === "website"
+  ) {
+    [
+      "website-designing",
+      "website_designing",
+      "website",
+      "Website Designing",
+    ].forEach((v) => set.add(v));
+  } else if (
+    normalized === "deployment" ||
+    normalized === "deployer" ||
+    normalized === "deploy"
+  ) {
+    [
+      "deployment",
+      "deployer",
+      "deploy",
+      "Deployment",
+      "Deployer",
+    ].forEach((v) => set.add(v));
+  } else if (normalized === "seo") {
+    ["seo", "SEO"].forEach((v) => set.add(v));
   }
 
-  return [value];
+  return Array.from(set);
 };
 
-const buildDepartmentFilter = (value, userRole) => {
-  const matchingValues = getDepartmentFilterValues(value).filter(Boolean);
+const buildDepartmentFilterAsync = async (value, userRole) => {
+  if (!value) return null;
+
+  const filterValuesSet = new Set();
+  getDepartmentFilterValues(value).forEach((val) => filterValuesSet.add(val));
+
+  try {
+    const Department = require("../departments/department.model");
+    const allDepts = await Department.find({}).lean();
+
+    const inputVariants = new Set(getDepartmentFilterValues(value));
+    inputVariants.add(String(value));
+    inputVariants.add(toHyphenatedSlug(value));
+
+    allDepts.forEach((d) => {
+      const deptIdStr = d._id ? d._id.toString() : "";
+      const deptSlug = d.slug || "";
+      const deptName = d.name || "";
+      const deptNameSlug = toHyphenatedSlug(deptName);
+
+      const deptVariants = new Set([
+        deptIdStr,
+        deptSlug,
+        deptName,
+        deptNameSlug,
+        ...getDepartmentFilterValues(deptSlug),
+        ...getDepartmentFilterValues(deptName),
+        ...getDepartmentFilterValues(deptNameSlug),
+      ]);
+
+      let isMatch = false;
+      for (const inv of inputVariants) {
+        if (deptVariants.has(inv)) {
+          isMatch = true;
+          break;
+        }
+      }
+
+      if (isMatch) {
+        deptVariants.forEach((v) => {
+          if (v) filterValuesSet.add(v);
+        });
+        if (d._id) {
+          filterValuesSet.add(d._id);
+          filterValuesSet.add(d._id.toString());
+          if (mongoose.Types.ObjectId.isValid(d._id)) {
+            filterValuesSet.add(new mongoose.Types.ObjectId(d._id));
+          }
+        }
+      }
+    });
+  } catch (err) {
+    console.error("[buildDepartmentFilterAsync] Error querying departments:", err);
+  }
+
+  const matchingValues = Array.from(filterValuesSet).filter(Boolean);
 
   if (userRole === "website_coordinator") {
     const coordinatorValues = matchingValues.filter((entry) =>
@@ -482,7 +647,7 @@ const getAllTasks = async (
     if (userRole === 'commander_admin') {
       allowedCreatorRoles = ['commander_admin'];
     } else if (userRole === 'agency_manager') {
-      allowedCreatorRoles = ['agency_manager', 'agency_client', 'client', 'coordinator', 'website_coordinator', 'digital_marketing_coordinator', 'digital_marketing_manager', 'operations_head', 'admin', 'user'];
+      allowedCreatorRoles = ['agency_manager', 'agency_super_admin', 'commander_admin', 'supreme_super_admin', 'agency_client', 'client', 'coordinator', 'website_coordinator', 'digital_marketing_coordinator', 'digital_marketing_manager', 'operations_head', 'admin', 'user'];
     } else if (userRole === 'agency_client' || userRole === 'client') {
       allowedCreatorRoles = ['agency_manager', 'agency_super_admin', 'client', 'agency_client'];
     } else if (userRole === 'agency_super_admin') {
@@ -502,7 +667,15 @@ const getAllTasks = async (
     }
 
     const allowedCreatorIds = await User.find(creatorMatchQuery).distinct('_id');
-    additionalFilters.createdBy = { $in: allowedCreatorIds };
+    if (userObjId) {
+      additionalFilters.$or = [
+        { createdBy: { $in: allowedCreatorIds } },
+        { watchers: userObjId },
+        { assignedTo: userObjId }
+      ];
+    } else {
+      additionalFilters.createdBy = { $in: allowedCreatorIds };
+    }
   }
   // ----------------------------------------------------
   if (userRole === "website_coordinator") {
@@ -540,11 +713,10 @@ const getAllTasks = async (
   if (reqQuery.companyId) additionalFilters.companyId = reqQuery.companyId;
   if (reqQuery.department) {
     let deptValue = reqQuery.department;
-    if (mongoose.Types.ObjectId.isValid(deptValue)) {
-      const dept = await Department.findById(deptValue).select("slug");
-      if (dept) deptValue = dept.slug;
-    }
-    additionalFilters.department = buildDepartmentFilter(deptValue, userRole);
+    additionalFilters.department = await buildDepartmentFilterAsync(
+      deptValue,
+      userRole,
+    );
   }
   if (reqQuery.projectId) additionalFilters.projectId = reqQuery.projectId;
   if (reqQuery.priority) additionalFilters.priority = reqQuery.priority;
@@ -1017,9 +1189,10 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
       workflowConfig = await getWorkflowConfig(
         projectId ? projectId.toString() : null,
         tenantCompanyId,
-        null,
+        taskData.department || null,
       );
-    } else if (taskData.department) {
+    }
+    if (!workflowConfig && taskData.department) {
       workflowConfig = await getWorkflowConfig(
         null,
         tenantCompanyId,
@@ -1093,6 +1266,79 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
   }
 
   normalizeTaskDateFields(cleanedTaskData);
+
+  // Auto-add Agency Manager(s) to task watchers list
+  try {
+    const agencyCompanyIds = [tenantCompanyId, agencyCompanyId, taskData.companyId].filter(Boolean);
+    const agencyManagerUsers = await User.find({
+      $and: [
+        {
+          $or: [
+            { agencyId: { $in: agencyCompanyIds } },
+            { companyId: { $in: agencyCompanyIds } },
+            { _id: { $in: agencyCompanyIds } },
+            { role: "agency_manager" },
+          ],
+        },
+        {
+          $or: [
+            { role: "agency_manager" },
+            { roleName: { $regex: /agency.*manager/i } },
+            { email: "agencymanager@gmail.com" },
+          ],
+        },
+        { status: { $ne: "inactive" } },
+      ],
+    }).select("_id");
+
+    if (agencyManagerUsers && agencyManagerUsers.length > 0) {
+      const existingWatchers = Array.isArray(cleanedTaskData.watchers)
+        ? cleanedTaskData.watchers.map((w) => (w?._id || w).toString())
+        : [];
+      const managerIds = agencyManagerUsers.map((u) => u._id.toString());
+      const mergedWatchers = Array.from(
+        new Set([...existingWatchers, ...managerIds])
+      );
+      cleanedTaskData.watchers = mergedWatchers;
+    }
+  } catch (amErr) {
+    logger.error("Error auto-adding agency_manager to watchers:", amErr);
+  }
+
+  // Auto-add leka@tunepath.com to watchers list ONLY when department is Projects department
+  try {
+    let isProjectsDeptTask = false;
+    if (taskData.department) {
+      const rawDept = String(taskData.department).toLowerCase();
+      if (rawDept === "projects" || rawDept === "project" || rawDept.includes("project")) {
+        isProjectsDeptTask = true;
+      } else {
+        const Department = require("./shimDepartmentModel");
+        const deptDoc = await Department.findById(taskData.department).select("slug name");
+        if (deptDoc) {
+          const dSlug = (deptDoc.slug || "").toLowerCase();
+          const dName = (deptDoc.name || "").toLowerCase();
+          if (dSlug === "projects" || dSlug === "project" || dName === "projects" || dName === "project" || dSlug.includes("project")) {
+            isProjectsDeptTask = true;
+          }
+        }
+      }
+    }
+
+    if (isProjectsDeptTask) {
+      const lekaUser = await User.findOne({ email: "leka@tunepath.com", status: { $ne: "inactive" } }).select("_id");
+      if (lekaUser) {
+        const existingWatchers = Array.isArray(cleanedTaskData.watchers)
+          ? cleanedTaskData.watchers.map((w) => (w?._id || w).toString())
+          : [];
+        if (!existingWatchers.includes(lekaUser._id.toString())) {
+          cleanedTaskData.watchers = [...existingWatchers, lekaUser._id.toString()];
+        }
+      }
+    }
+  } catch (lekaErr) {
+    logger.error("Error auto-adding leka@tunepath.com to watchers:", lekaErr);
+  }
 
   // Fetch assigned user's phone number if a user is assigned
   if (cleanedTaskData.assignedTo) {
@@ -2802,11 +3048,7 @@ const getTasksForKanban = async (
   }
   if (filters.department) {
     let deptValue = filters.department;
-    if (mongoose.Types.ObjectId.isValid(deptValue)) {
-      const dept = await Department.findById(deptValue).select("slug");
-      if (dept) deptValue = dept.slug;
-    }
-    query.department = buildDepartmentFilter(deptValue, userRole);
+    query.department = await buildDepartmentFilterAsync(deptValue, userRole);
   }
   if (filters.priority) query.priority = filters.priority;
   if (filters.companyId) query.companyId = filters.companyId;
@@ -3036,9 +3278,10 @@ const getTasksForKanban = async (
       workflowConfig = await getWorkflowConfig(
         projectId ? projectId.toString() : null,
         tenantCompanyId,
-        null,
+        task.department || null,
       );
-    } else if (task.department) {
+    }
+    if (!workflowConfig && task.department) {
       workflowConfig = await getWorkflowConfig(
         null,
         tenantCompanyId,
@@ -3054,7 +3297,7 @@ const getTasksForKanban = async (
     ) {
       // Find the status in workflow that matches task status
       const workflowStatus = workflowConfig.statuses.find(
-        (s) => s.id === taskStatus,
+        (s) => s.id === taskStatus || s.id?.toLowerCase() === taskStatus?.toLowerCase(),
       );
       if (workflowStatus) {
         const statusId = workflowStatus.id;
@@ -3074,13 +3317,13 @@ const getTasksForKanban = async (
       submitted: "review",
       rejected: "Rejected",
       validated: "complete",
-      completed: "review",
+      completed: "complete",
+      done: "complete",
+      complete: "complete",
       backlog: "backlog",
       to_do: "to_do",
       review: "review",
       Rejected: "Rejected",
-      done: "complete",
-      complete: "complete",
     };
 
     const kanbanStatus = statusMapping[taskStatus] || "backlog";
@@ -3127,9 +3370,10 @@ const validateStatusTransition = async (task, newStatusId, tenantCompanyId) => {
     workflowConfig = await getWorkflowConfig(
       projectId.toString(),
       tenantCompanyId,
-      null,
+      task.department || null,
     );
-  } else if (task.department) {
+  }
+  if (!workflowConfig && task.department) {
     workflowConfig = await getWorkflowConfig(
       null,
       tenantCompanyId,
@@ -3275,14 +3519,24 @@ const updateTaskStatusAndOrder = async (
     workflowConfig = await getWorkflowConfig(
       projectId.toString(),
       tenantCompanyId,
-      null,
+      task.department || null,
     );
-  } else if (task.department) {
+  }
+  if (!workflowConfig && task.department) {
     workflowConfig = await getWorkflowConfig(
       null,
       tenantCompanyId,
       task.department,
     );
+  }
+  if (!workflowConfig && userId) {
+    const userDoc = await User.findById(userId).select("role roleName designation departmentName team departmentId").populate("departmentId", "slug name").lean();
+    if (userDoc) {
+      const userDeptSlug = await getUserDepartmentSlug(userDoc);
+      if (userDeptSlug) {
+        workflowConfig = await getWorkflowConfig(null, tenantCompanyId, userDeptSlug);
+      }
+    }
   }
 
   const hasWorkflowConfig =
@@ -4956,13 +5210,28 @@ const getWorkflowConfig = async (
   // Priority: 1. Project-specific workflow, 2. Project type workflow, 3. Default workflow
   let config = null;
 
+  // Helper to sort statuses by order
+  const formatConfigResult = (cfg) => {
+    if (!cfg) return null;
+    if (cfg.statuses && Array.isArray(cfg.statuses)) {
+      const statusesSorted = [...cfg.statuses].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      if (typeof cfg.toObject === 'function') {
+        const obj = cfg.toObject();
+        obj.statuses = statusesSorted;
+        return obj;
+      }
+      cfg.statuses = statusesSorted;
+    }
+    return cfg;
+  };
+
   // First, try to find project-specific workflow
   if (projectId && projectId !== "null" && projectId !== "") {
     query.projectId = projectId;
     query.projectType = null; // Project-specific workflows don't have projectType
     config = await WorkflowConfig.findOne(query);
     if (config) {
-      return config;
+      return formatConfigResult(config);
     }
   }
 
@@ -4977,11 +5246,63 @@ const getWorkflowConfig = async (
   }
 
   if (normalizedProjectType) {
-    query.projectId = null;
-    query.projectType = normalizedProjectType;
-    config = await WorkflowConfig.findOne(query);
+    const filterObj = await buildDepartmentFilterAsync(normalizedProjectType);
+    let typeQuery = normalizedProjectType;
+    if (filterObj && filterObj.$in) {
+      typeQuery = filterObj;
+    } else if (filterObj) {
+      typeQuery = filterObj;
+    } else {
+      const departmentVariants = getDepartmentFilterValues(normalizedProjectType);
+      typeQuery = { $in: [normalizedProjectType, ...departmentVariants] };
+    }
+
+    config = await WorkflowConfig.findOne({
+      tenantCompanyId,
+      isActive: true,
+      projectId: null,
+      projectType: typeQuery,
+    });
     if (config) {
-      return config;
+      return formatConfigResult(config);
+    }
+
+    // Secondary department lookup: check if any Department document matches by slug/name
+    try {
+      const Department = require("../departments/department.model");
+      const deptVariantsSet = new Set(getDepartmentFilterValues(normalizedProjectType));
+      deptVariantsSet.add(normalizedProjectType);
+
+      const depts = await Department.find({
+        $or: [
+          { slug: { $in: Array.from(deptVariantsSet) } },
+          { name: { $in: Array.from(deptVariantsSet) } }
+        ]
+      }).lean();
+
+      if (depts && depts.length > 0) {
+        const deptIdsAndSlugs = [];
+        depts.forEach((d) => {
+          if (d._id) {
+            deptIdsAndSlugs.push(d._id);
+            deptIdsAndSlugs.push(d._id.toString());
+          }
+          if (d.slug) deptIdsAndSlugs.push(d.slug);
+          if (d.name) deptIdsAndSlugs.push(d.name);
+          if (d.name) deptIdsAndSlugs.push(toHyphenatedSlug(d.name));
+        });
+        config = await WorkflowConfig.findOne({
+          tenantCompanyId,
+          isActive: true,
+          projectId: null,
+          projectType: { $in: deptIdsAndSlugs },
+        });
+        if (config) {
+          return formatConfigResult(config);
+        }
+      }
+    } catch (err) {
+      console.error("[getWorkflowConfig] Error searching department workflow:", err);
     }
   }
 
@@ -4991,11 +5312,11 @@ const getWorkflowConfig = async (
   config = await WorkflowConfig.findOne(query);
 
   if (config) {
-    return config;
+    return formatConfigResult(config);
   }
 
   // Return default workflow if no custom config
-  return {
+  return formatConfigResult({
     defaultStatuses: true,
     statuses: [
       { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
@@ -5005,7 +5326,7 @@ const getWorkflowConfig = async (
       { id: "Rejected", name: "Rejected", color: "#ff4d4f", order: 4 },
       { id: "done", name: "Done", color: "#52c41a", order: 5 },
     ],
-  };
+  });
 };
 
 const createOrUpdateWorkflowConfig = async (configData, tenantCompanyId) => {
@@ -5054,9 +5375,53 @@ const createOrUpdateWorkflowConfig = async (configData, tenantCompanyId) => {
   });
 };
 
-// Get all workflow configurations for a tenant
-const getAllWorkflowConfigs = async (tenantCompanyId) => {
-  const configs = await WorkflowConfig.find({ tenantCompanyId })
+// Get all workflow configurations for a tenant (filtered by department/user if requested)
+const getAllWorkflowConfigs = async (
+  tenantCompanyId,
+  user = null,
+  filters = {},
+) => {
+  const query = { tenantCompanyId };
+
+  let targetDepartment = filters.department || filters.projectType || null;
+  if (targetDepartment && typeof targetDepartment === "string") {
+    targetDepartment = toHyphenatedSlug(targetDepartment);
+  }
+
+  const isGlobalRole =
+    user &&
+    [
+      "super_admin",
+      "admin",
+      "operations_head",
+      "agency_super_admin",
+      "agency_manager",
+      "commander_admin",
+      "supreme_super_admin",
+    ].includes(user.role);
+
+  if (user && !isGlobalRole && !targetDepartment) {
+    targetDepartment = await getUserDepartmentSlug(user);
+  }
+
+  if (targetDepartment && targetDepartment !== "all") {
+    const filterObj = await buildDepartmentFilterAsync(targetDepartment);
+    let typeQuery = targetDepartment;
+    if (filterObj && filterObj.$in) {
+      typeQuery = filterObj;
+    } else if (filterObj) {
+      typeQuery = filterObj;
+    } else {
+      const departmentVariants = getDepartmentFilterValues(targetDepartment);
+      typeQuery = { $in: [targetDepartment, ...departmentVariants] };
+    }
+    query.$or = [
+      { projectType: typeQuery },
+      { projectType: null, projectId: null },
+    ];
+  }
+
+  const configs = await WorkflowConfig.find(query)
     .populate("projectId", "name color departments")
     .sort({ createdAt: -1 })
     .lean();
@@ -5373,15 +5738,19 @@ const getTodayTaskStats = async (
 
   const completedStatuses = ["done", "completed", "validated", "complete", "review", "in_review", "in review", "reviewing"];
 
-  // 1. All active (incomplete) tasks assigned to the user that overlap with today
-  // Task must have started on or before today, and due on or after today (so it's active today)
+  // 1. All active (incomplete) tasks assigned to the user for today or overdue
   const activeTasksCount = await Task.countDocuments({
     assignedTo: userId,
     tenantCompanyId: { $in: [tenantCompanyId, ...clientCompanyIds] },
     ...(selectedClientCompanyId ? { companyId: selectedClientCompanyId } : {}),
     status: { $nin: completedStatuses },
-    startDate: { $lte: todayEnd },
-    dueDate: { $gte: todayStart },
+    $or: [
+      { dueDate: { $lte: todayEnd } },
+      { startDate: { $lte: todayEnd } },
+      { createdAt: { $gte: todayStart, $lte: todayEnd } },
+      { assignedOrStartDate: { $lte: todayEnd } },
+      { dueDate: { $exists: false }, startDate: { $exists: false } }
+    ]
   });
 
   // 2. All tasks completed by the user TODAY
@@ -5392,7 +5761,7 @@ const getTodayTaskStats = async (
     status: { $in: completedStatuses },
     $or: [
       { actualCompletionDate: { $gte: todayStart, $lte: todayEnd } },
-      { workCompletedAt: { $gte: todayStart, $lte: todayEnd } }
+      { workCompletedAt: { $gte: todayStart, $lte: todayEnd } },
     ]
   });
 

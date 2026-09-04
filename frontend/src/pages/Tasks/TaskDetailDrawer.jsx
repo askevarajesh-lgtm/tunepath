@@ -218,7 +218,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
         notifySuccess('task', taskId, `Task rejected successfully`);
       }
       
-      if (newStatus === 'complete' && typeof onTaskCompleted === 'function') {
+      if (['complete', 'done', 'review'].includes(newStatus) && typeof onTaskCompleted === 'function') {
         onTaskCompleted();
       }
       onClose();

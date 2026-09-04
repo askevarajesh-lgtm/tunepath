@@ -183,9 +183,15 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
     return allProjects.filter((project) => projectIds.has(project._id));
   }, [allProjects, tasks, isAdmin]);
 
-  // Note: Local filtering and sorting removed as it's now handled by the backend
-  const filteredTasks = tasks;
-  const sortedTasks = tasks;
+  const sortedTasks = useMemo(() => {
+    return [...tasks].sort((a, b) => {
+      const isACompleted = ["complete", "completed", "done", "validated"].includes((a.status || "").toLowerCase());
+      const isBCompleted = ["complete", "completed", "done", "validated"].includes((b.status || "").toLowerCase());
+      if (isACompleted && !isBCompleted) return 1;
+      if (!isACompleted && isBCompleted) return -1;
+      return 0;
+    });
+  }, [tasks]);
 
   const getStatusColor = (status) => {
     const colors = {
