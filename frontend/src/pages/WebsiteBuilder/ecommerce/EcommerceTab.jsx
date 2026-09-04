@@ -23,6 +23,7 @@ import EcommerceSettings from './components/EcommerceSettings';
 import EcommerceStoreBuilder from './components/EcommerceStoreBuilder';
 import StorefrontRenderer from './storefront/StorefrontRenderer';
 import EcommerceTemplates from './components/EcommerceTemplates';
+import TemplateCatalog from './components/TemplateCatalog';
 import EcommerceStoreManager from './components/EcommerceStoreManager';
 import EcommerceCustomers from './components/EcommerceCustomers';
 import EcommercePayments from './components/EcommercePayments';
@@ -142,6 +143,7 @@ const EcommerceTabContent = ({ itemVariants }) => {
                   <Route path="pages" element={<EcommerceStoreManager templateId={activeTemplateId} />} />
                   <Route path="preview/:templateId?" element={<StorefrontRenderer templateId={activeTemplateId} />} />
                   <Route path="templates" element={<EcommerceTemplates />} />
+                  <Route path="catalog" element={<TemplateCatalog />} />
                   
                   <Route path="*" element={<Navigate to="templates" replace />} />
                 </Routes>

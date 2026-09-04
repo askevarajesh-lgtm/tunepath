@@ -20,8 +20,26 @@ const CartPage = () => {
     let itemTemplate = null;
     let mountParent = null;
     
-    // 1. Try explicit mapping first
-    if (page.mapping) {
+    // 0. Explicit data-commerce binding
+    const explicitContainer = doc.querySelector('[data-commerce="cart"]');
+    if (explicitContainer) {
+      // If the container is a wrapper around a table, find the TR inside TBODY
+      itemTemplate = explicitContainer.querySelector('tbody > tr') || 
+                     (explicitContainer.tagName === 'TBODY' ? explicitContainer.firstElementChild : null) ||
+                     (explicitContainer.tagName === 'TABLE' ? explicitContainer.querySelector('tbody > tr') || explicitContainer.querySelector('tr') : explicitContainer.firstElementChild);
+      
+      if (itemTemplate) {
+        mountParent = itemTemplate.parentElement;
+      } else {
+        // Create an empty template if none exists inside the placeholder
+        explicitContainer.innerHTML = '<div></div>';
+        itemTemplate = explicitContainer.firstElementChild;
+        mountParent = explicitContainer;
+      }
+    }
+    
+    // 1. Try explicit mapping first (legacy)
+    if (!itemTemplate && page.mapping) {
       const { cartContainer, cartItem } = page.mapping;
       if (cartContainer && cartItem) {
         const container = doc.querySelector(cartContainer);

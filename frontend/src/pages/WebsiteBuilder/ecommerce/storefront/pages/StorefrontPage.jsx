@@ -1,10 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { resolveAssetUrls } from '../../utils/zipExtractor';
+import { useStorefront } from '../StorefrontContext';
 
 const StorefrontPage = ({ page, assets, children, portalSelector }) => {
   const containerRef = useRef(null);
   const [portalTarget, setPortalTarget] = useState(null);
+  const { cart } = useStorefront();
 
   useEffect(() => {
     if (!page || !assets || !containerRef.current) return;
@@ -63,6 +65,32 @@ const StorefrontPage = ({ page, assets, children, portalSelector }) => {
       const mountedTarget = containerRef.current.querySelector('#storefront-react-portal');
       setPortalTarget(mountedTarget);
     }
+    
+    // Inject CSS
+    let finalCss = '';
+    
+    // We can't access 'template' directly here without changing props, 
+    // but we can check if it's available via window context or just rely on page.css.
+    // If the caller provides a globalCss prop or similar, we'd use it here.
+    if (page.css) finalCss += page.css;
+    
+    // Check if there is a global css on the template via a custom prop (if added later)
+    // For now, page.css from the seeder contains everything needed.
+    
+    if (finalCss) {
+      let styleEl = document.getElementById('storefront-page-styles');
+      if (!styleEl) {
+        styleEl = document.createElement('style');
+        styleEl.id = 'storefront-page-styles';
+        document.head.appendChild(styleEl);
+      }
+      styleEl.innerHTML = finalCss;
+    }
+    
+    return () => {
+      const styleEl = document.getElementById('storefront-page-styles');
+      if (styleEl) styleEl.innerHTML = '';
+    };
   }, [page, assets, portalSelector]);
 
   // Handle internal navigation clicks (just like original preview did)
@@ -134,6 +162,25 @@ const StorefrontPage = ({ page, assets, children, portalSelector }) => {
       }
     };
   }, []);
+
+  // Sync Cart Badge
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const cartLinks = containerRef.current.querySelectorAll('a[href*="cart"], a[data-commerce-action="cart"], .cart-icon, [id*="cart"]');
+    const totalQuantity = cart.reduce((acc, item) => acc + item.quantity, 0);
+    
+    cartLinks.forEach(link => {
+      let badge = link.querySelector('.storefront-cart-badge');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'storefront-cart-badge';
+        badge.style.cssText = 'background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; margin-left: 6px; vertical-align: top; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; font-weight: bold;';
+        link.appendChild(badge);
+      }
+      badge.textContent = totalQuantity;
+      badge.style.display = totalQuantity > 0 ? 'inline-flex' : 'none';
+    });
+  }, [cart]);
 
   return (
     <>

@@ -75,6 +75,17 @@ const EcommerceTemplates = () => {
           >
             Manage
           </Button>
+          <Button
+            size="small"
+            type="default"
+            icon={<Edit size={14} />}
+            onClick={() => {
+              changeTemplate(record.id);
+              navigate('../builder');
+            }}
+          >
+            Edit
+          </Button>
           <Popconfirm title="Delete store?" onConfirm={() => handleDelete(record.id)}>
             <Button size="small" danger icon={<Trash2 size={14} />} />
           </Popconfirm>
@@ -90,11 +101,11 @@ const EcommerceTemplates = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <div>
           <Title level={3} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <LayoutTemplate size={24} color="var(--accent-primary)" /> Saved Stores
+            <LayoutTemplate size={24} color="var(--accent-primary)" /> Store Library
           </Title>
-          <Text type="secondary">Manage your saved e-commerce stores</Text>
+          <Text type="secondary">Manage your instantiated e-commerce stores</Text>
         </div>
-        <Button type="primary" onClick={() => navigate('../builder')}>Upload New ZIP</Button>
+        <Button type="primary" onClick={() => navigate('../catalog')}>Create Store</Button>
       </div>
 
       <Card>
@@ -102,7 +113,7 @@ const EcommerceTemplates = () => {
           columns={columns}
           dataSource={dataSource}
           pagination={false}
-          locale={{ emptyText: 'No stores saved yet. Go to Store Builder to upload a ZIP.' }}
+          locale={{ emptyText: 'No stores saved yet. Go to Create Store to pick a template.' }}
         />
       </Card>
     </div>

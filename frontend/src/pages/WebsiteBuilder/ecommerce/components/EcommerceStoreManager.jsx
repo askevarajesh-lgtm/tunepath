@@ -111,7 +111,7 @@ const EcommerceStoreManager = ({ templateId: propTemplateId }) => {
             </Text>
           </div>
           <Space>
-            <Button onClick={() => navigate(`../preview/${templateId}`)}>
+            <Button onClick={() => window.open(`/preview/store/${templateId}`, '_blank')}>
               <Eye size={14} style={{ marginRight: 4 }} /> Preview Store
             </Button>
             <Button type="default" onClick={openRenameModal}>
@@ -130,7 +130,7 @@ const EcommerceStoreManager = ({ templateId: propTemplateId }) => {
                 <Button
                   key="preview"
                   icon={<Eye size={14} />}
-                  onClick={() => navigate(`../preview/${templateId}?page=${page.id}`)}
+                  onClick={() => window.open(`/preview/store/${templateId}?page=${page.id}`, '_blank')}
                 >
                   Preview
                 </Button>,

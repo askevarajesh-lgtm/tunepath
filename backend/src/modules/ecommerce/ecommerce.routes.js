@@ -7,6 +7,10 @@ const Website = require('../websites/website.model');
 
 router.use(authMiddleware);
 
+// Catalog endpoints (global) - Must be defined BEFORE /:websiteId routes
+router.get('/catalog', ecommerceController.getCatalogTemplates);
+router.get('/catalog/:templateId', ecommerceController.getCatalogTemplate);
+
 // Middleware to verify website ownership — prevents cross-workspace data access
 const verifyWebsiteOwnership = async (req, res, next) => {
   try {
@@ -47,10 +51,16 @@ const verifyWebsiteOwnership = async (req, res, next) => {
 router.use('/:websiteId', verifyWebsiteOwnership);
 
 // Templates are scoped by websiteId (they represent the stores)
-router.get('/:websiteId/templates', ecommerceController.getTemplates);
-router.post('/:websiteId/templates', ecommerceController.createTemplate);
-router.put('/:websiteId/templates/:templateId', ecommerceController.updateTemplate);
-router.delete('/:websiteId/templates/:templateId', ecommerceController.deleteTemplate);
+router.get('/:websiteId/stores', ecommerceController.getStores);
+router.post('/:websiteId/stores', ecommerceController.createStore);
+router.put('/:websiteId/stores/:storeId', ecommerceController.updateStore);
+router.delete('/:websiteId/stores/:storeId', ecommerceController.deleteStore);
+
+// Legacy fallback for frontend that might still call /templates
+router.get('/:websiteId/templates', ecommerceController.getStores);
+router.post('/:websiteId/templates', ecommerceController.createStore);
+router.put('/:websiteId/templates/:templateId', ecommerceController.updateStore);
+router.delete('/:websiteId/templates/:templateId', ecommerceController.deleteStore);
 
 // All other routes are scoped: /ecommerce/:websiteId/:storeId/...
 router.get('/:websiteId/:storeId/products', ecommerceController.getProducts);

@@ -4,7 +4,8 @@ const EcommerceCustomer = require('./models/EcommerceCustomer');
 const EcommercePayment = require('./models/EcommercePayment');
 const EcommerceShipping = require('./models/EcommerceShipping');
 const EcommerceSettings = require('./models/EcommerceSettings');
-const EcommerceTemplate = require('./models/EcommerceTemplate');
+const EcommerceStore = require('./models/EcommerceStore');
+const EcommerceTemplateCatalog = require('./models/EcommerceTemplateCatalog');
 
 // Helper to construct isolated query — scope by workspace + website + store
 const getIsolatedQuery = (req) => {
@@ -28,70 +29,98 @@ const getTemplateQuery = (req) => {
   };
 };
 
-// --- TEMPLATES ---
-exports.getTemplates = async (req, res, next) => {
+// --- CATALOG ---
+exports.getCatalogTemplates = async (req, res, next) => {
   try {
-    const templates = await EcommerceTemplate.find(getTemplateQuery(req));
-    
-    // Map to object keyed by template ID to match frontend IndexedDB format
-    const templateMap = {};
-    templates.forEach(t => {
-      // Return as plain object mapping ID to object
-      const tObj = t.toObject();
-      tObj.id = tObj.templateId; // Map templateId to id for frontend
-      templateMap[tObj.templateId] = tObj;
-    });
-    
-    res.json({ success: true, data: templateMap });
+    const catalog = await EcommerceTemplateCatalog.find({ active: true });
+    res.json({ success: true, data: catalog });
   } catch (error) { next(error); }
 };
 
-exports.createTemplate = async (req, res, next) => {
+exports.getCatalogTemplate = async (req, res, next) => {
   try {
-    const template = new EcommerceTemplate({
+    const template = await EcommerceTemplateCatalog.findOne({ templateId: req.params.templateId });
+    if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+    res.json({ success: true, data: template });
+  } catch (error) { next(error); }
+};
+
+// --- STORES (formerly Templates) ---
+exports.getStores = async (req, res, next) => {
+  try {
+    const stores = await EcommerceStore.find(getTemplateQuery(req));
+    
+    // Map to object keyed by storeId (which uses the templateId field in DB)
+    const storeMap = {};
+    stores.forEach(s => {
+      const sObj = s.toObject();
+      sObj.id = sObj.templateId; 
+      storeMap[sObj.templateId] = sObj;
+    });
+    
+    res.json({ success: true, data: storeMap });
+  } catch (error) { next(error); }
+};
+
+exports.createStore = async (req, res, next) => {
+  try {
+    let pages = req.body.pages || {};
+    let assets = req.body.assets || {};
+    
+    // If a catalogTemplateId is provided, we clone it
+    if (req.body.catalogTemplateId) {
+      const sourceTpl = await EcommerceTemplateCatalog.findOne({ templateId: req.body.catalogTemplateId });
+      if (sourceTpl) {
+        pages = sourceTpl.pages || {};
+        assets = sourceTpl.assets || {};
+      }
+    }
+    
+    const store = new EcommerceStore({
       ...getTemplateQuery(req),
-      templateId: req.body.id || `tpl_${Date.now()}`,
+      templateId: req.body.id || `store_${Date.now()}`, // Using templateId field as store ID
       name: req.body.name,
-      pages: req.body.pages || {},
-      assets: req.body.assets || {}
+      sourceTemplateId: req.body.catalogTemplateId || null,
+      sourceTemplateVersion: 1,
+      pages: pages,
+      assets: assets
     });
-    await template.save();
+    await store.save();
     
-    const tObj = template.toObject();
-    tObj.id = tObj.templateId;
+    const sObj = store.toObject();
+    sObj.id = sObj.templateId;
     
-    res.json({ success: true, data: tObj });
+    res.json({ success: true, data: sObj });
   } catch (error) { next(error); }
 };
 
-exports.updateTemplate = async (req, res, next) => {
+exports.updateStore = async (req, res, next) => {
   try {
-    const query = { ...getTemplateQuery(req), templateId: req.params.templateId };
+    const query = { ...getTemplateQuery(req), templateId: req.params.storeId || req.params.templateId };
     
-    // Support partial updates (upsert to handle saveTemplate replacing entire object)
     const updateData = req.body;
     if (updateData.id) delete updateData.id;
     if (updateData.templateId) delete updateData.templateId;
 
-    const template = await EcommerceTemplate.findOneAndUpdate(
+    const store = await EcommerceStore.findOneAndUpdate(
       query,
       { $set: updateData },
       { new: true, upsert: true }
     );
     
-    const tObj = template.toObject();
-    tObj.id = tObj.templateId;
+    const sObj = store.toObject();
+    sObj.id = sObj.templateId;
     
-    res.json({ success: true, data: tObj });
+    res.json({ success: true, data: sObj });
   } catch (error) { next(error); }
 };
 
-exports.deleteTemplate = async (req, res, next) => {
+exports.deleteStore = async (req, res, next) => {
   try {
-    const query = { ...getTemplateQuery(req), templateId: req.params.templateId };
-    const template = await EcommerceTemplate.findOneAndDelete(query);
-    if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
-    res.json({ success: true, message: 'Template deleted' });
+    const query = { ...getTemplateQuery(req), templateId: req.params.storeId || req.params.templateId };
+    const store = await EcommerceStore.findOneAndDelete(query);
+    if (!store) return res.status(404).json({ success: false, message: 'Store not found' });
+    res.json({ success: true, message: 'Store deleted' });
   } catch (error) { next(error); }
 };
 

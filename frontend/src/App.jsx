@@ -19,10 +19,11 @@ import {
   Target, PenTool, Cpu, Share2, Megaphone, Inbox, Layout, Search
 } from 'lucide-react';
 
-// Admin Pages
 import Dashboard from './pages/Dashboard/Dashboard';
 import CRM from './pages/CRM/CRM';
 import WebsiteBuilder from './pages/WebsiteBuilder/WebsiteBuilder';
+import { EcommerceProvider } from './pages/WebsiteBuilder/ecommerce/contexts/EcommerceContext';
+import StorefrontRenderer from './pages/WebsiteBuilder/ecommerce/storefront/StorefrontRenderer';
 import BuilderRouteWrapper from './pages/WebsiteBuilder/tabs/BuilderRouteWrapper';
 import BlogPostBuilderRouteWrapper from './pages/WebsiteBuilder/tabs/BlogPostBuilderRouteWrapper';
 import FormEmbedView from './pages/WebsiteBuilder/tabs/FormEmbedView';
@@ -253,6 +254,11 @@ const AppRoutes = () => {
       <Route path="/blog/:blogSlug/:postSlug" element={<BlogPostEmbedView />} />
       <Route path="/preview/website/:websiteId/page/:pageId" element={<WebsitePreviewView />} />
       <Route path="/preview/website/:websiteId/blog-post/:postId" element={<BlogPostPreviewView />} />
+      <Route path="/preview/store/:templateId" element={
+        <EcommerceProvider>
+          <StorefrontRenderer />
+        </EcommerceProvider>
+      } />
       
       {/* Super Admin Routes */}
       <Route element={<ProtectedRoute allowedRoles={['supreme_super_admin', 'superadmin']} />}>

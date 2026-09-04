@@ -1,9 +1,10 @@
 import React, { useEffect, useRef, useMemo } from 'react';
+import { message } from 'antd';
 import { useStorefront } from '../StorefrontContext';
 import { formatCurrency } from '../../utils/currency';
 
 const ProductCard = ({ product, templateHtml, mapping }) => {
-  const { addToCart, navigateTo, workspaceId, websiteId, storeId } = useStorefront();
+  const { addToCart, addToWishlist, navigateTo, workspaceId, websiteId, storeId } = useStorefront();
   const containerRef = useRef(null);
 
   // Parse template and inject product data into the original DOM structure
@@ -16,15 +17,15 @@ const ProductCard = ({ product, templateHtml, mapping }) => {
     if (!cardEl) return '';
 
     // Inject Image
-    // Safely target all img tags, plus any specific mapped elements (which might be divs using background-image)
+    const explicitImgEls = Array.from(cardEl.querySelectorAll('[data-commerce-field="image"]'));
     const imgEls = Array.from(cardEl.querySelectorAll('img'));
     let mappedEls = [];
     if (mapping?.productImage) {
       mappedEls = Array.from(cardEl.querySelectorAll(mapping.productImage));
     }
     
-    // Use a Set to ensure unique elements
-    const allImageTargets = new Set([...imgEls, ...mappedEls]);
+    // Use a Set to ensure unique elements. Prioritize explicit bindings.
+    const allImageTargets = new Set([...explicitImgEls, ...imgEls, ...mappedEls]);
     
     allImageTargets.forEach(el => {
       if (product.image) {
@@ -49,8 +50,8 @@ const ProductCard = ({ product, templateHtml, mapping }) => {
     });
 
     // Inject Name
-    let nameEls = [];
-    if (mapping?.productName) nameEls = Array.from(cardEl.querySelectorAll(mapping.productName));
+    let nameEls = Array.from(cardEl.querySelectorAll('[data-commerce-field="name"]'));
+    if (nameEls.length === 0 && mapping?.productName) nameEls = Array.from(cardEl.querySelectorAll(mapping.productName));
     if (nameEls.length === 0) nameEls = Array.from(cardEl.querySelectorAll('h1, h2, h3, h4, h5, h6, .title, .name'));
     
     nameEls.forEach(el => {
@@ -66,8 +67,8 @@ const ProductCard = ({ product, templateHtml, mapping }) => {
     });
 
     // Inject Price
-    let priceEls = [];
-    if (mapping?.productPrice) priceEls = Array.from(cardEl.querySelectorAll(mapping.productPrice));
+    let priceEls = Array.from(cardEl.querySelectorAll('[data-commerce-field="price"]'));
+    if (priceEls.length === 0 && mapping?.productPrice) priceEls = Array.from(cardEl.querySelectorAll(mapping.productPrice));
     if (priceEls.length === 0) priceEls = Array.from(cardEl.querySelectorAll('.price, .amount'));
     
     const displayPrice = product.salePrice ? product.salePrice : product.price;
@@ -76,8 +77,8 @@ const ProductCard = ({ product, templateHtml, mapping }) => {
     });
 
     // Adjust Add to Cart button if out of stock
-    let addBtnEls = [];
-    if (mapping?.addBtn) {
+    let addBtnEls = Array.from(cardEl.querySelectorAll('[data-commerce-action="add-to-cart"]'));
+    if (addBtnEls.length === 0 && mapping?.addBtn) {
       addBtnEls = Array.from(cardEl.querySelectorAll(mapping.addBtn));
     }
     
@@ -132,13 +133,25 @@ const ProductCard = ({ product, templateHtml, mapping }) => {
 
     const handleClick = (e) => {
       // Check if clicked element or its parent is the Add to Cart button
-      const addBtn = e.target.closest('[data-ecommerce-action="add-to-cart"]');
+      const addBtn = e.target.closest('[data-ecommerce-action="add-to-cart"], [data-commerce-action="add-to-cart"]');
       if (addBtn) {
         e.preventDefault();
         e.stopPropagation();
         if (product.stock > 0) {
           addToCart(product);
+          message.success(`${product.name} added to cart`);
+        } else {
+          message.warning(`${product.name} is out of stock`);
         }
+        return;
+      }
+
+      const wishlistBtn = e.target.closest('[data-ecommerce-action="add-to-wishlist"], [data-commerce-action="add-to-wishlist"]');
+      if (wishlistBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        addToWishlist(product);
+        message.success(`${product.name} added to wishlist`);
         return;
       }
 

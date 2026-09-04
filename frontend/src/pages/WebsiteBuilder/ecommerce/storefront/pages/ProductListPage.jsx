@@ -10,7 +10,7 @@ const ProductListPage = () => {
   if (!page) return null;
 
   return (
-    <StorefrontPage page={page} assets={template.assets} portalSelector={page.mapping?.productGrid}>
+    <StorefrontPage page={page} assets={template.assets} portalSelector={`[data-commerce="product-grid"]${page.mapping?.productGrid ? `, ${page.mapping.productGrid}` : ''}`}>
       <ProductGrid mapping={page.mapping} html={page.html} />
     </StorefrontPage>
   );

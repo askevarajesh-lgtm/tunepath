@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import StorefrontPage from './StorefrontPage';
 import PaymentMethodSelector from '../components/PaymentMethodSelector';
 import ShippingMethodSelector from '../components/ShippingMethodSelector';
@@ -227,19 +228,24 @@ const CheckoutPage = () => {
     const parser = new DOMParser();
     const doc = parser.parseFromString(page.html, 'text/html');
     
-    if (page.mapping && page.mapping.checkoutForm) {
-      const formEl = doc.querySelector(page.mapping.checkoutForm);
-      if (formEl) {
-        let reactMount = formEl.querySelector('#storefront-react-checkout');
-        if (!reactMount) {
-          reactMount = doc.createElement('div');
-          reactMount.id = 'storefront-react-checkout';
-          formEl.appendChild(reactMount);
-        }
-        formEl.id = 'storefront-checkout-form';
-        formEl.removeAttribute('action');
-        formEl.removeAttribute('method');
+    // Prioritize explicit binding
+    let formEl = doc.querySelector('[data-commerce="checkout"]');
+    
+    // Fallback to legacy mapping
+    if (!formEl && page.mapping && page.mapping.checkoutForm) {
+      formEl = doc.querySelector(page.mapping.checkoutForm);
+    }
+    
+    if (formEl) {
+      let reactMount = formEl.querySelector('#storefront-react-checkout');
+      if (!reactMount) {
+        reactMount = doc.createElement('div');
+        reactMount.id = 'storefront-react-checkout';
+        formEl.appendChild(reactMount);
       }
+      formEl.id = 'storefront-checkout-form';
+      formEl.removeAttribute('action');
+      formEl.removeAttribute('method');
     }
 
     modPage.html = doc.documentElement.innerHTML;
@@ -278,7 +284,7 @@ const CheckoutPortal = (props) => {
   const target = document.getElementById('storefront-react-checkout');
   if (!target) return null;
 
-  return require('react-dom').createPortal(
+  return createPortal(
     <div style={{ marginTop: 32 }}>
       <ShippingMethodSelector 
         settings={props.settings} 

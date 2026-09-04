@@ -7,14 +7,14 @@ import ProductDetailPage from './pages/ProductDetailPage';
 import CartPage from './pages/CartPage';
 import CheckoutPage from './pages/CheckoutPage';
 import StorefrontPage from './pages/StorefrontPage';
+import ProductGrid from './components/ProductGrid';
 import { formatCurrency } from '../utils/currency';
 import { useParams } from 'react-router-dom';
 
 const { Text } = Typography;
 
 const StorefrontRendererContent = () => {
-  const { template, currentPageId, cart, workspaceId, websiteId, navigateTo } = useStorefront();
-  const [isCheckoutDrawerOpen, setIsCheckoutDrawerOpen] = useState(false);
+  const { template, currentPageId, cart, wishlist, workspaceId, websiteId, navigateTo } = useStorefront();
 
   // Intercept navigation events emitted by StorefrontPage
   React.useEffect(() => {
@@ -34,8 +34,7 @@ const StorefrontRendererContent = () => {
         if (cartPage) {
           return navigateTo(cartPage.id || Object.keys(template.pages).find(k => template.pages[k] === cartPage));
         } else {
-          console.warn('Storefront navigation: Cart page not found in template. Falling back to Quick Cart Drawer.');
-          setIsCheckoutDrawerOpen(true);
+          console.warn('Storefront navigation: Cart page not found in template.');
           return;
         }
       }
@@ -58,8 +57,23 @@ const StorefrontRendererContent = () => {
 
       // Strip leading ./ and # hashes to find the page ID
       const targetPath = href.replace(/^\.\//, '').split('#')[0];
+      
       if (template?.pages?.[targetPath]) {
-        navigateTo(targetPath);
+        return navigateTo(targetPath);
+      }
+      
+      // Fallback: search by fileName
+      const matchingPage = pages.find(p => p.fileName === targetPath || p.filename === targetPath);
+      if (matchingPage) {
+        return navigateTo(matchingPage.id || Object.keys(template.pages).find(k => template.pages[k] === matchingPage));
+      }
+      
+      // Fallback: search by role or name for wishlist
+      if (lowerHref.includes('wishlist')) {
+        const wishlistPage = pages.find(p => p.role === 'Wishlist' || p.name === 'Wishlist' || String(p.id).toLowerCase() === 'wishlist');
+        if (wishlistPage) {
+          return navigateTo(wishlistPage.id || Object.keys(template.pages).find(k => template.pages[k] === wishlistPage));
+        }
       }
     };
     window.addEventListener('storefront_navigate', handleNavigate);
@@ -87,85 +101,37 @@ const StorefrontRendererContent = () => {
     PageComponent = <CheckoutPage />;
   } else {
     // Generic page
-    PageComponent = <StorefrontPage page={page} assets={template.assets} />;
+    const hasGrid = page.html?.includes('data-commerce="product-grid"') || page.mapping?.productGrid;
+    const hasWishlistGrid = page.html?.includes('data-commerce="wishlist-grid"');
+    
+    if (hasGrid) {
+      PageComponent = (
+        <StorefrontPage page={page} assets={template.assets} portalSelector={`[data-commerce="product-grid"]${page.mapping?.productGrid ? `, ${page.mapping.productGrid}` : ''}`}>
+          <ProductGrid mapping={page.mapping} html={page.html} />
+        </StorefrontPage>
+      );
+    } else if (hasWishlistGrid) {
+      PageComponent = (
+        <StorefrontPage page={page} assets={template.assets} portalSelector={`[data-commerce="wishlist-grid"]`}>
+          <ProductGrid mapping={page.mapping} html={page.html} items={wishlist} />
+        </StorefrontPage>
+      );
+    } else {
+      PageComponent = <StorefrontPage page={page} assets={template.assets} />;
+    }
   }
 
   const totalQuantity = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ background: '#1e293b', color: 'white', padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Space>
-          <Text style={{ color: 'white', fontWeight: 'bold' }}>React Storefront Preview</Text>
-          <Text style={{ color: '#94a3b8' }}>{page?.name} ({currentPageId})</Text>
-        </Space>
-        <Space>
-          <Badge count={totalQuantity} showZero>
-            <Button size="small" type="primary" onClick={() => setIsCheckoutDrawerOpen(true)}>
-              <ShoppingCart size={14} style={{ marginRight: 8 }} />
-              Quick Cart Drawer
-            </Button>
-          </Badge>
-        </Space>
-      </div>
+
 
       <div style={{ flex: 1, position: 'relative', overflowY: 'auto', transform: 'translate(0)' }}>
         {PageComponent}
       </div>
 
-      <Drawer
-        title="Quick Cart"
-        placement="right"
-        onClose={() => setIsCheckoutDrawerOpen(false)}
-        open={isCheckoutDrawerOpen}
-        width={350}
-      >
-        {cart.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40 }}>Your cart is empty.</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            <div style={{ flex: 1, overflowY: 'auto' }}>
-              <List
-                itemLayout="horizontal"
-                dataSource={cart}
-                renderItem={item => (
-                  <List.Item>
-                    <List.Item.Meta
-                      avatar={<img src={item.image} alt={item.name} style={{ width: 40, height: 40, objectFit: 'cover' }} />}
-                      title={item.name}
-                      description={`${formatCurrency(item.price, workspaceId, websiteId)} x ${item.quantity}`}
-                    />
-                  </List.Item>
-                )}
-              />
-            </div>
-            <div style={{ marginTop: 16, borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
-              <Button 
-                block 
-                style={{ marginBottom: 8 }} 
-                onClick={() => {
-                  const cartPageId = Object.keys(template.pages).find(k => template.pages[k].role === 'Cart');
-                  if (cartPageId) navigateTo(cartPageId);
-                  setIsCheckoutDrawerOpen(false);
-                }}
-              >
-                View Cart
-              </Button>
-              <Button 
-                type="primary" 
-                block 
-                onClick={() => {
-                  const checkoutPageId = Object.keys(template.pages).find(k => template.pages[k].role === 'Checkout');
-                  if (checkoutPageId) navigateTo(checkoutPageId);
-                  setIsCheckoutDrawerOpen(false);
-                }}
-              >
-                Proceed to Checkout
-              </Button>
-            </div>
-          </div>
-        )}
-      </Drawer>
+
     </div>
   );
 };

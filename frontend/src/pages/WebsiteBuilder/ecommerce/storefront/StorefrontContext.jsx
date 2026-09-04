@@ -10,6 +10,7 @@ export const StorefrontProvider = ({ children, templateId }) => {
   const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState(null);
   const [cart, setCart] = useState([]);
+  const [wishlist, setWishlist] = useState([]);
   const [currentPageId, setCurrentPageId] = useState(() => {
     return sessionStorage.getItem(`storefront_page_${workspaceId}_${websiteId}_${templateId}`) || '';
   });
@@ -31,8 +32,38 @@ export const StorefrontProvider = ({ children, templateId }) => {
 
       if (activeTemplate && activeTemplate.pages && !sessionStorage.getItem(`storefront_page_${workspaceId}_${websiteId}_${templateId}`)) {
         setTemplate(activeTemplate);
-        let startPage = Object.keys(activeTemplate.pages).find(k => k.toLowerCase().includes('index'))
-          || Object.keys(activeTemplate.pages)[0];
+        setTemplate(activeTemplate);
+        
+        // 1. Check URL query params for ?page=
+        const queryParams = new URLSearchParams(window.location.search);
+        const urlPageId = queryParams.get('page');
+        
+        let startPage = null;
+        
+        if (urlPageId) {
+          // Case-insensitive match against page roles/names/ids
+          const lowerUrlId = urlPageId.toLowerCase();
+          startPage = Object.keys(activeTemplate.pages).find(k => {
+            const p = activeTemplate.pages[k];
+            return (p.id && p.id.toLowerCase() === lowerUrlId) ||
+                   (p.role && p.role.toLowerCase() === lowerUrlId) ||
+                   (p.name && p.name.toLowerCase() === lowerUrlId);
+          });
+        }
+        
+        // 2. Fallback to session storage if valid
+        if (!startPage && sessionStorage.getItem(`storefront_page_${workspaceId}_${websiteId}_${templateId}`)) {
+           const cachedPageId = sessionStorage.getItem(`storefront_page_${workspaceId}_${websiteId}_${templateId}`);
+           if (activeTemplate.pages[cachedPageId]) {
+             startPage = cachedPageId;
+           }
+        }
+        
+        // 3. Fallback to Home/Index
+        if (!startPage) {
+          startPage = Object.keys(activeTemplate.pages).find(k => k.toLowerCase().includes('index')) || Object.keys(activeTemplate.pages)[0];
+        }
+        
         setCurrentPageId(startPage || '');
       } else if (activeTemplate) {
         setTemplate(activeTemplate);
@@ -49,6 +80,10 @@ export const StorefrontProvider = ({ children, templateId }) => {
       // Load cart for this specific store
       const savedCart = getCart(workspaceId, websiteId, templateId);
       setCart(savedCart || []);
+      
+      // Load wishlist
+      const savedWishlist = JSON.parse(localStorage.getItem(`ecommerce_${workspaceId}_${websiteId}_${templateId}_wishlist`)) || [];
+      setWishlist(savedWishlist);
     };
 
     loadStore();
@@ -98,6 +133,24 @@ export const StorefrontProvider = ({ children, templateId }) => {
     clearCartStorage(workspaceId, websiteId, templateId);
   };
 
+  const addToWishlist = (product) => {
+    setWishlist(prev => {
+      const pid = product.id || product._id;
+      if (prev.find(item => (item.id || item._id) === pid)) return prev;
+      const newWishlist = [...prev, product];
+      localStorage.setItem(`ecommerce_${workspaceId}_${websiteId}_${templateId}_wishlist`, JSON.stringify(newWishlist));
+      return newWishlist;
+    });
+  };
+
+  const removeFromWishlist = (productId) => {
+    setWishlist(prev => {
+      const newWishlist = prev.filter(item => (item.id || item._id) !== productId);
+      localStorage.setItem(`ecommerce_${workspaceId}_${websiteId}_${templateId}_wishlist`, JSON.stringify(newWishlist));
+      return newWishlist;
+    });
+  };
+
   const navigateTo = (pageId, productId = null) => {
     let targetPageId = pageId;
 
@@ -130,6 +183,9 @@ export const StorefrontProvider = ({ children, templateId }) => {
       removeFromCart,
       updateQty,
       clearCart,
+      wishlist,
+      addToWishlist,
+      removeFromWishlist,
       currentPageId,
       navigateTo,
       selectedProductId,
