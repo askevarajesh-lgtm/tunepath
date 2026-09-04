@@ -5,12 +5,22 @@ class ProviderNormalizationService {
     const data = Array.isArray(raw) ? raw[0] : raw;
     if (!data) return {};
     
+    const parseNum = (val) => {
+      if (val === null || val === undefined || val === '') return 0;
+      const n = Number(val);
+      return isNaN(n) ? 0 : n;
+    };
+
+    const otVal = data.Ot !== undefined && data.Ot !== '' ? data.Ot : data['Organic Traffic'];
+    const orVal = data.Or !== undefined && data.Or !== '' ? data.Or : data['Organic Keywords'];
+    const rkVal = data.Rk !== undefined && data.Rk !== '' ? data.Rk : data.Rank;
+
     return {
-      semrushRank: this.createMetric(data.Rk || data.Rank, 'semrush', true, 100),
-      organicTraffic: this.createMetric(data.Ot || data['Organic Traffic'], 'semrush', true, 100),
-      organicKeywords: this.createMetric(data.Or || data['Organic Keywords'], 'semrush', true, 100),
-      paidTraffic: this.createMetric(data.At || data['Adwords Traffic'] || 0, 'semrush', true, 100),
-      organicCost: this.createMetric(data.Oc || data['Organic Cost'] || 0, 'semrush', true, 100),
+      semrushRank: this.createMetric(parseNum(rkVal), 'semrush', true, 100),
+      organicTraffic: this.createMetric(parseNum(otVal), 'semrush', true, 100),
+      organicKeywords: this.createMetric(parseNum(orVal), 'semrush', true, 100),
+      paidTraffic: this.createMetric(parseNum(data.At || data['Adwords Traffic']), 'semrush', true, 100),
+      organicCost: this.createMetric(parseNum(data.Oc || data['Organic Cost']), 'semrush', true, 100),
       competitors: data.competitors || [],
       trend: data.trend || [],
       topKeywords: data.topKeywords || [],

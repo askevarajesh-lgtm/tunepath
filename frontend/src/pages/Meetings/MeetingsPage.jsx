@@ -842,7 +842,16 @@ const MeetingsPage = () => {
               label="Agency Manager / Agency Admin"
               rules={[{ required: true, message: 'Please select at least one Agency Manager or Agency Admin' }]}
             >
-              <Select mode="multiple" placeholder="Select Agency Manager / Agency Admin">
+              <Select
+                mode="multiple"
+                placeholder="Select Agency Manager / Agency Admin"
+                filterOption={(input, option) => {
+                  const labelText = Array.isArray(option?.children)
+                    ? option.children.join(' ')
+                    : String(option?.children || '');
+                  return labelText.toLowerCase().indexOf(input.toLowerCase()) >= 0;
+                }}
+              >
                 {users.filter(u => u.role === 'agency_manager' || u.role === 'agency_super_admin').map(u => (
                   <Option key={u._id} value={u._id}>{u.name} ({u.role})</Option>
                 ))}
@@ -854,7 +863,16 @@ const MeetingsPage = () => {
               label="Participants"
               rules={[{ required: true, message: 'Please select at least one participant' }]}
             >
-              <Select mode="multiple" placeholder="Select participants" filterOption={(input, option) => option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0}>
+              <Select
+                mode="multiple"
+                placeholder="Select participants"
+                filterOption={(input, option) => {
+                  const labelText = Array.isArray(option?.children)
+                    ? option.children.join(' ')
+                    : String(option?.children || '');
+                  return labelText.toLowerCase().indexOf(input.toLowerCase()) >= 0;
+                }}
+              >
                 {users.map(u => (
                   <Option key={u._id} value={u._id}>{u.name} ({u.role})</Option>
                 ))}

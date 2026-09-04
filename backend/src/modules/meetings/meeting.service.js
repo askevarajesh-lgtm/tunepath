@@ -82,34 +82,44 @@ const createMeeting = async (meetingData, companyId, creatorId) => {
 
   const savedMeeting = await meeting.save();
 
-  // Create notifications for participants
+  // Create notifications and send emails for participants
   if (participants && participants.length > 0) {
+    const formattedDate = new Date(date).toLocaleDateString();
+    const notificationTitle = 'New Meeting Scheduled';
+    const notificationMessage = `You have been invited to a meeting: "${savedMeeting.title}" on ${formattedDate} at ${time}. Agenda: ${savedMeeting.agenda || 'N/A'}`;
+
     for (const participantId of participants) {
       if (participantId.toString() === creatorId.toString()) continue;
+
+      // 1. CRM Messaging System (In-App Notification)
       await createMeetingNotification(
         participantId,
         'meeting_created',
-        'New Meeting Scheduled',
-        `You have been invited to: "${savedMeeting.title}" on ${new Date(date).toLocaleDateString()} at ${time}`,
+        notificationTitle,
+        notificationMessage,
         savedMeeting._id
       );
 
-      // Send email invite
+      // 2. Email Notification via SendPulse
       try {
         const user = await User.findById(participantId);
         if (user && user.email) {
           await sendpulseService.sendEmail(
             user.email,
             `Meeting Invitation: ${savedMeeting.title}`,
-            `<p>You have been invited to a meeting: <strong>${savedMeeting.title}</strong></p>
-             <p>Date: ${new Date(date).toLocaleDateString()}</p>
-             <p>Time: ${time}</p>
-             <p>Agenda: ${savedMeeting.agenda || 'None'}</p>
-             <p>Join Link: <a href="${savedMeeting.meetingLink || '#'}">${savedMeeting.meetingLink || 'N/A'}</a></p>`
+            `<div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
+              <h2 style="color: #333;">Meeting Invitation</h2>
+              <p>You have been invited to a meeting: <strong>${savedMeeting.title}</strong></p>
+              <p><strong>Date:</strong> ${formattedDate}</p>
+              <p><strong>Time:</strong> ${time}</p>
+              <p><strong>Duration:</strong> ${savedMeeting.duration || 30} minutes</p>
+              <p><strong>Agenda:</strong> ${savedMeeting.agenda || 'None'}</p>
+              ${savedMeeting.meetingLink ? `<p><strong>Join Link:</strong> <a href="${savedMeeting.meetingLink}" target="_blank">${savedMeeting.meetingLink}</a></p>` : ''}
+            </div>`
           );
         }
       } catch (err) {
-        console.error("Failed to send email invite:", err);
+        console.error("Failed to send email invite to participant:", err);
       }
     }
   }

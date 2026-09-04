@@ -38,4 +38,11 @@ semrushCacheSchema.index({ companyId: 1, queryKey: 1 }, { unique: true });
 
 const SemrushCache = mongoose.model('SemrushCache', semrushCacheSchema);
 
+// Drop legacy single-field unique index 'queryKey_1' if it exists in MongoDB
+SemrushCache.on('index', () => {
+  SemrushCache.collection.dropIndex('queryKey_1').catch(() => {
+    // Ignore if queryKey_1 index does not exist or has already been dropped
+  });
+});
+
 module.exports = SemrushCache;

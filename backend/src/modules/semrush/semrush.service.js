@@ -52,11 +52,22 @@ class SemrushService {
       const parsedData = this.parseCSVToJSON(response.data);
 
       // 4. Save to cache
-      await SemrushCache.findOneAndUpdate(
-        { queryKey, companyId },
-        { data: parsedData, domain, provider: 'semrush' },
-        { upsert: true, returnDocument: 'after' }
-      );
+      try {
+        await SemrushCache.findOneAndUpdate(
+          { queryKey, companyId },
+          { data: parsedData, domain, provider: 'semrush', createdAt: new Date() },
+          { upsert: true, returnDocument: 'after' }
+        );
+      } catch (cacheErr) {
+        if (cacheErr.code === 11000 || cacheErr.message?.includes('E11000')) {
+          await SemrushCache.updateOne(
+            { queryKey, companyId },
+            { data: parsedData, domain, provider: 'semrush', createdAt: new Date() }
+          ).catch((e) => console.warn('[Semrush] Cache fallback update error:', e.message));
+        } else {
+          console.warn('[Semrush] Cache save error:', cacheErr.message);
+        }
+      }
 
       // 5. Log sync success
       await SemrushSyncLog.create({
@@ -176,32 +187,56 @@ class SemrushService {
 
   async getDomainOverview(domain, companyId, database = 'us', force = false) {
     const cleanDomain = this.cleanDomain(domain);
-    const queryKey = `domain_overview_${cleanDomain}_${database}`;
+    let targetDb = database;
+    if (database === 'us' && cleanDomain.endsWith('.in')) {
+      targetDb = 'in';
+    }
+
+    const queryKey = `domain_overview_${cleanDomain}_${targetDb}`;
     const params = {
       type: 'domain_ranks',
       domain: cleanDomain,
-      database: database,
+      database: targetDb,
       export_columns: 'Dn,Rk,Or,Ot,Oc,Ad,At,Ac'
     };
-    const overviewData = await this.fetchWithCache(queryKey, companyId, domain, params, null, force);
+    let overviewData = await this.fetchWithCache(queryKey, companyId, domain, params, null, force);
+
+    // If 'us' database returned 0 organic traffic or very low keywords, check 'in' (India) database
+    if (targetDb === 'us' && overviewData && overviewData.length > 0) {
+      const otVal = Number(overviewData[0]['Organic Traffic'] || overviewData[0].Ot || 0);
+      const orVal = Number(overviewData[0]['Organic Keywords'] || overviewData[0].Or || 0);
+      if (otVal === 0) {
+        const inQueryKey = `domain_overview_${cleanDomain}_in`;
+        const inParams = { ...params, database: 'in' };
+        const inOverview = await this.fetchWithCache(inQueryKey, companyId, domain, inParams, null, force).catch(() => null);
+        if (inOverview && inOverview.length > 0) {
+          const inOtVal = Number(inOverview[0]['Organic Traffic'] || inOverview[0].Ot || 0);
+          const inOrVal = Number(inOverview[0]['Organic Keywords'] || inOverview[0].Or || 0);
+          if (inOtVal > otVal || inOrVal > orVal) {
+            overviewData = inOverview;
+            targetDb = 'in';
+          }
+        }
+      }
+    }
     
     // Fetch historical trend, top keywords, and competitors in parallel
     if (overviewData && overviewData.length > 0) {
         const trendParams = {
-            type: 'domain_rank_history', domain: cleanDomain, database: database, export_columns: 'Dt,Ot', display_limit: 12
+            type: 'domain_rank_history', domain: cleanDomain, database: targetDb, export_columns: 'Dt,Ot', display_limit: 12
         };
         const keywordsParams = {
-            type: 'domain_organic', domain: cleanDomain, database: database, export_columns: 'Ph,Po,Nq,Cp,Ur,Tr,Tc,Co,Kd,In,Fp', display_limit: 100
+            type: 'domain_organic', domain: cleanDomain, database: targetDb, export_columns: 'Ph,Po,Nq,Cp,Ur,Tr,Tc,Co,Kd,In,Fp', display_limit: 100
         };
         const competitorsParams = {
-            type: 'domain_organic_organic', domain: cleanDomain, database: database, export_columns: 'Dn,Cr,Np,Or,Ot,Oc,Ad', display_limit: 10
+            type: 'domain_organic_organic', domain: cleanDomain, database: targetDb, export_columns: 'Dn,Cr,Np,Or,Ot,Oc,Ad', display_limit: 10
         };
 
         try {
             const [trendData, keywordsData, competitorsData] = await Promise.all([
-                this.fetchWithCache(`domain_rank_history_${cleanDomain}_${database}`, companyId, domain, trendParams, null, force).catch(() => []),
-                this.fetchWithCache(`domain_organic_${cleanDomain}_${database}`, companyId, domain, keywordsParams, null, force).catch(() => []),
-                this.fetchWithCache(`domain_organic_organic_${cleanDomain}_${database}`, companyId, domain, competitorsParams, null, force).catch(() => [])
+                this.fetchWithCache(`domain_rank_history_${cleanDomain}_${targetDb}`, companyId, domain, trendParams, null, force).catch(() => []),
+                this.fetchWithCache(`domain_organic_${cleanDomain}_${targetDb}`, companyId, domain, keywordsParams, null, force).catch(() => []),
+                this.fetchWithCache(`domain_organic_organic_${cleanDomain}_${targetDb}`, companyId, domain, competitorsParams, null, force).catch(() => [])
             ]);
             
             if (trendData && trendData.length > 0) {
@@ -221,11 +256,7 @@ class SemrushService {
             }
 
             if (keywordsData && keywordsData.length > 0) {
-                // If we fetched the max limit and got less than 100, then we know the exact total
-                if (keywordsData.length < 100 && overviewData.length > 0) {
-                    overviewData[0]['Organic Keywords'] = keywordsData.length.toString();
-                    overviewData[0].Or = keywordsData.length.toString();
-                }
+                // Do NOT overwrite Organic Keywords total count with keywordsData.length because display_limit truncates items.
 
                 // We fetched up to 100 keywords for distribution calculation, but only store top 10 for the table
                 const mapKeyword = k => {
