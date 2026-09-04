@@ -433,11 +433,39 @@ const seed = async () => {
       const category = categories[i];
       const templateId = `cat_${category.toLowerCase().replace(/[^a-z0-9]/g, '_')}_v1`;
       
+      const categoryImages = {
+        "Fashion": "https://images.unsplash.com/photo-1445205170230-053b83016050?w=600&q=80",
+        "Electronics": "https://images.unsplash.com/photo-1498049794561-7780e7231661?w=600&q=80",
+        "Furniture": "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=600&q=80",
+        "Beauty": "https://images.unsplash.com/photo-1596462502278-27bf85033e5a?w=600&q=80",
+        "Cosmetics": "https://images.unsplash.com/photo-1616683693504-3ea7e9ad6fec?w=600&q=80",
+        "Grocery": "https://images.unsplash.com/photo-1542838132-92c53300491e?w=600&q=80",
+        "Sports": "https://images.unsplash.com/photo-1461896836934-ffe607ba8211?w=600&q=80",
+        "Shoes": "https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=600&q=80",
+        "Jewelry": "https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?w=600&q=80",
+        "Watches": "https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=600&q=80",
+        "Kids": "https://images.unsplash.com/photo-1519689680058-324335c77eba?w=600&q=80",
+        "Lifestyle": "https://images.unsplash.com/photo-1511988617509-a57a4a4ce25a?w=600&q=80",
+        "Minimal": "https://images.unsplash.com/photo-1494438639946-1ebd1d20bf85?w=600&q=80",
+        "Luxury": "https://images.unsplash.com/photo-1532453288672-3a27e9be9efd?w=600&q=80",
+        "Modern": "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=600&q=80",
+        "Tech": "https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&q=80",
+        "Organic": "https://images.unsplash.com/photo-1505253758473-96b7015fcd40?w=600&q=80",
+        "Home Decor": "https://images.unsplash.com/photo-1513694203232-719a280e022f?w=600&q=80",
+        "Streetwear": "https://images.unsplash.com/photo-1523398002811-999aa8d9512e?w=600&q=80",
+        "Accessories": "https://images.unsplash.com/photo-1509319117193-57bab727e09d?w=600&q=80",
+        "Marketplace": "https://images.unsplash.com/photo-1533900298318-6b8da08a523e?w=600&q=80",
+        "Restaurant": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=600&q=80",
+        "Pet Shop": "https://images.unsplash.com/photo-1450778869180-41d0601e046e?w=600&q=80",
+        "Books": "https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=600&q=80",
+        "General Store": "https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=600&q=80"
+      };
+
       const doc = {
         templateId,
         name: `${category} Theme`,
         category,
-        thumbnail: `https://placehold.co/300x200?text=${category}+Theme`,
+        thumbnail: categoryImages[category] || `https://placehold.co/600x400?text=${category}+Theme`,
         pages: generatePages(category, i),
         assets: [],
         version: 1,

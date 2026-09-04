@@ -3,7 +3,7 @@ import { useStorefront } from '../StorefrontContext';
 import ProductCard from './ProductCard';
 
 const ProductGrid = ({ mapping, html, items }) => {
-  const { products: storeProducts } = useStorefront();
+  const { products: storeProducts, template } = useStorefront();
   const displayItems = items || storeProducts;
 
   // Parse the template HTML once to extract the card template
@@ -19,6 +19,18 @@ const ProductGrid = ({ mapping, html, items }) => {
     if (!cardEl && mapping?.productCard) {
       cardEl = doc.querySelector(mapping.productCard);
     }
+    
+    // Global fallback: If current page has no card, search other pages (e.g. Home, Shop)
+    if (!cardEl && template?.pages) {
+      for (const p of Object.values(template.pages)) {
+        if (p.html && p.html.includes('data-commerce="product-card"')) {
+          const tempDoc = parser.parseFromString(p.html, 'text/html');
+          cardEl = tempDoc.querySelector('[data-commerce="product-card"]');
+          if (cardEl) break;
+        }
+      }
+    }
+
       if (cardEl) {
         let rootCard = cardEl;
         let levels = 0;
@@ -37,7 +49,7 @@ const ProductGrid = ({ mapping, html, items }) => {
       }
 
     return templateStr;
-  }, [html, mapping]);
+  }, [html, mapping, template]);
 
   if (!displayItems || displayItems.length === 0) {
     return (

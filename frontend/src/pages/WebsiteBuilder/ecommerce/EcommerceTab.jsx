@@ -48,7 +48,7 @@ const EcommerceTabContent = ({ itemVariants }) => {
   const match = location.pathname.match(/^(.*?\/website\/ecommerce)(?=\/|$)/);
   const basePath = match ? match[0] : '/workspace/website/ecommerce';
 
-  const activeKey = ['dashboard', 'builder', 'templates', 'preview', 'products', 'orders', 'customers', 'payments', 'shipping', 'settings'].includes(lastPart)
+  const activeKey = ['dashboard', 'pages', 'builder', 'templates', 'preview', 'products', 'orders', 'customers', 'payments', 'shipping', 'settings'].includes(lastPart)
     ? lastPart
     : 'dashboard';
 
@@ -75,7 +75,7 @@ const EcommerceTabContent = ({ itemVariants }) => {
 
   const menuItems = activeTemplateId ? storeMenuItems : baseMenuItems;
 
-  const showSider = activeTemplateId && lastPart !== 'templates';
+  const showSider = activeTemplateId && !['templates', 'catalog'].includes(lastPart);
 
   return (
     <motion.div variants={itemVariants} style={{ height: '100%', minHeight: 'calc(100vh - 200px)' }}>

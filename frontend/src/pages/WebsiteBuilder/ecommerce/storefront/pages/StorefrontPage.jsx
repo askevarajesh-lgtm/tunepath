@@ -166,7 +166,7 @@ const StorefrontPage = ({ page, assets, children, portalSelector }) => {
   // Sync Cart Badge
   useEffect(() => {
     if (!containerRef.current) return;
-    const cartLinks = containerRef.current.querySelectorAll('a[href*="cart"], a[data-commerce-action="cart"], .cart-icon, [id*="cart"]');
+    const cartLinks = containerRef.current.querySelectorAll('a[href*="cart"], a[data-commerce-action="cart"]');
     const totalQuantity = cart.reduce((acc, item) => acc + item.quantity, 0);
     
     cartLinks.forEach(link => {

@@ -102,7 +102,7 @@ const StorefrontRendererContent = () => {
   } else {
     // Generic page
     const hasGrid = page.html?.includes('data-commerce="product-grid"') || page.mapping?.productGrid;
-    const hasWishlistGrid = page.html?.includes('data-commerce="wishlist-grid"');
+    const hasWishlistGrid = page.html?.includes('data-commerce="wishlist-grid"') || page.html?.includes('data-commerce="wishlist"');
     
     if (hasGrid) {
       PageComponent = (
@@ -111,8 +111,9 @@ const StorefrontRendererContent = () => {
         </StorefrontPage>
       );
     } else if (hasWishlistGrid) {
+      const selector = page.html?.includes('data-commerce="wishlist-grid"') ? '[data-commerce="wishlist-grid"]' : '[data-commerce="wishlist"]';
       PageComponent = (
-        <StorefrontPage page={page} assets={template.assets} portalSelector={`[data-commerce="wishlist-grid"]`}>
+        <StorefrontPage page={page} assets={template.assets} portalSelector={selector}>
           <ProductGrid mapping={page.mapping} html={page.html} items={wishlist} />
         </StorefrontPage>
       );

@@ -86,6 +86,27 @@ exports.createStore = async (req, res, next) => {
       assets: assets
     });
     await store.save();
+
+    // Seed dummy products for the newly created store
+    const dummyProducts = [
+      { name: 'Premium Wireless Headphones', price: 299, salePrice: 249, category: 'Electronics', stock: 45, status: 'Active', image: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&q=80' },
+      { name: 'Minimalist Wristwatch', price: 199, salePrice: 0, category: 'Accessories', stock: 12, status: 'Active', image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&q=80' },
+      { name: 'Ergonomic Office Chair', price: 499, salePrice: 399, category: 'Furniture', stock: 8, status: 'Active', image: 'https://images.unsplash.com/photo-1505843490538-5133c6c7d0e1?w=500&q=80' },
+      { name: 'Smart Home Speaker', price: 149, salePrice: 129, category: 'Electronics', stock: 30, status: 'Active', image: 'https://images.unsplash.com/photo-1589003071595-667954930e46?w=500&q=80' },
+      { name: 'Leather Messenger Bag', price: 120, salePrice: 99, category: 'Accessories', stock: 25, status: 'Active', image: 'https://images.unsplash.com/photo-1553062407-98eeb64c6a62?w=500&q=80' },
+      { name: 'Ceramic Coffee Mug', price: 24, salePrice: 18, category: 'Home', stock: 150, status: 'Active', image: 'https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=500&q=80' },
+      { name: 'Noise-Cancelling Earbuds', price: 179, salePrice: 149, category: 'Electronics', stock: 60, status: 'Active', image: 'https://images.unsplash.com/photo-1572569533902-3e0f5299df9b?w=500&q=80' },
+      { name: 'Cotton Crewneck T-Shirt', price: 35, salePrice: 0, category: 'Apparel', stock: 200, status: 'Active', image: 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=500&q=80' }
+    ];
+
+    for (const dp of dummyProducts) {
+      const product = new EcommerceProduct({
+        ...getTemplateQuery(req),
+        storeId: store.templateId,
+        ...dp
+      });
+      await product.save();
+    }
     
     const sObj = store.toObject();
     sObj.id = sObj.templateId;

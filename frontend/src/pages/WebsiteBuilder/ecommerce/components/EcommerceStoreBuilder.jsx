@@ -9,13 +9,14 @@ import { processZipFile } from '../utils/zipExtractor';
 import { analyzePageElements } from '../utils/analyzer';
 import EcommerceGrapesJS from './EcommerceGrapesJS';
 import { useEcommerce } from '../contexts/EcommerceContext';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 
 const { Title, Text } = Typography;
 
 const EcommerceStoreBuilder = () => {
   const { templateId: routeTemplateId, pageId: routePageId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [currentStep, setCurrentStep] = useState(0);
   const [templateId, setTemplateId] = useState('');
   const [pages, setPages] = useState({});
@@ -265,7 +266,13 @@ const EcommerceStoreBuilder = () => {
         initialName={pages[selectedPageId]?.name || ''}
         onBack={() => {
           if (routePageId) {
-            navigate(`../../store/${templateId}`);
+            const match = location.pathname.match(/^(.*?\/website\/ecommerce)(?=\/|$)/);
+            const basePath = match ? match[0] : '';
+            if (basePath) {
+              navigate(`${basePath}/pages`);
+            } else {
+              navigate(`../../pages`);
+            }
           } else {
             setCurrentStep(1);
           }

@@ -143,9 +143,10 @@ const CartItem = ({ item, templateHtml, mapping }) => {
     }
     inputEls.forEach(input => {
       if (input.tagName === 'INPUT') {
-        input.value = item.quantity;
-        input.max = item.stock;
-        input.min = 1;
+        input.setAttribute('value', item.quantity);
+        input.value = item.quantity; // Set property as well
+        if (item.stock) input.setAttribute('max', item.stock);
+        input.setAttribute('min', '1');
         input.setAttribute('data-cart-action', 'update-qty');
       }
     });
