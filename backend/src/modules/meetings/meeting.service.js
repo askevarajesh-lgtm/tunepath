@@ -701,6 +701,87 @@ const getMeetingAnalytics = async (companyId, userRole, userId) => {
   };
 };
 
+/**
+ * Reschedule meeting
+ */
+const rescheduleMeeting = async (meetingId, rescheduleData, companyId, userId) => {
+  const meeting = await Meeting.findOne({ _id: meetingId, companyId });
+  if (!meeting) {
+    throw new Error('Meeting not found');
+  }
+
+  const { date, time, duration, meetingLink, rescheduleReason } = rescheduleData;
+
+  if (!date || !time) {
+    throw new Error('Date and time are required to reschedule a meeting');
+  }
+
+  const oldDate = meeting.date;
+  const oldTime = meeting.time;
+
+  const oldDateStr = new Date(oldDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const newDateStr = new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
+  meeting.date = new Date(date);
+  meeting.time = time;
+  if (duration) meeting.duration = duration;
+  if (meetingLink !== undefined) meeting.meetingLink = meetingLink;
+  meeting.status = 'upcoming';
+
+  const historyDetails = `Rescheduled from ${oldDateStr} at ${oldTime} to ${newDateStr} at ${time}` + 
+    (rescheduleReason ? `. Reason: ${rescheduleReason}` : '');
+
+  meeting.history.push({
+    action: 'rescheduled',
+    performedBy: userId,
+    details: historyDetails
+  });
+
+  const savedMeeting = await meeting.save();
+
+  // Notify participants of reschedule
+  const formattedDate = newDateStr;
+  const notificationTitle = 'Meeting Rescheduled';
+  const notificationMessage = `Meeting "${savedMeeting.title}" has been rescheduled to ${formattedDate} at ${time}.` +
+    (rescheduleReason ? ` Reason: ${rescheduleReason}` : '');
+
+  for (const participantId of savedMeeting.participants) {
+    if (participantId.toString() === userId.toString()) continue;
+
+    await createMeetingNotification(
+      participantId,
+      'meeting_rescheduled',
+      notificationTitle,
+      notificationMessage,
+      savedMeeting._id
+    );
+
+    try {
+      const user = await User.findById(participantId);
+      if (user && user.email) {
+        await sendpulseService.sendEmail(
+          user.email,
+          `Meeting Rescheduled: ${savedMeeting.title}`,
+          `<div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
+            <h2 style="color: #333;">Meeting Rescheduled</h2>
+            <p>The meeting <strong>${savedMeeting.title}</strong> has been rescheduled.</p>
+            <p><strong>Previous Date & Time:</strong> ${oldDateStr} at ${oldTime}</p>
+            <p><strong>New Date:</strong> ${formattedDate}</p>
+            <p><strong>New Time:</strong> ${time}</p>
+            <p><strong>Duration:</strong> ${savedMeeting.duration || 30} minutes</p>
+            ${rescheduleReason ? `<p><strong>Reason for Reschedule:</strong> ${rescheduleReason}</p>` : ''}
+            ${savedMeeting.meetingLink ? `<p><strong>Join Link:</strong> <a href="${savedMeeting.meetingLink}" target="_blank">${savedMeeting.meetingLink}</a></p>` : ''}
+          </div>`
+        );
+      }
+    } catch (err) {
+      console.error("Failed to send reschedule email to participant:", err);
+    }
+  }
+
+  return await getMeetingById(savedMeeting._id, companyId, 'supreme_super_admin', userId);
+};
+
 module.exports = {
   createMeeting,
   getAllMeetings,
@@ -708,6 +789,7 @@ module.exports = {
   updateMeeting,
   deleteMeeting,
   updateMeetingStatus,
+  rescheduleMeeting,
   addMeetingNote,
   updateMeetingNote,
   deleteMeetingNote,
@@ -718,4 +800,4 @@ module.exports = {
   completeFollowUp,
   deleteFollowUp,
   getMeetingAnalytics
-};
+};

@@ -26,6 +26,7 @@ router.delete('/:id', meetingController.deleteMeeting);
 
 // Status/Detail management routes
 router.put('/:id/status', meetingController.updateMeetingStatus);
+router.put('/:id/reschedule', meetingController.rescheduleMeeting);
 // Notes routes
 router.post('/:id/notes', meetingController.addMeetingNote);
 router.put('/:id/notes/:noteId', meetingController.updateMeetingNote);

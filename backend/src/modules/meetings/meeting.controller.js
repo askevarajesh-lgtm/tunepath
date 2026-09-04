@@ -213,6 +213,20 @@ const deleteFollowUp = async (req, res) => {
   }
 };
 
+const rescheduleMeeting = async (req, res) => {
+  try {
+    const result = await meetingService.rescheduleMeeting(
+      req.params.id,
+      req.body,
+      req.companyId,
+      req.user?._id
+    );
+    return sendSuccess(res, 'Meeting rescheduled successfully', result);
+  } catch (error) {
+    return sendError(res, 400, error.message);
+  }
+};
+
 const getMeetingAnalytics = async (req, res) => {
   try {
     const analytics = await meetingService.getMeetingAnalytics(
@@ -233,6 +247,7 @@ module.exports = {
   updateMeeting,
   deleteMeeting,
   updateMeetingStatus,
+  rescheduleMeeting,
   addMeetingNote,
   updateMeetingNote,
   deleteMeetingNote,
@@ -243,4 +258,4 @@ module.exports = {
   completeFollowUp,
   deleteFollowUp,
   getMeetingAnalytics
-};
+};

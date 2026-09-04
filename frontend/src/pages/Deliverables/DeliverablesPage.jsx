@@ -3,7 +3,7 @@ import {
   Table, Typography, Card, Progress, Tag, Space, Tooltip, Row, Col, Statistic, Button, Drawer
 } from 'antd';
 import {
-  ProjectOutlined, CheckCircleOutlined, ClockCircleOutlined, ProfileOutlined, EyeOutlined
+  ProjectOutlined, CheckCircleOutlined, ClockCircleOutlined, ProfileOutlined, EyeOutlined, HourglassOutlined
 } from '@ant-design/icons';
 import { useGetProjectsQuery } from '../../api/projectApi';
 import { useGetTasksQuery } from '../../api/taskApi';
@@ -51,6 +51,7 @@ const DeliverablesPage = () => {
           projects: [],
           totalDeliverables: 0,
           completedDeliverables: 0,
+          pendingApprovalDeliverables: 0,
           remainingDeliverables: 0
         };
       }
@@ -59,8 +60,13 @@ const DeliverablesPage = () => {
       const pTotal = (project.numberOfPosters || 0) + (project.numberOfVideos || 0) + (project.numberOfShoots || 0);
       const pCompleted = (project.approvedPosters || 0) + (project.approvedVideos || 0) + (project.approvedShoots || 0);
 
+      const pPostersPending = Math.max(0, (project.completedPosters || 0) - (project.approvedPosters || 0));
+      const pVideosPending = Math.max(0, (project.completedVideos || 0) - (project.approvedVideos || 0));
+      const pShootsPending = Math.max(0, (project.completedShoots || 0) - (project.approvedShoots || 0));
+
       let extraTotal = 0;
       let extraCompleted = 0;
+      let extraPending = 0;
 
       // also check selectedCategories for custom deliverables
       if (project.selectedCategories && Array.isArray(project.selectedCategories)) {
@@ -70,23 +76,30 @@ const DeliverablesPage = () => {
           if (!isStandard) {
             extraTotal += (cat.quantity || cat.count || 0);
             extraCompleted += (cat.approved || 0);
+            extraPending += Math.max(0, (cat.completed || 0) - (cat.approved || 0));
           }
         });
       }
+
+      const calculatedPending = pPostersPending + pVideosPending + pShootsPending + extraPending;
+      const isProjectPendingReview = ['workflow_sent', 'sent_for_client_review', 'workflow_revision_requested'].includes(project.status) || project.clientReview?.status === 'pending';
+      const pPending = calculatedPending > 0 ? calculatedPending : (isProjectPendingReview ? 1 : 0);
 
       const totalD = pTotal + extraTotal;
       const compD = pCompleted + extraCompleted;
       const remD = totalD - compD;
 
       clientsMap[clientId].totalDeliverables += totalD;
-      clientsMap[clientId].remainingDeliverables += remD;
       clientsMap[clientId].completedDeliverables += compD;
+      clientsMap[clientId].pendingApprovalDeliverables += pPending;
+      clientsMap[clientId].remainingDeliverables += remD;
 
       clientsMap[clientId].projects.push({
         ...project,
         projectTotal: totalD,
-        projectRemaining: remD,
-        projectCompleted: compD
+        projectCompleted: compD,
+        projectPending: pPending,
+        projectRemaining: remD
       });
     });
 
@@ -134,6 +147,18 @@ const DeliverablesPage = () => {
         <Space>
           <ProfileOutlined style={{ color: 'var(--accent-primary)' }} />
           <Text strong style={{ fontSize: 16 }}>{val}</Text>
+        </Space>
+      )
+    },
+    {
+      title: 'Pending Approvals',
+      dataIndex: 'pendingApprovalDeliverables',
+      key: 'pendingApprovalDeliverables',
+      align: 'center',
+      render: (val) => (
+        <Space>
+          <HourglassOutlined style={{ color: '#d97706' }} />
+          <Text strong style={{ fontSize: 16, color: val > 0 ? '#d97706' : undefined }}>{val}</Text>
         </Space>
       )
     },
@@ -216,6 +241,13 @@ const DeliverablesPage = () => {
         render: (val) => <Text strong>{val}</Text>
       },
       {
+        title: 'Pending Approval',
+        dataIndex: 'projectPending',
+        key: 'projectPending',
+        align: 'center',
+        render: (val) => <Text style={{ color: val > 0 ? '#d97706' : undefined, fontWeight: val > 0 ? 'bold' : 'normal' }}>{val}</Text>
+      },
+      {
         title: 'Completed',
         dataIndex: 'projectCompleted',
         key: 'projectCompleted',
@@ -271,6 +303,7 @@ const DeliverablesPage = () => {
   };
 
   const totalGlobal = clientData.reduce((acc, curr) => acc + curr.totalDeliverables, 0);
+  const pendingGlobal = clientData.reduce((acc, curr) => acc + (curr.pendingApprovalDeliverables || 0), 0);
   const completedGlobal = clientData.reduce((acc, curr) => acc + curr.completedDeliverables, 0);
   const remainingGlobal = clientData.reduce((acc, curr) => acc + curr.remainingDeliverables, 0);
 
@@ -284,36 +317,47 @@ const DeliverablesPage = () => {
       </div>
 
       <Row gutter={[24, 24]} style={{ marginBottom: 24 }}>
-        <Col span={8}>
+        <Col xs={24} sm={12} lg={6}>
           <Card bodyStyle={{ padding: 0, display: 'flex', height: '100%' }} style={{ borderRadius: 16, border: 'none', background: isDark ? '#111c31' : '#ffffff', boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.5)' : '0 10px 30px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
             <div style={{ width: '35%', background: 'linear-gradient(135deg, var(--accent-primary) 0%, #0284c7 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-              <ProfileOutlined style={{ fontSize: 40, color: '#fff' }} />
+              <ProfileOutlined style={{ fontSize: 36, color: '#fff' }} />
             </div>
-            <div style={{ width: '65%', padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#8c8c8c', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Total Global Deliverables</div>
-              <div style={{ fontSize: 36, fontWeight: 900, lineHeight: 1, color: isDark ? '#fff' : '#111c31' }}>{totalGlobal}</div>
+            <div style={{ width: '65%', padding: '20px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#8c8c8c', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Total Global Deliverables</div>
+              <div style={{ fontSize: 32, fontWeight: 900, lineHeight: 1, color: isDark ? '#fff' : '#111c31' }}>{totalGlobal}</div>
             </div>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} lg={6}>
+          <Card bodyStyle={{ padding: 0, display: 'flex', height: '100%' }} style={{ borderRadius: 16, border: 'none', background: isDark ? '#111c31' : '#ffffff', boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.5)' : '0 10px 30px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+            <div style={{ width: '35%', background: 'linear-gradient(135deg, #b45309 0%, #f59e0b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+              <HourglassOutlined style={{ fontSize: 36, color: '#fff' }} />
+            </div>
+            <div style={{ width: '65%', padding: '20px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#8c8c8c', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Global Pending Approvals</div>
+              <div style={{ fontSize: 32, fontWeight: 900, lineHeight: 1, color: isDark ? '#fff' : '#111c31' }}>{pendingGlobal}</div>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
           <Card bodyStyle={{ padding: 0, display: 'flex', height: '100%' }} style={{ borderRadius: 16, border: 'none', background: isDark ? '#111c31' : '#ffffff', boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.5)' : '0 10px 30px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
             <div style={{ width: '35%', background: 'linear-gradient(135deg, #15803d 0%, #16a34a 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-              <CheckCircleOutlined style={{ fontSize: 40, color: '#fff' }} />
+              <CheckCircleOutlined style={{ fontSize: 36, color: '#fff' }} />
             </div>
-            <div style={{ width: '65%', padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#8c8c8c', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Global Completed</div>
-              <div style={{ fontSize: 36, fontWeight: 900, lineHeight: 1, color: isDark ? '#fff' : '#111c31' }}>{completedGlobal}</div>
+            <div style={{ width: '65%', padding: '20px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#8c8c8c', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Global Completed</div>
+              <div style={{ fontSize: 32, fontWeight: 900, lineHeight: 1, color: isDark ? '#fff' : '#111c31' }}>{completedGlobal}</div>
             </div>
           </Card>
         </Col>
-        <Col span={8}>
+        <Col xs={24} sm={12} lg={6}>
           <Card bodyStyle={{ padding: 0, display: 'flex', height: '100%' }} style={{ borderRadius: 16, border: 'none', background: isDark ? '#111c31' : '#ffffff', boxShadow: isDark ? '0 10px 30px rgba(0,0,0,0.5)' : '0 10px 30px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
             <div style={{ width: '35%', background: 'linear-gradient(135deg, #c2410c 0%, #ea580c 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
-              <ClockCircleOutlined style={{ fontSize: 40, color: '#fff' }} />
+              <ClockCircleOutlined style={{ fontSize: 36, color: '#fff' }} />
             </div>
-            <div style={{ width: '65%', padding: '24px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#8c8c8c', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Global Remaining</div>
-              <div style={{ fontSize: 36, fontWeight: 900, lineHeight: 1, color: isDark ? '#fff' : '#111c31' }}>{remainingGlobal}</div>
+            <div style={{ width: '65%', padding: '20px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#8c8c8c', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Global Remaining</div>
+              <div style={{ fontSize: 32, fontWeight: 900, lineHeight: 1, color: isDark ? '#fff' : '#111c31' }}>{remainingGlobal}</div>
             </div>
           </Card>
         </Col>

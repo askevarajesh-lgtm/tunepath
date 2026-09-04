@@ -10,7 +10,7 @@ import {
   BarChartOutlined, PaperClipOutlined, FileTextOutlined, TeamOutlined, 
   UserOutlined, ClockCircleOutlined, LinkOutlined, DeleteOutlined, 
   EditOutlined, CheckCircleOutlined, InfoCircleOutlined, CloseCircleOutlined,
-  CalendarTwoTone, WarningOutlined, FileAddOutlined
+  CalendarTwoTone, WarningOutlined, FileAddOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,7 +18,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { 
   useGetMeetingsQuery, useGetMeetingByIdQuery, useGetMeetingAnalyticsQuery, 
   useCreateMeetingMutation, useUpdateMeetingMutation, useDeleteMeetingMutation, 
-  useUpdateMeetingStatusMutation, useAddMeetingNoteMutation, 
+  useUpdateMeetingStatusMutation, useRescheduleMeetingMutation, useAddMeetingNoteMutation, 
   useUpdateMeetingNoteMutation, useDeleteMeetingNoteMutation,
   useAddMeetingAttachmentMutation, useRemoveMeetingAttachmentMutation,
   useCreateFollowUpMutation, useUpdateFollowUpMutation,
@@ -65,6 +65,11 @@ const MeetingsPage = () => {
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [selectedMeetingId, setSelectedMeetingId] = useState(null);
   
+  // Reschedule Modal state
+  const [rescheduleModalVisible, setRescheduleModalVisible] = useState(false);
+  const [reschedulingMeeting, setReschedulingMeeting] = useState(null);
+  const [rescheduleForm] = Form.useForm();
+
   // Note/Followup/Attachment inputs
   const [noteContent, setNoteContent] = useState('');
   const [editingNoteId, setEditingNoteId] = useState(null);
@@ -104,7 +109,9 @@ const MeetingsPage = () => {
   const [updateMeeting, { isLoading: isUpdating }] = useUpdateMeetingMutation();
   const [deleteMeeting] = useDeleteMeetingMutation();
   const [updateMeetingStatus] = useUpdateMeetingStatusMutation();
+  const [rescheduleMeeting, { isLoading: isRescheduling }] = useRescheduleMeetingMutation();
   const [addMeetingNote, { isLoading: isAddingNote }] = useAddMeetingNoteMutation();
+
   const [updateMeetingNote, { isLoading: isUpdatingNote }] = useUpdateMeetingNoteMutation();
   const [deleteMeetingNote] = useDeleteMeetingNoteMutation();
 
@@ -219,6 +226,50 @@ const MeetingsPage = () => {
       message.error(err.data?.message || 'Failed to update meeting status');
     }
   };
+
+  // Open reschedule modal
+  const openRescheduleModal = (meeting) => {
+    setReschedulingMeeting(meeting);
+    rescheduleForm.setFieldsValue({
+      date: meeting.date ? dayjs(meeting.date) : null,
+      time: meeting.time ? (dayjs.isDayjs(meeting.time) ? meeting.time : dayjs(meeting.time, ['HH:mm', 'h:mm A', 'hh:mm A', 'HH:mm:ss'])) : null,
+      duration: meeting.duration || 30,
+      meetingLink: meeting.meetingLink || '',
+      rescheduleReason: ''
+    });
+    setRescheduleModalVisible(true);
+  };
+
+  const closeRescheduleModal = () => {
+    setRescheduleModalVisible(false);
+    setReschedulingMeeting(null);
+    rescheduleForm.resetFields();
+  };
+
+  const handleRescheduleSubmit = async (values) => {
+    try {
+      const payload = {
+        id: reschedulingMeeting._id,
+        date: values.date ? values.date.format('YYYY-MM-DD') : '',
+        time: values.time ? (typeof values.time === 'string' ? values.time : values.time.format('HH:mm')) : '',
+        duration: values.duration,
+        meetingLink: values.meetingLink,
+        rescheduleReason: values.rescheduleReason
+      };
+
+      await rescheduleMeeting(payload).unwrap();
+      message.success('Meeting rescheduled successfully');
+      refetchMeetings();
+      refetchAnalytics();
+      if (selectedMeetingId === reschedulingMeeting._id) {
+        refetchDetail();
+      }
+      closeRescheduleModal();
+    } catch (err) {
+      message.error(err.data?.message || 'Failed to reschedule meeting');
+    }
+  };
+
 
   // Add or Save an edited Note
   const handleAddNote = async () => {
@@ -504,9 +555,17 @@ const MeetingsPage = () => {
               />
             </Tooltip>
           )}
-          {((record.host?._id || record.host) === currentUser._id || ['supreme_super_admin'].includes(userRole)) && (
+          {((record.host?._id || record.host) === currentUser._id || canManageMeetings || isClientRole) && (
             <>
-              <Tooltip title="Edit">
+              <Tooltip title="Reschedule Meeting">
+                <Button 
+                  type="link" 
+                  icon={<ReloadOutlined />} 
+                  onClick={() => openRescheduleModal(record)} 
+                  style={{ color: record.status === 'cancelled' ? '#ff4d4f' : '#1890ff' }}
+                />
+              </Tooltip>
+              <Tooltip title="Edit Details">
                 <Button 
                   type="link" 
                   icon={<EditOutlined />} 
@@ -939,17 +998,28 @@ const MeetingsPage = () => {
                   
                   <p><strong>Schedule:</strong> {dayjs(detailData.meeting.date).format('MMMM DD, YYYY')} at {detailData.meeting.time} ({detailData.meeting.duration} minutes)</p>
                   
-                  {detailData.meeting.meetingLink && (
-                    <Button 
-                      type="primary" 
-                      icon={<LinkOutlined />} 
-                      href={detailData.meeting.meetingLink} 
-                      target="_blank"
-                      style={{ marginBottom: '16px' }}
-                    >
-                      Join Virtual Meeting
-                    </Button>
-                  )}
+                  <Space style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
+                    {detailData.meeting.meetingLink && (
+                      <Button 
+                        type="primary" 
+                        icon={<LinkOutlined />} 
+                        href={detailData.meeting.meetingLink} 
+                        target="_blank"
+                      >
+                        Join Virtual Meeting
+                      </Button>
+                    )}
+                    {((detailData.meeting.host?._id || detailData.meeting.host) === currentUser._id || canManageMeetings || isClientRole) && (
+                      <Button 
+                        type="default" 
+                        icon={<ReloadOutlined />} 
+                        onClick={() => openRescheduleModal(detailData.meeting)}
+                      >
+                        Reschedule Meeting
+                      </Button>
+                    )}
+                  </Space>
+
 
                   <Divider />
                   
@@ -1196,6 +1266,106 @@ const MeetingsPage = () => {
         ) : (
           <div style={{ textAlign: 'center', padding: '24px' }}>Loading meeting metadata...</div>
         )}
+      </Modal>
+
+      {/* Reschedule Meeting Modal */}
+      <Modal
+        title={
+          <Space>
+            <ReloadOutlined style={{ color: 'var(--accent-primary)' }} />
+            <span>Reschedule Meeting: {reschedulingMeeting?.title || ''}</span>
+          </Space>
+        }
+        open={rescheduleModalVisible}
+        onCancel={closeRescheduleModal}
+        onOk={() => rescheduleForm.submit()}
+        confirmLoading={isRescheduling}
+        okText="Reschedule Meeting"
+        width={560}
+      >
+        {reschedulingMeeting && (
+          <div style={{ 
+            marginBottom: 20, 
+            padding: 16, 
+            background: isDark ? '#1a233a' : '#f0f5ff', 
+            borderRadius: 10, 
+            border: isDark ? '1px solid #2f3b54' : '1px solid #adc6ff' 
+          }}>
+            <div style={{ fontWeight: 600, color: isDark ? '#91caff' : '#1d39c4', marginBottom: 6 }}>
+              Current Meeting Info
+            </div>
+            <div style={{ fontSize: 13, color: isDark ? '#d9d9d9' : '#595959' }}>
+              <strong>Date & Time:</strong> {dayjs(reschedulingMeeting.date).format('MMM DD, YYYY')} at {reschedulingMeeting.time} ({reschedulingMeeting.duration || 30} mins)
+            </div>
+            <div style={{ fontSize: 13, color: isDark ? '#d9d9d9' : '#595959', marginTop: 4 }}>
+              <strong>Current Status:</strong> {getStatusTag(reschedulingMeeting.status)}
+            </div>
+          </div>
+        )}
+        <Form
+          form={rescheduleForm}
+          layout="vertical"
+          onFinish={handleRescheduleSubmit}
+        >
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="date"
+                label="New Date"
+                rules={[{ required: true, message: 'Please select new date' }]}
+              >
+                <DatePicker 
+                  style={{ width: '100%' }} 
+                  disabledDate={(current) => current && current < dayjs().startOf('day')} 
+                />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="time"
+                label="New Time"
+                rules={[{ required: true, message: 'Please select new time' }]}
+              >
+                <TimePicker 
+                  format="hh:mm A" 
+                  use12Hours 
+                  style={{ width: '100%' }} 
+                  placeholder="Select new time" 
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item
+                name="duration"
+                label="Duration (minutes)"
+                rules={[{ required: true, message: 'Please enter duration' }]}
+              >
+                <InputNumber min={5} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item
+                name="meetingLink"
+                label="Meeting Link / Location"
+              >
+                <Input prefix={<LinkOutlined />} placeholder="https://meet.google.com/..." />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Form.Item
+            name="rescheduleReason"
+            label="Reason for Rescheduling (Optional)"
+          >
+            <TextArea 
+              rows={3} 
+              placeholder="Provide a reason for rescheduling (this will be emailed to participants and logged in meeting history)..." 
+            />
+          </Form.Item>
+        </Form>
       </Modal>
     </div>
   );

@@ -86,6 +86,10 @@ export const useUpdateMeetingStatusMutation = createMutationHook('put')(({ id, s
   url: `/meetings/${id}/status`,
   body: { status }
 }));
+export const useRescheduleMeetingMutation = createMutationHook('put')(({ id, ...body }) => ({
+  url: `/meetings/${id}/reschedule`,
+  body
+}));
 export const useAddMeetingNoteMutation = createMutationHook('post')(({ id, ...body }) => ({
   url: `/meetings/${id}/notes`,
   body
