@@ -4,6 +4,7 @@ import { Eye, Copy } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useEcommerce } from '../contexts/EcommerceContext';
 import api from '../../../../services/api';
+import { ENABLE_TEMPLATE_IMPORT } from '../templateImportConfig';
 
 const { Title, Text } = Typography;
 const { Meta } = Card;
@@ -76,7 +77,12 @@ const TemplateCatalog = () => {
           <Title level={3} style={{ margin: 0 }}>Template Catalog</Title>
           <Text type="secondary">Choose a template to start building your store.</Text>
         </div>
-        <Button onClick={() => navigate('../templates')}>Back to Store Library</Button>
+        <Space>
+          {ENABLE_TEMPLATE_IMPORT && (
+            <Button type="dashed" onClick={() => navigate('../import-template')}>Import Template</Button>
+          )}
+          <Button onClick={() => navigate('../templates')}>Back to Store Library</Button>
+        </Space>
       </div>
 
       <Row gutter={[24, 24]}>

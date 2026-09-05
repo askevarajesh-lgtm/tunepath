@@ -45,6 +45,35 @@ exports.getCatalogTemplate = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
+exports.importCatalogTemplate = async (req, res, next) => {
+  try {
+    const { templateId, name, category, pages, assets, commerceBindings, metadata } = req.body;
+    
+    if (!templateId || !name) {
+      return res.status(400).json({ success: false, message: 'templateId and name are required' });
+    }
+
+    // Upsert the catalog entry
+    const template = await EcommerceTemplateCatalog.findOneAndUpdate(
+      { templateId },
+      { 
+        $set: { 
+          name, 
+          category: category || 'General',
+          pages, 
+          assets, 
+          commerceBindings,
+          metadata: metadata || { importedFrom: 'zip-upload' },
+          active: true
+        } 
+      },
+      { new: true, upsert: true }
+    );
+
+    res.json({ success: true, data: template });
+  } catch (error) { next(error); }
+};
+
 // --- STORES (formerly Templates) ---
 exports.getStores = async (req, res, next) => {
   try {

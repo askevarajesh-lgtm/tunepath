@@ -89,20 +89,22 @@ const StorefrontRendererContent = () => {
     return <div style={{ padding: 40, textAlign: 'center' }}>Page not found.</div>;
   }
 
+  const isImported = template?.templateId?.startsWith('import-') || template?.sourceTemplateId?.startsWith('import-') || template?.metadata?.importedFrom === 'zip-upload';
+
   let PageComponent = null;
 
-  if (page.role === 'Product Listing') {
+  if (!isImported && page.role === 'Product Listing') {
     PageComponent = <ProductListPage />;
-  } else if (page.role === 'Product Detail') {
+  } else if (!isImported && page.role === 'Product Detail') {
     PageComponent = <ProductDetailPage />;
-  } else if (page.role === 'Cart') {
+  } else if (!isImported && page.role === 'Cart') {
     PageComponent = <CartPage />;
-  } else if (page.role === 'Checkout') {
+  } else if (!isImported && page.role === 'Checkout') {
     PageComponent = <CheckoutPage />;
   } else {
     // Generic page
-    const hasGrid = page.html?.includes('data-commerce="product-grid"') || page.mapping?.productGrid;
-    const hasWishlistGrid = page.html?.includes('data-commerce="wishlist-grid"') || page.html?.includes('data-commerce="wishlist"');
+    const hasGrid = !isImported && (page.html?.includes('data-commerce="product-grid"') || page.mapping?.productGrid);
+    const hasWishlistGrid = !isImported && (page.html?.includes('data-commerce="wishlist-grid"') || page.html?.includes('data-commerce="wishlist"'));
     
     if (hasGrid) {
       PageComponent = (

@@ -38,8 +38,23 @@ export const processZipFile = async (file) => {
     if (relativePath.endsWith('.html') || relativePath.endsWith('.htm')) {
       filePromises.push(
         zipEntry.async('string').then(content => {
-          // SANITIZATION: Strip inline script tags to prevent XSS / execution in preview
-          const sanitizedContent = content.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+          // SANITIZATION: Strip external ecommerce logic but keep UI
+          let sanitizedContent = content;
+          
+          // Basic script removal for potentially conflicting logic
+          const scriptRegex = /<script\b[^>]*>([\s\S]*?)<\/script>/gi;
+          sanitizedContent = sanitizedContent.replace(scriptRegex, (match, scriptContent) => {
+            const lowerScript = scriptContent.toLowerCase();
+            // Remove scripts that likely interfere with our commerce state
+            if (lowerScript.includes('cart') && lowerScript.includes('storage') || 
+                lowerScript.includes('checkout') || 
+                lowerScript.includes('payment') ||
+                lowerScript.includes('addtocart') ||
+                lowerScript.includes('localstorage.setitem("cart"')) {
+                return ''; // Remove
+            }
+            return match; // Keep harmless scripts like sliders
+          });
 
           let fileName = relativePath.split('/').pop();
           let baseName = fileName.replace(/\.html?$/, '');
@@ -50,35 +65,62 @@ export const processZipFile = async (file) => {
 
           const normName = lowerName.replace(/[-_]/g, '');
           
-          if (normName === 'index' || normName === 'home' || normName === 'main') {
+          // Enhanced multi-signal detection
+          const lowerHtml = sanitizedContent.toLowerCase();
+          const titleMatch = sanitizedContent.match(/<title[^>]*>([^<]+)<\/title>/i);
+          const title = titleMatch ? titleMatch[1].toLowerCase() : '';
+          
+          const combinedSignals = `${normName} ${title}`.trim();
+          
+          if (combinedSignals.includes('index') || combinedSignals.includes('home') || combinedSignals.includes('main')) {
             role = 'Home';
             name = 'Home';
-          } else if (normName.includes('list') || normName.includes('shop') || normName === 'products') {
-            role = 'Product Listing';
-            name = 'Product Listing';
-          } else if (normName.includes('detail') || normName.includes('single') || normName === 'product') {
+          } else if (combinedSignals.includes('list') || combinedSignals.includes('shop') || combinedSignals.includes('products') || combinedSignals.includes('collection') || combinedSignals.includes('category')) {
+            role = 'Shop';
+            name = 'Shop';
+          } else if (combinedSignals.includes('detail') || combinedSignals.includes('single') || combinedSignals.includes('product') || combinedSignals.includes('item')) {
             role = 'Product Detail';
             name = 'Product Detail';
-          } else if (normName.includes('cart') || normName.includes('basket')) {
+          } else if (combinedSignals.includes('cart') || combinedSignals.includes('basket') || combinedSignals.includes('bag')) {
             role = 'Cart';
             name = 'Cart';
-          } else if (normName.includes('checkout') || normName.includes('cheackout') || normName.includes('chackout')) {
+          } else if (combinedSignals.includes('checkout') || combinedSignals.includes('payment') || combinedSignals.includes('billing')) {
             role = 'Checkout';
             name = 'Checkout';
-          } else if (normName.includes('contact')) {
+          } else if (combinedSignals.includes('wishlist') || combinedSignals.includes('favorite') || combinedSignals.includes('favourite')) {
+            role = 'Wishlist';
+            name = 'Wishlist';
+          } else if (combinedSignals.includes('about') || combinedSignals.includes('company') || combinedSignals.includes('story')) {
+            role = 'About';
+            name = 'About';
+          } else if (combinedSignals.includes('contact') || combinedSignals.includes('touch')) {
             role = 'Contact';
             name = 'Contact';
+          } else if (combinedSignals.includes('terms') || combinedSignals.includes('conditions')) {
+            role = 'Terms';
+            name = 'Terms';
+          } else if (combinedSignals.includes('privacy')) {
+            role = 'Privacy';
+            name = 'Privacy';
           }
           
           // Content-based fallback if role is still Other
           if (role === 'Other') {
-              const lowerHtml = sanitizedContent.toLowerCase();
               if (lowerHtml.includes('billing address') && lowerHtml.includes('payment') && lowerHtml.includes('<form')) {
                   role = 'Checkout';
                   name = 'Checkout';
               } else if (lowerHtml.includes('quantity') && lowerHtml.includes('price') && lowerHtml.includes('total') && (lowerHtml.includes('<table') || lowerHtml.includes('cart'))) {
                   role = 'Cart';
                   name = 'Cart';
+              } else if (lowerHtml.includes('add to cart') && lowerHtml.includes('price') && lowerHtml.includes('<img')) {
+                  // Heuristic for product detail vs listing: if there's a big add to cart but only one main product area
+                  if(lowerHtml.split('add to cart').length < 3) {
+                      role = 'Product Detail';
+                      name = 'Product Detail';
+                  } else {
+                      role = 'Shop';
+                      name = 'Shop';
+                  }
               }
           }
 
@@ -115,65 +157,78 @@ export const processZipFile = async (file) => {
 };
 
 export const resolveAssetUrls = (html, assets) => {
+  if (!html && !assets) return html;
+  
+  // Create a deep copy of assets so we can mutate the CSS content
+  const processedAssets = JSON.parse(JSON.stringify(assets));
+  const assetPaths = Object.keys(processedAssets).sort((a, b) => b.length - a.length);
+
+  const getReplacement = (asset) => {
+    if (asset.ext === 'js') return '#';
+    if (asset.type === 'text') {
+      // Base64 encode text assets to avoid any URI parsing issues
+      if (asset.ext === 'css') return `data:text/css;base64,${btoa(unescape(encodeURIComponent(asset.content)))}`;
+      if (asset.ext === 'svg') return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(asset.content)))}`;
+      if (asset.ext === 'json') return `data:application/json;base64,${btoa(unescape(encodeURIComponent(asset.content)))}`;
+    }
+    let mime = asset.ext;
+    if (asset.ext === 'jpg') mime = 'jpeg';
+    if (['woff', 'woff2', 'ttf', 'otf'].includes(asset.ext)) mime = `font/${asset.ext}`;
+    else if (['mp4', 'webm'].includes(asset.ext)) mime = `video/${asset.ext}`;
+    else mime = `image/${mime}`;
+    return `data:${mime};base64,${asset.content}`;
+  };
+
+  // Pre-process CSS files to resolve URLs inside them
+  assetPaths.forEach(cssPath => {
+    if (processedAssets[cssPath].ext === 'css') {
+      let cssContent = processedAssets[cssPath].content;
+      assetPaths.forEach(assetPath => {
+        if (assetPath === cssPath) return; // don't self-replace
+        const asset = processedAssets[assetPath];
+        const replacement = getReplacement(asset);
+        if (replacement && replacement !== '#') {
+          const escapedPath = assetPath.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          // Match url(...) with optional quotes and spaces, and any suffix like ?#
+          const regex = new RegExp(`url\\(\\s*['"]?([^'"]*?)(${escapedPath})([^'"]*)['"]?\\s*\\)`, 'gi');
+          cssContent = cssContent.replace(regex, `url("${replacement}")`);
+        }
+      });
+      processedAssets[cssPath].content = cssContent;
+    }
+  });
+
   if (!html) return html;
   let resolvedHtml = html;
-  
-  // Sort by length descending to replace most specific paths first
-  const assetPaths = Object.keys(assets).sort((a, b) => b.length - a.length);
 
   assetPaths.forEach(assetPath => {
-    const asset = assets[assetPath];
-    let replacement = '';
-    
-    // Do not inject JS as executable script inside React preview
-    if (asset.ext === 'js') {
-      replacement = '#'; // Neutralize
-    } else if (asset.type === 'text') {
-      if (asset.ext === 'css') {
-        replacement = `data:text/css;charset=utf-8,${encodeURIComponent(asset.content)}`;
-      } else if (asset.ext === 'svg') {
-        replacement = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(asset.content)}`;
-      } else if (asset.ext === 'json') {
-        replacement = `data:application/json;charset=utf-8,${encodeURIComponent(asset.content)}`;
-      }
-    } else {
-      // base64 media
-      let mime = asset.ext;
-      if (asset.ext === 'jpg') mime = 'jpeg';
-      if (['woff', 'woff2', 'ttf', 'otf'].includes(asset.ext)) {
-        mime = `font/${asset.ext}`;
-      } else if (['mp4', 'webm'].includes(asset.ext)) {
-        mime = `video/${asset.ext}`;
-      } else {
-        mime = `image/${mime}`;
-      }
-      replacement = `data:${mime};base64,${asset.content}`;
-    }
+    const asset = processedAssets[assetPath];
+    const replacement = getReplacement(asset);
     
     if (replacement && replacement !== '#') {
-      // Advanced replace: handles src="", href="", CSS url(...), and various relative path prefixes
       const escapedPath = assetPath.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
       
       const regexPatterns = [
-        new RegExp(`src=['"]([^'"]*?)(${escapedPath})([?#][^'"]*)?['"]`, 'g'),
-        new RegExp(`href=['"]([^'"]*?)(${escapedPath})([?#][^'"]*)?['"]`, 'g'),
-        new RegExp(`url\\(['"]?([^'"]*?)(${escapedPath})([?#][^'"]*)?['"]?\\)`, 'g'),
-        new RegExp(`srcset=['"]([^'"]*?)(${escapedPath})([^'"]*)['"]`, 'g')
+        new RegExp(`src\\s*=\\s*['"]([^'"]*?)(${escapedPath})([^'"]*)['"]`, 'gi'),
+        new RegExp(`href\\s*=\\s*['"]([^'"]*?)(${escapedPath})([^'"]*)['"]`, 'gi'),
+        new RegExp(`url\\(\\s*['"]?([^'"]*?)(${escapedPath})([^'"]*)['"]?\\s*\\)`, 'gi'),
+        new RegExp(`srcset\\s*=\\s*['"]([^'"]*?)(${escapedPath})([^'"]*)['"]`, 'gi')
       ];
 
       regexPatterns.forEach(regex => {
         resolvedHtml = resolvedHtml.replace(regex, (match, prefix, path, suffix) => {
-          if (match.startsWith('src=')) return `src="${replacement}"`;
-          if (match.startsWith('href=')) return `href="${replacement}"`;
-          if (match.startsWith('url(')) return `url("${replacement}")`;
-          if (match.startsWith('srcset=')) return `srcset="${replacement}${suffix || ''}"`; // srcset is tricky, MVP simple replacement
+          const lowerMatch = match.toLowerCase();
+          if (lowerMatch.startsWith('src')) return `src="${replacement}"`;
+          if (lowerMatch.startsWith('href')) return `href="${replacement}"`;
+          if (lowerMatch.startsWith('url')) return `url("${replacement}")`;
+          if (lowerMatch.startsWith('srcset')) return `srcset="${replacement}"`; // drop suffix for srcset in MVP
           return match;
         });
       });
     } else if (replacement === '#') {
       // Neutralize JS
       const escapedPath = assetPath.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      const jsRegex = new RegExp(`src=['"]([^'"]*?)(${escapedPath})['"]`, 'g');
+      const jsRegex = new RegExp(`src\\s*=\\s*['"]([^'"]*?)(${escapedPath})([^'"]*)['"]`, 'gi');
       resolvedHtml = resolvedHtml.replace(jsRegex, `src="#"`);
     }
   });

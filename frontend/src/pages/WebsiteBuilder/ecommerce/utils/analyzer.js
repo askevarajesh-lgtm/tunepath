@@ -1,4 +1,6 @@
 // analyzer.js - Heuristic template analyzer for e-commerce elements
+// IMPROVED VERSION for Temporary Import Workflow
+
 export const analyzePageSemantics = (html) => {
   const parser = new DOMParser();
   const doc = parser.parseFromString(html, 'text/html');
@@ -46,6 +48,7 @@ export const analyzePageSemantics = (html) => {
       state: '',
       country: '',
       postalCode: '',
+      payment: '',
       submitBtn: ''
     },
     confidence: { product: 0, cart: 0, checkout: 0 },
@@ -54,10 +57,19 @@ export const analyzePageSemantics = (html) => {
 
   const getSelector = (el, stopAt = doc.body) => {
     if (!el || el === doc || el === doc.body || el === doc.documentElement) return '';
+    
+    // Priority 1: Unique ID
     if (el.id) return `#${el.id}`;
+    
+    // Priority 2: Unique Data Attribute (e.g. data-product-id)
     if (el.dataset) {
-      const idKeys = Object.keys(el.dataset).filter(k => k.toLowerCase().includes('id') || k.toLowerCase().includes('ref'));
-      if (idKeys.length > 0) return `[data-${idKeys[0].replace(/[A-Z]/g, m => "-" + m.toLowerCase())}="${el.dataset[idKeys[0]]}"]`;
+      const dataAttrs = Object.keys(el.dataset);
+      for (const key of dataAttrs) {
+        if (key.toLowerCase().includes('id') || key.toLowerCase().includes('ref') || key.toLowerCase().includes('product')) {
+          const attr = `data-${key.replace(/[A-Z]/g, m => "-" + m.toLowerCase())}`;
+          return `[${attr}="${el.dataset[key]}"]`;
+        }
+      }
     }
     
     // Build path up to a stable parent
@@ -70,14 +82,15 @@ export const analyzePageSemantics = (html) => {
       } else if (current.className && typeof current.className === 'string') {
         const classes = current.className.split(' ')
           .map(c => c.trim())
-          .filter(c => c && !c.includes(':') && !c.match(/^[0-9]/) && !['col', 'row', 'container', 'active', 'show', 'd-flex'].includes(c));
+          .filter(c => c && !c.includes(':') && !c.match(/^[0-9]/) && !['col', 'row', 'container', 'active', 'show', 'd-flex', 'wrapper', 'item', 'inner'].includes(c));
         
         if (classes.length > 0) {
-          // Prefer semantic classes
-          const semantic = classes.find(c => c.includes('product') || c.includes('cart') || c.includes('item') || c.includes('title') || c.includes('price') || c.includes('img') || c.includes('btn'));
+          // Prefer semantic classes over generic layout ones
+          const semantic = classes.find(c => c.includes('product') || c.includes('cart') || c.includes('item') || c.includes('title') || c.includes('price') || c.includes('img') || c.includes('btn') || c.includes('form') || c.includes('checkout'));
           if (semantic) {
             path.unshift(`.${semantic}`);
           } else {
+            // Priority 4: Stable class combination (just use the first specific class)
              path.unshift(`.${classes[0]}`);
           }
         } else {
@@ -91,12 +104,12 @@ export const analyzePageSemantics = (html) => {
     
     if (path.length === 0) return el.tagName.toLowerCase();
     
-    // Simplify if too long
+    // Simplify if too long to avoid fragile nth-child or long chains
     if (path.length > 3) {
        path = [path[0], path[path.length - 2], path[path.length - 1]].filter(Boolean);
     }
     
-    const selector = path.join(' ');
+    const selector = path.join(' > ');
     return selector;
   };
 
@@ -106,15 +119,24 @@ export const analyzePageSemantics = (html) => {
     }
   };
 
+  const isCurrency = (text) => {
+    return !!text.match(/[\$\£\€\₹]/) || !!text.match(/\d+(\.\d{2})?\s*(usd|eur|gbp|inr)/i);
+  };
+
   // --- PRODUCT DETECTOR ---
   const detectProducts = () => {
     const elements = Array.from(doc.querySelectorAll('div, li, article, section'));
     const structureMap = new Map();
     
+    // Group elements by structural signature
     elements.forEach(el => {
+      // Must have some content to be a product card
       if (el.children.length < 2 || el.children.length > 30) return;
+      
       const tagPath = Array.from(el.children).map(c => c.tagName).join('>');
+      // Also factor in classes of immediate children if available, for more robust grouping
       const classPath = Array.from(el.children).map(c => (c.className || '').toString().split(' ')[0]).join('>');
+      
       const signature = `${el.tagName}:${tagPath}:${classPath}`;
       if (!structureMap.has(signature)) structureMap.set(signature, []);
       structureMap.get(signature).push(el);
@@ -124,18 +146,28 @@ export const analyzePageSemantics = (html) => {
     let bestScore = 0;
     
     for (const [sig, els] of structureMap.entries()) {
-      if (els.length < 2) continue;
-      let score = els.length * 0.1;
+      if (els.length < 2) continue; // Need at least 2 repeated items for a grid
+      
+      let score = Math.min(els.length * 0.2, 2); // Cap repeat bonus
       const sample = els[0];
       const text = sample.textContent.toLowerCase();
       const html = sample.innerHTML.toLowerCase();
       const cls = (sample.className || '').toString().toLowerCase();
       
+      // Semantic hints
       if (cls.includes('product') || cls.includes('item') || cls.includes('card')) score += 2;
-      if (sample.querySelector('img') || html.includes('background-image')) score += 1;
-      if (text.match(/[\$\£\€\₹]/) || text.match(/\d+(\.\d{2})?\s*(usd|eur|gbp|inr)/i)) score += 1.5;
+      
+      // Structural hints for products
+      if (sample.querySelector('img') || html.includes('background-image')) score += 1.5;
+      if (isCurrency(text)) score += 2.5; // Strong signal
       if (sample.querySelector('h1, h2, h3, h4, h5, h6')) score += 1;
-      if (html.includes('cart') || html.includes('bag') || html.includes('buy')) score += 1.5;
+      
+      // Action hints
+      const addBtns = Array.from(sample.querySelectorAll('button, a')).filter(b => {
+          const bTxt = b.textContent.toLowerCase();
+          return bTxt.includes('cart') || bTxt.includes('bag') || bTxt.includes('buy') || bTxt.includes('add');
+      });
+      if (addBtns.length > 0) score += 2;
       
       if (score > bestScore) {
         bestScore = score;
@@ -143,37 +175,68 @@ export const analyzePageSemantics = (html) => {
       }
     }
 
-    if (bestGroup.length > 0 && bestScore >= 3) {
+    if (bestGroup.length > 0 && bestScore >= 4) { // Increased threshold
       const card = bestGroup[0];
-      result.product.container = getSelector(card);
-      addDiag('product.container', result.product.container, 'repeated-structure', Math.min(bestScore / 8, 0.98));
-      result.confidence.product = Math.min(bestScore / 8, 0.98);
+      const grid = card.parentElement;
+      
+      result.product.container = getSelector(card, grid);
+      result.confidence.product = Math.min(bestScore / 10, 0.98);
+      
+      addDiag('product.container', result.product.container, 'repeated-structure', result.confidence.product);
 
+      // Extract inner elements
       const img = card.querySelector('img, [class*="img"], [class*="image"], [class*="thumb"]');
-      if (img) result.product.image = getSelector(img, card);
+      if (img) {
+          result.product.image = getSelector(img, card);
+          addDiag('product.image', result.product.image, 'tag/class', 0.9);
+      }
       
       const titles = Array.from(card.querySelectorAll('h1, h2, h3, h4, h5, h6, .title, .name, .product-title'));
-      if (titles.length > 0) result.product.title = getSelector(titles[0], card);
+      if (titles.length > 0) {
+          result.product.title = getSelector(titles[0], card);
+          addDiag('product.title', result.product.title, 'heading/class', 0.95);
+      }
       
-      const priceEls = Array.from(card.querySelectorAll('.price, .amount, .cost, [class*="price"]'));
+      // Find prices
+      const textEls = Array.from(card.querySelectorAll('*')).filter(el => el.children.length === 0 && el.textContent.trim().length > 0);
+      const priceEls = textEls.filter(el => isCurrency(el.textContent));
+      
       if (priceEls.length > 0) {
-        if(priceEls.length > 1) {
-            result.product.oldPrice = getSelector(priceEls[1], card);
-            result.product.salePrice = getSelector(priceEls[0], card);
-            result.product.price = getSelector(priceEls[0], card);
+        // If multiple prices, try to distinguish sale vs old
+        if (priceEls.length > 1) {
+            // Often old price has a strikethrough or 'old' class
+            let oldPriceEl = priceEls.find(el => (el.className||'').toLowerCase().includes('old') || window.getComputedStyle?.(el)?.textDecorationLine === 'line-through' || el.tagName.toLowerCase() === 's' || el.tagName.toLowerCase() === 'del');
+            let salePriceEl = priceEls.find(el => el !== oldPriceEl);
+            
+            if(!oldPriceEl) {
+                // Heuristic: smaller numerical value is sale price
+                const val1 = parseFloat(priceEls[0].textContent.replace(/[^0-9.]/g, ''));
+                const val2 = parseFloat(priceEls[1].textContent.replace(/[^0-9.]/g, ''));
+                if(val1 > val2) {
+                    oldPriceEl = priceEls[0];
+                    salePriceEl = priceEls[1];
+                } else {
+                    oldPriceEl = priceEls[1];
+                    salePriceEl = priceEls[0];
+                }
+            }
+            
+            if (oldPriceEl) {
+                result.product.oldPrice = getSelector(oldPriceEl, card);
+                addDiag('product.oldPrice', result.product.oldPrice, 'currency+heuristic', 0.85);
+            }
+            if (salePriceEl) {
+                result.product.salePrice = getSelector(salePriceEl, card);
+                result.product.price = result.product.salePrice; // Default to sale
+                addDiag('product.salePrice', result.product.salePrice, 'currency+heuristic', 0.85);
+            }
         } else {
             result.product.price = getSelector(priceEls[0], card);
-        }
-      } else {
-        const allText = Array.from(card.querySelectorAll('span, div, p, strong, b'));
-        for(let el of allText) {
-            if(el.children.length === 0 && (el.textContent.includes('$') || el.textContent.includes('£') || el.textContent.includes('€') || el.textContent.includes('₹'))) {
-                result.product.price = getSelector(el, card);
-                break;
-            }
+            addDiag('product.price', result.product.price, 'currency', 0.95);
         }
       }
       
+      // Find buttons
       const addBtns = Array.from(card.querySelectorAll('button, a, [role="button"]')).filter(el => {
           const txt = el.textContent.toLowerCase();
           const cls = (el.className||'').toString().toLowerCase();
@@ -184,6 +247,12 @@ export const analyzePageSemantics = (html) => {
       });
       if (addBtns.length > 0) {
         result.product.addBtn = getSelector(addBtns[0], card);
+        addDiag('product.addBtn', result.product.addBtn, 'text/class/href', 0.9);
+      }
+      
+      const links = Array.from(card.querySelectorAll('a')).filter(a => !addBtns.includes(a) && a.href);
+      if(links.length > 0) {
+          result.product.productLink = getSelector(links[0], card);
       }
     }
   };
@@ -191,6 +260,11 @@ export const analyzePageSemantics = (html) => {
   // --- CART DETECTOR ---
   const detectCart = () => {
     let bestCartScore = 0;
+    let bestCartContainer = null;
+    let bestCartItem = null;
+    let isTable = false;
+
+    // 1. Try table-based cart
     const tables = Array.from(doc.querySelectorAll('table'));
     for (const table of tables) {
         const text = table.textContent.toLowerCase();
@@ -203,43 +277,69 @@ export const analyzePageSemantics = (html) => {
         
         if (score > bestCartScore && score >= 2) {
             bestCartScore = score;
-            result.cart.container = getSelector(table);
+            bestCartContainer = table;
             const itemRow = Array.from(table.querySelectorAll('tbody tr')).find(tr => !tr.querySelector('th') && tr.textContent.trim().length > 0);
-            if(itemRow) {
-                result.cart.item = getSelector(itemRow, table);
-                
-                // Extract inner fields
-                const qtyInput = itemRow.querySelector('input[type="number"], input[class*="qty"], input[name*="qty"]');
-                if(qtyInput) result.cart.quantityInput = getSelector(qtyInput, itemRow);
-                
-                const removeBtns = Array.from(itemRow.querySelectorAll('button, a')).filter(el => {
-                    const txt = el.textContent.toLowerCase();
-                    const cls = (el.className || '').toString().toLowerCase();
-                    return txt.includes('×') || txt.includes('remove') || txt.includes('delete') || cls.includes('remove') || cls.includes('delete');
-                });
-                if(removeBtns.length > 0) result.cart.removeBtn = getSelector(removeBtns[0], itemRow);
-                
-                const totals = Array.from(itemRow.querySelectorAll('td, span, p')).filter(el => {
-                    const txt = el.textContent.trim();
-                    return txt.match(/^[\$\£\€\₹]?\s*\d+(\.\d{2})?\s*[\$\£\€\₹]?$/) && !el.querySelector('input');
-                });
-                if(totals.length > 1) { // Assuming first is price, last is total
-                    result.cart.price = getSelector(totals[0], itemRow);
-                    result.cart.lineTotal = getSelector(totals[totals.length-1], itemRow);
-                }
-            }
-            result.confidence.cart = Math.min(score / 5, 0.95);
+            if(itemRow) bestCartItem = itemRow;
+            isTable = true;
         }
     }
     
-    if (bestCartScore < 2) {
-        const containers = Array.from(doc.querySelectorAll('.cart, .cart-container, .shopping-cart, #cart'));
-        if(containers.length > 0) {
-            const container = containers[0];
-            result.cart.container = getSelector(container);
-            const items = Array.from(container.querySelectorAll('.cart-item, .item, [class*="item"]'));
-            if (items.length > 0) result.cart.item = getSelector(items[0], container);
-            result.confidence.cart = 0.8;
+    // 2. Try div/card-based cart
+    if (bestCartScore < 3) {
+        const containers = Array.from(doc.querySelectorAll('.cart, .cart-container, .shopping-cart, #cart, [data-cart]'));
+        for(const container of containers) {
+            const items = Array.from(container.querySelectorAll('.cart-item, .item, [class*="item"], article, div')).filter(el => {
+               // Look for qty + price + remove inside
+               const text = el.textContent.toLowerCase();
+               return (text.includes('qty') || el.querySelector('input[type="number"]')) && isCurrency(text);
+            });
+            
+            if(items.length > 0) {
+                let score = 3; // Baseline for explicit class + found items
+                if(score > bestCartScore) {
+                    bestCartScore = score;
+                    bestCartContainer = container;
+                    bestCartItem = items[0];
+                    isTable = false;
+                }
+            }
+        }
+    }
+    
+    if (bestCartContainer && bestCartItem) {
+        result.cart.container = getSelector(bestCartContainer);
+        result.cart.item = getSelector(bestCartItem, bestCartContainer);
+        result.confidence.cart = Math.min(bestCartScore / 5, 0.95);
+        
+        addDiag('cart.container', result.cart.container, isTable ? 'table-semantics' : 'class-heuristics', result.confidence.cart);
+        addDiag('cart.item', result.cart.item, 'child-of-container', result.confidence.cart);
+
+        // Extract inner fields from item
+        const qtyInput = bestCartItem.querySelector('input[type="number"], input[class*="qty"], input[name*="qty"]');
+        if(qtyInput) {
+            result.cart.quantityInput = getSelector(qtyInput, bestCartItem);
+            addDiag('cart.quantity', result.cart.quantityInput, 'input-type/name', 0.9);
+        }
+        
+        const removeBtns = Array.from(bestCartItem.querySelectorAll('button, a')).filter(el => {
+            const txt = el.textContent.toLowerCase();
+            const cls = (el.className || '').toString().toLowerCase();
+            return txt.includes('×') || txt.includes('remove') || txt.includes('delete') || cls.includes('remove') || cls.includes('delete');
+        });
+        if(removeBtns.length > 0) {
+            result.cart.removeBtn = getSelector(removeBtns[0], bestCartItem);
+            addDiag('cart.remove', result.cart.removeBtn, 'text/class', 0.9);
+        }
+        
+        const textEls = Array.from(bestCartItem.querySelectorAll('*')).filter(el => el.children.length === 0);
+        const priceEls = textEls.filter(el => isCurrency(el.textContent));
+        
+        if(priceEls.length > 0) { 
+            result.cart.price = getSelector(priceEls[0], bestCartItem);
+            addDiag('cart.price', result.cart.price, 'currency', 0.85);
+            if(priceEls.length > 1) {
+                result.cart.lineTotal = getSelector(priceEls[priceEls.length-1], bestCartItem);
+            }
         }
     }
   };
@@ -257,8 +357,12 @@ export const analyzePageSemantics = (html) => {
         let score = 0;
         const inputs = form.querySelectorAll('input, select, textarea');
         score += inputs.length * 0.1;
+        
+        // Semantic hints
         if (text.includes('billing')) score += 1;
         if (text.includes('shipping')) score += 1;
+        if (text.includes('payment')) score += 1;
+        if (text.includes('order')) score += 0.5;
         if (text.includes('name') && text.includes('email') && text.includes('address')) score += 2;
         if (form.className && typeof form.className === 'string' && form.className.toLowerCase().includes('checkout')) score += 2;
         
@@ -270,7 +374,8 @@ export const analyzePageSemantics = (html) => {
     
     if (bestForm) {
         result.checkout.form = getSelector(bestForm);
-        result.confidence.checkout = Math.min(bestScore / 6, 0.95);
+        result.confidence.checkout = Math.min(bestScore / 7, 0.95);
+        addDiag('checkout.form', result.checkout.form, 'form-semantics', result.confidence.checkout);
         
         const inputs = Array.from(bestForm.querySelectorAll('input, select, textarea'));
         inputs.forEach(input => {
@@ -278,6 +383,7 @@ export const analyzePageSemantics = (html) => {
            const id = (input.id || '').toLowerCase();
            const placeholder = (input.placeholder || '').toLowerCase();
            const type = (input.type || '').toLowerCase();
+           const autocomplete = (input.getAttribute('autocomplete') || '').toLowerCase();
            
            let labelText = '';
            if(id) {
@@ -288,26 +394,50 @@ export const analyzePageSemantics = (html) => {
                labelText = input.parentElement.textContent.toLowerCase();
            }
            
-           const combined = `${name} ${id} ${placeholder} ${labelText}`.trim();
+           const combined = `${name} ${id} ${placeholder} ${labelText} ${autocomplete}`.trim();
            const selector = getSelector(input, bestForm);
            
-           if(combined.includes('first') && combined.includes('name')) result.checkout.firstName = selector;
-           else if(combined.includes('last') && combined.includes('name')) result.checkout.lastName = selector;
-           else if((combined.includes('full') && combined.includes('name')) || name === 'name') result.checkout.fullName = selector;
-           else if(combined.includes('email') || type === 'email') result.checkout.email = selector;
-           else if(combined.includes('phone') || combined.includes('mobile') || type === 'tel') result.checkout.phone = selector;
-           else if(combined.includes('address') || combined.includes('street')) result.checkout.address = selector;
-           else if(combined.includes('city') || combined.includes('town')) result.checkout.city = selector;
-           else if(combined.includes('state') || combined.includes('province')) result.checkout.state = selector;
-           else if(combined.includes('country') || combined.includes('nation')) result.checkout.country = selector;
-           else if(combined.includes('zip') || combined.includes('postal')) result.checkout.postalCode = selector;
+           // Match based on combined signals
+           if(!result.checkout.firstName && (combined.includes('first') && combined.includes('name') || autocomplete === 'given-name')) {
+               result.checkout.firstName = selector; addDiag('checkout.firstName', selector, 'signal-match', 0.9);
+           }
+           else if(!result.checkout.lastName && (combined.includes('last') && combined.includes('name') || autocomplete === 'family-name')) {
+               result.checkout.lastName = selector; addDiag('checkout.lastName', selector, 'signal-match', 0.9);
+           }
+           else if(!result.checkout.fullName && ((combined.includes('full') && combined.includes('name')) || name === 'name' || autocomplete === 'name')) {
+               result.checkout.fullName = selector; addDiag('checkout.fullName', selector, 'signal-match', 0.8);
+           }
+           else if(!result.checkout.email && (combined.includes('email') || type === 'email' || autocomplete === 'email')) {
+               result.checkout.email = selector; addDiag('checkout.email', selector, 'signal-match', 0.95);
+           }
+           else if(!result.checkout.phone && (combined.includes('phone') || combined.includes('mobile') || type === 'tel' || autocomplete === 'tel')) {
+               result.checkout.phone = selector; addDiag('checkout.phone', selector, 'signal-match', 0.9);
+           }
+           else if(!result.checkout.address && (combined.includes('address') || combined.includes('street') || autocomplete.includes('street-address'))) {
+               result.checkout.address = selector; addDiag('checkout.address', selector, 'signal-match', 0.9);
+           }
+           else if(!result.checkout.city && (combined.includes('city') || combined.includes('town') || autocomplete === 'address-level2')) {
+               result.checkout.city = selector; addDiag('checkout.city', selector, 'signal-match', 0.9);
+           }
+           else if(!result.checkout.state && (combined.includes('state') || combined.includes('province') || autocomplete === 'address-level1')) {
+               result.checkout.state = selector; addDiag('checkout.state', selector, 'signal-match', 0.9);
+           }
+           else if(!result.checkout.country && (combined.includes('country') || combined.includes('nation') || autocomplete === 'country')) {
+               result.checkout.country = selector; addDiag('checkout.country', selector, 'signal-match', 0.9);
+           }
+           else if(!result.checkout.postalCode && (combined.includes('zip') || combined.includes('postal') || autocomplete === 'postal-code')) {
+               result.checkout.postalCode = selector; addDiag('checkout.postalCode', selector, 'signal-match', 0.9);
+           }
         });
         
         const submitBtns = Array.from(bestForm.querySelectorAll('button, input[type="submit"], a')).filter(el => {
             const txt = (el.value || el.textContent || '').toLowerCase();
-            return txt.includes('place order') || txt.includes('checkout') || txt.includes('confirm') || txt.includes('submit') || el.type === 'submit';
+            return txt.includes('place order') || txt.includes('checkout') || txt.includes('confirm') || txt.includes('submit') || txt.includes('pay') || el.type === 'submit';
         });
-        if(submitBtns.length > 0) result.checkout.submitBtn = getSelector(submitBtns[0], bestForm);
+        if(submitBtns.length > 0) {
+            result.checkout.submitBtn = getSelector(submitBtns[0], bestForm);
+            addDiag('checkout.submit', result.checkout.submitBtn, 'button-semantics', 0.9);
+        }
     }
   };
 

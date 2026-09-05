@@ -9,10 +9,13 @@ const StorefrontPage = ({ page, assets, children, portalSelector }) => {
   const { cart } = useStorefront();
 
   useEffect(() => {
-    if (!page || !assets || !containerRef.current) return;
+    if (!page || !containerRef.current) return;
     
-    // Resolve assets
-    const html = resolveAssetUrls(page.html, assets);
+    // Resolve assets: for imported templates, HTML is already self-contained (data URIs embedded).
+    // For built-in templates, this substitutes relative paths with data URIs from the assets map.
+    const html = (assets && Object.keys(assets).length > 0)
+      ? resolveAssetUrls(page.html, assets)
+      : (page.html || '');
     
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
@@ -59,37 +62,68 @@ const StorefrontPage = ({ page, assets, children, portalSelector }) => {
     }
     
     // Inject the HTML
-    containerRef.current.innerHTML = doc.documentElement.innerHTML;
+    containerRef.current.innerHTML = doc.body ? doc.body.innerHTML : doc.documentElement.innerHTML;
     
     if (targetEl) {
       const mountedTarget = containerRef.current.querySelector('#storefront-react-portal');
       setPortalTarget(mountedTarget);
     }
     
-    // Inject CSS
-    let finalCss = '';
+    // Inject CSS globally to ensure it applies
+    const existingStyles = document.getElementById('storefront-template-styles');
+    if (existingStyles) existingStyles.remove();
     
-    // We can't access 'template' directly here without changing props, 
-    // but we can check if it's available via window context or just rely on page.css.
-    // If the caller provides a globalCss prop or similar, we'd use it here.
-    if (page.css) finalCss += page.css;
+    const styleContainer = document.createElement('div');
+    styleContainer.id = 'storefront-template-styles';
     
-    // Check if there is a global css on the template via a custom prop (if added later)
-    // For now, page.css from the seeder contains everything needed.
+    // Extract all link tags (stylesheets, fonts, etc.)
+    const links = doc.querySelectorAll('link');
+    links.forEach(link => {
+       const href = link.getAttribute('href');
+       
+       // Convert data URI stylesheets directly into <style> tags to avoid CSP issues or loading delays
+       if (link.getAttribute('rel') === 'stylesheet' && href && href.startsWith('data:text/css;base64,')) {
+           try {
+               const base64 = href.split(',')[1];
+               const cssText = decodeURIComponent(escape(atob(base64)));
+               const newStyle = document.createElement('style');
+               newStyle.innerHTML = cssText;
+               styleContainer.appendChild(newStyle);
+           } catch (e) {
+               console.error('Failed to decode CSS data URI', e);
+           }
+       } else {
+           const newLink = document.createElement('link');
+           Array.from(link.attributes).forEach(attr => {
+               newLink.setAttribute(attr.name, attr.value);
+           });
+           if (href) {
+               newLink.href = href; 
+           }
+           styleContainer.appendChild(newLink);
+       }
+       link.remove();
+    });
     
-    if (finalCss) {
-      let styleEl = document.getElementById('storefront-page-styles');
-      if (!styleEl) {
-        styleEl = document.createElement('style');
-        styleEl.id = 'storefront-page-styles';
-        document.head.appendChild(styleEl);
-      }
-      styleEl.innerHTML = finalCss;
+    const styleTags = doc.querySelectorAll('style');
+    styleTags.forEach(style => {
+       const newStyle = document.createElement('style');
+       newStyle.innerHTML = style.innerHTML;
+       styleContainer.appendChild(newStyle);
+       style.remove();
+    });
+    
+    if (page.css) {
+       const customStyle = document.createElement('style');
+       customStyle.innerHTML = page.css;
+       styleContainer.appendChild(customStyle);
     }
     
+    document.head.appendChild(styleContainer);
+    
     return () => {
-      const styleEl = document.getElementById('storefront-page-styles');
-      if (styleEl) styleEl.innerHTML = '';
+      const el = document.getElementById('storefront-template-styles');
+      if (el) el.remove();
     };
   }, [page, assets, portalSelector]);
 

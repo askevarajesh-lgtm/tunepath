@@ -10,7 +10,10 @@ const ecommerceTemplateCatalogSchema = new mongoose.Schema({
   version: { type: Number, default: 1 },
   active: { type: Boolean, default: true },
   commerceBindings: { type: mongoose.Schema.Types.Mixed, default: {} },
-  metadata: { type: mongoose.Schema.Types.Mixed, default: {} }
+  metadata: { type: mongoose.Schema.Types.Mixed, default: {} },
+  importedFrom: { type: String, default: '' },
+  detectedPages: { type: mongoose.Schema.Types.Mixed, default: [] },
+  analyzerVersion: { type: String, default: '1.0' }
 }, { timestamps: true });
 
 module.exports = mongoose.model('EcommerceTemplateCatalog', ecommerceTemplateCatalogSchema);

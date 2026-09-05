@@ -138,7 +138,7 @@ const EcommerceStoreManager = ({ templateId: propTemplateId }) => {
                   key="edit"
                   type="primary"
                   icon={<Edit2 size={14} />}
-                  onClick={() => navigate(`../builder/${templateId}/${page.id}`)}
+                  onClick={() => navigate(`../builder/${templateId}/${encodeURIComponent(page.id)}`)}
                 >
                   Edit Page
                 </Button>

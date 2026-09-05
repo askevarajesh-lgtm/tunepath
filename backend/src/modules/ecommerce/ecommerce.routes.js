@@ -9,6 +9,7 @@ router.use(authMiddleware);
 
 // Catalog endpoints (global) - Must be defined BEFORE /:websiteId routes
 router.get('/catalog', ecommerceController.getCatalogTemplates);
+router.post('/:websiteId/catalog/import', ecommerceController.importCatalogTemplate);
 router.get('/catalog/:templateId', ecommerceController.getCatalogTemplate);
 
 // Middleware to verify website ownership — prevents cross-workspace data access
