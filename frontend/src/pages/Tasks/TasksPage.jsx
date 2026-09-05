@@ -30,7 +30,8 @@ import {
   CrownOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
+import { useGetDepartmentsDynamicQuery, useGetRolesQuery } from "../../api/accessControlApi";
+import { resolveUserDepartmentSlug } from "../../utils/departmentUtils";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
 import KanbanBoard from "./KanbanBoard";
@@ -351,91 +352,12 @@ const TasksPage = () => {
   const { data: departmentsResp } = useGetDepartmentsDynamicQuery();
   const departments = departmentsResp?.data?.departments || [];
 
+  const { data: rolesResp } = useGetRolesQuery();
+  const roles = rolesResp?.data || [];
+
   const userDepartmentSlug = useMemo(() => {
-    if (!user) return null;
-
-    const findMatch = (str) => {
-      if (!str) return null;
-      const norm = String(str).trim().toLowerCase();
-      if (!norm) return null;
-      const match = (departments || []).find((d) => {
-        if (!d) return false;
-        const dSlug = (d.slug || "").toLowerCase();
-        const dName = (d.name || "").toLowerCase();
-        const normSanitized = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        const dNameSanitized = dName.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        return (
-          d._id === str ||
-          dSlug === norm ||
-          dName === norm ||
-          dSlug === normSanitized ||
-          dNameSanitized === normSanitized
-        );
-      });
-      if (match?.slug) return match.slug;
-      return null;
-    };
-
-    if (user.departmentId) {
-      if (typeof user.departmentId === "object" && user.departmentId.slug) {
-        return user.departmentId.slug;
-      }
-      const match = findMatch(user.departmentId);
-      if (match) return match;
-    }
-
-    for (const val of [user.departmentName, user.department, user.team, user.roleName, user.designation, user.title]) {
-      const match = findMatch(val);
-      if (match) return match;
-    }
-
-    const roleSlugMap = {
-      website_coordinator: "website-designing",
-      digital_marketing_coordinator: "digital-marketing",
-      digital_marketing_manager: "digital-marketing",
-      seo_specialist: "seo",
-      seo_manager: "seo",
-      designer: "designer",
-      graphic_designer: "designer",
-      developer: "developer",
-      dev: "developer",
-      video_editor: "video-editor",
-      video_editing: "video-editor",
-      deployment: "deployment",
-      deployer: "deployment",
-      deploy: "deployment",
-    };
-
-    if (user.role && roleSlugMap[user.role]) {
-      const mapped = roleSlugMap[user.role];
-      const match = findMatch(mapped);
-      if (match) return match;
-      return mapped;
-    }
-
-    if (user.role) {
-      const match = findMatch(user.role);
-      if (match) return match;
-    }
-
-    for (const val of [user.roleName, user.departmentName, user.department, user.designation, user.team]) {
-      if (val) {
-        const slugified = String(val).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        if (slugified) return slugified;
-      }
-    }
-
-    if (user.name || user.fullName) {
-      const fullName = String(user.name || user.fullName);
-      const match = (departments || []).find((d) => {
-        if (!d?.name) return false;
-        return fullName.toLowerCase().includes(d.name.toLowerCase());
-      });
-      if (match?.slug) return match.slug;
-    }
-
-    return null;
-  }, [user, departments]);
+    return resolveUserDepartmentSlug(user, departments, roles);
+  }, [user, departments, roles]);
 
   const isGlobalAdmin = useMemo(() => {
     return user && [
@@ -448,22 +370,6 @@ const TasksPage = () => {
       "supreme_super_admin",
     ].includes(user.role);
   }, [user]);
-
-  const hasInitializedDept = useRef(false);
-
-  useEffect(() => {
-    if (!user) return;
-    if (!isGlobalAdmin) {
-      if (userDepartmentSlug && selectedDepartment !== userDepartmentSlug) {
-        setSelectedDepartment(userDepartmentSlug);
-      }
-    } else {
-      if (!hasInitializedDept.current && userDepartmentSlug) {
-        setSelectedDepartment(userDepartmentSlug);
-        hasInitializedDept.current = true;
-      }
-    }
-  }, [user, isGlobalAdmin, userDepartmentSlug, selectedDepartment]);
 
   const departmentTabItems = useMemo(() => {
     const base = [{ value: "all", label: "All Departments" }];
@@ -481,6 +387,25 @@ const TasksPage = () => {
       }));
     return [...base, ...dynamicItems];
   }, [departments, userRole]);
+
+  const hasInitializedDept = useRef(false);
+
+  useEffect(() => {
+    if (!user) return;
+    if (!isGlobalAdmin) {
+      if (userDepartmentSlug) {
+        setSelectedDepartment(userDepartmentSlug);
+      }
+    } else {
+      if (userDepartmentSlug) {
+        const isValidInItems = departmentTabItems.some((i) => i.value === selectedDepartment);
+        if (!hasInitializedDept.current || selectedDepartment === "all" || !isValidInItems) {
+          setSelectedDepartment(userDepartmentSlug);
+          hasInitializedDept.current = true;
+        }
+      }
+    }
+  }, [user, isGlobalAdmin, userDepartmentSlug, departmentTabItems, selectedDepartment]);
 
   const settingsTabItems = [
     {

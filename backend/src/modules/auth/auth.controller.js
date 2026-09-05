@@ -108,6 +108,9 @@ exports.signin = async (req, res, next) => {
     }
 
     const checkSubscriptionExpired = (targetUser) => {
+      if (process.env.DISABLE_SUBSCRIPTION_CHECK === 'true' || process.env.NODE_ENV === 'local' || process.env.NODE_ENV === 'development') {
+        return false;
+      }
       if (targetUser && targetUser.subscriptionEndDate) {
         return Date.now() > new Date(targetUser.subscriptionEndDate).getTime();
       }
@@ -240,6 +243,7 @@ exports.signin = async (req, res, next) => {
         domain: user.domain,
         industry: user.industry,
         workspaceId: user.workspaceId,
+        departmentId: user.departmentId,
         features: features,
         integrations: integrations,
         permissions: rolePermissions,
@@ -357,6 +361,7 @@ exports.me = async (req, res, next) => {
         domain: user.domain || (user.brandId ? user.brandId.domain : null),
         industry: user.industry || (user.brandId ? user.brandId.industry : null),
         workspaceId: user.workspaceId,
+        departmentId: user.departmentId,
         features: features,
         agencyFeatures: agencyFeatures,
         integrations: integrations,
@@ -409,6 +414,9 @@ exports.impersonate = async (req, res, next) => {
     }
 
     const checkSubscriptionExpired = (targetUser) => {
+      if (process.env.DISABLE_SUBSCRIPTION_CHECK === 'true' || process.env.NODE_ENV === 'local' || process.env.NODE_ENV === 'development') {
+        return false;
+      }
       if (targetUser && targetUser.subscriptionEndDate) {
         return Date.now() > new Date(targetUser.subscriptionEndDate).getTime();
       }

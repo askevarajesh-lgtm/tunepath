@@ -61,7 +61,8 @@ import {
 import { useGetClientsQuery } from "../../api/clientApi";
 import { useGetProjectsDropdownQuery } from "../../api/projectApi";
 import { useGetUsersDropdownQuery } from "../../api/userApi";
-import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
+import { useGetDepartmentsDynamicQuery, useGetRolesQuery } from "../../api/accessControlApi";
+import { resolveUserDepartmentSlug } from "../../utils/departmentUtils";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
@@ -1585,79 +1586,12 @@ const KanbanBoard = ({
   const { data: departmentsResp } = useGetDepartmentsDynamicQuery();
   const departments = departmentsResp?.data?.departments || [];
 
+  const { data: rolesResp } = useGetRolesQuery();
+  const roles = rolesResp?.data || [];
+
   const userDeptSlug = useMemo(() => {
-    if (!user) return null;
-    const findMatch = (str) => {
-      if (!str) return null;
-      const norm = String(str).trim().toLowerCase();
-      if (!norm) return null;
-      const match = (departments || []).find((d) => {
-        if (!d) return false;
-        const dSlug = (d.slug || "").toLowerCase();
-        const dName = (d.name || "").toLowerCase();
-        const normSanitized = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        const dNameSanitized = dName.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        return (
-          d._id === str ||
-          dSlug === norm ||
-          dName === norm ||
-          dSlug === normSanitized ||
-          dNameSanitized === normSanitized
-        );
-      });
-      if (match?.slug) return match.slug;
-      return null;
-    };
-
-    if (user.departmentId) {
-      if (typeof user.departmentId === "object" && user.departmentId.slug) {
-        return user.departmentId.slug;
-      }
-      const match = findMatch(user.departmentId);
-      if (match) return match;
-    }
-
-    for (const val of [user.departmentName, user.department, user.team, user.roleName, user.designation, user.title]) {
-      const match = findMatch(val);
-      if (match) return match;
-    }
-
-    const roleMap = {
-      website_coordinator: "website-designing",
-      digital_marketing_coordinator: "digital-marketing",
-      digital_marketing_manager: "digital-marketing",
-      seo_specialist: "seo",
-      seo_manager: "seo",
-      designer: "designer",
-      graphic_designer: "designer",
-      developer: "developer",
-      dev: "developer",
-      video_editor: "video-editor",
-      video_editing: "video-editor",
-      deployment: "deployment",
-      deployer: "deployment",
-      deploy: "deployment",
-    };
-    if (user.role && roleMap[user.role]) {
-      const mapped = roleMap[user.role];
-      const match = findMatch(mapped);
-      if (match) return match;
-      return mapped;
-    }
-
-    if (user.role) {
-      const match = findMatch(user.role);
-      if (match) return match;
-    }
-
-    for (const val of [user.roleName, user.departmentName, user.department, user.designation, user.team]) {
-      if (val) {
-        const slugified = String(val).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        if (slugified) return slugified;
-      }
-    }
-    return null;
-  }, [user, departments]);
+    return resolveUserDepartmentSlug(user, departments, roles);
+  }, [user, departments, roles]);
 
   const activeDepartmentSlug = useMemo(() => {
     if (departmentFilter && departmentFilter !== "all") return departmentFilter;
@@ -1792,87 +1726,7 @@ const KanbanBoard = ({
     let result = [];
 
     // Determine user's assigned department slug if any
-    let userDeptSlug = null;
-    if (user) {
-      const findMatch = (str) => {
-        if (!str) return null;
-        const norm = String(str).trim().toLowerCase();
-        if (!norm) return null;
-        const match = (departments || []).find((d) => {
-          if (!d) return false;
-          const dSlug = (d.slug || "").toLowerCase();
-          const dName = (d.name || "").toLowerCase();
-          const normSanitized = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-          const dNameSanitized = dName.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-          return (
-            d._id === str ||
-            dSlug === norm ||
-            dName === norm ||
-            dSlug === normSanitized ||
-            dNameSanitized === normSanitized
-          );
-        });
-        if (match?.slug) return match.slug;
-        return null;
-      };
-
-      if (user.departmentId) {
-        if (typeof user.departmentId === "object" && user.departmentId.slug) {
-          userDeptSlug = user.departmentId.slug;
-        } else {
-          userDeptSlug = findMatch(user.departmentId);
-        }
-      }
-
-      if (!userDeptSlug) {
-        for (const val of [user.departmentName, user.department, user.team, user.roleName, user.designation, user.title]) {
-          const match = findMatch(val);
-          if (match) {
-            userDeptSlug = match;
-            break;
-          }
-        }
-      }
-
-      if (!userDeptSlug && user.role) {
-        const roleMap = {
-          website_coordinator: "website-designing",
-          digital_marketing_coordinator: "digital-marketing",
-          digital_marketing_manager: "digital-marketing",
-          seo_specialist: "seo",
-          seo_manager: "seo",
-          designer: "designer",
-          graphic_designer: "designer",
-          developer: "developer",
-          dev: "developer",
-          video_editor: "video-editor",
-          video_editing: "video-editor",
-          deployment: "deployment",
-          deployer: "deployment",
-          deploy: "deployment",
-        };
-        const mapped = roleMap[user.role];
-        userDeptSlug = findMatch(mapped) || mapped || findMatch(user.role) || null;
-      }
-
-      if (!userDeptSlug) {
-        for (const val of [user.roleName, user.departmentName, user.department, user.designation, user.team]) {
-          if (val) {
-            userDeptSlug = String(val).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-            if (userDeptSlug) break;
-          }
-        }
-      }
-
-      if (!userDeptSlug && (user.name || user.fullName)) {
-        const fullName = String(user.name || user.fullName);
-        const match = (departments || []).find((d) => {
-          if (!d?.name) return false;
-          return fullName.toLowerCase().includes(d.name.toLowerCase());
-        });
-        if (match?.slug) userDeptSlug = match.slug;
-      }
-    }
+    const userDeptSlug = resolveUserDepartmentSlug(user, departments, roles);
 
     const isGlobalAdminRole =
       user &&
@@ -1888,10 +1742,10 @@ const KanbanBoard = ({
 
     // Determine rawDept:
     // For non-global admin users, force their assigned userDeptSlug so they only see their department workflow.
-    // For global admins, allow explicit filter or default to "all".
+    // For global admins, allow explicit filter or default to userDeptSlug if available.
     const rawDept = !isGlobalAdminRole
       ? userDeptSlug || (departmentFilter && departmentFilter !== "all" ? departmentFilter : "all")
-      : (departmentFilter || "all");
+      : (departmentFilter && departmentFilter !== "all" ? departmentFilter : (userDeptSlug || "all"));
 
     const effectiveDept =
       rawDept && rawDept !== "all"
@@ -1900,8 +1754,21 @@ const KanbanBoard = ({
 
     let hasDbConfig = false;
 
-    // 1. Search in allWorkflowConfigs for department template match if effectiveDept is specified
-    if (
+    // 1. If 'All Departments' selected, pick template with max statuses/highest order across all department templates
+    if ((effectiveDept === "all" || !effectiveDept) && allWorkflowConfigs.length > 0) {
+      let maxWorkflow = null;
+      let maxCount = 0;
+      allWorkflowConfigs.forEach((c) => {
+        if (c.statuses && c.statuses.length > maxCount) {
+          maxCount = c.statuses.length;
+          maxWorkflow = c;
+        }
+      });
+      if (maxWorkflow?.statuses && maxWorkflow.statuses.length > 0) {
+        result = [...maxWorkflow.statuses];
+        hasDbConfig = true;
+      }
+    } else if (
       effectiveDept &&
       effectiveDept !== "all" &&
       allWorkflowConfigs.length > 0
@@ -1911,8 +1778,8 @@ const KanbanBoard = ({
         const s = String(val).toLowerCase().trim();
         const norm = s.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
         const set = new Set([s, norm, norm.replace(/-/g, "_")]);
-        if (["dev", "developer", "development", "web-application-development", "tech-team", "tech_team"].includes(norm)) {
-          ["dev", "developer", "development", "web-application-development", "web_application_development", "tech_team", "tech-team"].forEach(x => set.add(x));
+        if (["dev", "developer", "development", "web-application-development", "tech-team", "tech_team", "project", "projects"].includes(norm)) {
+          ["dev", "developer", "development", "web-application-development", "web_application_development", "tech_team", "tech-team", "project", "projects"].forEach(x => set.add(x));
         } else if (["video-editor", "video_editor", "video-editing", "video"].includes(norm)) {
           ["video-editor", "video_editor", "video-editing", "video"].forEach(x => set.add(x));
         } else if (["designer", "design", "graphic-designer", "graphic_designer"].includes(norm)) {
@@ -1921,29 +1788,35 @@ const KanbanBoard = ({
           ["digital-marketing", "digital_marketing", "dm", "marketing"].forEach(x => set.add(x));
         } else if (["deployment", "deploy", "deployer"].includes(norm)) {
           ["deployment", "deploy", "deployer"].forEach(x => set.add(x));
+        } else if (["seo", "seo-specialist", "seo_specialist"].includes(norm)) {
+          ["seo", "seo-specialist", "seo_specialist"].forEach(x => set.add(x));
         }
         return set;
       };
 
       const effVariants = getVariants(effectiveDept);
 
+      const isDeptTemplate = (c) => {
+        if (!c || !c.projectType) return false;
+        if (!c.projectId) return true;
+        if (typeof c.projectId === "string" && (c.projectId === "" || c.projectId === "null")) return true;
+        if (typeof c.projectId === "object" && (!c.projectId._id || Object.keys(c.projectId).length === 0)) return true;
+        return false;
+      };
+
       const deptWorkflow = allWorkflowConfigs.find((c) => {
-        if (!c.projectType || c.projectId) return false;
+        if (!isDeptTemplate(c)) return false;
         const configType = String(c.projectType).toLowerCase().replace(/_/g, "-");
         if (effVariants.has(configType)) return true;
 
         const matchingDept = (departments || []).find((d) => {
+          if (!d) return false;
           const dSlug = (d.slug || "").toLowerCase();
           const dNameSlug = (d.name || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
           return (
             d._id === c.projectType ||
             dSlug === configType ||
-            dNameSlug === configType ||
-            d._id === rawDept ||
-            dSlug === effectiveDept ||
-            dNameSlug === effectiveDept ||
-            effVariants.has(dSlug) ||
-            effVariants.has(dNameSlug)
+            dNameSlug === configType
           );
         });
 
@@ -1951,9 +1824,9 @@ const KanbanBoard = ({
           const matchVariants = getVariants(matchingDept.slug || matchingDept.name);
           if (
             matchVariants.has(effectiveDept) ||
-            matchVariants.has(configType) ||
             matchingDept._id === rawDept ||
-            matchingDept._id === c.projectType
+            matchingDept.slug === rawDept ||
+            matchingDept.name?.toLowerCase() === rawDept
           ) {
             return true;
           }
@@ -1987,16 +1860,26 @@ const KanbanBoard = ({
       }
     }
 
-    // 4. Default Fallback if no custom workflow configured (Standard 6-status flow)
+    // 4. Default Fallback if no custom workflow configured (Smart per-department default)
     if (result.length === 0) {
-      result = [
-        { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
-        { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
-        { id: "in_progress", name: "In Progress", color: "#faad14", order: 2 },
-        { id: "review", name: "Review", color: "#722ed1", order: 3 },
-        { id: "Rejected", name: "Rejected", color: "#ff4d4f", order: 4 },
-        { id: "complete", name: "Complete", color: "#52c41a", order: 5 },
-      ];
+      const normEff = (effectiveDept || "").toLowerCase();
+      if (normEff === "digital-marketing" || normEff === "dm" || normEff === "all") {
+        result = [
+          { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
+          { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
+          { id: "in_progress", name: "In Progress", color: "#faad14", order: 2 },
+          { id: "review", name: "Review", color: "#722ed1", order: 3 },
+          { id: "Rejected", name: "Rejected", color: "#ff4d4f", order: 4 },
+          { id: "complete", name: "Complete", color: "#52c41a", order: 5 },
+        ];
+      } else {
+        result = [
+          { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
+          { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
+          { id: "in_progress", name: "In Progress", color: "#faad14", order: 2 },
+          { id: "complete", name: "Complete", color: "#52c41a", order: 3 },
+        ];
+      }
     }
 
     const normalizedDept = effectiveDept?.toLowerCase();
@@ -3043,7 +2926,25 @@ const KanbanBoard = ({
             }}
           >
             {statuses.map((status) => {
-              const statusTasks = [...(tasksByStatus[status.id] || [])].sort(
+              let rawTasks = [];
+              const statusIdLower = (status.id || "").toLowerCase();
+              const isCompletionCol =
+                ["complete", "done", "completed", "validated", "approved"].includes(statusIdLower) ||
+                (status.name || "").toLowerCase() === "complete" ||
+                (status.name || "").toLowerCase() === "done" ||
+                (status.name || "").toLowerCase() === "approved";
+
+              if (isCompletionCol) {
+                const combinedSet = new Set();
+                ["complete", "done", "completed", "validated", "approved", status.id].forEach((key) => {
+                  (tasksByStatus[key] || []).forEach((t) => combinedSet.add(t));
+                });
+                rawTasks = Array.from(combinedSet);
+              } else {
+                rawTasks = tasksByStatus[status.id] || [];
+              }
+
+              const statusTasks = [...rawTasks].sort(
                 (a, b) => {
                   if (a.order !== b.order) return a.order - b.order;
                   return new Date(a.dueDate) - new Date(b.dueDate);

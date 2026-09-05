@@ -30,7 +30,8 @@ import {
   useCreateOrUpdateWorkflowConfigMutation,
   useGetAllWorkflowConfigsQuery,
 } from "../../api/taskApi";
-import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
+import { useGetDepartmentsDynamicQuery, useGetRolesQuery } from "../../api/accessControlApi";
+import { resolveUserDepartmentSlug } from "../../utils/departmentUtils";
 
 const { Option } = Select;
 
@@ -61,91 +62,12 @@ const WorkflowTemplateManager = () => {
     useGetDepartmentsDynamicQuery();
   const departments = departmentsResp?.data?.departments || [];
 
+  const { data: rolesResp } = useGetRolesQuery();
+  const roles = rolesResp?.data || [];
+
   const userDepartmentSlug = useMemo(() => {
-    if (!user) return null;
-
-    const findMatch = (str) => {
-      if (!str) return null;
-      const norm = String(str).trim().toLowerCase();
-      if (!norm) return null;
-      const match = (departments || []).find((d) => {
-        if (!d) return false;
-        const dSlug = (d.slug || "").toLowerCase();
-        const dName = (d.name || "").toLowerCase();
-        const normSanitized = norm.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        const dNameSanitized = dName.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        return (
-          d._id === str ||
-          dSlug === norm ||
-          dName === norm ||
-          dSlug === normSanitized ||
-          dNameSanitized === normSanitized
-        );
-      });
-      if (match?.slug) return match.slug;
-      return null;
-    };
-
-    if (user.departmentId) {
-      if (typeof user.departmentId === "object" && user.departmentId.slug) {
-        return user.departmentId.slug;
-      }
-      const match = findMatch(user.departmentId);
-      if (match) return match;
-    }
-
-    for (const val of [user.departmentName, user.department, user.team, user.roleName, user.designation, user.title]) {
-      const match = findMatch(val);
-      if (match) return match;
-    }
-
-    const roleSlugMap = {
-      website_coordinator: "website-designing",
-      digital_marketing_coordinator: "digital-marketing",
-      digital_marketing_manager: "digital-marketing",
-      seo_specialist: "seo",
-      seo_manager: "seo",
-      designer: "designer",
-      graphic_designer: "designer",
-      developer: "developer",
-      dev: "developer",
-      video_editor: "video-editor",
-      video_editing: "video-editor",
-      deployment: "deployment",
-      deployer: "deployment",
-      deploy: "deployment",
-    };
-
-    if (user.role && roleSlugMap[user.role]) {
-      const mapped = roleSlugMap[user.role];
-      const match = findMatch(mapped);
-      if (match) return match;
-      return mapped;
-    }
-
-    if (user.role) {
-      const match = findMatch(user.role);
-      if (match) return match;
-    }
-
-    for (const val of [user.roleName, user.departmentName, user.department, user.designation, user.team]) {
-      if (val) {
-        const slugified = String(val).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-        if (slugified) return slugified;
-      }
-    }
-
-    if (user.name || user.fullName) {
-      const fullName = String(user.name || user.fullName);
-      const match = (departments || []).find((d) => {
-        if (!d?.name) return false;
-        return fullName.toLowerCase().includes(d.name.toLowerCase());
-      });
-      if (match?.slug) return match.slug;
-    }
-
-    return null;
-  }, [user, departments]);
+    return resolveUserDepartmentSlug(user, departments, roles);
+  }, [user, departments, roles]);
 
   const [filterDepartment, setFilterDepartment] = useState(null);
 
@@ -468,9 +390,18 @@ const WorkflowTemplateManager = () => {
       title: "Department",
       key: "department",
       render: (_, record) => {
-        const deptOption = departmentOptions.find(
-          (o) => o.value === record.projectType,
-        );
+        const pType = String(record.projectType || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
+        const deptOption = departmentOptions.find((o) => {
+          if (!record.projectType) return false;
+          const optVal = (o.value || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
+          const optLbl = (o.label || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
+          return (
+            optVal === pType ||
+            optLbl === pType ||
+            (pType === "dm" && optVal === "digital-marketing") ||
+            (pType === "project" && optVal === "projects")
+          );
+        });
         return (
           <Tag color={deptOption?.color || "default"}>
             {deptOption?.label ||

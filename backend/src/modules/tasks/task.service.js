@@ -196,7 +196,9 @@ const getDepartmentFilterValues = (value) => {
     normalized === "tech_team" ||
     normalized === "developer" ||
     normalized === "development" ||
-    normalized === "dev"
+    normalized === "dev" ||
+    normalized === "project" ||
+    normalized === "projects"
   ) {
     [
       "web-application-development",
@@ -209,6 +211,10 @@ const getDepartmentFilterValues = (value) => {
       "developer",
       "dev",
       "Developer",
+      "project",
+      "projects",
+      "Project",
+      "Projects",
     ].forEach((v) => set.add(v));
   } else if (
     normalized === "video-editor" ||
@@ -242,13 +248,16 @@ const getDepartmentFilterValues = (value) => {
   } else if (
     normalized === "digital-marketing" ||
     normalized === "digital_marketing" ||
-    normalized === "marketing"
+    normalized === "marketing" ||
+    normalized === "dm"
   ) {
     [
       "digital-marketing",
       "digital_marketing",
       "marketing",
       "Digital Marketing",
+      "dm",
+      "DM",
     ].forEach((v) => set.add(v));
   } else if (
     normalized === "website-designing" ||

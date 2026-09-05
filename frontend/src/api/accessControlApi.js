@@ -35,3 +35,4 @@ const createQueryHook = (endpointFn) => {
 };
 
 export const useGetDepartmentsDynamicQuery = createQueryHook(() => '/departments/dynamic');
+export const useGetRolesQuery = createQueryHook(() => '/roles');
