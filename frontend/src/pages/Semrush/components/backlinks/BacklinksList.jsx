@@ -5,9 +5,10 @@ import { useOutletContext } from 'react-router-dom';
 
 const { Text } = Typography;
 
-const BacklinksList = () => {
+const BacklinksList = ({ localData }) => {
   const { projectData } = useOutletContext();
-  const rawBacklinks = projectData?.backlinksOverview?.rawBacklinks || [];
+  const backlinksOverview = localData?.backlinksOverview || projectData?.backlinksOverview || {};
+  const rawBacklinks = backlinksOverview?.rawBacklinks || [];
 
   const columns = [
     {

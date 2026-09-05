@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Typography, Row, Col, Card, Table, Tag, Button, Input, Progress, Avatar, Drawer, Timeline, Select, message, Space, Modal, Form, DatePicker } from 'antd';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ReferenceLine, Tooltip as RechartsTooltip } from 'recharts';
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ReferenceLine, Tooltip as RechartsTooltip } from 'recharts';
 import { motion } from 'framer-motion';
-import { Download, Settings, Search, AlertCircle, Target, CheckCircle, AlertOctagon, AlertTriangle, MessageSquare, ArrowUpRight } from 'lucide-react';
-import { slaTrendData } from '../../data/mock'; // keep mock for the trend chart as we don't have historical data yet
+import { Download, Settings, Search, AlertCircle, Target, CheckCircle, AlertOctagon, AlertTriangle, MessageSquare, ArrowUpRight, TrendingUp, Filter, RefreshCw } from 'lucide-react';
+import { slaTrendData } from '../../data/mock';
 import { slaApi } from '../../api/slaApi';
 import { exportToCSV } from '../../utils/exportUtils';
 
@@ -16,6 +16,7 @@ const SLA = () => {
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
   const [filters, setFilters] = useState({ status: 'All', triggerType: 'All', search: '' });
+  const [trendRange, setTrendRange] = useState('6M'); // '3M', '6M', '1Y'
   
   // Drawer state
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -361,19 +362,85 @@ const SLA = () => {
 
           <motion.div variants={itemVariants}>
             <Card 
-              title={<div style={{ paddingTop: 8 }}><Title level={5} style={{ margin: 0, color: 'var(--text-primary)' }}>SLA Trend</Title></div>} 
-              className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)' }}
+              className="glassmorphism" 
+              style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-md)' }}
+              bodyStyle={{ padding: 24 }}
             >
-              <div style={{ height: 200, marginTop: 16 }}>
+              {/* Header with Title, Status & Range Filter */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <TrendingUp size={20} style={{ color: 'var(--accent-primary)' }} />
+                    <Title level={4} style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>Compliance Trend</Title>
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Monthly SLA fulfillment performance vs 95% target SLA
+                  </Text>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Tag color="green" style={{ borderRadius: 12, padding: '2px 10px', fontSize: 12, fontWeight: 600, border: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <ArrowUpRight size={14} /> Improving
+                  </Tag>
+                  <Select 
+                    value={trendRange} 
+                    onChange={setTrendRange} 
+                    size="small" 
+                    style={{ width: 80 }}
+                  >
+                    <Option value="3M">3 Months</Option>
+                    <Option value="6M">6 Months</Option>
+                    <Option value="1Y">1 Year</Option>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Stats overview banner */}
+              <div style={{ display: 'flex', gap: 24, padding: '12px 16px', borderRadius: 12, background: 'var(--bg-secondary)', marginBottom: 20, border: '1px solid var(--border-color)' }}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, display: 'block' }}>CURRENT COMPLIANCE</Text>
+                  <Text style={{ fontSize: 20, fontWeight: 800, color: (stats?.compliance || 95) >= 95 ? '#52c41a' : '#fa8c16' }}>
+                    {stats?.compliance ?? 95}%
+                  </Text>
+                </div>
+                <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: 24 }}>
+                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, display: 'block' }}>TARGET SLA</Text>
+                  <Text style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)' }}>95%</Text>
+                </div>
+                <div style={{ borderLeft: '1px solid var(--border-color)', paddingLeft: 24 }}>
+                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600, display: 'block' }}>HEALTH STATUS</Text>
+                  <Text style={{ fontSize: 14, fontWeight: 700, color: (stats?.stats?.breached || 0) === 0 ? '#52c41a' : '#ff4d4f' }}>
+                    {(stats?.stats?.breached || 0) === 0 ? 'Healthy' : `${stats.stats.breached} Breached`}
+                  </Text>
+                </div>
+              </div>
+
+              {/* Chart Visualization */}
+              <div style={{ height: 220, marginTop: 8 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={slaTrendData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                  <AreaChart 
+                    data={
+                      (stats?.trend && stats.trend.length > 0 ? stats.trend : slaTrendData)
+                        .slice(trendRange === '3M' ? -3 : trendRange === '6M' ? -6 : -12)
+                    } 
+                    margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="slaGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.35}/>
+                        <stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0.0}/>
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border-color)" />
-                    <XAxis dataKey="name" stroke="var(--text-tertiary)" axisLine={false} tickLine={false} />
-                    <YAxis domain={[80, 100]} stroke="var(--text-tertiary)" axisLine={false} tickLine={false} />
-                    <RechartsTooltip />
-                    <ReferenceLine y={95} stroke="var(--accent-danger)" strokeDasharray="3 3" />
-                    <Line type="monotone" dataKey="val" stroke="var(--accent-primary)" strokeWidth={3} />
-                  </LineChart>
+                    <XAxis dataKey="name" stroke="var(--text-tertiary)" axisLine={false} tickLine={false} style={{ fontSize: 12 }} />
+                    <YAxis domain={[50, 100]} stroke="var(--text-tertiary)" axisLine={false} tickLine={false} style={{ fontSize: 12 }} />
+                    <RechartsTooltip 
+                      contentStyle={{ background: 'var(--bg-card)', borderRadius: 12, border: '1px solid var(--border-color)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                      formatter={(val) => [`${val}%`, 'Compliance Rate']}
+                    />
+                    <ReferenceLine y={95} stroke="#ff4d4f" strokeDasharray="3 3" label={{ value: 'Target 95%', fill: '#ff4d4f', fontSize: 10, position: 'insideTopRight' }} />
+                    <Area type="monotone" dataKey="val" stroke="var(--accent-primary)" strokeWidth={3} fillOpacity={1} fill="url(#slaGradient)" />
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             </Card>

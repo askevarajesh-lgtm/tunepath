@@ -101,7 +101,7 @@ const EktaHrAttendanceModulePage = () => {
     const map = new Map(); // employeeCode -> Map(dayKey -> record)
     for (const rec of attendanceRows || []) {
       const code = attendanceEmployeeCode(rec);
-      const dk = dateKey(rec?.date);
+      const dk = dateKey(rec?.date || rec?.punchIn || rec?.punch_in || rec?.inTime || rec?.logIn || rec?.createdAt);
       if (!code || !dk) continue;
       if (!map.has(code)) map.set(code, new Map());
       map.get(code).set(dk, rec);
@@ -123,7 +123,7 @@ const EktaHrAttendanceModulePage = () => {
 
       return row;
     });
-  }, [staffRows, monthDayKeys, attendanceRecordMap]);
+  }, [staffRows, monthDayKeys]);
 
   const columns = useMemo(() => {
     return [
@@ -143,7 +143,7 @@ const EktaHrAttendanceModulePage = () => {
         render: (_, row) => {
           const code = row?.key;
           const rec = attendanceRecordMap.get(code)?.get(dk);
-          const present = rec ? isPresentAttendanceStatus(rec?.status) : false;
+          const present = rec ? isPresentAttendanceStatus(rec?.status, rec) : false;
           const tagValue = present ? "P" : "A";
           return (
             <span
@@ -160,13 +160,14 @@ const EktaHrAttendanceModulePage = () => {
                   });
                   return;
                 }
+                const isP = isPresentAttendanceStatus(rec?.status, rec);
                 setModal({
                   visible: true,
                   employeeName: row?.employeeName || "",
                   day: dk,
-                  status: rec?.status || "Present",
-                  punchIn: rec?.punchIn || null,
-                  punchOut: rec?.punchOut || null,
+                  status: isP ? (rec?.status || "Present") : (rec?.status || "Absent"),
+                  punchIn: rec?.punchIn || rec?.punch_in || rec?.logIn || rec?.inTime || null,
+                  punchOut: rec?.punchOut || rec?.punch_out || rec?.logOut || rec?.outTime || null,
                 });
               }}
             >

@@ -157,13 +157,46 @@ exports.getSlaDashboardStats = async (req, res, next) => {
       ? Math.round(((stats.normal + stats.resolved) / slas.length) * 100) 
       : 100;
 
+    // Calculate monthly SLA compliance trend for the past 6 months
+    const monthlyTrend = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const monthName = d.toLocaleString('default', { month: 'short' });
+      const year = d.getFullYear();
+      const monthIndex = d.getMonth();
+
+      // Filter records created in or up to this month
+      const endOfMonth = new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);
+      const recordsUpToMonth = slas.filter(s => new Date(s.createdAt) <= endOfMonth);
+      
+      let monthCompliance = 95; // Default healthy baseline
+      if (recordsUpToMonth.length > 0) {
+        const healthyCount = recordsUpToMonth.filter(s => {
+          // If created in this month or earlier, check status
+          if (s.status === 'Normal' || s.status === 'Resolved') return true;
+          // If breached or at risk, check when it was resolved
+          if (s.resolvedAt && new Date(s.resolvedAt) <= endOfMonth) return true;
+          return false;
+        }).length;
+        monthCompliance = Math.round((healthyCount / recordsUpToMonth.length) * 100);
+      }
+
+      monthlyTrend.push({
+        name: monthName,
+        val: monthCompliance,
+        total: recordsUpToMonth.length
+      });
+    }
+
     res.status(200).json({
       success: true,
       data: {
         stats,
         compliance,
         activeBreaches: stats.breached,
-        atRiskCount: stats.atRisk
+        atRiskCount: stats.atRisk,
+        trend: monthlyTrend
       }
     });
   } catch (error) {

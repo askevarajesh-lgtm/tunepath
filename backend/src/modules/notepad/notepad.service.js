@@ -231,9 +231,36 @@ const getAllUsersLatestReports = async (tenantId, reqQuery = {}) => {
 
   const latestReports = [];
 
+  // Parse date query if provided (e.g. reqQuery.date or reqQuery.startDate)
+  let targetDateStart = null;
+  let targetDateEnd = null;
+  if (reqQuery.date) {
+    targetDateStart = new Date(reqQuery.date);
+    targetDateStart.setHours(0, 0, 0, 0);
+    targetDateEnd = new Date(reqQuery.date);
+    targetDateEnd.setHours(23, 59, 59, 999);
+  } else if (reqQuery.startDate || reqQuery.endDate) {
+    if (reqQuery.startDate) {
+      targetDateStart = new Date(reqQuery.startDate);
+      targetDateStart.setHours(0, 0, 0, 0);
+    }
+    if (reqQuery.endDate) {
+      targetDateEnd = new Date(reqQuery.endDate);
+      targetDateEnd.setHours(23, 59, 59, 999);
+    }
+  }
+
   for (const user of users) {
-    // Get the most recent note for this user
-    const latestNote = await Notepad.findOne({ userId: user._id })
+    // Build query for user note
+    const noteQuery = { userId: user._id };
+    if (targetDateStart || targetDateEnd) {
+      noteQuery.noteDate = {};
+      if (targetDateStart) noteQuery.noteDate.$gte = targetDateStart;
+      if (targetDateEnd) noteQuery.noteDate.$lte = targetDateEnd;
+    }
+
+    // Get the note for this user on the targeted date (or latest)
+    const latestNote = await Notepad.findOne(noteQuery)
       .sort({ noteDate: -1, updatedAt: -1 })
       .lean();
 

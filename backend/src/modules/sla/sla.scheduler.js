@@ -20,24 +20,16 @@ const startSlaScheduler = () => {
       });
 
       for (const task of pendingTasks) {
-        if (!task.dueDate) continue;
-
-        // A task should remain active for the entire day it was created without triggering an SLA
-        const taskCreatedAt = new Date(task.createdAt || task._id.getTimestamp());
-        const isSameDayCreated = 
-          taskCreatedAt.getFullYear() === now.getFullYear() &&
-          taskCreatedAt.getMonth() === now.getMonth() &&
-          taskCreatedAt.getDate() === now.getDate();
-
-        if (isSameDayCreated) {
-          // Clean up any mistakenly created SLAs on day 1
+        if (!task.dueDate) {
+          // If task has no due date, remove any existing SLA record
           await SlaRecord.deleteOne({ entityId: task._id, entityType: 'Task' });
           continue;
         }
 
-        let status = 'Normal';
         const dueDate = new Date(task.dueDate);
         dueDate.setHours(23, 59, 59, 999);
+
+        let status = 'Normal';
 
         if (now > dueDate) {
           status = 'Breached';
@@ -45,11 +37,18 @@ const startSlaScheduler = () => {
           status = 'At Risk';
         }
 
+        // ONLY track SLA if the task is genuinely Breached (past 11:59 PM on due date) or At Risk (within 48 hours of due date)
+        if (status === 'Normal') {
+          // Task is created/in progress and still within normal timeline — DO NOT create or display SLA record
+          await SlaRecord.deleteOne({ entityId: task._id, entityType: 'Task' });
+          continue;
+        }
+
         // Check existing status to determine if we should send a notification
         const existingSla = await SlaRecord.findOne({ entityId: task._id, entityType: 'Task' });
         const oldStatus = existingSla ? existingSla.status : 'Normal';
 
-        // Upsert SLA Record
+        // Upsert SLA Record for Breached or At Risk task
         const updatedSla = await SlaRecord.findOneAndUpdate(
           { entityId: task._id, entityType: 'Task' },
           {
@@ -61,7 +60,7 @@ const startSlaScheduler = () => {
             entityId: task._id,
             entityType: 'Task',
             title: `Task: ${task.title}`,
-            description: `Due Date Monitoring for Task ${task.title}`,
+            description: `Overdue Task: ${task.title} was not completed by 11:59 PM on ${new Date(task.dueDate).toLocaleDateString()}.`,
             dueDate: task.dueDate,
             priority: task.priority === 'high' || task.priority === 'critical' ? task.priority : (status === 'Breached' ? 'High' : 'Medium'),
             status,
@@ -77,7 +76,7 @@ const startSlaScheduler = () => {
             status === 'Breached' ? 'sla_breached' : 'sla_at_risk',
             'SLA Trigger',
             `SLA ${status}: ${updatedSla.title}`,
-            `The SLA for ${updatedSla.title} is now ${status}.`,
+            `Task ${task.title} has not been completed by the due date deadline.`,
             { slaId: updatedSla._id, entityId: task._id, entityType: 'Task' }
           );
         }

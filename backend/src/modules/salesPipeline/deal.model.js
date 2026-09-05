@@ -95,6 +95,10 @@ const dealSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    expectedCloseDate: {
+      type: Date,
+      default: null,
+    },
     priority: {
       type: String,
       enum: ["low", "medium", "high", "critical"],

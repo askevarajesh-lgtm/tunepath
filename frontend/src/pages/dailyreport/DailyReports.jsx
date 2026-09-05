@@ -28,7 +28,13 @@ import {
   ReloadOutlined,
   BellOutlined,
   LinkOutlined,
+  TeamOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  LeftOutlined,
+  RightOutlined,
 } from "@ant-design/icons";
+import { motion } from "framer-motion";
 import {
   useGetAllUsersLatestReportsQuery,
   useGetAllUsersReportHistoryQuery,
@@ -47,6 +53,7 @@ const { Panel } = Collapse;
 const DailyReports = () => {
   const [activeTab, setActiveTab] = useState("reports");
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDate, setSelectedDate] = useState(dayjs());
   const [dateRange, setDateRange] = useState(null);
 
   // Pagination for Reports tab
@@ -67,6 +74,7 @@ const DailyReports = () => {
   const reportsParams = {
     ...reportsQueryParams,
     ...(searchTerm && { search: searchTerm }),
+    ...(selectedDate && { date: selectedDate.format("YYYY-MM-DD") }),
   };
 
   const historyParams = {
@@ -107,8 +115,47 @@ const DailyReports = () => {
   }
   const historyTotal = historyPaginationData?.total || userReports.length || historyTotalRef.current;
 
+  // KPI Calculations based on reports list
+  const totalEmployees = reportsTotal || reports.length;
+  const reportsSubmitted = React.useMemo(() => {
+    return reports.filter((r) => Boolean(r.content && r.content.trim())).length;
+  }, [reports]);
+  const reportsPending = React.useMemo(() => {
+    return reports.filter((r) => !r.content || !r.content.trim()).length;
+  }, [reports]);
+
+  const containerVariants = {
+    hidden: { opacity: 0, y: 15 },
+    visible: {
+      opacity: 1,
+      y: 0,
+      transition: { duration: 0.4, staggerChildren: 0.08 },
+    },
+  };
+
+  const itemVariants = {
+    hidden: { opacity: 0, y: 10 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
+  };
+
   const handleSearchChange = (value) => {
     setSearchTerm(value);
+  };
+
+  const handleSingleDateChange = (date) => {
+    setSelectedDate(date);
+  };
+
+  const handlePrevDate = () => {
+    setSelectedDate((prev) => (prev ? prev.subtract(1, "day") : dayjs().subtract(1, "day")));
+  };
+
+  const handleNextDate = () => {
+    setSelectedDate((prev) => (prev ? prev.add(1, "day") : dayjs().add(1, "day")));
+  };
+
+  const handleTodayDate = () => {
+    setSelectedDate(dayjs());
   };
 
   const handleDateRangeChange = (dates) => {
@@ -117,6 +164,7 @@ const DailyReports = () => {
 
   const handleClearFilters = () => {
     setSearchTerm("");
+    setSelectedDate(dayjs());
     setDateRange(null);
   };
 
@@ -272,24 +320,33 @@ const DailyReports = () => {
   ];
 
   return (
-    <div>
-      <div
+    <motion.div initial="hidden" animate="visible" variants={containerVariants}>
+      <motion.div
+        variants={itemVariants}
         style={{
           marginBottom: 24,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
+          flexWrap: "wrap",
+          gap: 16,
         }}
       >
-        <Title level={2} style={{ margin: 0 }}>
-          Daily Reports
-        </Title>
-        <Space>
+        <div>
+          <Title level={2} style={{ margin: 0, fontWeight: 700 }}>
+            Daily Reports
+          </Title>
+          <Text type="secondary">
+            Monitor daily employee log submissions, track completion, and notify pending team members.
+          </Text>
+        </div>
+        <Space wrap>
           <Button
             type="primary"
             icon={<BellOutlined />}
             onClick={handleNotifyMissingReports}
             loading={isNotifying}
+            style={{ borderRadius: 6, fontWeight: 500 }}
           >
             Notify Missing Reports
           </Button>
@@ -302,11 +359,134 @@ const DailyReports = () => {
                 refetchHistory();
               }
             }}
+            style={{ borderRadius: 6 }}
           >
             Refresh
           </Button>
         </Space>
-      </div>
+      </motion.div>
+
+      {/* Top Summary KPI Cards */}
+      <motion.div variants={itemVariants} style={{ marginBottom: 24 }}>
+        <Row gutter={[16, 16]}>
+          <Col xs={24} sm={8}>
+            <Card
+              bordered={false}
+              style={{
+                borderRadius: 12,
+                background: "var(--bg-card, #ffffff)",
+                boxShadow: "0 2px 12px rgba(0, 0, 0, 0.04)",
+                border: "1px solid var(--border-color, #f0f0f0)",
+              }}
+              bodyStyle={{ padding: "20px 24px" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: 13, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Total Employees
+                  </Text>
+                  <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4, color: "var(--text-color, #1f2937)" }}>
+                    {totalEmployees}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 12,
+                    background: "rgba(24, 144, 255, 0.1)",
+                    color: "#1890ff",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 22,
+                  }}
+                >
+                  <TeamOutlined />
+                </div>
+              </div>
+            </Card>
+          </Col>
+
+          <Col xs={24} sm={8}>
+            <Card
+              bordered={false}
+              style={{
+                borderRadius: 12,
+                background: "var(--bg-card, #ffffff)",
+                boxShadow: "0 2px 12px rgba(0, 0, 0, 0.04)",
+                border: "1px solid var(--border-color, #f0f0f0)",
+              }}
+              bodyStyle={{ padding: "20px 24px" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: 13, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Reports Submitted
+                  </Text>
+                  <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4, color: "#52c41a" }}>
+                    {reportsSubmitted}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 12,
+                    background: "rgba(82, 196, 26, 0.1)",
+                    color: "#52c41a",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 22,
+                  }}
+                >
+                  <CheckCircleOutlined />
+                </div>
+              </div>
+            </Card>
+          </Col>
+
+          <Col xs={24} sm={8}>
+            <Card
+              bordered={false}
+              style={{
+                borderRadius: 12,
+                background: "var(--bg-card, #ffffff)",
+                boxShadow: "0 2px 12px rgba(0, 0, 0, 0.04)",
+                border: "1px solid var(--border-color, #f0f0f0)",
+              }}
+              bodyStyle={{ padding: "20px 24px" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: 13, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Reports Pending
+                  </Text>
+                  <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4, color: "#fa8c16" }}>
+                    {reportsPending}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 12,
+                    background: "rgba(250, 140, 22, 0.1)",
+                    color: "#fa8c16",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 22,
+                  }}
+                >
+                  <ClockCircleOutlined />
+                </div>
+              </div>
+            </Card>
+          </Col>
+        </Row>
+      </motion.div>
 
       <Card>
         <Tabs activeKey={activeTab} onChange={setActiveTab}>
@@ -321,8 +501,8 @@ const DailyReports = () => {
             key="reports"
           >
             <Card style={{ marginBottom: 16 }}>
-              <Row gutter={16}>
-                <Col xs={24} sm={12} md={16}>
+              <Row gutter={[16, 16]} align="middle">
+                <Col xs={24} sm={12} md={10}>
                   <DebouncedSearchInput
                     placeholder="Search by user name, email, or report content..."
                     onChange={handleSearchChange}
@@ -330,7 +510,26 @@ const DailyReports = () => {
                     prefix={<SearchOutlined />}
                   />
                 </Col>
-                <Col xs={24} sm={12} md={8}>
+                <Col xs={24} sm={12} md={10}>
+                  <Space style={{ width: "100%", justifyContent: "flex-start" }} wrap>
+                    <Button.Group>
+                      <Button icon={<LeftOutlined />} onClick={handlePrevDate} title="Previous Day" />
+                      <Button onClick={handleTodayDate} style={{ fontWeight: selectedDate && selectedDate.isSame(dayjs(), "day") ? 600 : 400 }}>
+                        Today
+                      </Button>
+                      <Button icon={<RightOutlined />} onClick={handleNextDate} title="Next Day" />
+                    </Button.Group>
+                    <DatePicker
+                      value={selectedDate}
+                      onChange={handleSingleDateChange}
+                      format="DD/MM/YYYY"
+                      allowClear
+                      placeholder="Select Date"
+                      style={{ width: 140 }}
+                    />
+                  </Space>
+                </Col>
+                <Col xs={24} sm={24} md={4}>
                   <Button onClick={handleClearFilters} block>
                     Clear Filters
                   </Button>
@@ -579,7 +778,7 @@ const DailyReports = () => {
           </TabPane>
         </Tabs>
       </Card>
-    </div>
+    </motion.div>
   );
 };
 

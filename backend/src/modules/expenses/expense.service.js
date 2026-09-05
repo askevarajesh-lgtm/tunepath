@@ -1491,12 +1491,24 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
   // Initialize dynamic team expenses
   const teamExpenses = {};
 
-  // Fetch all departments to map ObjectIds to readable names
+  // Fetch company's actual registered agency departments to map ObjectIds & preload all real departments
   const Department = require("../departments/department.model");
-  const allDepartments = await Department.find({}).lean();
+  const allDepartments = await Department.find({
+    $or: [{ agencyId: companyId }, { companyId: companyId }]
+  }).lean();
+
   const deptMap = {};
   allDepartments.forEach(d => {
-    deptMap[d._id.toString()] = d.name;
+    const name = d.name.trim();
+    deptMap[d._id.toString()] = name;
+    // Pre-initialize real agency department in teamExpenses
+    if (!teamExpenses[name]) {
+      teamExpenses[name] = {
+        variableExpense: 0,
+        fixedExpenseAllocated: 0,
+        totalExpense: 0,
+      };
+    }
   });
 
   // Calculate variable expenses per team
@@ -1754,45 +1766,7 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
     profitPercentage: parseFloat(profitPercentage.toFixed(2)),
 
     // Team-wise breakdown (includes revenue, profit and profitPercentage per team)
-    // Ensure teamBreakdown is always an array with all teams
-    teamBreakdown:
-      Array.isArray(teamBreakdown) && teamBreakdown.length > 0
-        ? teamBreakdown
-        : [
-            {
-              team: "dm_designing",
-              teamLabel: "DM + Designing Team",
-              revenue: 0,
-              variableExpense: 0,
-              fixedExpenseAllocated: 0,
-              totalExpense: 0,
-              expenseContributionPercent: 0,
-              profit: 0,
-              profitPercentage: 0,
-            },
-            {
-              team: "website_tech",
-              teamLabel: "Website & Tech Team",
-              revenue: 0,
-              variableExpense: 0,
-              fixedExpenseAllocated: 0,
-              totalExpense: 0,
-              expenseContributionPercent: 0,
-              profit: 0,
-              profitPercentage: 0,
-            },
-            {
-              team: "seo",
-              teamLabel: "SEO Team",
-              revenue: 0,
-              variableExpense: 0,
-              fixedExpenseAllocated: 0,
-              totalExpense: 0,
-              expenseContributionPercent: 0,
-              profit: 0,
-              profitPercentage: 0,
-            },
-          ],
+    teamBreakdown: teamBreakdown || [],
 
     // Detailed itemized expenses for reporting
     fixedExpenses: fixedExpenses || [],

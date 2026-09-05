@@ -90,8 +90,9 @@ const getPipelineAnalytics = async (companyId) => {
   const deals = await Deal.find({ companyId });
 
   // Compute KPIs
+  const openStages = ['lead', 'qualified', 'proposal', 'negotiation'];
   const activeDeals = deals.filter(d => d.stage !== 'lost');
-  const openDeals = deals.filter(d => ['lead', 'qualified', 'proposal', 'negotiation'].includes(d.stage));
+  const openDeals = deals.filter(d => openStages.includes(d.stage));
   const wonDeals = deals.filter(d => d.stage === 'won');
   const lostDeals = deals.filter(d => d.stage === 'lost');
 
@@ -140,15 +141,17 @@ const getPipelineAnalytics = async (companyId) => {
     winRate: g.totalCount > 0 ? Math.round((g.countWon / g.totalCount) * 100) : 0
   })).sort((a, b) => b.valueWon - a.valueWon);
 
-  // Stalled Deal Detection: No activity in last 10 days
-  const tenDaysAgo = new Date();
-  tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
-  const stalledDeals = deals.filter(d => openStages.includes(d.stage) && d.updatedAt < tenDaysAgo).map(d => ({
+  // Stalled Deal Detection: No activity in last 1 day (or older)
+  const oneDayAgo = new Date();
+  oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+  const stalledDeals = deals.filter(d => openStages.includes(d.stage) && (!d.updatedAt || new Date(d.updatedAt) < oneDayAgo)).map(d => ({
     _id: d._id,
     name: d.name,
     stage: d.stage,
     value: d.value,
     rep: d.rep,
+    companyName: d.companyName,
+    industry: d.industry,
     updatedAt: d.updatedAt
   }));
 

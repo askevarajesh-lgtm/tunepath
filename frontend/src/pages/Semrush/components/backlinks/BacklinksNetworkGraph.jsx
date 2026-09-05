@@ -3,10 +3,10 @@ import { ReactFlow, Background, Controls } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useOutletContext } from 'react-router-dom';
 
-const BacklinksNetworkGraph = () => {
+const BacklinksNetworkGraph = ({ localData }) => {
   const { project, projectData } = useOutletContext();
   const domain = project?.domain || 'Target Domain';
-  const data = projectData?.backlinksOverview || {};
+  const data = localData?.backlinksOverview || projectData?.backlinksOverview || {};
   
   const { nodes, edges } = useMemo(() => {
     const nodes = [

@@ -655,11 +655,12 @@ class SemrushService {
           }));
     
           overview[0].pages = (pages || []).map(p => ({
-              url: p.source_url,
-              links: p.backlinks_num,
-              domains: p.domains_num,
-              external: p.external_num,
-              internal: p.internal_num,
+              url: p.source_url || p.target_url || p.page || p.url || '',
+              title: p.title || p.source_title || p.target_title || '',
+              links: p.backlinks_num || p.links || 0,
+              domains: p.domains_num || p.domains || 0,
+              external: p.external_num || p.external || 0,
+              internal: p.internal_num || p.internal || 0,
               last_seen: p.last_seen
           }));
           

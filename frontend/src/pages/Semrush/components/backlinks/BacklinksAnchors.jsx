@@ -4,9 +4,10 @@ import { useOutletContext } from 'react-router-dom';
 
 const { Text } = Typography;
 
-const BacklinksAnchors = () => {
+const BacklinksAnchors = ({ localData }) => {
   const { projectData } = useOutletContext();
-  const anchors = projectData?.backlinksOverview?.anchors || [];
+  const backlinksOverview = localData?.backlinksOverview || projectData?.backlinksOverview || {};
+  const anchors = backlinksOverview?.anchors || [];
 
   const columns = [
     {

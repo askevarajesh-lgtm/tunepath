@@ -132,15 +132,16 @@ const TimeTracking = () => {
   const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.08 } } };
   const itemVariants = { hidden: { y: 16, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } } };
 
-  const formatTime = (h) => {
-    if (h === undefined || h === null || h === '-' || h === 0) return '—';
+  const formatTime = (h, allowZero = false) => {
+    if (h === undefined || h === null || h === '-') return allowZero ? '0h' : '—';
     const numH = parseFloat(h);
-    if (isNaN(numH) || numH === 0) return '—';
+    if (isNaN(numH) || numH < 0) return allowZero ? '0h' : '—';
+    if (numH === 0) return allowZero ? '0h' : '—';
     const totalSeconds = Math.round(numH * 3600);
     if (numH < 1) {
       const minutes = Math.floor(totalSeconds / 60);
       const seconds = totalSeconds % 60;
-      return minutes === 0 ? `${seconds}s` : `${minutes}m ${seconds}s`;
+      return minutes === 0 ? `${seconds}s` : `${minutes}m`;
     }
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -347,10 +348,43 @@ const TimeTracking = () => {
       <motion.div variants={itemVariants}>
         <Row gutter={[24, 24]} style={{ marginBottom: 40 }}>
           {[
-            { label: 'HOURS LOGGED', val: formatTime(kpis.totalHours), sub: `${formatTime(kpis.nonBillableHours)} non-billable`, msg: 'Selected week', color: 'var(--accent-info)', icon: <Clock size={20} /> },
-            { label: 'ACTIVE TIMERS', val: kpis.activeTimersCount || 0, sub: `${formatTime(kpis.activeTimersRunningTime)} running`, msg: 'Running right now', color: 'var(--accent-primary)', pos: true, icon: <PlayCircle size={20} /> },
-            { label: 'BILLABLE UTILIZATION', val: `${kpis.utilizationRate || 0}%`, sub: `${formatTime(kpis.billableHours)} billable`, msg: 'Out of total logged hours', color: 'var(--accent-warning)', icon: <Target size={20} /> },
-            { label: 'MISSING TIMESHEETS', val: kpis.missingTimesheetsCount || 0, sub: kpis.missingTimesheetsMessage, msg: 'Department members', color: 'var(--accent-danger)', alert: kpis.missingTimesheetsCount > 0, icon: <CalendarX2 size={20} /> },
+            {
+              label: 'TOTAL HOURS LOGGED',
+              val: formatTime(kpis.totalHours, true),
+              sub: kpis.nonBillableHours > 0
+                ? `${formatTime(kpis.nonBillableHours, true)} non-billable`
+                : `${formatTime(kpis.billableHours, true)} billable`,
+              msg: dateRange ? 'Custom date range' : 'Selected week',
+              color: 'var(--accent-info)',
+              icon: <Clock size={20} />
+            },
+            {
+              label: 'ACTIVE TIMERS',
+              val: kpis.activeTimersCount || 0,
+              sub: kpis.activeTimersCount > 0
+                ? `${kpis.activeTimersCount} member${kpis.activeTimersCount > 1 ? 's' : ''} active`
+                : 'No active timers',
+              msg: 'Running right now',
+              color: 'var(--accent-primary)',
+              pos: kpis.activeTimersCount > 0,
+              icon: <PlayCircle size={20} />
+            },
+            {
+              label: 'BILLABLE UTILIZATION',
+              val: `${kpis.utilizationRate || 0}%`,
+              sub: `${formatTime(kpis.billableHours, true)} billable`,
+              msg: 'Out of total logged hours',
+              color: 'var(--accent-warning)',
+              icon: <Target size={20} />
+            },
+            {
+              label: 'AVG HOURS PER MEMBER',
+              val: formatTime(kpis.avgHoursPerMember || (kpis.totalHours / (kpis.totalEligibleMembers || timesheetData.length || 1)), true),
+              sub: `Across ${kpis.totalEligibleMembers || timesheetData.length || 0} members`,
+              msg: 'Average logged per member',
+              color: 'var(--accent-secondary)',
+              icon: <Users size={20} />
+            },
           ].map((kpi, i) => (
             <Col style={{ flex: '1 1 200px', minWidth: 200 }} key={i}>
               <motion.div whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ height: '100%' }}>

@@ -11,22 +11,25 @@ import {
   Divider,
   Row,
   Col,
+  Select,
 } from "antd";
 import {
   PictureOutlined,
   VideoCameraOutlined,
   SaveOutlined,
   InfoCircleOutlined,
+  ApartmentOutlined,
 } from "@ant-design/icons";
-import { message } from "antd";
 import { notifySuccess, notifyError } from '../../utils/notify';
 import {
   useGetDMTeamSettingsQuery,
   useUpdateDMTeamSettingsMutation,
+  useGetDepartmentsQuery,
 } from "../../api/settingsApi";
 import { useTheme } from "../../contexts/ThemeContext";
 
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
+const { Option } = Select;
 
 const DigitalMarketingTeamSettings = () => {
   const [form] = Form.useForm();
@@ -39,17 +42,21 @@ const DigitalMarketingTeamSettings = () => {
     refetch,
   } = useGetDMTeamSettingsQuery();
 
+  const { data: deptData } = useGetDepartmentsQuery();
+
   const [updateDMTeamSettings, { isLoading: isSaving }] =
     useUpdateDMTeamSettingsMutation();
 
   const dmSettings = dmSettingsData?.data?.dmTeam;
+  const departments = deptData?.data?.departments || deptData?.data || [];
 
   // Populate form when data arrives
   useEffect(() => {
     if (dmSettings) {
       form.setFieldsValue({
-        designerDailyLimit: dmSettings.designerDailyLimit,
-        videoEditorDailyLimit: dmSettings.videoEditorDailyLimit,
+        departmentId: dmSettings.departmentId || undefined,
+        designerDailyLimit: dmSettings.designerDailyLimit ?? 7,
+        videoEditorDailyLimit: dmSettings.videoEditorDailyLimit ?? 3,
       });
     }
   }, [dmSettings, form]);
@@ -57,17 +64,23 @@ const DigitalMarketingTeamSettings = () => {
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
-      await updateDMTeamSettings({
+      const res = await updateDMTeamSettings({
+        departmentId: values.departmentId,
         designerDailyLimit: values.designerDailyLimit,
         videoEditorDailyLimit: values.videoEditorDailyLimit,
-      }).unwrap();
-      notifySuccess('dm-settings', 'global', "Digital Marketing Team settings saved successfully!");
-    } catch (error) {
-      if (error?.data?.message) {
-        notifyError('dm-settings', 'global', error.data.message);
-      } else if (error?.errorFields) {
-        // Antd validation errors — already shown inline
+      });
+
+      if (res?.data?.success) {
+        notifySuccess('dm-settings', 'global', "Digital Marketing Team settings saved successfully!");
+        refetch();
+      } else if (res?.error) {
+        notifyError('dm-settings', 'global', res.error?.data?.message || "Failed to save settings.");
       } else {
+        notifySuccess('dm-settings', 'global', "Digital Marketing Team settings saved successfully!");
+        refetch();
+      }
+    } catch (error) {
+      if (!error?.errorFields) {
         notifyError('dm-settings', 'global', "Failed to save settings. Please try again.");
       }
     }
@@ -128,10 +141,51 @@ const DigitalMarketingTeamSettings = () => {
         icon={<InfoCircleOutlined />}
         style={{ marginBottom: 20, borderRadius: 10 }}
         message="Daily Task Limit Configuration"
-        description="Set the maximum number of tasks that can be assigned to each role per day in the Digital Marketing department. These limits are used across the Task Page, Analytics, and Progress Tracking."
+        description="Select your agency department and set the maximum number of tasks that can be assigned per role per day. These limits apply across Task Page, Analytics, and Progress Tracking."
       />
 
       <Form form={form} layout="vertical" requiredMark="optional">
+        {/* Department Selection */}
+        <Card style={{ ...cardStyle, marginBottom: 20 }} bodyStyle={{ padding: "20px 24px" }}>
+          <div style={accentStyle("var(--accent-info)")}>
+            <ApartmentOutlined />
+          </div>
+          <Title
+            level={5}
+            style={{
+              margin: "0 0 4px",
+              color: isDark ? "#f3f4f6" : "#111827",
+            }}
+          >
+            Agency Department Selection
+          </Title>
+          <Text
+            type="secondary"
+            style={{ fontSize: 12, display: "block", marginBottom: 16 }}
+          >
+            Select the digital marketing or agency department these limits apply to
+          </Text>
+          <Form.Item
+            name="departmentId"
+            label="Department"
+            style={{ marginBottom: 0 }}
+          >
+            <Select
+              showSearch
+              placeholder="Select department (e.g. Digital Marketing)"
+              optionFilterProp="children"
+              allowClear
+              size="large"
+            >
+              {departments.map((d) => (
+                <Option key={d._id} value={d._id}>
+                  {d.name}
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+        </Card>
+
         <Row gutter={[20, 0]}>
           {/* Designer limit */}
           <Col xs={24} md={12}>
@@ -244,7 +298,9 @@ const DigitalMarketingTeamSettings = () => {
             bodyStyle={{ padding: "12px 16px" }}
           >
             <Text type="secondary" style={{ fontSize: 12 }}>
-              <strong>Currently saved:</strong> &nbsp; Designer →{" "}
+              <strong>Currently saved:</strong> &nbsp; Department →{" "}
+              <strong>{dmSettings.departmentName || "Digital Marketing"}</strong>
+              &nbsp;&nbsp;|&nbsp;&nbsp; Designer →{" "}
               <strong>{dmSettings.designerDailyLimit} tasks/day</strong>
               &nbsp;&nbsp;|&nbsp;&nbsp; Video Editor →{" "}
               <strong>{dmSettings.videoEditorDailyLimit} tasks/day</strong>
@@ -273,6 +329,7 @@ const DigitalMarketingTeamSettings = () => {
             onClick={() => {
               if (dmSettings) {
                 form.setFieldsValue({
+                  departmentId: dmSettings.departmentId || undefined,
                   designerDailyLimit: dmSettings.designerDailyLimit,
                   videoEditorDailyLimit: dmSettings.videoEditorDailyLimit,
                 });

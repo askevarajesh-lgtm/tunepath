@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from "react";
+import { motion } from "framer-motion";
 import {
   Card,
   Table,
@@ -887,304 +888,422 @@ const ExpenseManagementPage = () => {
     }
   };
 
+  const containerVariants = { hidden: { opacity: 0 }, visible: { opacity: 1, transition: { staggerChildren: 0.08 } } };
+  const itemVariants = { hidden: { y: 16, opacity: 0 }, visible: { y: 0, opacity: 1, transition: { type: "spring", stiffness: 300, damping: 24 } } };
+
   return (
-    <div>
-      <div
-        className="page-header"
+    <motion.div variants={containerVariants} initial="hidden" animate="visible" style={{ width: "100%" }}>
+      {/* ─── Page Header ────────────────────────────────────────────────────── */}
+      <motion.div
+        variants={itemVariants}
         style={{
+          marginBottom: 32,
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 24,
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+          gap: 16,
         }}
       >
-        <Title level={2} style={{ margin: 0 }}>
-          Expense Management
-        </Title>
-        <Space>
-          <Button onClick={() => setShowMonthlySummary(!showMonthlySummary)}>
-            {showMonthlySummary ? "Hide" : "Show"} Monthly Summary
+        <div>
+          <Title level={2} style={{ margin: "4px 0 0 0", fontWeight: 800 }}>
+            Expense Management
+          </Title>
+          <Typography.Text type="secondary" style={{ fontWeight: 500 }}>
+            Track fixed overheads, variable employee costs, department budgets and financial analytics.
+          </Typography.Text>
+        </div>
+        <Space size={12}>
+          <Button
+            size="large"
+            onClick={() => setShowMonthlySummary(!showMonthlySummary)}
+            style={{ borderRadius: 10, fontWeight: 600, height: 42 }}
+          >
+            {showMonthlySummary ? "Hide Report" : "Monthly Summary"}
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+          <Button
+            type="primary"
+            size="large"
+            icon={<PlusOutlined />}
+            onClick={handleAdd}
+            style={{ borderRadius: 10, fontWeight: 600, height: 42, background: "var(--accent-primary)" }}
+          >
             Add Expense
           </Button>
         </Space>
-      </div>
+      </motion.div>
 
-      {/* Analytics Dashboard */}
-      <Card className="expense-stats-card">
-        <Row gutter={[16, 16]}>
-          <Col {...RESPONSIVE_COLS.threeCols}>
-            <div className="crm-stat-card">
-              <Statistic
-                title="Total Expenses"
-                value={stats.totalExpenses || 0}
-                prefix={<DollarOutlined className="crm-prefix-icon" />}
-                className="expense-stat-total"
-                formatter={(value) => `₹${value?.toLocaleString("en-IN") || 0}`}
-              />
-              <div className="card-indicator"></div>
-            </div>
+      {/* ─── KPI Analytics Cards ───────────────────────────────────────────── */}
+      <motion.div variants={itemVariants} style={{ marginBottom: 32 }}>
+        <Row gutter={[20, 20]}>
+          <Col xs={24} sm={12} lg={8}>
+            <motion.div whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ height: "100%" }}>
+              <Card
+                className="glassmorphism hover-bg"
+                style={{
+                  borderRadius: 16,
+                  border: "1px solid var(--border-color)",
+                  height: "100%",
+                  position: "relative",
+                  overflow: "hidden",
+                }}
+                bodyStyle={{ padding: "20px 24px" }}
+              >
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "var(--accent-info)" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2 }}>
+                    TOTAL EXPENSES
+                  </Typography.Text>
+                  <div
+                    style={{
+                      padding: 8,
+                      borderRadius: 10,
+                      backgroundColor: "rgba(59, 130, 246, 0.1)",
+                      color: "var(--accent-info)",
+                      border: "1px solid rgba(59, 130, 246, 0.2)",
+                    }}
+                  >
+                    <DollarOutlined style={{ fontSize: 18 }} />
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <Title level={2} style={{ margin: 0, color: "var(--text-primary)", fontWeight: 800, lineHeight: 1 }}>
+                    ₹{(stats.totalExpenses || 0).toLocaleString("en-IN")}
+                  </Title>
+                </div>
+                <Typography.Text style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginTop: 8, fontWeight: 500 }}>
+                  Combined Fixed & Variable Outgoings
+                </Typography.Text>
+              </Card>
+            </motion.div>
           </Col>
-          <Col {...RESPONSIVE_COLS.threeCols}>
-            <div className="crm-stat-card">
-              <Statistic
-                title="Fixed Expenses"
-                value={stats.fixedTotal || 0}
-                prefix={<DollarOutlined className="crm-prefix-icon" />}
-                className="expense-stat-fixed"
-                formatter={(value) => `₹${value?.toLocaleString("en-IN") || 0}`}
-              />
-              <div className="card-indicator"></div>
-            </div>
+
+          <Col xs={24} sm={12} lg={8}>
+            <motion.div whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ height: "100%" }}>
+              <Card
+                className="glassmorphism hover-bg"
+                style={{
+                  borderRadius: 16,
+                  border: "1px solid var(--border-color)",
+                  height: "100%",
+                  position: "relative",
+                  overflow: "hidden",
+                }}
+                bodyStyle={{ padding: "20px 24px" }}
+              >
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "var(--accent-primary)" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2 }}>
+                    FIXED EXPENSES
+                  </Typography.Text>
+                  <div
+                    style={{
+                      padding: 8,
+                      borderRadius: 10,
+                      backgroundColor: "rgba(16, 185, 129, 0.1)",
+                      color: "var(--accent-primary)",
+                      border: "1px solid rgba(16, 185, 129, 0.2)",
+                    }}
+                  >
+                    <Icon icon="mdi:cash-lock" width="20" />
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <Title level={2} style={{ margin: 0, color: "var(--text-primary)", fontWeight: 800, lineHeight: 1 }}>
+                    ₹{(stats.fixedTotal || 0).toLocaleString("en-IN")}
+                  </Title>
+                </div>
+                <Typography.Text style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginTop: 8, fontWeight: 500 }}>
+                  Rent, Overheads, Software & Subscriptions
+                </Typography.Text>
+              </Card>
+            </motion.div>
           </Col>
-          <Col {...RESPONSIVE_COLS.threeCols}>
-            <div className="crm-stat-card">
-              <Statistic
-                title="Variable Expenses"
-                value={stats.variableTotal || 0}
-                prefix={<DollarOutlined className="crm-prefix-icon" />}
-                className="expense-stat-variable"
-                formatter={(value) => `₹${value?.toLocaleString("en-IN") || 0}`}
-              />
-              <div className="card-indicator"></div>
-            </div>
+
+          <Col xs={24} sm={12} lg={8}>
+            <motion.div whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ height: "100%" }}>
+              <Card
+                className="glassmorphism hover-bg"
+                style={{
+                  borderRadius: 16,
+                  border: "1px solid var(--border-color)",
+                  height: "100%",
+                  position: "relative",
+                  overflow: "hidden",
+                }}
+                bodyStyle={{ padding: "20px 24px" }}
+              >
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: "var(--accent-warning)" }} />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1.2 }}>
+                    VARIABLE EXPENSES
+                  </Typography.Text>
+                  <div
+                    style={{
+                      padding: 8,
+                      borderRadius: 10,
+                      backgroundColor: "rgba(245, 158, 11, 0.1)",
+                      color: "var(--accent-warning)",
+                      border: "1px solid rgba(245, 158, 11, 0.2)",
+                    }}
+                  >
+                    <Icon icon="mdi:cash-sync" width="20" />
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                  <Title level={2} style={{ margin: 0, color: "var(--text-primary)", fontWeight: 800, lineHeight: 1 }}>
+                    ₹{(stats.variableTotal || 0).toLocaleString("en-IN")}
+                  </Title>
+                </div>
+                <Typography.Text style={{ fontSize: 12, color: "var(--text-secondary)", display: "block", marginTop: 8, fontWeight: 500 }}>
+                  Employee Payroll, Allowances & Bonuses
+                </Typography.Text>
+              </Card>
+            </motion.div>
           </Col>
         </Row>
-      </Card>
+      </motion.div>
 
-      {/* Monthly Summary Report */}
+      {/* ─── Monthly Summary Report Dropdown Drawer/Card ────────────────────── */}
       {showMonthlySummary && (
-        <Card style={{ marginBottom: 24 }}>
-          <Space direction="vertical" style={{ width: "100%" }}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 16,
-              }}
-            >
-              <Title level={4} style={{ margin: 0 }}>
-                Monthly Summary Report
-              </Title>
-              <Space>
-                <span>Select Month:</span>
-                <MonthPicker
-                  value={dayjs(
-                    `${selectedYear}-${selectedMonth.toString().padStart(2, "0")}-01`,
-                  )}
-                  onChange={(date) => {
-                    if (date) {
-                      setSelectedMonth(date.month() + 1);
-                      setSelectedYear(date.year());
-                    }
-                  }}
-                  format="MMMM YYYY"
-                />
-              </Space>
-            </div>
-            <Spin spinning={monthlySummaryLoading}>
-              {monthlySummaryData?.data && (
-                <div>
-                  <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-                    <Col span={8}>
-                      <Statistic
-                        title="Total Fixed Expenses"
-                        value={monthlySummaryData.data.summary.fixedTotal}
-                        prefix={<DollarOutlined />}
-                        formatter={(value) =>
-                          `₹${value?.toLocaleString("en-IN") || 0}`
-                        }
-                      />
-                    </Col>
-                    <Col span={8}>
-                      <Statistic
-                        title="Total Variable Expenses"
-                        value={monthlySummaryData.data.summary.variableTotal}
-                        prefix={<DollarOutlined />}
-                        formatter={(value) =>
-                          `₹${value?.toLocaleString("en-IN") || 0}`
-                        }
-                      />
-                    </Col>
-                    <Col span={8}>
-                      <Statistic
-                        title="Combined Total"
-                        value={monthlySummaryData.data.summary.totalExpenses}
-                        prefix={<DollarOutlined />}
-                        formatter={(value) =>
-                          `₹${value?.toLocaleString("en-IN") || 0}`
-                        }
-                      />
-                    </Col>
-                  </Row>
+        <motion.div variants={itemVariants} style={{ marginBottom: 24 }}>
+          <Card className="glassmorphism" style={{ borderRadius: 16, border: "1px solid var(--border-color)" }}>
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <Title level={4} style={{ margin: 0 }}>Monthly Summary Report</Title>
+                <Space>
+                  <span>Select Month:</span>
+                  <MonthPicker
+                    value={dayjs(`${selectedYear}-${selectedMonth.toString().padStart(2, "0")}-01`)}
+                    onChange={(date) => {
+                      if (date) {
+                        setSelectedMonth(date.month() + 1);
+                        setSelectedYear(date.year());
+                      }
+                    }}
+                    format="MMMM YYYY"
+                    style={{ borderRadius: 8 }}
+                  />
+                </Space>
+              </div>
+              <Spin spinning={monthlySummaryLoading}>
+                {monthlySummaryData?.data && (
+                  <div>
+                    <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+                      <Col span={8}>
+                        <Card size="small" style={{ borderRadius: 12, background: "var(--bg-tertiary)", border: "1px solid var(--border-color)" }}>
+                          <Statistic
+                            title="Total Fixed Expenses"
+                            value={monthlySummaryData.data.summary.fixedTotal}
+                            prefix={<DollarOutlined />}
+                            formatter={(value) => `₹${value?.toLocaleString("en-IN") || 0}`}
+                          />
+                        </Card>
+                      </Col>
+                      <Col span={8}>
+                        <Card size="small" style={{ borderRadius: 12, background: "var(--bg-tertiary)", border: "1px solid var(--border-color)" }}>
+                          <Statistic
+                            title="Total Variable Expenses"
+                            value={monthlySummaryData.data.summary.variableTotal}
+                            prefix={<DollarOutlined />}
+                            formatter={(value) => `₹${value?.toLocaleString("en-IN") || 0}`}
+                          />
+                        </Card>
+                      </Col>
+                      <Col span={8}>
+                        <Card size="small" style={{ borderRadius: 12, background: "var(--bg-tertiary)", border: "1px solid var(--border-color)" }}>
+                          <Statistic
+                            title="Combined Total"
+                            value={monthlySummaryData.data.summary.totalExpenses}
+                            prefix={<DollarOutlined />}
+                            formatter={(value) => `₹${value?.toLocaleString("en-IN") || 0}`}
+                          />
+                        </Card>
+                      </Col>
+                    </Row>
 
-                  {monthlySummaryData.data.fixedCategoryWise?.length > 0 && (
-                    <div style={{ marginBottom: 24 }}>
-                      <Title level={5}>Fixed Expenses by Category</Title>
-                      <Table
-                        columns={[
-                          {
-                            title: "Category",
-                            dataIndex: "category",
-                            key: "category",
-                            render: (cat) => {
-                              const catObj = fixedExpenseCategories.find(
-                                (c) => c.value === cat,
-                              );
-                              return catObj?.label || cat;
+                    {monthlySummaryData.data.fixedCategoryWise?.length > 0 && (
+                      <div style={{ marginBottom: 24 }}>
+                        <Title level={5} style={{ marginBottom: 12 }}>Fixed Expenses by Category</Title>
+                        <Table
+                          columns={[
+                            {
+                              title: "Category",
+                              dataIndex: "category",
+                              key: "category",
+                              render: (cat) => {
+                                const catObj = fixedExpenseCategories.find((c) => c.value === cat);
+                                return catObj?.label || cat;
+                              },
                             },
-                          },
-                          { title: "Count", dataIndex: "count", key: "count" },
-                          {
-                            title: "Total Amount",
-                            dataIndex: "total",
-                            key: "total",
-                            render: (amt) =>
-                              `₹${(amt || 0).toLocaleString("en-IN")}`,
-                          },
-                        ]}
-                        dataSource={monthlySummaryData.data.fixedCategoryWise}
-                        rowKey="category"
-                        pagination={false}
-                        size="small"
-                      />
-                    </div>
-                  )}
+                            { title: "Count", dataIndex: "count", key: "count" },
+                            {
+                              title: "Total Amount",
+                              dataIndex: "total",
+                              key: "total",
+                              render: (amt) => `₹${(amt || 0).toLocaleString("en-IN")}`,
+                            },
+                          ]}
+                          dataSource={monthlySummaryData.data.fixedCategoryWise}
+                          rowKey="category"
+                          pagination={false}
+                          size="small"
+                        />
+                      </div>
+                    )}
 
-                  {monthlySummaryData.data.variableEmployeeWise?.length > 0 && (
-                    <div>
-                      <Title level={5}>Variable Expenses by Employee</Title>
-                      <Table
-                        columns={[
-                          {
-                            title: "Employee",
-                            key: "name",
-                            render: (_, record) =>
-                              `${record.staffName} (${record.staffRole?.replace(/_/g, " ") || "N/A"})`,
-                          },
-                          {
-                            title: "Team",
-                            dataIndex: "staffTeam",
-                            key: "team",
-                            render: (team) => team || "N/A",
-                          },
-                          { title: "Count", dataIndex: "count", key: "count" },
-                          {
-                            title: "Total Amount",
-                            dataIndex: "total",
-                            key: "total",
-                            render: (amt) =>
-                              `₹${(amt || 0).toLocaleString("en-IN")}`,
-                          },
-                        ]}
-                        dataSource={
-                          monthlySummaryData.data.variableEmployeeWise
-                        }
-                        rowKey="staffId"
-                        pagination={false}
-                        size="small"
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </Spin>
-          </Space>
-        </Card>
+                    {monthlySummaryData.data.variableEmployeeWise?.length > 0 && (
+                      <div>
+                        <Title level={5} style={{ marginBottom: 12 }}>Variable Expenses by Employee</Title>
+                        <Table
+                          columns={[
+                            {
+                              title: "Employee",
+                              key: "name",
+                              render: (_, record) => `${record.staffName} (${record.staffRole?.replace(/_/g, " ") || "N/A"})`,
+                            },
+                            {
+                              title: "Team",
+                              dataIndex: "staffTeam",
+                              key: "team",
+                              render: (team) => team || "N/A",
+                            },
+                            { title: "Count", dataIndex: "count", key: "count" },
+                            {
+                              title: "Total Amount",
+                              dataIndex: "total",
+                              key: "total",
+                              render: (amt) => `₹${(amt || 0).toLocaleString("en-IN")}`,
+                            },
+                          ]}
+                          dataSource={monthlySummaryData.data.variableEmployeeWise}
+                          rowKey="staffId"
+                          pagination={false}
+                          size="small"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Spin>
+            </Space>
+          </Card>
+        </motion.div>
       )}
 
-      {/* Date Filters */}
-      <Card className="expense-filters-card">
-        <Space direction="vertical" className="expense-filters-space">
-          <Typography.Text strong>Filter by Date:</Typography.Text>
-          <Radio.Group
-            value={dateFilter}
-            onChange={handleDateFilterChange}
-            className="expense-date-filters"
-          >
-            <Radio.Button value="allTime">All Time</Radio.Button>
-            <Radio.Button value="currentMonth">Current Month</Radio.Button>
-            <Radio.Button value="previousMonth">Previous Month</Radio.Button>
-            <Radio.Button value="last3Months">Last 3 Months</Radio.Button>
-            <Radio.Button value="last6Months">Last 6 Months</Radio.Button>
-            <Radio.Button value="custom">Custom Range</Radio.Button>
-          </Radio.Group>
-          {dateFilter === "custom" && (
-            <RangePicker
-              value={customDateRange}
-              onChange={setCustomDateRange}
-              className="expense-custom-date-picker"
-            />
-          )}
-        </Space>
-      </Card>
+      {/* ─── Date Filter Bar ────────────────────────────────────────────────── */}
+      <motion.div variants={itemVariants} style={{ marginBottom: 24 }}>
+        <Card
+          className="glassmorphism"
+          style={{ borderRadius: 16, border: "1px solid var(--border-color)" }}
+          bodyStyle={{ padding: "16px 20px" }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <Typography.Text strong style={{ fontSize: 13, color: "var(--text-secondary)" }}>
+                Filter by Date:
+              </Typography.Text>
+              <Radio.Group
+                value={dateFilter}
+                onChange={handleDateFilterChange}
+                buttonStyle="solid"
+                size="middle"
+              >
+                <Radio.Button value="allTime">All Time</Radio.Button>
+                <Radio.Button value="currentMonth">Current Month</Radio.Button>
+                <Radio.Button value="previousMonth">Previous Month</Radio.Button>
+                <Radio.Button value="last3Months">Last 3 Months</Radio.Button>
+                <Radio.Button value="last6Months">Last 6 Months</Radio.Button>
+                <Radio.Button value="custom">Custom Range</Radio.Button>
+              </Radio.Group>
+            </div>
+            {dateFilter === "custom" && (
+              <RangePicker
+                value={customDateRange}
+                onChange={setCustomDateRange}
+                style={{ borderRadius: 8 }}
+              />
+            )}
+          </div>
+        </Card>
+      </motion.div>
 
-      <Card className="expense-table-card">
-        <Spin spinning={isLoading || isCreating || isUpdating}>
-          <Tabs activeKey={activeTab} onChange={setActiveTab}>
-            <TabPane
-              key="fixed"
-              tab={
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icon icon="mdi:cash-lock" width="22" />
-                  Fixed Expenses
-                </span>
-              }
-            >
-              <div style={{ marginBottom: 16 }}>
-                <Button
-                  type="default"
-                  onClick={() => {
-                    // Set default values: previous month as source, current month as target
-                    const now = dayjs();
-                    const prevMonth = now.subtract(1, "month");
-                    duplicateForm.setFieldsValue({
-                      sourceMonth: prevMonth,
-                      targetMonth: now,
-                    });
-                    setShowDuplicateModal(true);
-                  }}
-                  title="Duplicate fixed expenses from previous month to current month"
-                >
-                  Duplicate from Previous Month
-                </Button>
-              </div>
-              <div className="expense-table-wrapper">
+      {/* ─── Main Expenses Table Card ───────────────────────────────────────── */}
+      <motion.div variants={itemVariants}>
+        <Card
+          className="glassmorphism"
+          style={{ borderRadius: 16, marginBottom: 32, border: "1px solid var(--border-color)", boxShadow: "var(--shadow-sm)" }}
+          bodyStyle={{ padding: 24 }}
+        >
+          <Spin spinning={isLoading || isCreating || isUpdating}>
+            <Tabs activeKey={activeTab} onChange={setActiveTab} size="large">
+              <TabPane
+                key="fixed"
+                tab={
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+                    <Icon icon="mdi:cash-lock" width="20" style={{ color: "var(--accent-primary)" }} />
+                    Fixed Expenses
+                    <Tag style={{ borderRadius: 12, marginLeft: 4, background: "var(--bg-tertiary)", border: "1px solid var(--border-color)", fontWeight: 700 }}>
+                      {activeTab === "fixed" ? filteredExpenses.length : 0}
+                    </Tag>
+                  </span>
+                }
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
+                  <Button
+                    type="default"
+                    icon={<Icon icon="mdi:content-duplicate" width="16" />}
+                    onClick={() => {
+                      const now = dayjs();
+                      const prevMonth = now.subtract(1, "month");
+                      duplicateForm.setFieldsValue({
+                        sourceMonth: prevMonth,
+                        targetMonth: now,
+                      });
+                      setShowDuplicateModal(true);
+                    }}
+                    style={{ borderRadius: 8, fontWeight: 600 }}
+                  >
+                    Duplicate from Previous Month
+                  </Button>
+                </div>
                 <Table
                   columns={fixedExpenseColumns}
                   dataSource={filteredExpenses}
                   rowKey="_id"
                   pagination={{
-                    defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'],
+                    defaultPageSize: 10,
+                    showSizeChanger: true,
+                    pageSizeOptions: ["10", "20", "50", "100", "200"],
                     responsive: true,
                   }}
                   scroll={{ x: "max-content" }}
-                  size="small"
+                  size="middle"
+                  rowClassName={() => "hover-bg"}
                   locale={{
-                    emptyText:
-                      'No fixed expenses found. Click "Add Expense" to create one.',
+                    emptyText: 'No fixed expenses found. Click "Add Expense" to create one.',
                   }}
                 />
-              </div>
-            </TabPane>
-            <TabPane
-              key="variable"
-              tab={
-                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icon icon="mdi:cash-sync" width="22" />
-                  Variable Expenses
-                </span>
-              }
-            >
-              <div style={{ marginBottom: 16 }}>
-                <Space direction="vertical" style={{ width: "100%" }}>
+              </TabPane>
+
+              <TabPane
+                key="variable"
+                tab={
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 600 }}>
+                    <Icon icon="mdi:cash-sync" width="20" style={{ color: "var(--accent-warning)" }} />
+                    Variable Expenses
+                    <Tag style={{ borderRadius: 12, marginLeft: 4, background: "var(--bg-tertiary)", border: "1px solid var(--border-color)", fontWeight: 700 }}>
+                      {activeTab === "variable" ? filteredExpenses.length : 0}
+                    </Tag>
+                  </span>
+                }
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 12 }}>
                   <Space>
                     <Button
                       type="default"
+                      icon={<Icon icon="mdi:content-duplicate" width="16" />}
                       onClick={() => {
-                        // Set default values: previous month as source, current month as target
                         const now = dayjs();
                         const prevMonth = now.subtract(1, "month");
                         variableDuplicateForm.setFieldsValue({
@@ -1193,90 +1312,76 @@ const ExpenseManagementPage = () => {
                         });
                         setShowVariableDuplicateModal(true);
                       }}
-                      title="Duplicate variable expenses from previous month to current month"
+                      style={{ borderRadius: 8, fontWeight: 600 }}
                     >
                       Duplicate from Previous Month
                     </Button>
                     <Button
                       onClick={() => setShowDepartmentWise(!showDepartmentWise)}
+                      style={{ borderRadius: 8, fontWeight: 600 }}
                     >
-                      {showDepartmentWise ? "Hide" : "Show"} Department-wise
-                      Summary
+                      {showDepartmentWise ? "Hide" : "Show"} Department-wise Summary
                     </Button>
                   </Space>
-                </Space>
+                </div>
 
-                {showDepartmentWise &&
-                  Object.keys(departmentWiseSalaries).length > 0 && (
-                    <Card style={{ marginTop: 16 }}>
-                      <Title level={5}>Department-wise Salary Expenses</Title>
-                      <Table
-                        columns={[
-                          {
-                            title: "Department",
-                            dataIndex: "department",
-                            key: "department",
-                            render: (dept) => {
-                              const deptObj = departments.find(
-                                (d) => d.value === dept,
-                              );
-                              return (
-                                <Tag color="blue">
-                                  {deptObj?.label ||
-                                    dept
-                                      .replace(/_/g, " ")
-                                      .replace(/\b\w/g, (l) => l.toUpperCase())}
-                                </Tag>
-                              );
-                            },
+                {showDepartmentWise && Object.keys(departmentWiseSalaries).length > 0 && (
+                  <Card style={{ marginBottom: 24, borderRadius: 12, border: "1px solid var(--border-color)", background: "var(--bg-tertiary)" }}>
+                    <Title level={5} style={{ marginBottom: 16 }}>Department-wise Salary Expenses</Title>
+                    <Table
+                      columns={[
+                        {
+                          title: "Department",
+                          dataIndex: "department",
+                          key: "department",
+                          render: (dept) => {
+                            const deptObj = departments.find((d) => d.value === dept);
+                            return (
+                              <Tag color="blue" style={{ borderRadius: 12, fontWeight: 600 }}>
+                                {deptObj?.label || dept.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase())}
+                              </Tag>
+                            );
                           },
-                          {
-                            title: "Employee Count",
-                            dataIndex: "employeeCount",
-                            key: "employeeCount",
-                          },
-                          {
-                            title: "Total Expenses",
-                            dataIndex: "count",
-                            key: "count",
-                          },
-                          {
-                            title: "Total Amount",
-                            dataIndex: "total",
-                            key: "total",
-                            render: (amt) =>
-                              `₹${(amt || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-                          },
-                        ]}
-                        dataSource={Object.values(departmentWiseSalaries)}
-                        rowKey="department"
-                        pagination={false}
-                        size="small"
-                      />
-                    </Card>
-                  )}
-              </div>
-              <div className="expense-table-wrapper">
+                        },
+                        { title: "Employee Count", dataIndex: "employeeCount", key: "employeeCount" },
+                        { title: "Total Expenses", dataIndex: "count", key: "count" },
+                        {
+                          title: "Total Amount",
+                          dataIndex: "total",
+                          key: "total",
+                          render: (amt) => `₹${(amt || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+                        },
+                      ]}
+                      dataSource={Object.values(departmentWiseSalaries)}
+                      rowKey="department"
+                      pagination={false}
+                      size="small"
+                    />
+                  </Card>
+                )}
+
                 <Table
                   columns={variableExpenseColumns}
                   dataSource={filteredExpenses}
                   rowKey="_id"
                   pagination={{
-                    defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'],
+                    defaultPageSize: 10,
+                    showSizeChanger: true,
+                    pageSizeOptions: ["10", "20", "50", "100", "200"],
                     responsive: true,
                   }}
                   scroll={{ x: "max-content" }}
-                  size="small"
+                  size="middle"
+                  rowClassName={() => "hover-bg"}
                   locale={{
-                    emptyText:
-                      'No variable expenses found. Click "Add Expense" to create one.',
+                    emptyText: 'No variable expenses found. Click "Add Expense" to create one.',
                   }}
                 />
-              </div>
-            </TabPane>
-          </Tabs>
-        </Spin>
-      </Card>
+              </TabPane>
+            </Tabs>
+          </Spin>
+        </Card>
+      </motion.div>
 
       {/* Add/Edit Expense Modal */}
       <Modal
@@ -1897,7 +2002,7 @@ const ExpenseManagementPage = () => {
         }}
         employeeId={selectedEmployeeId}
       />
-    </div>
+    </motion.div>
   );
 };
 

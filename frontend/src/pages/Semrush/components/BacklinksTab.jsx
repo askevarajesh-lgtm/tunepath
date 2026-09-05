@@ -189,10 +189,10 @@ const BacklinksTab = () => {
           </div>
           <div>
             {activeKey === 'overview' && <BacklinksOverview setActiveTab={setActiveKey} localData={localData} />}
-            {activeKey === 'backlinks' && <BacklinksList />}
-            {activeKey === 'anchors' && <BacklinksAnchors />}
-            {activeKey === 'indexed-pages' && <BacklinksPages />}
-            {activeKey === 'network-graph' && <BacklinksNetworkGraph />}
+            {activeKey === 'backlinks' && <BacklinksList localData={localData} />}
+            {activeKey === 'anchors' && <BacklinksAnchors localData={localData} />}
+            {activeKey === 'indexed-pages' && <BacklinksPages localData={localData} />}
+            {activeKey === 'network-graph' && <BacklinksNetworkGraph localData={localData} />}
           </div>
         </>
       )}

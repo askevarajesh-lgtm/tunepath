@@ -53,6 +53,7 @@ const SalesPipeline = () => {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [newNote, setNewNote] = useState('');
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
+  const [stalledDaysFilter, setStalledDaysFilter] = useState(1);
 
   // Forms
   const [form] = Form.useForm();
@@ -76,11 +77,34 @@ const SalesPipeline = () => {
   const [convertDeal, { isLoading: isConverting }] = useConvertDealToClientMutation();
 
   const deals = dealsResponse?.data?.deals || [];
-  const analytics = analyticsResponse?.data?.analytics || {
-    kpis: { totalPipelineValue: 0, weightedPipelineValue: 0, winRate: 0, avgDealSize: 0, activeProspects: 0, proposalsSent: 0, dealsWonThisMonth: 0, dealsLostThisMonth: 0 },
-    funnel: [],
-    leaderboard: [],
-    stalledDeals: []
+
+  // Derived client-side KPIs as fallback when analytics response is loading or empty
+  const activeDeals = deals.filter(d => d.stage !== 'lost');
+  const wonDeals = deals.filter(d => d.stage === 'won');
+  const lostDeals = deals.filter(d => d.stage === 'lost');
+  const totalVal = activeDeals.reduce((sum, d) => sum + (d.value || 0), 0);
+  const weightedVal = activeDeals.reduce((sum, d) => {
+    if (d.stage === 'won') return sum + (d.value || 0);
+    return sum + ((d.value || 0) * (d.probability || 20) / 100);
+  }, 0);
+  const totalClosed = wonDeals.length + lostDeals.length;
+  const computedWinRate = totalClosed > 0 ? Math.round((wonDeals.length / totalClosed) * 100) : 0;
+
+  const serverAnalytics = analyticsResponse?.data?.analytics;
+  const analytics = {
+    kpis: {
+      totalPipelineValue: serverAnalytics?.kpis?.totalPipelineValue ?? totalVal,
+      weightedPipelineValue: serverAnalytics?.kpis?.weightedPipelineValue ?? weightedVal,
+      winRate: serverAnalytics?.kpis?.winRate ?? computedWinRate,
+      avgDealSize: serverAnalytics?.kpis?.avgDealSize ?? (deals.length > 0 ? Math.round(totalVal / deals.length) : 0),
+      activeProspects: serverAnalytics?.kpis?.activeProspects ?? activeDeals.length,
+      proposalsSent: serverAnalytics?.kpis?.proposalsSent ?? deals.filter(d => d.stage === 'proposal').length,
+      dealsWonThisMonth: serverAnalytics?.kpis?.dealsWonThisMonth ?? wonDeals.length,
+      dealsLostThisMonth: serverAnalytics?.kpis?.dealsLostThisMonth ?? lostDeals.length
+    },
+    funnel: serverAnalytics?.funnel || [],
+    leaderboard: serverAnalytics?.leaderboard || [],
+    stalledDeals: serverAnalytics?.stalledDeals || []
   };
 
   const selectedDeal = deals.find(d => d._id === selectedDealId);
@@ -89,11 +113,14 @@ const SalesPipeline = () => {
     try {
       const repName = values.rep || "Unassigned";
       const repInitials = values.rep ? values.rep.split(" ").map(n => n[0]).join("").toUpperCase() : "UN";
-      await createDeal({
+      const payload = {
         ...values,
         rep: repName,
-        ownerInit: repInitials
-      }).unwrap();
+        ownerInit: repInitials,
+        expectedCloseDate: values.expectedCloseDate ? values.expectedCloseDate.toISOString() : undefined,
+        follow: values.follow ? values.follow.format('YYYY-MM-DD') : undefined
+      };
+      await createDeal(payload).unwrap();
       message.success("Deal created successfully");
       setIsCreateOpen(false);
       form.resetFields();
@@ -191,8 +218,10 @@ const SalesPipeline = () => {
   };
 
   const formatPrice = (val) => {
-    if (val >= 100000) return `₹${(val / 100000).toFixed(1)}L`;
-    return `₹${val.toLocaleString()}`;
+    if (val === undefined || val === null || isNaN(Number(val))) return '₹0';
+    const num = Number(val);
+    if (num >= 100000) return `₹${(num / 100000).toFixed(1)}L`;
+    return `₹${num.toLocaleString('en-IN')}`;
   };
 
   // Group deals into pipeline stages
@@ -335,11 +364,19 @@ const SalesPipeline = () => {
 
                       <Divider style={{ margin: '12px 0' }} />
 
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#8c8c8c' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: '#8c8c8c' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><User size={12} /> {deal.rep}</span>
-                        {deal.follow && (
+                        {deal.expectedCloseDate ? (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-primary)', fontWeight: 600 }}>
+                            <Calendar size={12} /> End: {dayjs(deal.expectedCloseDate).format('DD MMM YYYY')}
+                          </span>
+                        ) : deal.follow ? (
                           <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-warning)' }}>
-                            <Clock size={12} /> {dayjs(deal.follow).isValid() ? dayjs(deal.follow).format('DD MMM YYYY') : deal.follow}
+                            <Clock size={12} /> {dayjs(deal.follow).isValid() ? dayjs(deal.follow).format('DD MMM YYYY') : 'Follow-up'}
+                          </span>
+                        ) : (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#8c8c8c' }}>
+                            <Clock size={12} /> {deal.createdAt ? dayjs(deal.createdAt).format('DD MMM YYYY') : 'Added'}
                           </span>
                         )}
                       </div>
@@ -426,24 +463,96 @@ const SalesPipeline = () => {
           </Col>
 
           {/* Stalled Deals */}
-          <Col xs={24} md={12} lg={8}>
-            <Card title="Stalled Opportunities" extra={<Badge count={analytics.stalledDeals.length} />} className="glassmorphism" style={{ borderRadius: 16, height: '100%', border: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 300, overflowY: 'auto' }}>
-                {analytics.stalledDeals.map(d => (
-                  <div key={d._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'rgba(245, 158, 11, 0.05)', borderRadius: 8, border: '1px solid rgba(245,158,11,0.2)' }}>
-                    <div>
-                      <strong style={{ fontSize: 13 }}>{d.name}</strong>
-                      <div style={{ fontSize: 11, color: '#8c8c8c' }}>Stage: {d.stage.toUpperCase()} · Owner: {d.rep}</div>
-                    </div>
-                    <Tag color="warning" icon={<AlertCircle size={10} style={{ marginRight: 2 }} />}>No Action</Tag>
+          {(() => {
+            const openDealsList = deals.filter(d => ['lead', 'qualified', 'proposal', 'negotiation'].includes(d.stage));
+            const calculatedStalled = openDealsList.filter(d => {
+              if (!d.updatedAt) return true;
+              const diffDays = dayjs().diff(dayjs(d.updatedAt), 'day');
+              return diffDays >= stalledDaysFilter;
+            });
+            const displayStalled = calculatedStalled.length > 0 ? calculatedStalled : analytics.stalledDeals;
+
+            return (
+              <Col xs={24} md={12} lg={8}>
+                <Card 
+                  title="Stalled Opportunities" 
+                  extra={
+                    <Space size={8}>
+                      <Select 
+                        size="small" 
+                        value={stalledDaysFilter} 
+                        onChange={setStalledDaysFilter}
+                        style={{ width: 100 }}
+                      >
+                        <Option value={1}>&gt; 1 day</Option>
+                        <Option value={3}>&gt; 3 days</Option>
+                        <Option value={5}>&gt; 5 days</Option>
+                        <Option value={7}>&gt; 7 days</Option>
+                      </Select>
+                      <Badge count={displayStalled.length} />
+                    </Space>
+                  } 
+                  className="glassmorphism" 
+                  style={{ borderRadius: 16, height: '100%', border: '1px solid var(--border-color)' }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 340, overflowY: 'auto', paddingRight: 4 }}>
+                    {displayStalled.map(d => {
+                      const daysInactive = d.updatedAt ? dayjs().diff(dayjs(d.updatedAt), 'day') : 1;
+                      return (
+                        <div key={d._id} style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '12px 14px', background: 'rgba(245, 158, 11, 0.05)', borderRadius: 10, border: '1px solid rgba(245,158,11,0.2)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div 
+                              style={{ cursor: 'pointer' }} 
+                              onClick={() => { setSelectedDealId(d._id); setIsDetailOpen(true); }}
+                            >
+                              <strong style={{ fontSize: 13, color: 'var(--text-primary)', display: 'block' }}>{d.name}</strong>
+                              <Text type="secondary" style={{ fontSize: 11 }}>
+                                Owner: {d.rep} · {formatPrice(d.value)}
+                              </Text>
+                            </div>
+                            <Tag color="warning" icon={<AlertCircle size={10} style={{ marginRight: 2 }} />}>
+                              {daysInactive > 0 ? `${daysInactive}d inactive` : 'Stalled'}
+                            </Tag>
+                          </div>
+
+                          {/* Quick Actions Bar */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTop: '1px dashed rgba(245,158,11,0.2)' }}>
+                            <Select 
+                              size="small" 
+                              value={d.stage} 
+                              style={{ width: 125, fontSize: 11 }}
+                              onChange={(newStage) => handleStageChange(d._id, newStage)}
+                            >
+                              <Option value="lead">LEAD</Option>
+                              <Option value="qualified">QUALIFIED</Option>
+                              <Option value="proposal">PROPOSAL</Option>
+                              <Option value="negotiation">NEGOTIATION</Option>
+                              <Option value="won">WON</Option>
+                              <Option value="lost">LOST</Option>
+                            </Select>
+
+                            <Button 
+                              size="small" 
+                              type="primary" 
+                              ghost
+                              icon={<CheckCircle2 size={12} />}
+                              style={{ fontSize: 11, borderRadius: 6 }}
+                              onClick={() => handleStageChange(d._id, d.stage)}
+                            >
+                              Mark Active
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {displayStalled.length === 0 && (
+                      <div style={{ textAlign: 'center', color: '#8c8c8c', padding: '40px 0', fontSize: 12 }}>No stalled opportunities detected</div>
+                    )}
                   </div>
-                ))}
-                {analytics.stalledDeals.length === 0 && (
-                  <div style={{ textAlign: 'center', color: '#8c8c8c', padding: '40px 0', fontSize: 12 }}>No stalled opportunities detected</div>
-                )}
-              </div>
-            </Card>
-          </Col>
+                </Card>
+              </Col>
+            );
+          })()}
 
           {/* Top Performers */}
           <Col xs={24} lg={8}>
@@ -501,6 +610,33 @@ const SalesPipeline = () => {
               <Paragraph style={{ color: '#8c8c8c' }}>
                 Assigned to <strong>{selectedDeal.rep}</strong> · Opportunity Category: <strong>{selectedDeal.category}</strong>
               </Paragraph>
+
+              {/* Expected End Date Card */}
+              <div style={{ marginTop: 12, padding: '12px 16px', background: isDark ? '#1f1f1f' : '#f9fafb', borderRadius: 10, border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block', fontWeight: 600 }}>EXPECTED END DATE</Text>
+                  <strong style={{ fontSize: 14, color: 'var(--accent-primary)' }}>
+                    {selectedDeal.expectedCloseDate ? dayjs(selectedDeal.expectedCloseDate).format('DD MMMM YYYY') : 'Not specified'}
+                  </strong>
+                </div>
+                {canEdit && (
+                  <DatePicker
+                    size="small"
+                    placeholder="Set End Date"
+                    value={selectedDeal.expectedCloseDate ? dayjs(selectedDeal.expectedCloseDate) : null}
+                    onChange={async (d) => {
+                      try {
+                        await updateDeal({ id: selectedDeal._id, expectedCloseDate: d ? d.toISOString() : null }).unwrap();
+                        message.success("Expected end date updated");
+                        refetchDeals();
+                        refetchAnalytics();
+                      } catch {
+                        message.error("Failed to update date");
+                      }
+                    }}
+                  />
+                )}
+              </div>
             </div>
 
             <Divider style={{ margin: 0 }} />
@@ -699,6 +835,14 @@ const SalesPipeline = () => {
                 </Select>
               </Form.Item>
             </Col>
+            <Col span={12}>
+              <Form.Item label="Expected End Date" name="expectedCloseDate">
+                <DatePicker style={{ width: '100%' }} placeholder="Select Expected End Date" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
             <Col span={12}>
               <Form.Item label="Follow-up Date" name="follow">
                 <DatePicker style={{ width: '100%' }} placeholder="Select Date" />

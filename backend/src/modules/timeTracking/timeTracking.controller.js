@@ -298,7 +298,9 @@ exports.getDashboardData = async (req, res) => {
     const now = new Date();
     let activeTimersRunningTimeMin = 0;
     activeTasks.forEach(t => {
-      activeTimersRunningTimeMin += Math.max(0, Math.round((now - t.workStartedAt) / 60000));
+      const elapsedMin = Math.max(0, Math.round((now - new Date(t.workStartedAt)) / 60000));
+      // Cap running time per timer to 12 hours (720 min) to handle unstopped stale timers
+      activeTimersRunningTimeMin += Math.min(elapsedMin, 720);
     });
 
     const activeTimersList = activeTasks.map(t => ({
@@ -326,6 +328,9 @@ exports.getDashboardData = async (req, res) => {
     let missingCount = 0;
     eligibleUsers.forEach(u => { if (!loggedSet.has(u._id.toString())) missingCount++; });
 
+    const totalEligibleMembers = eligibleUsers.length;
+    const avgHoursPerMember = totalEligibleMembers > 0 ? parseFloat((kpi.totalHours / totalEligibleMembers).toFixed(2)) : 0;
+
     const kpiCards = {
       totalHours: parseFloat(kpi.totalHours.toFixed(1)),
       capacity: null,
@@ -339,6 +344,8 @@ exports.getDashboardData = async (req, res) => {
       activeTimersRunningTime: parseFloat((activeTimersRunningTimeMin / 60).toFixed(2)),
       activeTimersList,
       missingTimesheetsCount: missingCount,
+      totalEligibleMembers,
+      avgHoursPerMember,
       missingTimesheetsMessage: eligibleUsers.length === 0
         ? 'No members to track'
         : missingCount > 0
@@ -347,28 +354,38 @@ exports.getDashboardData = async (req, res) => {
     };
 
     // ── Weekly timesheet: hours per member per day ───────────────────────────
-    // Aggregate TimeEntries by employee + day-of-week for this week
-    const timesheetAgg = await TimeEntry.aggregate([
-      { $match: weekMatch },
-      { $group: {
-        _id: { employee: '$employee', dayOfWeek: { $isoDayOfWeek: '$date' } },
-        hours: { $sum: '$hours' }
-      }}
-    ]);
+    const weekEntries = await TimeEntry.find(weekMatch).lean();
 
     // Fetch departments in this agency for enriching data
     const departments = await Department.find({ agencyId: tenantObjectId }).select('_id name').lean();
     const deptMap = {};
     departments.forEach(d => { deptMap[d._id.toString()] = d.name; });
 
+    const getIsoDayOfWeek = (dateInput) => {
+      if (!dateInput) return 0;
+      if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+        const [y, m, dayNum] = dateInput.split('-').map(Number);
+        const d = new Date(Date.UTC(y, m - 1, dayNum));
+        const day = d.getUTCDay();
+        return day === 0 ? 7 : day;
+      }
+      const d = new Date(dateInput);
+      if (isNaN(d.getTime())) return 0;
+      const day = d.getUTCDay();
+      return day === 0 ? 7 : day;
+    };
+
     const colors = ['var(--accent-warning)', 'var(--accent-primary)', 'var(--accent-info)', 'var(--accent-secondary)', 'var(--accent-danger)'];
     const timesheetData = eligibleUsers.map((u, i) => {
-      const empLogs = timesheetAgg.filter(t => t._id.employee.toString() === u._id.toString());
-      const getDayHours = (isoDay) => {
-        const log = empLogs.find(l => l._id.dayOfWeek === isoDay);
-        return (!log || log.hours === 0) ? '-' : parseFloat(log.hours.toFixed(1));
-      };
-      const daysArr = [1,2,3,4,5,6,7].map(getDayHours);
+      const empEntries = weekEntries.filter(e => e.employee && e.employee.toString() === u._id.toString());
+      
+      const daysArr = [1, 2, 3, 4, 5, 6, 7].map(isoDay => {
+        const dayHours = empEntries
+          .filter(e => getIsoDayOfWeek(e.date) === isoDay)
+          .reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
+        return dayHours === 0 ? '-' : parseFloat(dayHours.toFixed(2));
+      });
+
       const visualTotal = daysArr.reduce((s, v) => s + (v === '-' ? 0 : v), 0);
       const deptName = u.departmentId ? (deptMap[u.departmentId.toString()] || u.departmentName || '—') : (u.departmentName || '—');
 
@@ -380,7 +397,7 @@ exports.getDashboardData = async (req, res) => {
         color: colors[i % colors.length],
         mon: daysArr[0], tue: daysArr[1], wed: daysArr[2],
         thu: daysArr[3], fri: daysArr[4], sat: daysArr[5], sun: daysArr[6],
-        total: parseFloat(visualTotal.toFixed(1))
+        total: parseFloat(visualTotal.toFixed(2))
       };
     });
 
@@ -509,15 +526,25 @@ exports.getTeamTaskPerformance = async (req, res) => {
       endOfWeek = weekRange.endOfWeek;
     }
 
-    const completedStatuses = ['completed', 'done', 'validated', 'complete', 'review', 'REVIEW'];
+    const completedStatuses = [
+      'completed', 'done', 'validated', 'complete', 'review', 'REVIEW',
+      'submitted', 'SUBMITTED', 'in_review', 'IN_REVIEW', 'APPROVED', 'approved',
+      'Completed', 'Done', 'Validated', 'Complete'
+    ];
 
-    // Tasks completed this week
+    // Tasks completed this week based on any completion date field or updatedAt
     const tasksCompletedAgg = await Task.aggregate([
       { $match: {
         $or: [{ tenantCompanyId: tenantObjectId }, { companyId: tenantObjectId }],
         status: { $in: completedStatuses },
         assignedTo: { $ne: null },
-        updatedAt: { $gte: startOfWeek, $lte: endOfWeek }
+        $or: [
+          { actualCompletionDate: { $gte: startOfWeek, $lte: endOfWeek } },
+          { validatedAt: { $gte: startOfWeek, $lte: endOfWeek } },
+          { completedAt: { $gte: startOfWeek, $lte: endOfWeek } },
+          { workCompletedAt: { $gte: startOfWeek, $lte: endOfWeek } },
+          { updatedAt: { $gte: startOfWeek, $lte: endOfWeek } }
+        ]
       }},
       { $group: { _id: '$assignedTo', tasksCompleted: { $sum: 1 } } }
     ]);
@@ -528,13 +555,9 @@ exports.getTeamTaskPerformance = async (req, res) => {
       { $group: { _id: '$employee', totalTimeSpentHours: { $sum: '$hours' } } }
     ]);
 
-    const allUserIds = [...new Set([
-      ...tasksCompletedAgg.map(p => p._id.toString()),
-      ...timeSpentAgg.map(p => p._id.toString())
-    ])];
-
+    // Fetch ALL active trackable users for this tenant
     const users = await User.find({ 
-      _id: { $in: allUserIds },
+      agencyId: tenantObjectId,
       role: { $in: EMPLOYEE_ROLES }
     }).select('name role departmentId departmentName').lean();
 
@@ -544,8 +567,8 @@ exports.getTeamTaskPerformance = async (req, res) => {
     departments.forEach(d => { deptMap[d._id.toString()] = d.name; });
 
     const performanceData = users.map(u => {
-      const tc = tasksCompletedAgg.find(t => t._id.toString() === u._id.toString());
-      const ts = timeSpentAgg.find(t => t._id.toString() === u._id.toString());
+      const tc = tasksCompletedAgg.find(t => t._id && t._id.toString() === u._id.toString());
+      const ts = timeSpentAgg.find(t => t._id && t._id.toString() === u._id.toString());
       const deptName = u.departmentId ? (deptMap[u.departmentId.toString()] || u.departmentName || '—') : (u.departmentName || '—');
       return {
         userId: u._id,
@@ -557,11 +580,17 @@ exports.getTeamTaskPerformance = async (req, res) => {
       };
     });
 
-    // Also return department-level rollup
+    // Also return department-level rollup initialized with active departments
     const deptPerformance = {};
+    departments.forEach(d => {
+      deptPerformance[d.name] = { department: d.name, members: 0, tasksCompleted: 0, totalTimeSpent: 0 };
+    });
+
     performanceData.forEach(p => {
-      const key = p.department || 'No Department';
-      if (!deptPerformance[key]) deptPerformance[key] = { department: key, members: 0, tasksCompleted: 0, totalTimeSpent: 0 };
+      const key = p.department && p.department !== '—' ? p.department : 'No Department';
+      if (!deptPerformance[key]) {
+        deptPerformance[key] = { department: key, members: 0, tasksCompleted: 0, totalTimeSpent: 0 };
+      }
       deptPerformance[key].members++;
       deptPerformance[key].tasksCompleted += p.tasksCompleted;
       deptPerformance[key].totalTimeSpent = parseFloat((deptPerformance[key].totalTimeSpent + p.totalTimeSpent).toFixed(1));

@@ -114,12 +114,12 @@ const EktaHrAttendancePage = () => {
     const map = new Map(); // employeeCode -> Map(dayKey -> booleanPresent)
     for (const rec of attendanceRows || []) {
       const code = attendanceEmployeeCode(rec);
-      const dayKeyStr = dateKey(rec?.date);
+      const dayKeyStr = dateKey(rec?.date || rec?.punchIn || rec?.punch_in || rec?.inTime || rec?.logIn || rec?.createdAt);
       if (!code || !dayKeyStr) continue;
       if (!map.has(code)) map.set(code, new Map());
       const dayMap = map.get(code);
       const prev = dayMap.get(dayKeyStr) === true;
-      dayMap.set(dayKeyStr, prev || isPresentAttendanceStatus(rec?.status));
+      dayMap.set(dayKeyStr, prev || isPresentAttendanceStatus(rec?.status, rec));
     }
     return map;
   }, [attendanceRows]);
