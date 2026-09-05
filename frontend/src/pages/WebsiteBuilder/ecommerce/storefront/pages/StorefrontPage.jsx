@@ -3,16 +3,91 @@ import { createPortal } from 'react-dom';
 import { resolveAssetUrls } from '../../utils/zipExtractor';
 import { useStorefront } from '../StorefrontContext';
 
-const StorefrontPage = ({ page, assets, children, portalSelector }) => {
+const StorefrontPage = ({ page, assets, children, portalSelector, isImported }) => {
   const containerRef = useRef(null);
+  const iframeRef = useRef(null);
   const [portalTarget, setPortalTarget] = useState(null);
   const { cart } = useStorefront();
 
-  useEffect(() => {
-    if (!page || !containerRef.current) return;
+  const handleInternalClick = (e) => {
+    // Find the closest actionable element
+    const actionable = e.target.closest('a, button, [role="button"], [data-cart], [class*="cart"], [id*="cart"]');
     
-    // Resolve assets: for imported templates, HTML is already self-contained (data URIs embedded).
-    // For built-in templates, this substitutes relative paths with data URIs from the assets map.
+    if (!actionable) return;
+    
+    const text = (actionable.textContent || '').toLowerCase().trim();
+    // Let Add to Cart buttons be handled by their respective click handlers (e.g., ProductCard)
+    if (text.includes('add to cart') || actionable.closest('[data-ecommerce-action="add-to-cart"]')) {
+      return;
+    }
+
+    const href = actionable.getAttribute('href') || '';
+    const className = (actionable.className || '').toString().toLowerCase();
+    const id = (actionable.id || '').toLowerCase();
+    
+    const isCartUrl = [
+      'cart.html', './cart.html', '/cart.html', '#cart', 
+      'cart', 'shopping-cart', 'shopping_cart', 'basket', '#shopping-cart'
+    ].includes(href.toLowerCase());
+
+    const cartKeywords = ['cart', 'shopping-cart', 'shopping_cart', 'basket', 'view cart', 'cart icon', 'shopping bag'];
+    const hasCartClassOrId = cartKeywords.some(kw => className.includes(kw) || id.includes(kw));
+    const hasCartText = cartKeywords.some(kw => text === kw);
+    
+    // If it looks like a cart click, dispatch navigation
+    if (isCartUrl || hasCartClassOrId || hasCartText) {
+       e.preventDefault();
+       e.stopPropagation();
+       window.dispatchEvent(new CustomEvent('storefront_navigate', { detail: 'cart' }));
+       return;
+    }
+
+    // Check for checkout clicks
+    const hrefLower = href.toLowerCase();
+    const isCheckoutUrl = [
+      'checkout.html', './checkout.html', '/checkout.html', '#checkout', 
+      'checkout', 'cheackout.html', 'chackout.html'
+    ].includes(hrefLower) || hrefLower.includes('checkout') || hrefLower.includes('cheackout') || hrefLower.includes('chackout');
+    const hasCheckoutText = text === 'checkout';
+
+    if (isCheckoutUrl || hasCheckoutText) {
+       e.preventDefault();
+       e.stopPropagation();
+       window.dispatchEvent(new CustomEvent('storefront_navigate', { detail: 'checkout' }));
+       return;
+    }
+    
+    // Fallback for regular links
+    if (actionable.tagName === 'A') {
+      if (href && !href.startsWith('http') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('javascript:')) {
+        e.preventDefault();
+        window.dispatchEvent(new CustomEvent('storefront_navigate', { detail: href }));
+      }
+    }
+  };
+
+  const updateCartBadge = (containerDoc) => {
+    if (!containerDoc) return;
+    const cartLinks = containerDoc.querySelectorAll('a[href*="cart"], a[data-commerce-action="cart"]');
+    const totalQuantity = cart.reduce((acc, item) => acc + item.quantity, 0);
+    
+    cartLinks.forEach(link => {
+      let badge = link.querySelector('.storefront-cart-badge');
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'storefront-cart-badge';
+        badge.style.cssText = 'background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; margin-left: 6px; vertical-align: top; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; font-weight: bold;';
+        link.appendChild(badge);
+      }
+      badge.textContent = totalQuantity;
+      badge.style.display = totalQuantity > 0 ? 'inline-flex' : 'none';
+    });
+  };
+
+  useEffect(() => {
+    if (isImported || !page || !containerRef.current) return;
+    
+    // Resolve assets: for built-in templates, this substitutes relative paths with data URIs from the assets map.
     const html = (assets && Object.keys(assets).length > 0)
       ? resolveAssetUrls(page.html, assets)
       : (page.html || '');
@@ -125,96 +200,65 @@ const StorefrontPage = ({ page, assets, children, portalSelector }) => {
       const el = document.getElementById('storefront-template-styles');
       if (el) el.remove();
     };
-  }, [page, assets, portalSelector]);
+  }, [page, assets, portalSelector, isImported]);
 
   // Handle internal navigation clicks (just like original preview did)
   useEffect(() => {
-    const handleClick = (e) => {
-      // Find the closest actionable element
-      const actionable = e.target.closest('a, button, [role="button"], [data-cart], [class*="cart"], [id*="cart"]');
-      
-      if (!actionable) return;
-      
-      const text = (actionable.textContent || '').toLowerCase().trim();
-      // Let Add to Cart buttons be handled by their respective click handlers (e.g., ProductCard)
-      if (text.includes('add to cart') || actionable.closest('[data-ecommerce-action="add-to-cart"]')) {
-        return;
-      }
-
-      const href = actionable.getAttribute('href') || '';
-      const className = (actionable.className || '').toString().toLowerCase();
-      const id = (actionable.id || '').toLowerCase();
-      
-      const isCartUrl = [
-        'cart.html', './cart.html', '/cart.html', '#cart', 
-        'cart', 'shopping-cart', 'shopping_cart', 'basket', '#shopping-cart'
-      ].includes(href.toLowerCase());
-
-      const cartKeywords = ['cart', 'shopping-cart', 'shopping_cart', 'basket', 'view cart', 'cart icon', 'shopping bag'];
-      const hasCartClassOrId = cartKeywords.some(kw => className.includes(kw) || id.includes(kw));
-      const hasCartText = cartKeywords.some(kw => text === kw);
-      
-      // If it looks like a cart click, dispatch navigation
-      if (isCartUrl || hasCartClassOrId || hasCartText) {
-         e.preventDefault();
-         e.stopPropagation();
-         window.dispatchEvent(new CustomEvent('storefront_navigate', { detail: 'cart' }));
-         return;
-      }
-
-      // Check for checkout clicks
-      const hrefLower = href.toLowerCase();
-      const isCheckoutUrl = [
-        'checkout.html', './checkout.html', '/checkout.html', '#checkout', 
-        'checkout', 'cheackout.html', 'chackout.html'
-      ].includes(hrefLower) || hrefLower.includes('checkout') || hrefLower.includes('cheackout') || hrefLower.includes('chackout');
-      const hasCheckoutText = text === 'checkout';
-
-      if (isCheckoutUrl || hasCheckoutText) {
-         e.preventDefault();
-         e.stopPropagation();
-         window.dispatchEvent(new CustomEvent('storefront_navigate', { detail: 'checkout' }));
-         return;
-      }
-      
-      // Fallback for regular links
-      if (actionable.tagName === 'A') {
-        if (href && !href.startsWith('http') && !href.startsWith('mailto:') && !href.startsWith('tel:') && !href.startsWith('javascript:')) {
-          e.preventDefault();
-          window.dispatchEvent(new CustomEvent('storefront_navigate', { detail: href }));
-        }
-      }
-    };
+    if (isImported) return;
     
     const container = containerRef.current;
     if (container) {
-      container.addEventListener('click', handleClick);
+      container.addEventListener('click', handleInternalClick);
     }
     return () => {
       if (container) {
-        container.removeEventListener('click', handleClick);
+        container.removeEventListener('click', handleInternalClick);
       }
     };
-  }, []);
+  }, [isImported]);
 
-  // Sync Cart Badge
+  // Sync Cart Badge for built-in
   useEffect(() => {
-    if (!containerRef.current) return;
-    const cartLinks = containerRef.current.querySelectorAll('a[href*="cart"], a[data-commerce-action="cart"]');
-    const totalQuantity = cart.reduce((acc, item) => acc + item.quantity, 0);
-    
-    cartLinks.forEach(link => {
-      let badge = link.querySelector('.storefront-cart-badge');
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'storefront-cart-badge';
-        badge.style.cssText = 'background: #ef4444; color: white; border-radius: 50%; padding: 2px 6px; font-size: 11px; margin-left: 6px; vertical-align: top; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; font-weight: bold;';
-        link.appendChild(badge);
-      }
-      badge.textContent = totalQuantity;
-      badge.style.display = totalQuantity > 0 ? 'inline-flex' : 'none';
-    });
-  }, [cart]);
+    if (isImported) return;
+    if (containerRef.current) {
+        updateCartBadge(containerRef.current);
+    }
+  }, [cart, isImported]);
+
+  // Handle Cart Badge for iframe
+  useEffect(() => {
+    if (isImported && iframeRef.current && iframeRef.current.contentDocument) {
+        updateCartBadge(iframeRef.current.contentDocument);
+    }
+  }, [cart, isImported]);
+
+  const handleIframeLoad = () => {
+    const iframeDoc = iframeRef.current?.contentDocument;
+    if (!iframeDoc) return;
+
+    // Remove preloaders
+    const preloaders = iframeDoc.querySelectorAll('#preloader, .preloader, #loader, .loader, #spinner, .spinner, .preloading');
+    preloaders.forEach(el => el.remove());
+
+    iframeDoc.addEventListener('click', handleInternalClick);
+    updateCartBadge(iframeDoc);
+  };
+
+  if (isImported) {
+    const html = (assets && Object.keys(assets).length > 0)
+      ? resolveAssetUrls(page.html, assets)
+      : (page.html || '');
+
+    return (
+      <iframe
+        ref={iframeRef}
+        srcDoc={html}
+        style={{ width: '100%', minHeight: '100vh', border: 'none', display: 'block' }}
+        onLoad={handleIframeLoad}
+        title="Storefront Imported Preview"
+      />
+    );
+  }
 
   return (
     <>

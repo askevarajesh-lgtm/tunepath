@@ -120,7 +120,7 @@ const StorefrontRendererContent = () => {
         </StorefrontPage>
       );
     } else {
-      PageComponent = <StorefrontPage page={page} assets={template.assets} />;
+      PageComponent = <StorefrontPage page={page} assets={template.assets} isImported={isImported} />;
     }
   }
 
