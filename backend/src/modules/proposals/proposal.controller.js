@@ -79,7 +79,7 @@ exports.getProposals = async (req, res, next) => {
     const total = await Proposal.countDocuments(queryFilter);
     const proposals = await Proposal.find(queryFilter)
       .populate('clientId', 'name companyName email')
-      .populate('masterItems', 'name itemCode price categories handlingDuration description applicableAccess isCampaign campaignDetails')
+      .populate('masterItems', 'name itemCode price categories handlingDuration description applicableAccess isCampaign campaignDetails department departmentId')
       .populate('createdBy', 'name email roleName')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -103,7 +103,7 @@ exports.getProposal = async (req, res, next) => {
   try {
     const proposal = await Proposal.findOne({ _id: req.params.id, isDeleted: false })
       .populate('clientId', 'name companyName email address phone')
-      .populate('masterItems', 'name itemCode category categories price duration description handlingDuration applicableAccess isCampaign campaignDetails')
+      .populate('masterItems', 'name itemCode category categories price duration description handlingDuration applicableAccess isCampaign campaignDetails department departmentId')
       .populate('agencyId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
       .populate('adminId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
       .populate('createdBy', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature');

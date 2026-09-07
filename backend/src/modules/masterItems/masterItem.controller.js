@@ -65,6 +65,7 @@ exports.getMasterItems = async (req, res, next) => {
     const total = await MasterItem.countDocuments(queryFilter);
     const masterItems = await MasterItem.find(queryFilter)
       .populate('createdBy', 'name email roleName')
+      .populate('departmentId', 'name slug')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -85,7 +86,8 @@ exports.getMasterItems = async (req, res, next) => {
 // Get Single Master Item
 exports.getMasterItem = async (req, res, next) => {
   try {
-    const masterItem = await MasterItem.findOne({ _id: req.params.id, isDeleted: false });
+    const masterItem = await MasterItem.findOne({ _id: req.params.id, isDeleted: false })
+      .populate('departmentId', 'name slug');
     if (!masterItem) {
       return res.status(404).json({ success: false, message: 'Master Item not found' });
     }

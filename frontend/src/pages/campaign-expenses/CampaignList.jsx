@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
   Table,
   Button,
@@ -48,6 +48,7 @@ import {
   useGetCompaniesQuery,
   useGetCompaniesDropdownQuery,
 } from "../../api/companyApi";
+import { useGetProjectsDropdownQuery } from "../../api/projectApi";
 import DebouncedSearchInput from "../../components/common/DebouncedSearchInput";
 import usePagination from "../../hooks/usePagination";
 import { Icon } from "@iconify/react";
@@ -176,6 +177,7 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
     queryParamsWithFilters,
   );
   const { data: campaignsDropdownData } = useGetCampaignsDropdownQuery({});
+  const { data: allProjectsData } = useGetProjectsDropdownQuery({ hasCampaigns: true });
   const { data: clientsData } = useGetCompaniesQuery();
   const { data: clientsDropdownData } = useGetCompaniesDropdownQuery({
     limit: 100,
@@ -241,11 +243,77 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
 
   // Handle dropdown data
   const campaignsDropdown = campaignsDropdownData?.data?.campaigns || campaignsDropdownData?.campaigns || [];
+  const allProjects = allProjectsData?.data?.projects || allProjectsData?.data?.data || [];
   const clients = clientsData?.data || clientsData?.companies || [];
-  const clientsDropdown =
+  const rawClientsDropdown =
     clientsDropdownData?.data ||
     clientsDropdownData?.companies ||
     [];
+
+  const isCampaignProject = useCallback((proj) => {
+    if (!proj) return false;
+    const projId = (proj._id || proj.id || "").toString();
+
+    const hasCampaignDoc = (campaignsDropdown || []).some((c) => {
+      const cProjId = (c.projectId?._id || c.projectId || "").toString();
+      return cProjId && cProjId === projId;
+    });
+    if (hasCampaignDoc) return true;
+
+    if (proj.isCampaign || proj.hasCampaigns) return true;
+    if (proj.campaignAmount && Number(proj.campaignAmount) > 0) return true;
+    if (proj.masterItemId?.isCampaign || (proj.masterItemId?.campaignDetails?.campaignAmount > 0)) return true;
+    if (proj.invoiceId?.campaignAmount && Number(proj.invoiceId.campaignAmount) > 0) return true;
+
+    const depts = Array.isArray(proj.departments)
+      ? proj.departments
+      : [proj.department || ""];
+    const hasCampaignDept = depts.some((d) => {
+      const s = String(d || "").toLowerCase();
+      return s.includes("digital-marketing") || s.includes("campaign") || s.includes("performance-ads");
+    });
+    if (hasCampaignDept) return true;
+
+    if (proj.milestoneWorkflowType && ["campaign", "ads", "performance_ads"].includes(String(proj.milestoneWorkflowType).toLowerCase())) {
+      return true;
+    }
+
+    const name = String(proj.name || "").toLowerCase();
+    if (name.includes("campaign") || name.includes("meta ad") || name.includes("google ad") || name.includes("performance ad")) {
+      return true;
+    }
+
+    const cats = Array.isArray(proj.selectedCategories) ? proj.selectedCategories : [];
+    const hasCampaignCat = cats.some((c) => {
+      const catName = (typeof c === "string" ? c : c.name || c.categoryName || "").toLowerCase();
+      return catName.includes("campaign") || catName.includes("meta ad") || catName.includes("google ad") || catName.includes("performance ad");
+    });
+    if (hasCampaignCat) return true;
+
+    return false;
+  }, [campaignsDropdown]);
+
+  const campaignClientIds = useMemo(() => {
+    const set = new Set();
+    (campaignsDropdown || []).forEach((c) => {
+      const cId = c.clientCompanyId?._id || c.clientCompanyId || c.clientId?._id || c.clientId;
+      if (cId) set.add(cId.toString());
+    });
+    (allProjects || []).forEach((p) => {
+      if (isCampaignProject(p)) {
+        const cId = p.clientId?._id || p.clientId;
+        if (cId) set.add(cId.toString());
+      }
+    });
+    return set;
+  }, [campaignsDropdown, allProjects, isCampaignProject]);
+
+  const clientsDropdown = useMemo(() => {
+    return rawClientsDropdown.filter((client) => {
+      const cId = (client._id || client.id || "").toString();
+      return campaignClientIds.has(cId);
+    });
+  }, [rawClientsDropdown, campaignClientIds]);
 
   const canViewAmounts = canRead;
   const canManageClientAmountValue = canEdit;
@@ -618,9 +686,6 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
                   Create Campaign
                 </Button>
               )}
-              <Button onClick={() => navigate("/campaigns-scheduled")}>
-                Campaign Scheduler
-              </Button>
             </>
           )}
         </Space>

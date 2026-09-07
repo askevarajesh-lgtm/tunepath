@@ -513,7 +513,8 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
               });
             },
           },
-          isCompletedTask(record.status) &&
+          canEdit &&
+            isCompletedTask(record.status) &&
             record.department === "website_designing" && {
               key: "reopen",
               label: "Reopen",

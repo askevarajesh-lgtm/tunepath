@@ -23,6 +23,7 @@ import {
   Row,
   Col,
   Divider,
+  Radio,
 } from "antd";
 import {
   HistoryOutlined,
@@ -43,6 +44,7 @@ import {
   useGetScorecardByIdQuery,
   useCreateOrUpdateScorecardMutation,
 } from "../../api/performanceApi";
+import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
 import { exportToCSV } from "../../utils/exportUtils";
 import dayjs from "dayjs";
 
@@ -78,8 +80,19 @@ const performanceCategories = [
 // ─── Inline Edit Drawer ────────────────────────────────────────────────────────
 const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
   const [form] = Form.useForm();
+  const [evaluatorMode, setEvaluatorMode] = useState("all"); // 'oh', 'hr', or 'all'
   const [createOrUpdateScorecard, { isLoading: isSubmitting }] =
     useCreateOrUpdateScorecardMutation();
+
+  const { data: deptData } = useGetDepartmentsDynamicQuery();
+  const departmentOptions = React.useMemo(() => {
+    if (!deptData) return [];
+    if (Array.isArray(deptData.data?.departments)) return deptData.data.departments;
+    if (Array.isArray(deptData.departments)) return deptData.departments;
+    if (Array.isArray(deptData.data)) return deptData.data;
+    if (Array.isArray(deptData)) return deptData;
+    return [];
+  }, [deptData]);
 
   const { data: scorecardData, isLoading } = useGetScorecardByIdQuery(
     scorecardId,
@@ -91,11 +104,15 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
   // Populate form when scorecard loads
   useEffect(() => {
     if (scorecard && open) {
+      const userObj = scorecard.userId;
+      const resolvedDesignation = userObj?.roleName || userObj?.role || scorecard.designation || "";
+      const resolvedTeam = scorecard.team || userObj?.departmentName || userObj?.departmentId?.name || "";
+
       form.setFieldsValue({
-        userId: scorecard.userId?._id || scorecard.userId,
+        userId: userObj?._id || userObj || scorecard.userId,
         name: scorecard.name,
-        designation: scorecard.designation,
-        team: scorecard.team || "",
+        designation: resolvedDesignation,
+        team: resolvedTeam,
         month: scorecard.month,
         year: scorecard.year,
         evaluationDate: scorecard.evaluationDate
@@ -132,6 +149,9 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
         ? dayjs(values.evaluationDate).toDate()
         : new Date();
 
+      const isOhEditable = evaluatorMode === "all" || evaluatorMode === "oh";
+      const isHrEditable = evaluatorMode === "all" || evaluatorMode === "hr";
+
       const scorecardPayload = {
         _id: scorecardId,
         userId: scorecard?.userId?._id || scorecard?.userId,
@@ -144,21 +164,21 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
         performanceCategories: performanceCategories.reduce((acc, cat) => {
           acc[cat.key] = {
             self: values[`${cat.key}_self`],
-            oh: values[`${cat.key}_oh`],
-            hr: values[`${cat.key}_hr`],
+            oh: isOhEditable ? values[`${cat.key}_oh`] : (scorecard?.performanceCategories?.[cat.key]?.oh),
+            hr: isHrEditable ? values[`${cat.key}_hr`] : (scorecard?.performanceCategories?.[cat.key]?.hr),
           };
           return acc;
         }, {}),
         appraisalScores: {
-          self: values.selfScore,
-          oh: values.ohScore,
-          hr: values.hrScore,
+          self: values.selfScore || undefined,
+          oh: isOhEditable ? (values.ohScore || undefined) : (scorecard?.appraisalScores?.oh || undefined),
+          hr: isHrEditable ? (values.hrScore || undefined) : (scorecard?.appraisalScores?.hr || undefined),
         },
         roomForImprovement: values.roomForImprovement || null,
         remarks: {
           tl: values.tlRemarks || null,
-          oh: values.ohRemarks || null,
-          hr: values.hrRemarks || null,
+          oh: isOhEditable ? values.ohRemarks : (scorecard?.remarks?.oh || null),
+          hr: isHrEditable ? values.hrRemarks : (scorecard?.remarks?.hr || null),
         },
       };
 
@@ -172,6 +192,9 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
       );
     }
   };
+
+  const isOhDisabled = evaluatorMode === "hr";
+  const isHrDisabled = evaluatorMode === "oh";
 
   return (
     <Drawer
@@ -198,7 +221,20 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
         </div>
       ) : (
         <Form form={form} layout="vertical" onFinish={onFinish}>
-          {/* Basic Info (read-only) */}
+          <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-secondary, #f8fafc)', borderRadius: 8, border: '1px solid var(--border-color, #e2e8f0)' }}>
+            <Text strong style={{ display: 'block', marginBottom: 8 }}>Select Evaluator Mode for Editing:</Text>
+            <Radio.Group
+              value={evaluatorMode}
+              onChange={(e) => setEvaluatorMode(e.target.value)}
+              buttonStyle="solid"
+            >
+              <Radio.Button value="all">Edit Both (OH & HR)</Radio.Button>
+              <Radio.Button value="oh">Edit Operations Head (OH) Only</Radio.Button>
+              <Radio.Button value="hr">Edit Human Resources (HR) Only</Radio.Button>
+            </Radio.Group>
+          </div>
+
+          {/* Basic Info */}
           <Row gutter={[16, 0]}>
             <Col xs={24} sm={12}>
               <Form.Item name="name" label="Name">
@@ -212,12 +248,21 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item name="team" label="Team">
-                <Input disabled />
+                <Select placeholder="Select Department/Team" allowClear showSearch optionFilterProp="children">
+                  {departmentOptions.map((dept) => {
+                    const val = typeof dept === 'object' ? (dept.name || dept.slug) : dept;
+                    return (
+                      <Option key={val} value={val}>
+                        {val}
+                      </Option>
+                    );
+                  })}
+                </Select>
               </Form.Item>
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item name="evaluationDate" label="Evaluation Date">
-                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" disabled />
+                <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
               </Form.Item>
             </Col>
             <Col xs={12} sm={4}>
@@ -265,9 +310,9 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
                   <Form.Item
                     name={`${category.key}_oh`}
                     label="OH"
-                    rules={[{ required: true, message: "Please select a grade" }]}
+                    rules={[{ required: !isOhDisabled, message: "Please select a grade" }]}
                   >
-                    <Select placeholder="Select grade">
+                    <Select placeholder="Select grade" disabled={isOhDisabled}>
                       {gradeOptions.map((opt) => (
                         <Option key={opt.value} value={opt.value}>{opt.label}</Option>
                       ))}
@@ -278,9 +323,9 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
                   <Form.Item
                     name={`${category.key}_hr`}
                     label="HR"
-                    rules={[{ required: true, message: "Please select a grade" }]}
+                    rules={[{ required: !isHrDisabled, message: "Please select a grade" }]}
                   >
-                    <Select placeholder="Select grade">
+                    <Select placeholder="Select grade" disabled={isHrDisabled}>
                       {gradeOptions.map((opt) => (
                         <Option key={opt.value} value={opt.value}>{opt.label}</Option>
                       ))}
@@ -304,6 +349,7 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
                   style={{ width: "100%" }}
                   min={0}
                   max={100}
+                  disabled={isOhDisabled}
                   onChange={(val) => {
                     const self = form.getFieldValue("selfScore");
                     const hr = form.getFieldValue("hrScore");
@@ -319,6 +365,7 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
                   style={{ width: "100%" }}
                   min={0}
                   max={100}
+                  disabled={isHrDisabled}
                   onChange={(val) => {
                     const self = form.getFieldValue("selfScore");
                     const oh = form.getFieldValue("ohScore");
@@ -343,10 +390,10 @@ const EditScorecardDrawer = ({ scorecardId, open, onClose, onSuccess }) => {
             <TextArea rows={2} placeholder="Enter TL remarks" />
           </Form.Item>
           <Form.Item name="ohRemarks" label="OH Remarks">
-            <TextArea rows={2} placeholder="Enter OH remarks" />
+            <TextArea rows={2} placeholder="Enter OH remarks" disabled={isOhDisabled} />
           </Form.Item>
           <Form.Item name="hrRemarks" label="HR Remarks">
-            <TextArea rows={2} placeholder="Enter HR remarks" />
+            <TextArea rows={2} placeholder="Enter HR remarks" disabled={isHrDisabled} />
           </Form.Item>
 
           <Form.Item style={{ marginTop: 16 }}>

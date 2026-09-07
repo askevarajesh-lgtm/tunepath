@@ -936,8 +936,9 @@ const TaskCardInner = ({
             </>
           )}
 
-          {/* Reopen button — only for completed tasks */}
+          {/* Reopen button — only for completed tasks when user has edit permission */}
           {isCompleted &&
+            canEdit &&
             onReopen && (
               <Tooltip title="Reopen as Correction Task">
                 <button
@@ -1396,23 +1397,31 @@ const KanbanColumn = ({
                 flexDirection: "column",
                 alignItems: "center",
                 gap: 8,
+                cursor: canCreate ? "pointer" : "default",
+              }}
+              onClick={() => {
+                if (canCreate && onAddTask) {
+                  onAddTask(statusConfig.id);
+                }
               }}
             >
-              <div
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: "50%",
-                  background: isDark ? "#1c1c1e" : "#f1f5f9",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <PlusOutlined
-                  style={{ fontSize: 14, color: isDark ? "#444" : "#cbd5e1" }}
-                />
-              </div>
+              {canCreate && (
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: "50%",
+                    background: isDark ? "#1c1c1e" : "#f1f5f9",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <PlusOutlined
+                    style={{ fontSize: 14, color: isDark ? "#444" : "#cbd5e1" }}
+                  />
+                </div>
+              )}
               <span
                 style={{
                   color: isDark ? "#444" : "#cbd5e1",
@@ -1515,7 +1524,7 @@ const KanbanBoard = ({
   const isSEO = false; // Default-Allow model
   const isSEOFullTime = false;
 
-  const { hasPermission } = useActionPermissions("/tasks");
+  const { canAdd: canCreatePermission, hasPermission } = useActionPermissions("/tasks");
   const adminRoles = [
     "supreme_super_admin",
     "commander_admin",
@@ -1524,8 +1533,7 @@ const KanbanBoard = ({
     "agency_manager",
     "brand_manager"
   ];
-  const kanbanIsAdmin = adminRoles.includes(userRole);
-  const canCreate = kanbanIsAdmin && hasPermission(PERMISSION_ACTIONS.CREATE_TASK);
+  const canCreate = canCreatePermission || hasPermission(PERMISSION_ACTIONS.CREATE_TASK);
   const canEdit = hasPermission(PERMISSION_ACTIONS.EDIT_TASK);
   const canDelete = hasPermission(PERMISSION_ACTIONS.DELETE_TASK);
   const canMoveStatus = true; // Drag functionality should always remain enabled by default for all users.

@@ -197,7 +197,8 @@ exports.getInvoices = async (req, res, next) => {
         select: 'proposalNumber name masterItems',
         populate: {
           path: 'masterItems',
-          select: 'name price description status categories applicableAccess startDate endDate handlingDuration isCampaign campaignDetails'
+          select: 'name price description status categories applicableAccess startDate endDate handlingDuration isCampaign campaignDetails department departmentId',
+          populate: { path: 'departmentId', select: 'name slug' }
         }
       })
       .populate('createdBy', 'name email roleName')
@@ -233,7 +234,8 @@ exports.getInvoice = async (req, res, next) => {
         select: 'proposalNumber name masterItems',
         populate: {
           path: 'masterItems',
-          select: 'name itemCode category categories price duration description applicableAccess startDate endDate handlingDuration isCampaign campaignDetails'
+          select: 'name itemCode category categories price duration description applicableAccess startDate endDate handlingDuration isCampaign campaignDetails department departmentId',
+          populate: { path: 'departmentId', select: 'name slug' }
         }
       });
     if (!invoice) {

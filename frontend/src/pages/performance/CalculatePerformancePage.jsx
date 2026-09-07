@@ -28,6 +28,7 @@ import {
 } from "../../api/performanceApi";
 import { useGetUsersQuery } from "../../api/userApi";
 import { useGetAllScorecardsQuery } from "../../api/performanceApi";
+import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
 import dayjs from "dayjs";
 
 const { Title, Text } = Typography;
@@ -41,6 +42,16 @@ const CalculatePerformancePage = () => {
   const isEdit = !!id;
   const [form] = Form.useForm();
   const [selectedUserId, setSelectedUserId] = useState(null);
+
+  const { data: deptData } = useGetDepartmentsDynamicQuery();
+  const departmentOptions = React.useMemo(() => {
+    if (!deptData) return [];
+    if (Array.isArray(deptData.data?.departments)) return deptData.data.departments;
+    if (Array.isArray(deptData.departments)) return deptData.departments;
+    if (Array.isArray(deptData.data)) return deptData.data;
+    if (Array.isArray(deptData)) return deptData;
+    return [];
+  }, [deptData]);
   const [currentDate] = useState(() => {
     const now = new Date();
     return { month: now.getMonth() + 1, year: now.getFullYear() };
@@ -135,11 +146,15 @@ const CalculatePerformancePage = () => {
       setSelectedUserId(scorecard.userId?._id || scorecard.userId);
       setSelectedMonth(scorecard.month);
       setSelectedYear(scorecard.year);
+      const userObj = scorecard.userId;
+      const resolvedDesignation = userObj?.roleName || userObj?.role || scorecard.designation || "";
+      const resolvedTeam = scorecard.team || userObj?.departmentName || userObj?.departmentId?.name || "";
+
       form.setFieldsValue({
-        userId: scorecard.userId?._id || scorecard.userId,
+        userId: userObj?._id || userObj || scorecard.userId,
         name: scorecard.name,
-        designation: scorecard.designation,
-        team: scorecard.team || "",
+        designation: resolvedDesignation,
+        team: resolvedTeam,
         month: scorecard.month,
         year: scorecard.year,
         evaluationDate: scorecard.evaluationDate
@@ -210,8 +225,8 @@ const CalculatePerformancePage = () => {
     if (selectedUser) {
       form.setFieldsValue({
         name: selectedUser.name,
-        designation: selectedUser.role,
-        team: selectedUser.team || "",
+        designation: selectedUser.roleName || selectedUser.role || "",
+        team: selectedUser.departmentName || selectedUser.departmentId?.name || selectedUser.team || "",
       });
     }
   };
@@ -456,7 +471,16 @@ const CalculatePerformancePage = () => {
               </Col>
               <Col xs={24} sm={6}>
                 <Form.Item name="team" label="Team">
-                  <Input disabled={isEdit} />
+                  <Select placeholder="Select Department/Team" allowClear showSearch optionFilterProp="children">
+                    {departmentOptions.map((dept) => {
+                      const val = typeof dept === 'object' ? (dept.name || dept.slug) : dept;
+                      return (
+                        <Option key={val} value={val}>
+                          {val}
+                        </Option>
+                      );
+                    })}
+                  </Select>
                 </Form.Item>
               </Col>
               <Col xs={24} sm={6}>

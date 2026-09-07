@@ -30,6 +30,7 @@ import {
 import { useNavigate } from "react-router-dom";
 import {
   useCreateCampaignMutation,
+  useGetCampaignsDropdownQuery,
 } from "../../api/campaignApi";
 import { useGetCompaniesDropdownQuery } from "../../api/companyApi";
 import {
@@ -139,6 +140,9 @@ const CampaignForm = () => {
     selectedClientId ? { companyId: selectedClientId } : {},
     { skip: !selectedClientId },
   );
+  const { data: allProjectsData } = useGetProjectsDropdownQuery({});
+  const { data: campaignsDropdownData } = useGetCampaignsDropdownQuery({});
+
   const { data: projectData, isLoading: isLoadingProject } =
     useGetProjectByIdQuery(selectedProjectId, { skip: !selectedProjectId });
   const project = projectData?.data?.project;
@@ -152,9 +156,79 @@ const CampaignForm = () => {
     ? invoice.campaignAmount || 0
     : null;
 
-  const clients = clientsData?.data?.companies || clientsData?.data?.data || (Array.isArray(clientsData?.data) ? clientsData.data : []) || [];
-  const projects =
-    projectsData?.data?.projects || projectsData?.data?.data || [];
+  const rawClients = clientsData?.data?.companies || clientsData?.data?.data || (Array.isArray(clientsData?.data) ? clientsData.data : []) || [];
+  const rawProjects = projectsData?.data?.projects || projectsData?.data?.data || [];
+  const allProjects = allProjectsData?.data?.projects || allProjectsData?.data?.data || [];
+  const allCampaigns = campaignsDropdownData?.data?.campaigns || campaignsDropdownData?.campaigns || [];
+
+  const isCampaignProject = useCallback((proj) => {
+    if (!proj) return false;
+    const projId = (proj._id || proj.id || "").toString();
+
+    const hasCampaignDoc = (allCampaigns || []).some((c) => {
+      const cProjId = (c.projectId?._id || c.projectId || "").toString();
+      return cProjId && cProjId === projId;
+    });
+    if (hasCampaignDoc) return true;
+
+    if (proj.isCampaign || proj.hasCampaigns) return true;
+    if (proj.campaignAmount && Number(proj.campaignAmount) > 0) return true;
+    if (proj.masterItemId?.isCampaign || (proj.masterItemId?.campaignDetails?.campaignAmount > 0)) return true;
+    if (proj.invoiceId?.campaignAmount && Number(proj.invoiceId.campaignAmount) > 0) return true;
+
+    const depts = Array.isArray(proj.departments)
+      ? proj.departments
+      : [proj.department || ""];
+    const hasCampaignDept = depts.some((d) => {
+      const s = String(d || "").toLowerCase();
+      return s.includes("digital-marketing") || s.includes("campaign") || s.includes("performance-ads");
+    });
+    if (hasCampaignDept) return true;
+
+    if (proj.milestoneWorkflowType && ["campaign", "ads", "performance_ads"].includes(String(proj.milestoneWorkflowType).toLowerCase())) {
+      return true;
+    }
+
+    const name = String(proj.name || "").toLowerCase();
+    if (name.includes("campaign") || name.includes("meta ad") || name.includes("google ad") || name.includes("performance ad")) {
+      return true;
+    }
+
+    const cats = Array.isArray(proj.selectedCategories) ? proj.selectedCategories : [];
+    const hasCampaignCat = cats.some((c) => {
+      const catName = (typeof c === "string" ? c : c.name || c.categoryName || "").toLowerCase();
+      return catName.includes("campaign") || catName.includes("meta ad") || catName.includes("google ad") || catName.includes("performance ad");
+    });
+    if (hasCampaignCat) return true;
+
+    return false;
+  }, [allCampaigns]);
+
+  const campaignClientIds = React.useMemo(() => {
+    const set = new Set();
+    allCampaigns.forEach((c) => {
+      const cId = c.clientCompanyId?._id || c.clientCompanyId || c.clientId?._id || c.clientId;
+      if (cId) set.add(cId.toString());
+    });
+    allProjects.forEach((p) => {
+      if (isCampaignProject(p)) {
+        const cId = p.clientId?._id || p.clientId;
+        if (cId) set.add(cId.toString());
+      }
+    });
+    return set;
+  }, [allProjects, allCampaigns, isCampaignProject]);
+
+  const clients = React.useMemo(() => {
+    return rawClients.filter((c) => {
+      const cId = (c._id || c.id || "").toString();
+      return campaignClientIds.has(cId) || (selectedClientId && cId === selectedClientId.toString());
+    });
+  }, [rawClients, campaignClientIds, selectedClientId]);
+
+  const projects = React.useMemo(() => {
+    return rawProjects.filter((p) => isCampaignProject(p));
+  }, [rawProjects, isCampaignProject]);
 
   // Auto-populate remainingBalance (read-only) from invoice into all Campaigns
   useEffect(() => {

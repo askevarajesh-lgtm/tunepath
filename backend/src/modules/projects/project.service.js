@@ -1323,6 +1323,28 @@ const getProjectsDropdown = async (tenantCompanyId, reqQuery = {}) => {
       ? { departments: { $in: WEBSITE_COORDINATOR_DEPARTMENTS } }
       : {};
 
+  let campaignFilter = {};
+  if (reqQuery.hasCampaigns === "true" || reqQuery.hasCampaigns === true) {
+    try {
+      const { Campaign } = require("../campaigns/campaign.model");
+      const existingCampaignProjIds = await Campaign.distinct("projectId");
+      const validProjIds = (existingCampaignProjIds || []).filter(Boolean);
+
+      campaignFilter = {
+        $or: [
+          ...(validProjIds.length > 0 ? [{ _id: { $in: validProjIds } }] : []),
+          { isCampaign: true },
+          { campaignAmount: { $gt: 0 } },
+          { departments: { $in: ["digital-marketing", "performance-ads", "campaigns"] } },
+          { milestoneWorkflowType: { $in: ["campaign", "ads", "performance_ads"] } },
+          { name: { $regex: /campaign|ad|meta|google/i } },
+        ],
+      };
+    } catch (e) {
+      console.error("Error building campaign filter for getProjectsDropdown:", e);
+    }
+  }
+
   const queryOptions = buildDropdownQuery(reqQuery, {
     searchFields: ["name"],
     defaultSortField: "name",
@@ -1340,6 +1362,7 @@ const getProjectsDropdown = async (tenantCompanyId, reqQuery = {}) => {
       }),
       ...(masterItemIdFilter && { masterItemId: masterItemIdFilter }),
       ...websiteCoordinatorProjectFilter,
+      ...campaignFilter,
     },
   });
 

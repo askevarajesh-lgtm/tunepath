@@ -3,6 +3,7 @@ import { Card, Form, Input, InputNumber, Select, Button, Space, Row, Col, messag
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Typography } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
+import { useGetDepartmentsDynamicQuery } from '../../api/accessControlApi';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -15,6 +16,16 @@ const MasterItemForm = () => {
   const isEditing = !!id;
   const location = useLocation();
   const [loading, setLoading] = React.useState(false);
+
+  const { data: deptData } = useGetDepartmentsDynamicQuery();
+  const departmentOptions = React.useMemo(() => {
+    if (!deptData) return [];
+    if (Array.isArray(deptData.data?.departments)) return deptData.data.departments;
+    if (Array.isArray(deptData.departments)) return deptData.departments;
+    if (Array.isArray(deptData.data)) return deptData.data;
+    if (Array.isArray(deptData)) return deptData;
+    return [];
+  }, [deptData]);
 
   const getBaseRoute = () => {
     if (location.pathname.startsWith("/client")) return "/client/workspace";
@@ -49,6 +60,8 @@ const MasterItemForm = () => {
 
         // Set form values
         form.setFieldsValue({
+          departmentId: item.departmentId?._id || item.departmentId || undefined,
+          department: item.department || item.departmentId?.name || undefined,
           name: item.name,
           description: item.description,
           price: item.price,
@@ -71,6 +84,15 @@ const MasterItemForm = () => {
     }
   };
 
+  const handleDepartmentChange = (deptId, option) => {
+    const deptObj = departmentOptions.find(d => (typeof d === 'object' ? (d._id || d.id || d.name) === deptId : d === deptId));
+    const deptName = typeof deptObj === 'object' ? (deptObj.name || deptObj.title || deptObj.slug) : (deptObj || option?.children || null);
+    form.setFieldsValue({
+      departmentId: deptId,
+      department: deptName
+    });
+  };
+
   const onFinish = async (values) => {
     try {
       setLoading(true);
@@ -81,7 +103,12 @@ const MasterItemForm = () => {
         count: values.categoryCounts?.[catName] || 0
       }));
 
+      const selectedDeptObj = departmentOptions.find(d => (typeof d === 'object' ? (d._id || d.id || d.name) === values.departmentId : d === values.departmentId));
+      const resolvedDeptName = values.department || (typeof selectedDeptObj === 'object' ? selectedDeptObj.name : selectedDeptObj) || null;
+
       const payload = {
+        departmentId: values.departmentId || null,
+        department: resolvedDeptName,
         name: values.name,
         categories: formattedCategories,
         applicableAccess: values.applicableAccess || [],
@@ -143,6 +170,36 @@ const MasterItemForm = () => {
       </div>
       <Card loading={loading}>
         <Form form={form} layout="vertical" onFinish={onFinish} onValuesChange={handleCampaignValuesChange}>
+          <Form.Item
+            label="Department"
+            name="departmentId"
+            rules={[{ required: true, message: 'Please select a department' }]}
+          >
+            <Select
+              placeholder="Select Department"
+              onChange={handleDepartmentChange}
+              allowClear
+              showSearch
+              optionFilterProp="children"
+              filterOption={(input, option) =>
+                (option?.children || '').toString().toLowerCase().includes(input.toLowerCase())
+              }
+            >
+              {departmentOptions.map((dept) => {
+                const idVal = typeof dept === 'object' ? (dept._id || dept.id || dept.name) : dept;
+                const labelVal = typeof dept === 'object' ? (dept.name || dept.title || dept.slug) : dept;
+                return (
+                  <Option key={idVal} value={idVal}>
+                    {labelVal}
+                  </Option>
+                );
+              })}
+            </Select>
+          </Form.Item>
+          <Form.Item name="department" hidden>
+            <Input />
+          </Form.Item>
+
           <Form.Item label="Item Name" name="name" rules={[{ required: true }]}>
             <Input />
           </Form.Item>

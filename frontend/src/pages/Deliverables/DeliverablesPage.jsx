@@ -411,15 +411,21 @@ const DeliverablesPage = () => {
               title: 'Status',
               dataIndex: 'status',
               key: 'status',
-              render: (status) => {
+              render: (status, record) => {
+                const isPendingClientApproval = ['complete', 'completed', 'done'].includes(status?.toLowerCase()) && record?.clientReviewStatus !== 'approved';
                 let color = 'default';
-                if (status === 'completed' || status === 'approved' || status === 'validated' || status === 'done') color = 'success';
+                if (isPendingClientApproval) color = 'warning';
+                else if (status === 'completed' || status === 'approved' || status === 'validated' || status === 'done' || record?.clientReviewStatus === 'approved') color = 'success';
                 else if (status === 'in_progress') color = 'processing';
                 else if (status === 'workflow_sent' || status === 'sent_for_client_review' || status === 'review' || status === 'in_review') color = 'warning';
 
+                const displayStatus = isPendingClientApproval
+                  ? 'PENDING APPROVAL'
+                  : (status?.replace(/_/g, ' ')?.toUpperCase() || 'UNKNOWN');
+
                 return (
                   <Tag color={color}>
-                    {status?.replace(/_/g, ' ')?.toUpperCase() || 'UNKNOWN'}
+                    {displayStatus}
                   </Tag>
                 );
               }

@@ -214,7 +214,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
         await clientApproveTask(taskId).unwrap();
         notifySuccess('task', taskId, `Task approved successfully`);
       } else {
-        await updateTask({ id: taskId, status: newStatus }).unwrap();
+        await updateTask({ id: taskId, status: newStatus, clientReviewStatus: 'correction_requested' }).unwrap();
         notifySuccess('task', taskId, `Task rejected successfully`);
       }
       
@@ -709,13 +709,15 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
             <span>{liveTask?.title || task?.title || "Task Details"}</span>
             <Space>
               {liveTask &&
-                ['brand_super_admin', 'brand_manager', 'agency_client', 'client', 'brand_team_user'].includes(userRole) &&
-                ['review', 'sent_for_client_review', 'in_review'].includes(liveTask.status?.toLowerCase()) && (
+                ['brand_super_admin', 'brand_manager', 'agency_client', 'client', 'brand_team_user', 'admin', 'super_admin', 'agency_manager'].includes(userRole) &&
+                (['review', 'sent_for_client_review', 'in_review'].includes(liveTask.status?.toLowerCase()) ||
+                 (['complete', 'completed', 'done', 'validated'].includes(liveTask.status?.toLowerCase()) && liveTask.clientReviewStatus !== 'approved')) && (
                   <>
                     <Button
                       type="primary"
                       style={{ background: "#52c41a", borderColor: "#52c41a" }}
                       onClick={() => handleClientAction("complete")}
+                      loading={isApproving}
                     >
                       Approve
                     </Button>
@@ -734,6 +736,11 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
                     </Popconfirm>
                   </>
                 )}
+              {liveTask && liveTask.clientReviewStatus === 'approved' && (
+                <Tag color="green" style={{ padding: '4px 10px', fontSize: '13px', fontWeight: 'bold' }}>
+                  ✓ CLIENT APPROVED
+                </Tag>
+              )}
               {task &&
                 (canEditTaskDetails || (task.assignedTo && (task.assignedTo._id === user._id || task.assignedTo === user._id))) &&
                 task.status !== "hold" &&
@@ -773,6 +780,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
                 </Popconfirm>
               )}
               {task &&
+                canEdit &&
                 isCompletedTask(task.status) && (
                   <Button
                     icon={<ReloadOutlined />}

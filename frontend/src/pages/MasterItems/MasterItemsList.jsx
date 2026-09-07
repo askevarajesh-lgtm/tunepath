@@ -94,6 +94,7 @@ const MasterItemsList = () => {
         <Card>
           <Table
             columns={[
+              { title: 'Department', key: 'department', render: (_, record) => record.department || record.departmentId?.name ? <Tag color="blue">{record.department || record.departmentId?.name}</Tag> : <Text type="secondary">—</Text> },
               { title: 'Item Name', dataIndex: 'name', key: 'name' },
               {
                 title: 'Categories', dataIndex: 'categories', key: 'categories', render: (cats) => (
@@ -143,7 +144,12 @@ const MasterItemsList = () => {
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <Title level={3} style={{ margin: 0, fontWeight: 700 }}>{item.name}</Title>
-                  <Space>
+                  <Space wrap>
+                    {(item.department || item.departmentId?.name) && (
+                      <Tag color="blue" style={{ borderRadius: 12, margin: 0 }}>
+                        {item.department || item.departmentId?.name}
+                      </Tag>
+                    )}
                     <Tag color={item.status === 'active' ? 'purple-inverse' : 'default'} style={{ borderRadius: 12, margin: 0, border: 'none' }}>
                       {item.status === 'active' ? 'Active' : 'Inactive'}
                     </Tag>

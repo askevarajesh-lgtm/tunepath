@@ -1437,7 +1437,11 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
   }
 
   const allExpenses = await Expense.find(expenseQuery)
-    .populate("staffId", "name email role team")
+    .populate({
+      path: "staffId",
+      select: "name email role team departmentName designation departmentId",
+      populate: { path: "departmentId", select: "name slug" }
+    })
     .lean();
 
   // Separate fixed and variable expenses
@@ -1501,7 +1505,6 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
   allDepartments.forEach(d => {
     const name = d.name.trim();
     deptMap[d._id.toString()] = name;
-    // Pre-initialize real agency department in teamExpenses
     if (!teamExpenses[name]) {
       teamExpenses[name] = {
         variableExpense: 0,
@@ -1511,17 +1514,59 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
     }
   });
 
-  // Calculate variable expenses per team
-  // Handle both expenses with staffId (populated) and without
-  variableExpenses.forEach((exp) => {
-    let department = exp.department || exp.staffId?.departmentName || exp.staffId?.team || "General";
-    // Normalize string
-    let team = department.trim();
+  const registeredTeamKeys = Object.keys(teamExpenses);
 
-    // If the department string is an ObjectId, map it to the readable name
-    if (deptMap[team]) {
-      team = deptMap[team].trim();
+  const resolveTeamName = (rawDept, staffObj) => {
+    const candidates = [
+      rawDept,
+      staffObj?.departmentId?.name,
+      staffObj?.departmentName,
+      staffObj?.designation,
+      staffObj?.role,
+      staffObj?.team,
+    ].filter(Boolean);
+
+    for (const cand of candidates) {
+      const strCand = cand.toString().trim();
+      if (deptMap[strCand]) return deptMap[strCand];
+
+      const lowerCand = strCand.toLowerCase();
+      for (const teamKey of registeredTeamKeys) {
+        const lowerKey = teamKey.toLowerCase();
+        if (lowerCand.includes(lowerKey) || lowerKey.includes(lowerCand)) {
+          return teamKey;
+        }
+      }
+
+      // Keyword matching
+      if (lowerCand.includes("design") || lowerCand.includes("graphic")) {
+        const match = registeredTeamKeys.find(t => t.toLowerCase().includes("design"));
+        if (match) return match;
+      }
+      if (lowerCand.includes("dev") || lowerCand.includes("web") || lowerCand.includes("code") || lowerCand.includes("tech")) {
+        const match = registeredTeamKeys.find(t => t.toLowerCase().includes("dev") || t.toLowerCase().includes("web"));
+        if (match) return match;
+      }
+      if (lowerCand.includes("marketing") || lowerCand.includes("digital") || lowerCand.includes("dm")) {
+        const match = registeredTeamKeys.find(t => t.toLowerCase().includes("marketing") || t.toLowerCase().includes("dm"));
+        if (match) return match;
+      }
+      if (lowerCand.includes("video") || lowerCand.includes("edit")) {
+        const match = registeredTeamKeys.find(t => t.toLowerCase().includes("video") || t.toLowerCase().includes("edit"));
+        if (match) return match;
+      }
+      if (lowerCand.includes("deploy")) {
+        const match = registeredTeamKeys.find(t => t.toLowerCase().includes("deploy"));
+        if (match) return match;
+      }
     }
+
+    return registeredTeamKeys[0] || "General";
+  };
+
+  // Calculate variable expenses per team
+  variableExpenses.forEach((exp) => {
+    const team = resolveTeamName(exp.department, exp.staffId);
 
     if (!teamExpenses[team]) {
       teamExpenses[team] = {
@@ -1539,18 +1584,20 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
     teamExpenses["General"] = { variableExpense: 0, fixedExpenseAllocated: 0, totalExpense: 0 };
   }
 
-  // Allocate fixed expenses to teams proportionally based on variable expenses
+  // Allocate fixed expenses to teams proportionally based on variable expenses (or equally if 0 variable expenses)
   const totalVariableExpensePool = Object.values(teamExpenses).reduce(
     (sum, t) => sum + t.variableExpense,
     0
   );
 
+  const numTeams = Object.keys(teamExpenses).length;
+
   Object.keys(teamExpenses).forEach((team) => {
     let allocationRatio = 0;
     if (totalVariableExpensePool > 0) {
       allocationRatio = teamExpenses[team].variableExpense / totalVariableExpensePool;
-    } else {
-      allocationRatio = 1 / Object.keys(teamExpenses).length;
+    } else if (numTeams > 0) {
+      allocationRatio = 1 / numTeams;
     }
     
     teamExpenses[team].fixedExpenseAllocated = totalFixedExpensePool * allocationRatio;
@@ -1596,34 +1643,76 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
 
   // ========== TEAM-WISE REVENUE ALLOCATION ==========
 
-  // Helper function to dynamically map service name to an existing team/department
-  const mapServiceToTeam = (serviceName) => {
-    if (!serviceName) return "General";
+  // Helper function to dynamically map service name or explicit item department to an existing team/department
+  const mapServiceToTeam = (serviceName, itemDepartment) => {
+    // 0. If item has explicit department, match directly against teamKeys
+    if (itemDepartment) {
+      const deptStr = (typeof itemDepartment === "object" ? itemDepartment.name : itemDepartment).toString().trim();
+      for (const t of Object.keys(teamExpenses)) {
+        const normT = t.toLowerCase().trim();
+        const normDept = deptStr.toLowerCase().trim();
+        if (normDept.includes(normT) || normT.includes(normDept)) {
+          return t;
+        }
+      }
+      // If team exists or registered, check resolve logic
+      const resolved = resolveTeamName(deptStr, null);
+      if (resolved) return resolved;
+    }
 
-    const name = (serviceName || "").toLowerCase().trim();
-    
-    // First try to find an exact or partial match in the existing dynamic teams
+    const raw = (serviceName || "").toLowerCase().trim().replace(/[\s_-]+/g, " ");
+    if (!raw) return Object.keys(teamExpenses)[0] || "General";
+
+    // Direct / inclusion check against team keys
     for (const t of Object.keys(teamExpenses)) {
-      if (name.includes(t.toLowerCase()) || t.toLowerCase().includes(name)) {
+      const normT = t.toLowerCase().trim();
+      if (raw.includes(normT) || normT.includes(raw)) {
         return t;
       }
     }
 
-    // Keyword mapping for common services
-    if (name.includes("digital marketing") || name.includes("social media") || name.includes("design")) {
-      const marketingTeam = Object.keys(teamExpenses).find(t => t.toLowerCase().includes("marketing") || t.toLowerCase().includes("design"));
-      if (marketingTeam) return marketingTeam;
-    }
-    if (name.includes("website") || name.includes("development") || name.includes("tech") || name.includes("chatbot")) {
-      const devTeam = Object.keys(teamExpenses).find(t => t.toLowerCase().includes("web") || t.toLowerCase().includes("tech") || t.toLowerCase().includes("dev"));
-      if (devTeam) return devTeam;
-    }
-    if (name.includes("seo") || name.includes("aeo") || name.includes("geo")) {
-      const seoTeam = Object.keys(teamExpenses).find(t => t.toLowerCase().includes("seo"));
-      if (seoTeam) return seoTeam;
+    // Deliverable / Service keyword mappings
+    if (raw.includes("poster") || raw.includes("image") || raw.includes("design") || raw.includes("graphic")) {
+      const match = Object.keys(teamExpenses).find(t => {
+        const norm = t.toLowerCase();
+        return norm.includes("design") || norm.includes("graphic");
+      });
+      if (match) return match;
     }
 
-    return "General";
+    if (raw.includes("video") || raw.includes("package") || raw.includes("shoot") || raw.includes("edit")) {
+      const match = Object.keys(teamExpenses).find(t => {
+        const norm = t.toLowerCase();
+        return norm.includes("video") || norm.includes("edit") || norm.includes("package");
+      });
+      if (match) return match;
+    }
+
+    if (raw.includes("web") || raw.includes("dev") || raw.includes("code") || raw.includes("app") || raw.includes("tech")) {
+      const match = Object.keys(teamExpenses).find(t => {
+        const norm = t.toLowerCase();
+        return norm.includes("dev") || norm.includes("web") || norm.includes("tech");
+      });
+      if (match) return match;
+    }
+
+    if (raw.includes("marketing") || raw.includes("digital") || raw.includes("social") || raw.includes("dm")) {
+      const match = Object.keys(teamExpenses).find(t => {
+        const norm = t.toLowerCase();
+        return norm.includes("marketing") || norm.includes("digital") || norm.includes("dm");
+      });
+      if (match) return match;
+    }
+
+    if (raw.includes("deploy")) {
+      const match = Object.keys(teamExpenses).find(t => {
+        const norm = t.toLowerCase();
+        return norm.includes("deploy");
+      });
+      if (match) return match;
+    }
+
+    return Object.keys(teamExpenses)[0] || "General";
   };
 
   // Initialize team revenue
@@ -1634,7 +1723,7 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
     teamRevenue[t] = 0;
   });
 
-  // Allocate revenue to teams — TRANSACTION BASIS ONLY
+  // Allocate revenue to teams
   allInvoices.forEach((invoice) => {
     const invoiceId = invoice._id ? invoice._id.toString() : null;
     if (!invoiceId) return;
@@ -1644,45 +1733,61 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
     const paidFraction =
       grandTotal > 0 ? Math.min(verifiedAmount / grandTotal, 1) : 0;
 
-    if (paidFraction === 0) return; // Nothing transacted — skip entirely
+    const effectiveFraction = paidFraction > 0 ? paidFraction : (grandTotal > 0 ? 1 : 0);
+    if (effectiveFraction === 0) return;
 
-    // 1. If invoice has items, allocate based on service name
+    // 1. If invoice has items, allocate based on service name or department
     if (
       invoice.items &&
       Array.isArray(invoice.items) &&
       invoice.items.length > 0
     ) {
       invoice.items.forEach((item) => {
-        if (item.category !== "handling") return;
+        if (item.category && item.category !== "handling") return;
 
-        let serviceName = null;
+        let serviceName = item.description || item.name || null;
+        let itemDept = item.department || item.departmentId || null;
+
         if (item.serviceId && typeof item.serviceId === "object") {
-          serviceName = item.serviceId.name;
+          serviceName = item.serviceId.name || serviceName;
+          if (!itemDept) {
+            itemDept = item.serviceId.department || item.serviceId.departmentId || null;
+          }
         }
 
-        const team = mapServiceToTeam(serviceName);
-        const handlingAmount = (item.taxableValue || 0) * paidFraction;
+        // Fallback to proposal masterItems department
+        if (!itemDept && invoice.proposalId && Array.isArray(invoice.proposalId.masterItems)) {
+          const masterItemMatch = invoice.proposalId.masterItems.find(m => m && (m.name === serviceName || (m._id && item.serviceId && m._id.toString() === item.serviceId.toString())));
+          if (masterItemMatch) {
+            itemDept = masterItemMatch.department || masterItemMatch.departmentId || null;
+          }
+        }
+
+        const team = mapServiceToTeam(serviceName, itemDept);
+        const itemAmount = (item.taxableValue || item.amount || 0) * effectiveFraction;
 
         if (teamRevenue[team] !== undefined) {
-          teamRevenue[team] += handlingAmount;
+          teamRevenue[team] += itemAmount;
         } else {
-          teamRevenue[team] = handlingAmount;
-          if (!teamExpenses[team]) {
-            teamExpenses[team] = { variableExpense: 0, fixedExpenseAllocated: 0, totalExpense: 0 };
-          }
+          teamRevenue[team] = itemAmount;
         }
       });
     }
-    // 2. Fallback for manual invoices (no items)
-    else if (invoice.handlingAmount > 0) {
-      const fallbackTeam = Object.keys(teamRevenue).length > 0 ? Object.keys(teamRevenue)[0] : "General";
+    // 2. Fallback for manual invoices (no items) or proposal-level masterItems
+    else if (invoice.handlingAmount > 0 || grandTotal > 0) {
+      let masterItemDept = null;
+      if (invoice.proposalId && Array.isArray(invoice.proposalId.masterItems) && invoice.proposalId.masterItems.length > 0) {
+        const firstItem = invoice.proposalId.masterItems[0];
+        if (firstItem) {
+          masterItemDept = firstItem.department || firstItem.departmentId || null;
+        }
+      }
+      const handlingVal = invoice.handlingAmount > 0 ? invoice.handlingAmount : extractHandling(invoice);
+      const fallbackTeam = mapServiceToTeam(null, masterItemDept);
       if (teamRevenue[fallbackTeam] === undefined) {
-         teamRevenue[fallbackTeam] = 0;
+        teamRevenue[fallbackTeam] = 0;
       }
-      if (!teamExpenses[fallbackTeam]) {
-         teamExpenses[fallbackTeam] = { variableExpense: 0, fixedExpenseAllocated: 0, totalExpense: 0 };
-      }
-      teamRevenue[fallbackTeam] += invoice.handlingAmount * paidFraction;
+      teamRevenue[fallbackTeam] += handlingVal * effectiveFraction;
     }
   });
 

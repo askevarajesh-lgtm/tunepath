@@ -1047,7 +1047,13 @@ const ProjectDetail = () => {
                   </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="Departments">
-                  <Tag color="default">Tasks will be manually assigned</Tag>
+                  {(project.masterItemId?.department || project.masterItemId?.departmentId?.name || project.masterItemIds?.[0]?.department || project.masterItemIds?.[0]?.departmentId?.name) ? (
+                    <Tag color="blue">
+                      {project.masterItemId?.department || project.masterItemId?.departmentId?.name || project.masterItemIds?.[0]?.department || project.masterItemIds?.[0]?.departmentId?.name}
+                    </Tag>
+                  ) : (
+                    <Tag color="default">Tasks will be manually assigned</Tag>
+                  )}
                 </Descriptions.Item>
               </Descriptions>
 

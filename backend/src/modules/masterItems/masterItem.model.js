@@ -57,6 +57,17 @@ const masterItemSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  // Department reference & name
+  departmentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Department',
+    default: null
+  },
+  department: {
+    type: String,
+    trim: true,
+    default: null
+  },
   // Tenant references for RBAC
   adminId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -79,6 +90,7 @@ const masterItemSchema = new mongoose.Schema({
 
 // Indexes for common queries
 masterItemSchema.index({ name: 1, adminId: 1, agencyId: 1, brandId: 1 });
+masterItemSchema.index({ departmentId: 1 });
 masterItemSchema.index({ isDeleted: 1 });
 
 module.exports = mongoose.model('MasterItem', masterItemSchema);

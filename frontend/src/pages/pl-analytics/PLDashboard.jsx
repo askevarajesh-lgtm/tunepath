@@ -240,8 +240,9 @@ const PLDashboard = () => {
       name: team.teamLabel,
       profit: team.profit || 0,
       expense: team.totalExpense || 0,
+      revenue: team.revenue || 0,
     }))
-    .filter((team) => team.expense > 0 || team.profit !== 0);
+    .filter((team) => team.expense > 0 || team.profit !== 0 || team.revenue > 0);
 
   const handleRecalculate = async () => {
     try {

@@ -258,6 +258,13 @@ const InvoiceForm = () => {
                 <Descriptions.Item label="Description" span={2}>
                   {item.description || 'N/A'}
                 </Descriptions.Item>
+                <Descriptions.Item label="Department">
+                  {item?.department || item?.departmentId?.name ? (
+                    <Tag color="blue">{item.department || item.departmentId?.name}</Tag>
+                  ) : (
+                    'N/A'
+                  )}
+                </Descriptions.Item>
                 <Descriptions.Item label="Item Type">
                   <Tag>PACKAGE</Tag>
                 </Descriptions.Item>

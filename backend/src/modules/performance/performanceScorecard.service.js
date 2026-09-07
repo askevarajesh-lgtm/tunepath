@@ -228,24 +228,24 @@ const createOrUpdateScorecard = async (
     throw new Error("User does not belong to the specified company");
   }
 
-  // Calculate appraisal scores - use manual scores if provided, otherwise calculate from categories
+  // Calculate appraisal scores - use manual scores if provided and non-zero/valid, otherwise calculate from categories
   const appraisalScores = {
     self:
-      scorecardData.appraisalScores?.self !== undefined
+      scorecardData.appraisalScores?.self !== undefined && scorecardData.appraisalScores?.self !== null && scorecardData.appraisalScores?.self > 0
         ? parseInt(scorecardData.appraisalScores.self)
         : calculateAppraisalScore(
             scorecardData.performanceCategories || {},
             "self",
           ),
     oh:
-      scorecardData.appraisalScores?.oh !== undefined
+      scorecardData.appraisalScores?.oh !== undefined && scorecardData.appraisalScores?.oh !== null && scorecardData.appraisalScores?.oh > 0
         ? parseInt(scorecardData.appraisalScores.oh)
         : calculateAppraisalScore(
             scorecardData.performanceCategories || {},
             "oh",
           ),
     hr:
-      scorecardData.appraisalScores?.hr !== undefined
+      scorecardData.appraisalScores?.hr !== undefined && scorecardData.appraisalScores?.hr !== null && scorecardData.appraisalScores?.hr > 0
         ? parseInt(scorecardData.appraisalScores.hr)
         : calculateAppraisalScore(
             scorecardData.performanceCategories || {},
@@ -353,7 +353,7 @@ const getLastMonthScorecard = async (userId, companyId) => {
     year: lastMonthYear,
     companyId,
   })
-    .populate("userId", "name email role team")
+    .populate("userId", "name email role roleName team departmentName departmentId")
     .sort({ createdAt: -1 });
 
   return scorecard;
@@ -380,7 +380,7 @@ const getPerformanceHistory = async (userId, companyId, filters = {}) => {
   }
 
   const scorecards = await PerformanceScorecard.find(query)
-    .populate("userId", "name email role team")
+    .populate("userId", "name email role roleName team departmentName departmentId")
     .sort({ year: -1, month: -1, createdAt: -1 });
 
   return scorecards;
@@ -410,7 +410,7 @@ const getAllScorecards = async (companyId, filters = {}) => {
   }
 
   let scorecards = await PerformanceScorecard.find(query)
-    .populate("userId", "name email role team")
+    .populate("userId", "name email role roleName team departmentName departmentId")
     .sort({ year: -1, month: -1, createdAt: -1 });
 
   // Fallback: If no scorecards found for companyId filter, search by month/year
@@ -420,7 +420,7 @@ const getAllScorecards = async (companyId, filters = {}) => {
     if (filters.month) fallbackQuery.month = parseInt(filters.month);
     if (filters.year) fallbackQuery.year = parseInt(filters.year);
     scorecards = await PerformanceScorecard.find(fallbackQuery)
-      .populate("userId", "name email role team")
+      .populate("userId", "name email role roleName team departmentName departmentId")
       .sort({ year: -1, month: -1, createdAt: -1 });
   }
 
@@ -440,7 +440,7 @@ const getScorecardById = async (scorecardId, companyId) => {
   const scorecard = await PerformanceScorecard.findOne({
     _id: scorecardId,
     companyId,
-  }).populate("userId", "name email role team");
+  }).populate("userId", "name email role roleName team departmentName departmentId");
 
   if (!scorecard) {
     throw new Error("Scorecard not found");

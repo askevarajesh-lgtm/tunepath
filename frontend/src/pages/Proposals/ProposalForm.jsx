@@ -246,6 +246,13 @@ const ProposalForm = () => {
                 <Descriptions.Item label="Description" span={2}>
                   {selectedMasterItem.description || 'N/A'}
                 </Descriptions.Item>
+                <Descriptions.Item label="Department">
+                  {selectedMasterItem?.department || selectedMasterItem?.departmentId?.name ? (
+                    <Tag color="blue">{selectedMasterItem.department || selectedMasterItem.departmentId?.name}</Tag>
+                  ) : (
+                    'N/A'
+                  )}
+                </Descriptions.Item>
                 <Descriptions.Item label="Item Type">
                   <Tag>PACKAGE</Tag>
                 </Descriptions.Item>
