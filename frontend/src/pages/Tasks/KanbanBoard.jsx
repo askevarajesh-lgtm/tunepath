@@ -2088,20 +2088,43 @@ const KanbanBoard = ({
     validStatusIds.add(currentStatusId);
     if (currentStatusId === "done") validStatusIds.add("complete");
     if (currentStatusId === "complete") validStatusIds.add("done");
-    if (currentStatusIndex < sortedStatuses.length - 1) {
-      const nextId = sortedStatuses[currentStatusIndex + 1].id;
-      validStatusIds.add(nextId);
-      if (nextId === "done") validStatusIds.add("complete");
-      if (nextId === "complete") validStatusIds.add("done");
-    }
-    if (currentStatusIndex > 0)
-      validStatusIds.add(sortedStatuses[currentStatusIndex - 1].id);
-    for (let i = 0; i < currentStatusIndex; i++)
-      validStatusIds.add(sortedStatuses[i].id);
 
-    // Allow jumping from 'backlog' (Hold) to 'in_progress'
-    if (currentStatusId === "backlog") {
+    // Allow in_progress to move to complete/done/completed/validated
+    if (currentStatusId === "in_progress") {
+      validStatusIds.add("complete");
+      validStatusIds.add("done");
+      validStatusIds.add("completed");
+      validStatusIds.add("validated");
+    }
+
+    // Allow jumping from 'backlog' (Hold) to 'in_progress' or 'to_do'
+    if (currentStatusId === "backlog" || currentStatusId === "hold") {
       validStatusIds.add("in_progress");
+      validStatusIds.add("to_do");
+    }
+
+    // Ensure all completion status aliases are consistently included if any completion status is valid
+    const hasCompletionStatus = Array.from(validStatusIds).some((id) =>
+      ["done", "complete", "completed", "validated"].includes(String(id).toLowerCase())
+    );
+    if (hasCompletionStatus) {
+      validStatusIds.add("done");
+      validStatusIds.add("complete");
+      validStatusIds.add("completed");
+      validStatusIds.add("validated");
+    }
+
+    const isAssigned = task.assignedTo &&
+      ((task.assignedTo._id || task.assignedTo)?.toString() === user?._id?.toString());
+    const isCreator = task.createdBy &&
+      ((task.createdBy._id || task.createdBy)?.toString() === user?._id?.toString());
+    const canBypassWorkflow = isCreator || isAssigned || isAdmin;
+
+    // For authorized users (creator/assignee/admin), ensure all visible board columns are allowed
+    if (canBypassWorkflow && Array.isArray(statuses)) {
+      statuses.forEach((s) => {
+        if (s?.id) validStatusIds.add(s.id);
+      });
     }
 
     const finalStatusIds = Array.from(validStatusIds);
@@ -2118,7 +2141,6 @@ const KanbanBoard = ({
       if (!rawStatuses.includes("to_do")) rawStatuses.push("to_do");
       if (!rawStatuses.includes("in_progress")) rawStatuses.push("in_progress");
     }
-
 
     // Restrict moving backward before In Progress once the task is in progress or beyond
     const inProgressOrBeyond = [
@@ -2432,48 +2454,12 @@ const KanbanBoard = ({
           notifyError('reorder', activeId || 'reorder', "Failed to reorder task");
         }
       } else {
-        if (
-          draggedTask.department === "digital-marketing" &&
-          (targetStatusFromTask === "done" || targetStatusFromTask === "complete") &&
-          !canApproveReview
-        ) {
-          notifyError('move', activeId, "Assigned users cannot move tasks to Done. Move In Progress to Review only.");
-          return;
-        }
-        const validNextStatuses = getValidNextStatuses(
+        await initiateColumnMove(
+          activeId,
           draggedTask,
           sourceStatus,
+          targetStatusFromTask,
         );
-        if (!validNextStatuses.includes(targetStatusFromTask)) {
-          message.warning(
-            `Cannot move task to "${statuses.find((s) => s.id === targetStatusFromTask)?.name || targetStatusFromTask}". Please follow the workflow order.`,
-          );
-          return;
-        }
-
-        if (
-          (sourceStatus === "to_do" || sourceStatus === "backlog") &&
-          targetStatusFromTask === "in_progress"
-        ) {
-          await runQuickMoveToInProgress(activeId);
-          return;
-        }
-          if (
-            draggedTask.department === "digital-marketing" &&
-            sourceStatus === "review" &&
-            (targetStatusFromTask !== "done" && targetStatusFromTask !== "complete") &&
-            !canApproveReview
-          ) {
-            notifyError('move', activeId, "Only the task creator, Agency Manager, or Coordinator can move tasks from Review.");
-            return;
-          }
-        setPendingStatusChange({
-          taskId: activeId,
-          task: draggedTask,
-          sourceStatus,
-          targetStatus: targetStatusFromTask,
-        });
-        setIsStatusModalVisible(true);
       }
     }
   };
