@@ -357,6 +357,91 @@ const GrapesJSBuilder = ({
 
     stylesheetUrlsRef.current = templateCssUrls;
 
+    const styleSectors = [
+      {
+        name: "General",
+        open: false,
+        buildProps: [
+          "display",
+          "float",
+          "position",
+          "top",
+          "right",
+          "left",
+          "bottom",
+        ],
+      },
+      {
+        name: "Dimension",
+        open: true,
+        buildProps: [
+          "width",
+          "height",
+          "max-width",
+          "min-width",
+          "max-height",
+          "min-height",
+          "margin",
+          "margin-top",
+          "margin-right",
+          "margin-bottom",
+          "margin-left",
+          "padding",
+          "padding-top",
+          "padding-right",
+          "padding-bottom",
+          "padding-left",
+        ],
+      },
+      {
+        name: "Typography",
+        open: true,
+        buildProps: [
+          "font-family",
+          "font-size",
+          "font-weight",
+          "letter-spacing",
+          "color",
+          "line-height",
+          "text-align",
+          "text-decoration",
+          "text-shadow",
+        ],
+      },
+      {
+        name: "Decorations",
+        open: true,
+        buildProps: [
+          "background-color",
+          "border-radius",
+          "border",
+          "box-shadow",
+          "background",
+        ],
+      },
+      {
+        name: "Flex",
+        open: false,
+        buildProps: [
+          "flex-direction",
+          "flex-wrap",
+          "justify-content",
+          "align-items",
+          "align-content",
+          "order",
+          "flex-basis",
+          "flex-grow",
+          "flex-shrink",
+          "align-self",
+        ],
+      },
+      {
+        name: "Extra",
+        open: false,
+        buildProps: ["opacity", "transition", "transform", "cursor", "overflow"],
+      },
+    ];
+
     const e = grapesjs.init({
       container: editorRef.current,
       fromElement: true,
@@ -373,10 +458,13 @@ const GrapesJSBuilder = ({
           },
         },
       },
+      styleManager: {
+        sectors: styleSectors,
+      },
       plugins: [webpagePlugin],
       pluginsOpts: {
         "grapesjs-preset-webpage": {
-          // options for the preset
+          customStyleManager: styleSectors,
         },
       },
       canvas: {

@@ -124,6 +124,11 @@ router.get(
   taskController.getTaskActivity,
 );
 router.post(
+  "/bulk",
+  _permMiddleware("create-task"),
+  taskController.createBulkTasks,
+);
+router.post(
   "/",
   _permMiddleware("create-task"),
   createTaskValidation,

@@ -113,6 +113,7 @@ export const useGetTodayAssignedDMSummaryQuery = createQueryHook(() => '/tasks/t
 
 // Mutations
 export const useCreateTaskMutation = createMutationHook((data) => ({ url: '/tasks', method: 'POST', body: data }));
+export const useCreateBulkTasksMutation = createMutationHook((data) => ({ url: '/tasks/bulk', method: 'POST', body: data }));
 export const useUpdateTaskMutation = createMutationHook(({ id, ...data }) => ({ url: `/tasks/${id}`, method: 'PUT', body: data }));
 export const useHoldTaskMutation = createMutationHook(({ id, holdReason }) => ({ url: `/tasks/${id}/hold`, method: 'PUT', body: { holdReason } }));
 export const useSubmitTaskMutation = createMutationHook(({ id, deliverables }) => ({ url: `/tasks/${id}/submit`, method: 'POST', body: { deliverables } }));
@@ -145,6 +146,7 @@ export const taskApi = {
   useGetTasksQuery,
   useGetTaskByIdQuery,
   useCreateTaskMutation,
+  useCreateBulkTasksMutation,
   useUpdateTaskMutation,
   useDeleteTaskMutation,
 };

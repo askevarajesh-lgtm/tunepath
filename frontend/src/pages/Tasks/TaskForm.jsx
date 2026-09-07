@@ -15,12 +15,25 @@ import {
   Col,
   Alert,
   Switch,
+  Segmented,
+  Table,
+  InputNumber,
+  Divider,
+  Tooltip,
+  Popconfirm,
 } from "antd";
-import { ArrowLeftOutlined } from "@ant-design/icons";
+import {
+  ArrowLeftOutlined,
+  PlusOutlined,
+  DeleteOutlined,
+  ThunderboltOutlined,
+  CalendarOutlined,
+} from "@ant-design/icons";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import {
   useGetTaskByIdQuery,
   useCreateTaskMutation,
+  useCreateBulkTasksMutation,
   useUpdateTaskMutation,
   taskApi,
 } from "../../api/taskApi";
@@ -47,12 +60,91 @@ import { ensureNamedCategories } from "../../utils/categoryUtils";
 const { TextArea } = Input;
 const { Option } = Select;
 
+const extractProjectCategoriesWithCounts = (proj) => {
+  if (!proj) return [];
+  const list = [];
+  const addedNames = new Set();
+
+  const rawCategories =
+    proj.selectedCategories ||
+    proj.masterItemId?.selectedCategories ||
+    proj.masterItemIds?.[0]?.selectedCategories ||
+    [];
+
+  if (Array.isArray(rawCategories) && rawCategories.length > 0) {
+    rawCategories.forEach((cat, idx) => {
+      if (typeof cat === "string") {
+        const name = cat;
+        if (!addedNames.has(name.toLowerCase())) {
+          addedNames.add(name.toLowerCase());
+          list.push({ name, value: cat, remaining: 1, total: 1 });
+        }
+      } else if (typeof cat === "object" && cat !== null) {
+        const name = cat.name || cat.categoryName || cat.label || `Item ${idx + 1}`;
+        if (!addedNames.has(name.toLowerCase())) {
+          addedNames.add(name.toLowerCase());
+          const total = cat.quantity !== undefined ? Number(cat.quantity) : (cat.count !== undefined ? Number(cat.count) : (cat.total !== undefined ? Number(cat.total) : undefined));
+          const remaining = cat.remaining !== undefined ? Number(cat.remaining) : (total !== undefined ? total : undefined);
+          list.push({
+            ...cat,
+            name,
+            value: cat.value || cat.name || name,
+            remaining,
+            total,
+          });
+        }
+      }
+    });
+  }
+
+  // Standard deliverables (Poster, Video, Shoot) if not in list
+  if ((proj.numberOfPosters || 0) > 0 && !addedNames.has("poster") && !addedNames.has("posters")) {
+    const total = Number(proj.numberOfPosters) || 0;
+    const remaining = proj.remainingPosters !== undefined ? Number(proj.remainingPosters) : total;
+    list.push({ name: "Poster", value: "Poster", remaining, total });
+    addedNames.add("poster");
+  }
+
+  if ((proj.numberOfVideos || 0) > 0 && !addedNames.has("video") && !addedNames.has("videos")) {
+    const total = Number(proj.numberOfVideos) || 0;
+    const remaining = proj.remainingVideos !== undefined ? Number(proj.remainingVideos) : total;
+    list.push({ name: "Videos", value: "Videos", remaining, total });
+    addedNames.add("video");
+  }
+
+  if ((proj.numberOfShoots || 0) > 0 && !addedNames.has("shoot") && !addedNames.has("shoots")) {
+    const total = Number(proj.numberOfShoots) || 0;
+    const remaining = proj.remainingShoots !== undefined ? Number(proj.remainingShoots) : total;
+    list.push({ name: "Shoots", value: "Shoots", remaining, total });
+    addedNames.add("shoot");
+  }
+
+  return list;
+};
+
 const TaskForm = () => {
   const navigate = useNavigate();
   const location = useLocation();
     const { id } = useParams();
   const isEdit = !!id;
   const [form] = Form.useForm();
+  const [taskBlocks, setTaskBlocks] = useState([
+    {
+      id: 1,
+      department: undefined,
+      companyId: undefined,
+      projectId: undefined,
+      serviceType: undefined,
+      assignedTo: undefined,
+      title: "",
+      startDate: dayjs(),
+      dueDate: null,
+      priority: "medium",
+      taskCategory: "New",
+      description: "",
+      watchers: [],
+    },
+  ]);
   const [selectedCompanyId, setSelectedCompanyId] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [prevCompanyId, setPrevCompanyId] = useState(null);
@@ -293,6 +385,7 @@ const TaskForm = () => {
   const { data: priorityLevelsData } = useGetPriorityLevelsQuery();
 
   const [createTask, { isLoading: isCreating }] = useCreateTaskMutation();
+  const [createBulkTasks, { isLoading: isCreatingBulk }] = useCreateBulkTasksMutation();
   const [updateTask, { isLoading: isUpdating }] = useUpdateTaskMutation();
 
   const task = taskData?.data?.task;
@@ -795,9 +888,119 @@ const TaskForm = () => {
     }
   }, [selectedProject, isEdit, form]);
 
+  const handleAddTaskBlock = () => {
+    const nextId = Date.now();
+    const defaultWatchers = allAvailableUsers.filter(isFixedWatcher).map((u) => u._id);
+
+    setTaskBlocks((prev) => [
+      ...prev,
+      {
+        id: nextId,
+        department: undefined,
+        companyId: undefined,
+        projectId: undefined,
+        serviceType: undefined,
+        assignedTo: undefined,
+        title: "",
+        startDate: dayjs(),
+        dueDate: null,
+        priority: "medium",
+        taskCategory: "New",
+        description: "",
+        watchers: defaultWatchers,
+      },
+    ]);
+  };
+
+  const handleUpdateTaskBlock = (index, field, value) => {
+    setTaskBlocks((prev) =>
+      prev.map((block, idx) => {
+        if (idx !== index) return block;
+        const updated = { ...block, [field]: value };
+        if (field === "projectId" && value) {
+          const projObj = allProjects.find((p) => (p._id || p.id) === value);
+          if (projObj?.clientId) {
+            updated.companyId = projObj.clientId._id || projObj.clientId;
+          }
+        }
+        return updated;
+      })
+    );
+  };
+
+  const handleRemoveTaskBlock = (index) => {
+    if (taskBlocks.length <= 1) return;
+    setTaskBlocks((prev) => prev.filter((_, idx) => idx !== index));
+  };
+
+  const handleSubmitAllTasks = async () => {
+    for (let i = 0; i < taskBlocks.length; i++) {
+      const b = taskBlocks[i];
+      const num = i + 1;
+      if (!b.department) {
+        notifyError('save', 'validation', `Please select a Department for Task #${num}`);
+        return;
+      }
+      if (!b.assignedTo) {
+        notifyError('save', 'validation', `Please select Assigned To user for Task #${num}`);
+        return;
+      }
+      if (!hideClientDropdown && !b.companyId && !b.projectId) {
+        notifyError('save', 'validation', `Please select a Client or Project for Task #${num}`);
+        return;
+      }
+      if (!b.title || !b.title.trim()) {
+        notifyError('save', 'validation', `Please enter Task Title for Task #${num}`);
+        return;
+      }
+      if (!b.startDate) {
+        notifyError('save', 'validation', `Please select Start Date for Task #${num}`);
+        return;
+      }
+      if (!b.dueDate) {
+        notifyError('save', 'validation', `Please select Due Date for Task #${num}`);
+        return;
+      }
+    }
+
+    const bulkPayload = taskBlocks.map((b) => {
+      const selectedDeptObj = departments.find(
+        (d) => d._id === b.department || d.slug === b.department,
+      );
+      const departmentSlug = selectedDeptObj?.slug || b.department;
+
+      return {
+        title: b.title.trim(),
+        description: b.description || "",
+        department: departmentSlug,
+        projectId: b.projectId || null,
+        companyId: b.companyId,
+        assignedTo: b.assignedTo,
+        priority: b.priority || "medium",
+        taskCategory: b.taskCategory || "New",
+        startDate: b.startDate ? dayjs(b.startDate).startOf('day').toISOString() : null,
+        dueDate: b.dueDate ? dayjs(b.dueDate).endOf('day').toISOString() : null,
+        watchers: b.watchers || [],
+        status: location.state?.initialStatus || "created",
+        taskType: taskTarget,
+        serviceType: b.serviceType || undefined,
+      };
+    });
+
+    const keyId = 'create-bulk';
+    notifyLoading('save', keyId, `Creating ${bulkPayload.length} task(s)...`);
+    try {
+      const res = await createBulkTasks({ tasks: bulkPayload }).unwrap();
+      notifySuccess('save', keyId, `Successfully created ${res.successCount || bulkPayload.length} task(s)!`);
+      navigate(`${getBaseRoute()}/tasks`);
+    } catch (error) {
+      const errorMessage = error?.response?.data?.message || error?.data?.message || error?.message || "Operation failed";
+      notifyError('save', keyId, errorMessage);
+    }
+  };
+
   const onFinish = async (values) => {
     try {
-      // Resolve department ObjectId to slug (backend stores department as slug string)
       const selectedDeptObj = departments.find(
         (d) => d._id === values.department || d.slug === values.department,
       );
@@ -890,669 +1093,553 @@ const TaskForm = () => {
           </Tag>
         </h2>
       </div>
-      <Card>
-        {(selectedProjectData?.data?.project?.clientId?.status === "inactive" ||
-          selectedProjectData?.data?.project?.clientId?.status ===
-            "closed") && (
-          <Alert
-            message={`The client for this project is ${selectedProjectData.data.project.clientId.status}.`}
-            type="warning"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={onFinish}
-          autoComplete="off"
-          initialValues={{
-            priority: "medium",
-            taskType: "New",
-            taskCategory: "New",
-            status: "created",
-            startDate: dayjs(),
-          }}
-        >
-          <Row gutter={16}>
-            <Col xs={24} md={8}>
-              <Form.Item
-                label="Department"
-                name="department"
-                rules={[
-                  { required: true, message: "Please select a department" },
-                ]}
-              >
-                <Select
-                  placeholder="Select department"
-                  loading={isLoadingDepartments}
-                  showSearch
-                  optionFilterProp="children"
-                  filterOption={(input, option) => {
-                    const label = Array.isArray(option?.children)
-                      ? option.children.join(" ")
-                      : option?.children || "";
-                    return String(label)
-                      .toLowerCase()
-                      .includes(input.toLowerCase());
-                  }}
-                  notFoundContent={
-                    isLoadingDepartments
-                      ? "Loading..."
-                      : isDepartmentsError
-                        ? "Error loading departments"
-                        : "No departments found"
-                  }
+
+      {isEdit ? (
+        <Card>
+          {(selectedProjectData?.data?.project?.clientId?.status === "inactive" ||
+            selectedProjectData?.data?.project?.clientId?.status === "closed") && (
+            <Alert
+              message={`The client for this project is ${selectedProjectData.data.project.clientId.status}.`}
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          <Form
+            form={form}
+            layout="vertical"
+            onFinish={onFinish}
+            autoComplete="off"
+            initialValues={{
+              priority: "medium",
+              taskType: "New",
+              taskCategory: "New",
+              status: "created",
+              startDate: dayjs(),
+            }}
+          >
+            <Row gutter={16}>
+              <Col xs={24} md={8}>
+                <Form.Item
+                  label="Department"
+                  name="department"
+                  rules={[
+                    { required: true, message: "Please select a department" },
+                  ]}
                 >
-                  {departments
-                    .filter((d) => {
-                      // Hide "General" from non-admin/client roles
-                      if (
-                        d.slug === "general" ||
-                        d.name?.toLowerCase() === "general"
-                      ) {
-                        return ["admin", "super_admin", "client"].includes(
-                          userRole,
-                        );
-                      }
-                      return true;
-                    })
-                    .map((dept) => (
-                      <Option key={dept._id} value={dept._id}>
-                        {dept.name}
+                  <Select
+                    placeholder="Select department"
+                    loading={isLoadingDepartments}
+                    showSearch
+                    optionFilterProp="children"
+                    filterOption={(input, option) => {
+                      const label = Array.isArray(option?.children)
+                        ? option.children.join(" ")
+                        : option?.children || "";
+                      return String(label)
+                        .toLowerCase()
+                        .includes(input.toLowerCase());
+                    }}
+                  >
+                    {departments.map((department) => (
+                      <Option key={department._id} value={department._id}>
+                        {department.name}
                       </Option>
                     ))}
-                </Select>
-              </Form.Item>
-            </Col>
+                  </Select>
+                </Form.Item>
+              </Col>
 
-            <Col xs={24} md={8}>
-              <Form.Item
-                label="Assigned To"
-                name="assignedTo"
-                rules={[{ required: true, message: "Please select a user" }]}
-              >
-                <Select
-                  placeholder="Select user"
-                  loading={isLoadingUsers}
-                  showSearch
-                  notFoundContent={
-                    isLoadingUsers
-                      ? "Loading..."
-                      : isUsersError
-                        ? "Error loading users"
-                        : "No users found"
-                  }
-                  filterOption={(input, option) => {
-                    const label = Array.isArray(option?.children)
-                      ? option.children.join(" ")
-                      : option?.children || "";
-                    return String(label)
-                      .toLowerCase()
-                      .includes(input.toLowerCase());
-                  }}
+              <Col xs={24} md={8}>
+                <Form.Item
+                  label="Assigned To"
+                  name="assignedTo"
+                  rules={[
+                    { required: true, message: "Please select an assigned user" },
+                  ]}
                 >
-                  {usersForAssigneesSorted && usersForAssigneesSorted.length > 0
-                    ? usersForAssigneesSorted.map((user) => {
-                        const disabled = isAbsentUser(user);
-                        return (
-                          <Option
-                            key={user._id}
-                            value={user._id}
-                            disabled={disabled}
-                          >
-                            {user.name} ({user.email})
-                            {user.type ? ` - ${user.type}` : ""}
-                            {disabled ? " - Absent" : ""}
-                          </Option>
+                  <Select
+                    placeholder="Select user"
+                    loading={isLoadingUsers}
+                    showSearch
+                    optionFilterProp="children"
+                    onChange={(value) => {
+                      const selectedUser = users.find((u) => u._id === value);
+                      if (selectedUser && isAbsentUser(selectedUser)) {
+                        notifyError(
+                          "attendance",
+                          "assignedTo",
+                          `${selectedUser.name} is on leave today. Please select another team member.`
                         );
-                      })
-                    : null}
-                </Select>
-              </Form.Item>
-            </Col>
+                      }
+                    }}
+                    filterOption={(input, option) => {
+                      const label = Array.isArray(option?.children)
+                        ? option.children.join(" ")
+                        : option?.children || "";
+                      return String(label)
+                        .toLowerCase()
+                        .includes(input.toLowerCase());
+                    }}
+                  >
+                    {usersForAssigneesSorted && usersForAssigneesSorted.length > 0
+                      ? usersForAssigneesSorted.map((user) => {
+                          const disabled = isAbsentUser(user);
+                          return (
+                            <Option
+                              key={user._id}
+                              value={user._id}
+                              disabled={disabled}
+                            >
+                              {user.name} ({user.email})
+                              {user.type ? ` - ${user.type}` : ""}
+                              {disabled ? " - Absent" : ""}
+                            </Option>
+                          );
+                        })
+                      : null}
+                  </Select>
+                </Form.Item>
+              </Col>
 
-            <Col xs={24} md={8}>
-              <Form.Item
-                label="Task Title"
-                name="title"
-                rules={[{ required: true, message: "Please enter task title" }]}
-              >
-                <Input placeholder="Enter task title" />
-              </Form.Item>
-            </Col>
-          </Row>
+              <Col xs={24} md={8}>
+                <Form.Item
+                  label="Task Title"
+                  name="title"
+                  rules={[{ required: true, message: "Please enter task title" }]}
+                >
+                  <Input placeholder="Enter task title" />
+                </Form.Item>
+              </Col>
+            </Row>
 
-          <Row gutter={16}>
-            {!hideClientDropdown && (
+            <Row gutter={16}>
+              {!hideClientDropdown && (
                 <Col xs={24} md={8}>
                   <Form.Item
                     label="Client"
                     name="companyId"
                     rules={[{ required: true, message: "Please select a client" }]}
-                    tooltip={
-                      selectedProject
-                        ? "Client is pre-filled from selected project. You can change it if needed."
-                        : "Select a client. Or select a project first to auto-fill the client."
-                    }
                   >
                     <Select
-                      placeholder={
-                        selectedProject
-                          ? "Client (pre-filled from project)"
-                          : "Select client"
-                      }
-                  loading={isLoadingCompanies}
-                  showSearch
-                  allowClear
-                  disabled={!!selectedProject?.clientId} // Disable if pre-filled from project
-                  onChange={(value) => {
-                    setSelectedCompanyId(value);
-                    // Clear project selection when company changes (if not pre-filled from project)
-                    if (!selectedProject?.clientId) {
-                      form.setFieldsValue({ projectId: undefined });
-                      setSelectedProjectId(null);
-                    }
-                  }}
-                  filterOption={(input, option) => {
-                    const label = Array.isArray(option?.children)
-                      ? option.children.join(" ")
-                      : option?.children || "";
-                    return String(label)
-                      .toLowerCase()
-                      .includes(input.toLowerCase());
-                  }}
-                >
-                  {finalAvailableCompanies.map((company) => (
-                    <Option key={company._id} value={company._id}>
-                      {company.name}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            )}
+                      placeholder="Select client"
+                      loading={isLoadingCompanies}
+                      showSearch
+                      allowClear
+                      disabled={!!selectedProject?.clientId}
+                      onChange={(value) => {
+                        setSelectedCompanyId(value);
+                        if (!selectedProject?.clientId) {
+                          form.setFieldsValue({ projectId: undefined });
+                          setSelectedProjectId(null);
+                        }
+                      }}
+                    >
+                      {finalAvailableCompanies.map((company) => (
+                        <Option key={company._id} value={company._id}>
+                          {company.name}
+                        </Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                </Col>
+              )}
 
-            {!hideClientDropdown && (
+              {!hideClientDropdown && (
+                <Col xs={24} md={8}>
+                  <Form.Item
+                    label="Project"
+                    name="projectId"
+                    rules={[{ required: true, message: "Please select a project" }]}
+                  >
+                    <Select
+                      placeholder="Select project"
+                      loading={selectedCompanyId ? isLoadingProjects : isLoadingAllProjects}
+                      allowClear
+                      showSearch
+                      onChange={(value) => {
+                        setSelectedProjectId(value);
+                        if (!value) {
+                          setSelectedCompanyId(null);
+                          form.setFieldsValue({ companyId: undefined });
+                        }
+                      }}
+                    >
+                      {(() => {
+                        let displayProjects = selectedCompanyId ? projects : allProjects;
+                        if (taskTarget === 'own_brand') {
+                          displayProjects = displayProjects?.filter(p => !p.clientId) || [];
+                        }
+                        return displayProjects && displayProjects.length > 0
+                          ? displayProjects.map((project) => (
+                              <Option key={project._id || project.id} value={project._id || project.id}>
+                                {project.name || "Unnamed Project"} {project.clientId?.name && `(${project.clientId.name})`}
+                              </Option>
+                            ))
+                          : null;
+                      })()}
+                    </Select>
+                  </Form.Item>
+                </Col>
+              )}
+            </Row>
+
+            <Row gutter={16}>
               <Col xs={24} md={8}>
                 <Form.Item
-                  label="Project"
-                  name="projectId"
-                  rules={[{ required: true, message: "Please select a project" }]}
-                  tooltip="Select a project first to automatically filter and prefill the client. Or select client first to filter projects."
+                  label="Start Date"
+                  name="startDate"
+                  rules={[{ required: true, message: "Please select start date" }]}
                 >
-                <Select
-                  placeholder="Select project (optional - will auto-fill client)"
-                  loading={
-                    selectedCompanyId ? isLoadingProjects : isLoadingAllProjects
-                  }
-                  allowClear
-                  showSearch
-                  onChange={(value) => {
-                    setSelectedProjectId(value);
-                    if (!value) {
-                      // Clear client when project is cleared
-                      setSelectedCompanyId(null);
-                      form.setFieldsValue({ companyId: undefined });
-                    }
-                  }}
-                  filterOption={(input, option) => {
-                    const label = Array.isArray(option?.children)
-                      ? option.children.join(" ")
-                      : option?.children || "";
-                    return String(label)
-                      .toLowerCase()
-                      .includes(input.toLowerCase());
-                  }}
-                  notFoundContent={
-                    (
-                      selectedCompanyId
-                        ? isLoadingProjects
-                        : isLoadingAllProjects
-                    )
-                      ? "Loading projects..."
-                      : (selectedCompanyId ? projects : allProjects).length ===
-                          0
-                        ? "No active projects available for the selected client."
-                        : "No projects found"
-                  }
+                  <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
+
+              <Col xs={24} md={8}>
+                <Form.Item
+                  label="Due Date"
+                  name="dueDate"
+                  rules={[{ required: true, message: "Please select due date" }]}
                 >
-                  {(() => {
-                    let displayProjects = selectedCompanyId
-                      ? projects
-                      : allProjects;
-                    if (taskTarget === 'own_brand') {
-                      displayProjects = displayProjects?.filter(p => !p.clientId) || [];
-                    }
-                    return displayProjects && displayProjects.length > 0
-                      ? displayProjects.map((project) => {
-                          const projectId = project._id || project.id;
-                          const projectName = project.name || "Unnamed Project";
-                          const clientName = project.clientId?.name || "";
-                          return (
-                            <Option key={projectId} value={projectId}>
-                              {projectName} {clientName && `(${clientName})`}{" "}
-                              {project.status &&
-                                `- ${project.status.replace(/_/g, " ")}`}
-                            </Option>
-                          );
-                        })
-                      : null;
-                  })()}
-                </Select>
-              </Form.Item>
-            </Col>
-            )}
+                  <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
 
-            <Form.Item
-              noStyle
-              shouldUpdate={(prevValues, currentValues) =>
-                prevValues.projectId !== currentValues.projectId
-              }
-            >
-              {({ getFieldValue }) => {
-                const projectId = getFieldValue("projectId");
-                const rawCategories =
-                  selectedProjectWithCounts?.selectedCategories ||
-                  selectedProjectWithCounts?.masterItemId?.selectedCategories ||
-                  selectedProjectWithCounts?.masterItemIds?.[0]?.selectedCategories ||
-                  [];
-                const selectedCategories = rawCategories.map((cat, idx) => {
-                  if (typeof cat === "string") {
-                    return { name: cat, value: cat, remaining: 1 };
-                  }
-                  const name = cat.name || cat.categoryName || cat.label || `Item ${idx + 1}`;
-                  return {
-                    ...cat,
-                    name,
-                    value: cat.value || name,
-                    remaining: cat.remaining !== undefined ? cat.remaining : (cat.quantity || 0),
-                  };
-                });
-                const hasDynamicCategories = selectedCategories.length > 0;
-                const hasLegacyDeliverables =
-                  (selectedProjectWithCounts?.numberOfPosters || 0) > 0 ||
-                  (selectedProjectWithCounts?.numberOfVideos || 0) > 0 ||
-                  (selectedProjectWithCounts?.numberOfShoots || 0) > 0;
+              <Col xs={24} md={8}>
+                <Form.Item label="Priority" name="priority">
+                  <Select>
+                    {priorityLevels.map((level) => (
+                      <Option key={level.value} value={level.value}>
+                        {level.label}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
 
-                if (projectId && (hasDynamicCategories || hasLegacyDeliverables)) {
-                  return (
+            <Form.Item label="Description" name="description">
+              <TextArea rows={3} placeholder="Enter task description" />
+            </Form.Item>
+
+            <Form.Item style={{ marginTop: 24 }}>
+              <Space>
+                <Button type="primary" htmlType="submit" loading={isUpdating}>
+                  Update Task
+                </Button>
+                <Button onClick={() => navigate(`${getBaseRoute()}/tasks`)}>Cancel</Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        </Card>
+      ) : (
+        <div>
+          {taskBlocks.map((block, index) => {
+            const currentCompanyId = block.companyId;
+            const currentProjectId = block.projectId;
+
+            let availableProjects = currentCompanyId
+              ? allProjects.filter(
+                  (p) =>
+                    (p.clientId?._id || p.clientId) === currentCompanyId ||
+                    String(p.clientId) === String(currentCompanyId)
+                )
+              : allProjects;
+
+            if (taskTarget === "own_brand") {
+              availableProjects = availableProjects.filter((p) => !p.clientId);
+            }
+
+            const selectedProjObj = allProjects.find(
+              (p) => (p._id || p.id) === currentProjectId
+            );
+            const selectedCategories = extractProjectCategoriesWithCounts(selectedProjObj);
+
+            return (
+              <Card
+                key={block.id || index}
+                title={
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontWeight: "bold", fontSize: "16px", color: "#1890ff" }}>
+                      Task #{index + 1}
+                    </span>
+                    {taskBlocks.length > 1 && (
+                      <Button
+                        type="text"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={() => handleRemoveTaskBlock(index)}
+                      >
+                        Remove Task #{index + 1}
+                      </Button>
+                    )}
+                  </div>
+                }
+                style={{ marginBottom: 20, borderRadius: "8px", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}
+              >
+                <Row gutter={16}>
+                  <Col xs={24} md={8}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Department
+                      </label>
+                      <Select
+                        placeholder="Select department"
+                        value={block.department}
+                        onChange={(val) => handleUpdateTaskBlock(index, "department", val)}
+                        style={{ width: "100%" }}
+                        showSearch
+                        optionFilterProp="children"
+                      >
+                        {departments.map((d) => (
+                          <Option key={d._id} value={d._id}>
+                            {d.name}
+                          </Option>
+                        ))}
+                      </Select>
+                    </div>
+                  </Col>
+
+                  <Col xs={24} md={8}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Assigned To
+                      </label>
+                      <Select
+                        placeholder="Select user"
+                        value={block.assignedTo}
+                        onChange={(val) => handleUpdateTaskBlock(index, "assignedTo", val)}
+                        style={{ width: "100%" }}
+                        showSearch
+                        optionFilterProp="children"
+                      >
+                        {usersForAssigneesSorted.map((u) => (
+                          <Option key={u._id} value={u._id} disabled={isAbsentUser(u)}>
+                            {u.name} ({u.email}) {isAbsentUser(u) ? " - Absent" : ""}
+                          </Option>
+                        ))}
+                      </Select>
+                    </div>
+                  </Col>
+
+                  {!hideClientDropdown && (
                     <Col xs={24} md={8}>
-                      <Form.Item
-                        label="Project Category"
-                        name="serviceType"
-                        rules={[
-                          {
-                            required: true,
-                            message: "Please select a category",
-                          },
-                        ]}
-                        tooltip="Available categories based on project deliverables."
+                      <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                          <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Client
+                        </label>
+                        <Select
+                          placeholder="Select client"
+                          value={block.companyId}
+                          onChange={(val) => {
+                            handleUpdateTaskBlock(index, "companyId", val);
+                            handleUpdateTaskBlock(index, "projectId", undefined);
+                          }}
+                          style={{ width: "100%" }}
+                          showSearch
+                          allowClear
                         >
+                          {finalAvailableCompanies.map((c) => (
+                            <Option key={c._id} value={c._id}>
+                              {c.name}
+                            </Option>
+                          ))}
+                        </Select>
+                      </div>
+                    </Col>
+                  )}
+
+                  {!hideClientDropdown && (
+                    <Col xs={24} md={8}>
+                      <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                          <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Project
+                        </label>
+                        <Select
+                          placeholder="Select project"
+                          value={block.projectId}
+                          onChange={(val) => handleUpdateTaskBlock(index, "projectId", val)}
+                          style={{ width: "100%" }}
+                          showSearch
+                          allowClear
+                        >
+                          {availableProjects.map((p) => (
+                            <Option key={p._id || p.id} value={p._id || p.id}>
+                              {p.name} {p.clientId?.name && `(${p.clientId.name})`}
+                            </Option>
+                          ))}
+                        </Select>
+                      </div>
+                    </Col>
+                  )}
+
+                  {selectedCategories.length > 0 && (
+                    <Col xs={24} md={8}>
+                      <div style={{ marginBottom: 16 }}>
+                        <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                          <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Project Category
+                        </label>
                         <Select
                           placeholder="Select category"
-                          showSearch
-                          optionFilterProp="children"
+                          value={block.serviceType}
+                          onChange={(val) => handleUpdateTaskBlock(index, "serviceType", val)}
+                          style={{ width: "100%" }}
                         >
-                          {(() => {
-                            const dynamicOptions = selectedCategories.map(
-                              (opt, idx) => ({
-                                label: opt.name,
-                                value: opt.value,
-                                remaining: Number(opt.remaining ?? opt.quantity ?? 0),
-                                id: opt._id || `cat-${idx}`,
-                              }),
-                            );
-
-                            if (dynamicOptions.length > 0) {
-                              return dynamicOptions.map((opt, idx) => (
-                                <Option
-                                  key={opt.id || `opt-${idx}`}
-                                  value={opt.value}
-                                  disabled={opt.remaining <= 0 && opt.value !== task?.serviceType}
-                                >
-                                  {opt.label} {`(Remaining: ${opt.remaining})`}
-                                </Option>
-                              ));
-                            }
-
-                            const legacyOptions = [];
-                            if ((selectedProjectWithCounts?.numberOfPosters || 0) > 0) {
-                              legacyOptions.push({
-                                label: "Poster",
-                                value: "poster",
-                                remaining:
-                                  selectedProjectWithCounts?.remainingPosters || 0,
-                              });
-                            }
-                            if ((selectedProjectWithCounts?.numberOfVideos || 0) > 0) {
-                              legacyOptions.push({
-                                label: "Video",
-                                value: "video",
-                                remaining:
-                                  selectedProjectWithCounts?.remainingVideos || 0,
-                              });
-                            }
-                            if ((selectedProjectWithCounts?.numberOfShoots || 0) > 0) {
-                              legacyOptions.push({
-                                label: "Shoot",
-                                value: "shoot",
-                                remaining:
-                                  selectedProjectWithCounts?.remainingShoots || 0,
-                              });
-                            }
-
-                            return legacyOptions.map((opt, idx) => (
-                              <Option
-                                key={opt.id || `opt-${idx}`}
-                                value={opt.value}
-                                disabled={opt.remaining <= 0}
-                              >
-                                {opt.label} {`(Remaining: ${opt.remaining})`}
+                          {selectedCategories.map((cat, catIdx) => {
+                            const countText = cat.remaining !== undefined && cat.remaining !== null
+                              ? ` (Remaining: ${cat.remaining}${cat.total ? ` / ${cat.total}` : ""})`
+                              : (cat.total !== undefined && cat.total !== null ? ` (Count: ${cat.total})` : "");
+                            return (
+                              <Option key={catIdx} value={cat.value}>
+                                {cat.name}{countText}
                               </Option>
-                            ));
-                          })()}
+                            );
+                          })}
                         </Select>
-                      </Form.Item>
+                      </div>
                     </Col>
-                  );
-                }
-                return null;
-              }}
-            </Form.Item>
-          </Row>
+                  )}
 
-          <Row gutter={16}>
-            <Col xs={24} md={8}>
-              <div style={{ marginBottom: 24 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    marginBottom: 8,
-                    alignItems: "center",
-                  }}
-                >
-                  <label
-                    style={{
-                      fontSize: "14px",
-                      color: "hsl(var(--foreground))",
-                    }}
-                  >
-                    <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>
-                    Start Date
-                  </label>
-                </div>
-                <Form.Item
-                  name="startDate"
-                  rules={[
-                    { required: true, message: "Please select start date" },
-                  ]}
-                  style={{ marginBottom: 0 }}
-                >
-                  <DatePicker
-                    style={{ width: "100%" }}
-                    disabledDate={(current) => current && current < dayjs().startOf("day")}
-                    onChange={(date) => {
-                      const dueDate = form.getFieldValue("dueDate");
-                      if (date && dueDate && date.startOf("day") > dueDate.startOf("day")) {
-                        form.setFieldsValue({ dueDate: null });
-                      }
-                    }}
-                  />
-                </Form.Item>
-              </div>
+                  <Col xs={24} md={8}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Task Title
+                      </label>
+                      <Input
+                        placeholder="Enter task title"
+                        value={block.title}
+                        onChange={(e) => handleUpdateTaskBlock(index, "title", e.target.value)}
+                      />
+                    </div>
+                  </Col>
 
-              <Form.Item
-                label="Due Date"
-                name="dueDate"
-                rules={[{ required: true, message: "Please select due date" }]}
-              >
-                <DatePicker
-                  style={{ width: "100%" }}
-                  disabledDate={(current) => {
-                    const startDate = form.getFieldValue("startDate");
-                    const isBeforeToday = current && current < dayjs().startOf("day");
-                    const isBeforeStartDate = current && startDate && current < startDate.startOf("day");
-                    return isBeforeToday || isBeforeStartDate;
-                  }}
-                />
-              </Form.Item>
-            </Col>
+                  <Col xs={24} md={8}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Start Date
+                      </label>
+                      <DatePicker
+                        value={block.startDate ? dayjs(block.startDate) : null}
+                        onChange={(date) => handleUpdateTaskBlock(index, "startDate", date)}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                  </Col>
 
-            <Col xs={24} md={8}>
-              <Form.Item label="Priority" name="priority">
-                <Select
-                  showSearch
-                  optionFilterProp="children"
-                  filterOption={(input, option) => {
-                    const label = Array.isArray(option?.children)
-                      ? option.children.join(" ")
-                      : option?.children || "";
-                    return String(label)
-                      .toLowerCase()
-                      .includes(input.toLowerCase());
-                  }}
-                >
-                  {priorityLevels.map((level) => (
-                    <Option key={level.value} value={level.value}>
-                      {level.label}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
+                  <Col xs={24} md={8}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Due Date
+                      </label>
+                      <DatePicker
+                        value={block.dueDate ? dayjs(block.dueDate) : null}
+                        onChange={(date) => handleUpdateTaskBlock(index, "dueDate", date)}
+                        style={{ width: "100%" }}
+                      />
+                    </div>
+                  </Col>
 
-            <Col xs={24} md={8}>
-              <Form.Item
-                label="Task Category"
-                name="taskCategory"
-                rules={[
-                  { required: true, message: "Please select a category" },
-                ]}
-              >
-                <Select placeholder="Select category">
-                  {(() => {
-                    if (
-                      selectedDepartment === "digital-marketing" ||
-                      selectedDepartment === "seo" ||
-                      selectedDepartment === digitalMarketingDeptId ||
-                      selectedDepartment === seoDeptId
-                    ) {
-                      return [
-                        <Option key="New" value="New">
-                          New
-                        </Option>,
-                        <Option key="Correction" value="Correction">
-                          Correction
-                        </Option>,
-                        <Option key="ReDesign" value="ReDesign">
-                          ReDesign
-                        </Option>,
-                      ];
-                    }
-                    const isWebsiteOrWebApp =
-                      (websiteDeptId && selectedDepartment === websiteDeptId) ||
-                      (webAppDeptId && selectedDepartment === webAppDeptId) ||
-                      [
-                        "website-designing",
-                        "web-application-development",
-                      ].includes(selectedDepartment);
-                    if (isWebsiteOrWebApp) {
-                      return [
-                        <Option key="New" value="New">
-                          New
-                        </Option>,
-                        <Option
-                          key="Internal Correction"
-                          value="Internal Correction"
-                        >
-                          Internal Correction
-                        </Option>,
-                        <Option
-                          key="Client Correction"
-                          value="Client Correction"
-                        >
-                          Client Correction
-                        </Option>,
-                        <Option key="Hosting" value="Hosting">
-                          Hosting
-                        </Option>,
-                        <Option key="SEO Site Content Update" value="SEO Site Content Update">
-                          SEO Site Content Update
-                        </Option>,
-                      ];
-                    }
-                    return [
-                      <Option key="New" value="New">
-                        New
-                      </Option>,
-                      <Option key="Correction" value="Correction">
-                        Correction
-                      </Option>,
-                      <Option key="Redesign" value="Redesign">
-                        Redesign
-                      </Option>,
-                    ];
-                  })()}
-                </Select>
-              </Form.Item>
-            </Col>
-          </Row>
+                  <Col xs={24} md={8}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        Priority
+                      </label>
+                      <Select
+                        value={block.priority}
+                        onChange={(val) => handleUpdateTaskBlock(index, "priority", val)}
+                        style={{ width: "100%" }}
+                      >
+                        {priorityLevels.map((lvl) => (
+                          <Option key={lvl.value} value={lvl.value}>
+                            {lvl.label}
+                          </Option>
+                        ))}
+                      </Select>
+                    </div>
+                  </Col>
 
-          <Form.Item label="Description" name="description">
-            <TextArea rows={4} placeholder="Enter task description" />
-          </Form.Item>
+                  <Col xs={24} md={8}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Task Category
+                      </label>
+                      <Select
+                        value={block.taskCategory}
+                        onChange={(val) => handleUpdateTaskBlock(index, "taskCategory", val)}
+                        style={{ width: "100%" }}
+                      >
+                        <Option value="New">New</Option>
+                        <Option value="Correction">Correction</Option>
+                        <Option value="ReDesign">ReDesign</Option>
+                      </Select>
+                    </div>
+                  </Col>
 
-          <Form.Item
-            label="Watchers"
-            name="watchers"
-            tooltip="Controls task visibility: only users listed here (and the assigned user) can see this task. Assigned users are added automatically."
-          >
-            <Select
-              mode="multiple"
-              placeholder="Select watchers (optional)"
-              loading={isLoadingUsers}
-              showSearch
-              optionFilterProp="label"
-              tagRender={tagRender}
-              filterOption={(input, option) => {
-                const label =
-                  typeof option?.label === "string"
-                    ? option.label
-                    : String(option?.label || "");
-                return label.toLowerCase().includes(input.toLowerCase());
-              }}
-              onChange={(values) => {
-                // Prevent manual removal of fixed admins
-                const fixedWatchers = allAvailableUsers.filter(isFixedWatcher);
-                const fixedIds = fixedWatchers.map((a) => a._id);
-                const currentValues = values || [];
+                  <Col xs={24} md={16}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        Watchers
+                      </label>
+                      <Select
+                        mode="multiple"
+                        placeholder="Select watchers"
+                        value={block.watchers}
+                        onChange={(vals) => handleUpdateTaskBlock(index, "watchers", vals)}
+                        style={{ width: "100%" }}
+                        options={allAvailableUsersSorted.map((u) => ({
+                          value: u._id,
+                          label: `${u.name} (${u.email})`,
+                          disabled: isFixedWatcher(u) || isAbsentUser(u),
+                        }))}
+                      />
+                    </div>
+                  </Col>
 
-                // Ensure all fixed IDs are present
-                const finalValues = [
-                  ...fixedIds,
-                  ...currentValues.filter((id) => !fixedIds.includes(id)),
-                ];
-                form.setFieldsValue({ watchers: finalValues });
-              }}
-              options={allAvailableUsersSorted.map((u) => {
-                const disabled = isAbsentUser(u);
-                const isFixed = isFixedWatcher(u);
-                return {
-                  value: u._id,
-                  label: `${u.name} (${u.email})${disabled ? " - Absent" : ""}`,
-                  disabled: isFixed || disabled,
-                };
-              })}
-            />
-          </Form.Item>
+                  <Col xs={24}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        Description
+                      </label>
+                      <TextArea
+                        rows={3}
+                        placeholder="Enter task description"
+                        value={block.description}
+                        onChange={(e) => handleUpdateTaskBlock(index, "description", e.target.value)}
+                      />
+                    </div>
+                  </Col>
+                </Row>
+              </Card>
+            );
+          })}
 
-          {isEdit && (
-            <Form.Item label="Status" name="status">
-              <Select>
-                <Option value="backlog">Hold</Option>
-                <Option value="to_do">To Do</Option>
-                <Option value="in_progress">In Progress</Option>
-                <Option value="hold">Hold</Option>
-                <Option value="review">Review</Option>
-                <Option value="Rejected">Rejected</Option>
-                <Option
-                  value="done"
-                  disabled={
-                    selectedDepartment === "digital-marketing" &&
-                    task?.status === "to_do"
-                  }
-                >
-                  Done
-                </Option>
-                <Option value="created">Created</Option>
-                <Option value="assigned">Assigned</Option>
-                <Option value="submitted">Submitted</Option>
-                <Option
-                  value="validated"
-                  disabled={
-                    selectedDepartment === "digital-marketing" &&
-                    task?.status === "to_do"
-                  }
-                >
-                  Validated
-                </Option>
-                <Option value="rejected">Rejected</Option>
-                <Option
-                  value="completed"
-                  disabled={
-                    selectedDepartment === "digital-marketing" &&
-                    task?.status === "to_do"
-                  }
-                >
-                  Completed
-                </Option>
-              </Select>
-            </Form.Item>
-          )}
-
-          {isEdit && (
-            <Form.Item
-              noStyle
-              shouldUpdate={(prev, curr) => prev.status !== curr.status}
+          <div style={{ marginBottom: 24 }}>
+            <Button
+              type="dashed"
+              block
+              icon={<PlusOutlined />}
+              onClick={handleAddTaskBlock}
+              style={{ height: "45px", fontSize: "15px", fontWeight: "600", borderColor: "#1890ff", color: "#1890ff" }}
             >
-              {({ getFieldValue }) =>
-                getFieldValue("status") === "hold" ? (
-                  <Form.Item
-                    label="Hold Reason"
-                    name="holdReason"
-                    rules={[
-                      {
-                        required: true,
-                        message: "Please enter the hold reason",
-                      },
-                    ]}
-                  >
-                    <Input.TextArea
-                      rows={3}
-                      placeholder="Enter reason for putting this task on hold"
-                    />
-                  </Form.Item>
-                ) : null
-              }
-            </Form.Item>
-          )}
+              + Add Task
+            </Button>
+          </div>
 
-          <Form.Item>
-            <Space>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={isCreating || isUpdating}
-              >
-                {isEdit ? "Update Task" : "Create Task"}
-              </Button>
-              <Button onClick={() => navigate(`${getBaseRoute()}/tasks`)}>Cancel</Button>
-            </Space>
-          </Form.Item>
-        </Form>
-      </Card>
+          <div style={{ display: "flex", gap: 12, marginBottom: 32 }}>
+            <Button
+              type="primary"
+              size="large"
+              loading={isCreating || isCreatingBulk}
+              onClick={handleSubmitAllTasks}
+            >
+              {taskBlocks.length > 1 ? `Create ${taskBlocks.length} Tasks` : "Create Task"}
+            </Button>
+            <Button size="large" onClick={() => navigate(`${getBaseRoute()}/tasks`)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -101,11 +101,11 @@ const AVATAR_COLORS = [
 
 // Map backend statuses to display groups
 const isCompleted = (status) =>
-  ["review", "completed", "validated", "approved", "done", "in_review", "reviewing"].includes(status?.toLowerCase());
+  ["review", "completed", "complete", "validated", "approved", "done", "in_review", "reviewing"].includes(status?.toLowerCase());
 const isInProgress = (status) => 
   ["in_progress", "submitted"].includes(status?.toLowerCase());
 const isPending = (status) =>
-  ["created", "assigned", "backlog", "to_do"].includes(status?.toLowerCase());
+  !isCompleted(status) && !isInProgress(status);
 
 // Every task (New, Correction, Redesign) counts as exactly 1 task unit.
 const getTaskWorkloadUnits = (task) => 1;
@@ -513,6 +513,47 @@ const TaskAnalyticsPage = () => {
     return map;
   }, [allUsers]);
 
+  // Helper for matching department across IDs, slugs, and names
+  const matchDepartment = (t, selectedDeptId) => {
+    if (!selectedDeptId) return true;
+    if (!t) return false;
+
+    const taskDept = t.department;
+    if (!taskDept) return false;
+
+    const selectedDeptObj = departments?.find(
+      (d) => String(d._id) === String(selectedDeptId) || d.slug === selectedDeptId || d.name === selectedDeptId
+    );
+
+    const taskDeptId = typeof taskDept === "object" ? (taskDept._id || taskDept.id) : taskDept;
+    const taskDeptSlug = typeof taskDept === "object" ? taskDept.slug : taskDept;
+    const taskDeptName = typeof taskDept === "object" ? taskDept.name : taskDept;
+
+    const norm = (s) =>
+      String(s || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+
+    const targetId = String(selectedDeptId);
+    const targetSlug = selectedDeptObj?.slug || norm(selectedDeptObj?.name || selectedDeptId);
+    const targetNameNorm = norm(selectedDeptObj?.name);
+    const selectedDeptNorm = norm(selectedDeptId);
+
+    // Direct ID checks
+    if (String(taskDeptId) === targetId) return true;
+    if (selectedDeptObj && String(taskDeptId) === String(selectedDeptObj._id)) return true;
+
+    // Normalized slug and name checks
+    const taskDeptNorm = norm(taskDeptSlug || taskDeptName || taskDeptId);
+    if (targetSlug && taskDeptNorm === targetSlug) return true;
+    if (targetNameNorm && taskDeptNorm === targetNameNorm) return true;
+    if (selectedDeptNorm && taskDeptNorm === selectedDeptNorm) return true;
+
+    return false;
+  };
+
   // ─── Apply filters ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     return allTasks.filter((t) => {
@@ -527,12 +568,8 @@ const TaskAnalyticsPage = () => {
           return false;
         if (selectedStatus === "pending" && !isPending(t.status)) return false;
       }
-      if (selectedDepartment) {
-        const selectedDeptObj = departments.find((d) => d._id === selectedDepartment);
-        const taskDeptId = t.department?._id || t.department;
-        const taskDeptSlug = t.department?.slug || t.department;
-        const generatedSlug = selectedDeptObj?.slug || (selectedDeptObj?.name ? selectedDeptObj.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") : null);
-        if (taskDeptId !== selectedDepartment && taskDeptSlug !== generatedSlug) return false;
+      if (selectedDepartment && !matchDepartment(t, selectedDepartment)) {
+        return false;
       }
       if (dateRange?.[0] && dateRange?.[1]) {
         const start = dayjs(t.startDate || t.createdAt).startOf("day");
@@ -578,12 +615,8 @@ const TaskAnalyticsPage = () => {
         if (start.isAfter(filterEnd) || effectiveEnd.isBefore(filterStart))
           return false;
       }
-      if (selectedDepartment) {
-        const selectedDeptObj = departments.find((d) => d._id === selectedDepartment);
-        const taskDeptId = t.department?._id || t.department;
-        const taskDeptSlug = t.department?.slug || t.department;
-        const generatedSlug = selectedDeptObj?.slug || (selectedDeptObj?.name ? selectedDeptObj.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") : null);
-        if (taskDeptId !== selectedDepartment && taskDeptSlug !== generatedSlug) return false;
+      if (selectedDepartment && !matchDepartment(t, selectedDepartment)) {
+        return false;
       }
       return true;
     });
@@ -606,6 +639,9 @@ const TaskAnalyticsPage = () => {
       completedAt &&
       dayjs(completedAt).isBetween(filterStart, filterEnd, "day", "[]")
     ) {
+      return sum + getTaskWorkloadUnits(t);
+    }
+    if (!completedAt) {
       return sum + getTaskWorkloadUnits(t);
     }
     return sum;
@@ -671,12 +707,11 @@ const TaskAnalyticsPage = () => {
           map[key].Redesign++;
         }
 
-        // Count completed if the task was finished by the end of this range
-        // AND was active on this specific day (following the 'retrospective completion' requirement)
+        // Count completed on the actual date completed
         if (
+          isCompleted(t.status) &&
           completedAt &&
-          (dayjs(completedAt).isAfter(current) ||
-            dayjs(completedAt).isSame(current, "day"))
+          dayjs(completedAt).isSame(current, "day")
         ) {
           map[key].Completed += getTaskWorkloadUnits(t);
         }
@@ -740,18 +775,13 @@ const TaskAnalyticsPage = () => {
       perfMap[assignedId].assigned += activeDaysInRange;
       perfMap[assignedId].distinctAssigned++;
 
-      // Completed units are matched to assigned days to ensure correct performance score
-      if (
-        completedAt &&
-        dayjs(completedAt).isAfter(overlapStart.subtract(1, "day"))
-      ) {
-        // If completed, add workload units for each active day in the range
-        perfMap[assignedId].completed +=
-          getTaskWorkloadUnits(t) * activeDaysInRange;
+      if (isCompleted(t.status)) {
+        perfMap[assignedId].completed += getTaskWorkloadUnits(t);
+      } else if (isInProgress(t.status)) {
+        perfMap[assignedId].inProgress++;
+      } else if (isPending(t.status)) {
+        perfMap[assignedId].pending++;
       }
-
-      if (isInProgress(t.status)) perfMap[assignedId].inProgress++;
-      else if (isPending(t.status)) perfMap[assignedId].pending++;
     });
 
     // Populate corrections/redesigns from status-agnostic list to ensure THEY ALWAYS COUNT
@@ -2736,11 +2766,17 @@ const TaskAnalyticsPage = () => {
                       },
                       {
                         label: "Last Week",
-                        range: [dayjs().subtract(7, "day"), dayjs()],
+                        range: [
+                          dayjs().subtract(7, "day").startOf("day"),
+                          dayjs().endOf("day"),
+                        ],
                       },
                       {
                         label: "Last 28 Days",
-                        range: [dayjs().subtract(28, "day"), dayjs()],
+                        range: [
+                          dayjs().subtract(28, "day").startOf("day"),
+                          dayjs().endOf("day"),
+                        ],
                       },
                     ].map((p) => (
                       <Col span={8} key={p.label}>

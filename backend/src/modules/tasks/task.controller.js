@@ -81,6 +81,19 @@ const createTask = async (req, res) => {
   }
 };
 
+const createBulkTasks = async (req, res) => {
+  try {
+    const result = await taskService.createBulkTasks(
+      req.body,
+      req.companyId,
+      req.user._id,
+    );
+    return sendSuccess(res, `Successfully created ${result.successCount} task(s)`, result);
+  } catch (error) {
+    return sendError(res, 400, error.message);
+  }
+};
+
 const updateTask = async (req, res) => {
   try {
     const task = await taskService.updateTask(
@@ -550,6 +563,7 @@ module.exports = {
   getTasksDropdown,
   getTaskById,
   createTask,
+  createBulkTasks,
   reopenTask,
   updateTask,
   holdTask,

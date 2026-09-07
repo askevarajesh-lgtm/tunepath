@@ -5872,11 +5872,40 @@ async function resolveSlaForTask(task) {
   }
 }
 
+const createBulkTasks = async (bulkData, tenantCompanyId, createdByUserId) => {
+  const tasksPayload = Array.isArray(bulkData) ? bulkData : (bulkData.tasks || []);
+  if (!Array.isArray(tasksPayload) || tasksPayload.length === 0) {
+    throw new Error("No tasks provided for bulk creation");
+  }
+
+  const createdTasks = [];
+  const errors = [];
+
+  for (let i = 0; i < tasksPayload.length; i++) {
+    const singleTaskData = tasksPayload[i];
+    try {
+      const task = await createTask(singleTaskData, tenantCompanyId, createdByUserId);
+      createdTasks.push(task);
+    } catch (err) {
+      errors.push({ index: i, title: singleTaskData.title || `Task #${i + 1}`, error: err.message });
+    }
+  }
+
+  return {
+    totalRequested: tasksPayload.length,
+    successCount: createdTasks.length,
+    failedCount: errors.length,
+    tasks: createdTasks,
+    errors,
+  };
+};
+
 module.exports = {
   getAllTasks,
   getTasksDropdown,
   getTaskById,
   createTask,
+  createBulkTasks,
   reopenTask,
   updateTask,
   holdTask,
