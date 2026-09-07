@@ -5,7 +5,7 @@ import CartItem from '../components/CartItem';
 import { useStorefront } from '../StorefrontContext';
 import { formatCurrency } from '../../utils/currency';
 
-const CartPage = () => {
+const CartPage = ({ isImported }) => {
   const { template, currentPageId, cart, workspaceId, websiteId, storeId, settings } = useStorefront();
   const page = template?.pages?.[currentPageId];
   
@@ -208,23 +208,34 @@ const CartPage = () => {
 
   // Native DOM update for totals to prevent wiping the DOM with re-renders
   useEffect(() => {
-    const subtotalNodes = document.querySelectorAll('[data-cart-subtotal="true"]');
+    // Determine the active document (handle iframe context)
+    let activeDoc = document;
+    if (isImported) {
+      const iframe = document.querySelector('iframe');
+      if (iframe && iframe.contentDocument) {
+         activeDoc = iframe.contentDocument;
+      } else {
+         return; // If iframe is not loaded yet, don't try to query
+      }
+    }
+
+    const subtotalNodes = activeDoc.querySelectorAll('[data-cart-subtotal="true"]');
     subtotalNodes.forEach(node => {
       node.textContent = formatCurrency(subTotal, workspaceId, websiteId, storeId);
     });
 
-    const shippingNodes = document.querySelectorAll('[data-cart-shipping="true"]');
+    const shippingNodes = activeDoc.querySelectorAll('[data-cart-shipping="true"]');
     shippingNodes.forEach(node => {
       node.textContent = formatCurrency(shipping, workspaceId, websiteId, storeId);
     });
 
-    const grandtotalNodes = document.querySelectorAll('[data-cart-grandtotal="true"]');
+    const grandtotalNodes = activeDoc.querySelectorAll('[data-cart-grandtotal="true"]');
     grandtotalNodes.forEach(node => {
       node.textContent = formatCurrency(grandTotal, workspaceId, websiteId, storeId);
     });
 
     // Handle Empty State Visibility
-    const emptyStateNodes = document.querySelectorAll('[data-cart-empty-state="true"]');
+    const emptyStateNodes = activeDoc.querySelectorAll('[data-cart-empty-state="true"]');
     emptyStateNodes.forEach(node => {
       if (cart.length > 0) {
         node.style.display = 'none';
@@ -234,55 +245,100 @@ const CartPage = () => {
     });
     
     // Also hide the cart container/table if cart is empty and we have a native empty state
-    const cartList = document.getElementById('storefront-react-cart-list');
+    const cartList = activeDoc.getElementById('storefront-react-cart-list');
     if (cartList && emptyStateNodes.length > 0) {
        const table = cartList.closest('table');
        if (table) {
          table.style.display = cart.length === 0 ? 'none' : '';
        }
     }
-  }, [cart.length, subTotal, shipping, grandTotal, workspaceId, websiteId, storeId]);
+  }, [cart.length, subTotal, shipping, grandTotal, workspaceId, websiteId, storeId, isImported]);
 
   const { navigateTo } = useStorefront();
   
   // Intercept Proceed to Checkout button clicks on the Cart Page
   useEffect(() => {
-    const handleCheckoutClick = (e) => {
-      const btn = e.target.closest('a, button');
-      if (btn) {
-        const text = btn.textContent.toLowerCase();
-        const href = btn.getAttribute('href') || '';
-        if (text.includes('checkout') || href.toLowerCase().includes('checkout')) {
-          e.preventDefault();
-          e.stopPropagation();
-          const checkoutPageId = Object.keys(template.pages).find(k => template.pages[k].role === 'Checkout');
-          if (checkoutPageId) {
-            navigateTo(checkoutPageId);
-          } else {
-            console.warn('Checkout page not found in template');
+    let activeCleanup = null;
+    
+    const attachListeners = (activeDoc) => {
+      const handleCheckoutClick = (e) => {
+        const btn = e.target.closest('a, button');
+        if (btn) {
+          const text = btn.textContent.toLowerCase();
+          const href = btn.getAttribute('href') || '';
+          if (text.includes('checkout') || href.toLowerCase().includes('checkout')) {
+            e.preventDefault();
+            e.stopPropagation();
+            const checkoutPageId = Object.keys(template.pages).find(k => template.pages[k].role === 'Checkout');
+            if (checkoutPageId) {
+              navigateTo(checkoutPageId);
+            } else {
+              console.warn('Checkout page not found in template');
+            }
           }
         }
-      }
+      };
+      
+      activeDoc.addEventListener('click', handleCheckoutClick, true); // use capture phase to override default links
+      return () => activeDoc.removeEventListener('click', handleCheckoutClick, true);
     };
-    
-    document.addEventListener('click', handleCheckoutClick, true); // use capture phase to override default links
-    return () => document.removeEventListener('click', handleCheckoutClick, true);
-  }, [template, navigateTo]);
+
+    if (isImported) {
+      const handleIframeLoaded = (e) => {
+        if (activeCleanup) activeCleanup();
+        activeCleanup = attachListeners(e.detail);
+      };
+      
+      window.addEventListener('storefront_iframe_loaded', handleIframeLoaded);
+      
+      const iframe = document.querySelector('iframe');
+      if (iframe && iframe.contentDocument && iframe.contentDocument.readyState === 'complete' && iframe.contentDocument.body.innerHTML) {
+         if (activeCleanup) activeCleanup();
+         activeCleanup = attachListeners(iframe.contentDocument);
+      }
+      
+      return () => {
+        window.removeEventListener('storefront_iframe_loaded', handleIframeLoaded);
+        if (activeCleanup) activeCleanup();
+      };
+    } else {
+      activeCleanup = attachListeners(document);
+      return () => {
+        if (activeCleanup) activeCleanup();
+      };
+    }
+  }, [template, navigateTo, isImported]);
 
   if (!modifiedPage) return null;
 
   return (
-    <StorefrontPage page={modifiedPage} assets={template.assets}>
-      <CartListPortal cart={cart} itemTemplateHtml={itemTemplateHtml} hasEmptyState={hasEmptyState} />
+    <StorefrontPage page={modifiedPage} assets={template.assets} isImported={isImported} portalSelector="#storefront-react-cart-list">
+      <CartListPortal cart={cart} itemTemplateHtml={itemTemplateHtml} hasEmptyState={hasEmptyState} isImported={isImported} />
     </StorefrontPage>
   );
 };
 
-const CartListPortal = ({ cart, itemTemplateHtml, hasEmptyState }) => {
+const CartListPortal = ({ cart, itemTemplateHtml, hasEmptyState, isImported }) => {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
   
   if (!mounted) return null;
+  
+  // Actually, we don't need to manually createPortal into the iframe because StorefrontPage already sets up a portalTarget when isImported is true!
+  // If isImported is true, StorefrontPage will automatically render children into the portalTarget!
+  // BUT we need to ensure that when isImported is false, we still manually portal into document.getElementById('storefront-react-cart-list')
+  if (isImported) {
+     return (
+       <>
+         {cart.length === 0 && !hasEmptyState ? (
+           <tr><td colSpan="5" style={{ padding: 20, textAlign: 'center' }}>Your cart is empty.</td></tr>
+         ) : (
+           cart.map(item => <CartItem key={item.id} item={item} templateHtml={itemTemplateHtml} />)
+         )}
+       </>
+     );
+  }
+
   const target = document.getElementById('storefront-react-cart-list');
   if (!target) return null;
 

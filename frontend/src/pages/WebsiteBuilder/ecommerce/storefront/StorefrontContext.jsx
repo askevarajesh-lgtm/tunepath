@@ -7,6 +7,7 @@ const StorefrontContext = createContext();
 export const StorefrontProvider = ({ children, templateId }) => {
   const { workspaceId, websiteId } = useEcommerce();
   const [template, setTemplate] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [products, setProducts] = useState([]);
   const [settings, setSettings] = useState(null);
   const [cart, setCart] = useState([]);
@@ -27,11 +28,11 @@ export const StorefrontProvider = ({ children, templateId }) => {
     if (!workspaceId || !websiteId || !templateId) return;
 
     const loadStore = async () => {
+      setIsLoading(true);
       const templates = await getTemplates(workspaceId, websiteId);
       const activeTemplate = templates[templateId];
 
       if (activeTemplate && activeTemplate.pages && !sessionStorage.getItem(`storefront_page_${workspaceId}_${websiteId}_${templateId}`)) {
-        setTemplate(activeTemplate);
         setTemplate(activeTemplate);
         
         // 1. Check URL query params for ?page=
@@ -84,28 +85,35 @@ export const StorefrontProvider = ({ children, templateId }) => {
       // Load wishlist
       const savedWishlist = JSON.parse(localStorage.getItem(`ecommerce_${workspaceId}_${websiteId}_${templateId}_wishlist`)) || [];
       setWishlist(savedWishlist);
+      setIsLoading(false);
     };
 
     loadStore();
   }, [templateId, workspaceId, websiteId]);
 
   const addToCart = (product, quantity = 1) => {
+    let result = { success: true, message: '' };
     setCart(prev => {
       let newCart;
       const pid = product.id || product._id;
       const existing = prev.find(item => item.id === pid);
       if (existing) {
         if (existing.quantity + quantity > product.stock) {
-          return prev; // Not enough stock (caller UI should warn)
+          result = { success: false, message: `Cannot add more. Only ${product.stock} left in stock.` };
+          return prev; // Not enough stock
         }
         newCart = prev.map(item => item.id === pid ? { ...item, quantity: item.quantity + quantity } : item);
       } else {
-        if (product.stock < quantity) return prev;
+        if (product.stock < quantity) {
+          result = { success: false, message: `Cannot add to cart. Only ${product.stock} left in stock.` };
+          return prev;
+        }
         newCart = [...prev, { ...product, id: pid, quantity }];
       }
       saveCart(workspaceId, websiteId, templateId, newCart);
       return newCart;
     });
+    return result;
   };
 
   const removeFromCart = (productId) => {
@@ -117,15 +125,22 @@ export const StorefrontProvider = ({ children, templateId }) => {
   };
 
   const updateQty = (productId, quantity) => {
+    let result = { success: true, value: quantity };
     setCart(prev => {
       const product = products.find(p => p.id === productId);
-      if (!product || quantity > product.stock) {
+      if (!product) {
+         result = { success: false, value: 0 };
+         return prev;
+      }
+      if (quantity > product.stock) {
+        result = { success: false, value: product.stock, message: `Only ${product.stock} left in stock.` };
         return prev; // Prevent exceeding stock
       }
       const newCart = prev.map(item => item.id === productId ? { ...item, quantity } : item);
       saveCart(workspaceId, websiteId, templateId, newCart);
       return newCart;
     });
+    return result;
   };
 
   const clearCart = () => {
@@ -175,6 +190,7 @@ export const StorefrontProvider = ({ children, templateId }) => {
 
   return (
     <StorefrontContext.Provider value={{
+      isLoading,
       template,
       products,
       settings,

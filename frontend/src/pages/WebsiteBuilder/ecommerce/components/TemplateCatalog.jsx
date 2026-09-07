@@ -16,7 +16,7 @@ const TemplateCatalog = () => {
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [storeName, setStoreName] = useState('');
   const [creating, setCreating] = useState(false);
-  
+
   const navigate = useNavigate();
   const { workspaceId, websiteId, changeTemplate } = useEcommerce();
 
@@ -48,14 +48,14 @@ const TemplateCatalog = () => {
     if (!storeName.trim()) {
       return message.warning('Please enter a store name');
     }
-    
+
     setCreating(true);
     try {
       const res = await api.post(`/ecommerce/${websiteId}/stores`, {
         name: storeName,
         catalogTemplateId: selectedTemplate.templateId
       });
-      
+
       if (res.data.success) {
         message.success('Store created successfully');
         changeTemplate(res.data.data.templateId); // which is storeId
@@ -114,9 +114,9 @@ const TemplateCatalog = () => {
         <p>You are about to create a new store using the <strong>{selectedTemplate?.name}</strong> template.</p>
         <div style={{ marginTop: 16 }}>
           <Text strong>Store Name</Text>
-          <Input 
-            value={storeName} 
-            onChange={e => setStoreName(e.target.value)} 
+          <Input
+            value={storeName}
+            onChange={e => setStoreName(e.target.value)}
             placeholder="e.g. My Awesome Store"
             style={{ marginTop: 8 }}
           />

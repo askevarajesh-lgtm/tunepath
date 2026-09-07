@@ -6,7 +6,7 @@ const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'agency_uploads',
-    allowed_formats: ['jpeg', 'jpg', 'png', 'gif', 'ico', 'svg']
+    allowed_formats: ['jpeg', 'jpg', 'png', 'gif', 'ico', 'svg', 'webp']
   }
 });
 

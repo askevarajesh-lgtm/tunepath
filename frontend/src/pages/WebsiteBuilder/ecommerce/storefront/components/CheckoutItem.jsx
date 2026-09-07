@@ -1,9 +1,9 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useStorefront } from '../StorefrontContext';
 import { formatCurrency } from '../../utils/currency';
 
-const CartItem = ({ item, templateHtml, mapping }) => {
-  const { updateQty, removeFromCart, workspaceId, websiteId, storeId } = useStorefront();
+const CheckoutItem = ({ item, templateHtml, mapping }) => {
+  const { workspaceId, websiteId, storeId } = useStorefront();
   const containerRef = useRef(null);
 
   // Parse template and inject cart item data into the original DOM structure
@@ -34,6 +34,9 @@ const CartItem = ({ item, templateHtml, mapping }) => {
           replaced = true;
           break;
         }
+      }
+      if (!replaced && el.tagName !== 'IMG' && el.tagName !== 'INPUT') {
+        el.textContent = newText;
       }
     };
 
@@ -72,21 +75,20 @@ const CartItem = ({ item, templateHtml, mapping }) => {
     if (!nameReplaced) {
       const nameWalker = document.createTreeWalker(cols[0] || itemEl, NodeFilter.SHOW_TEXT, null, false);
       while (nameNode = nameWalker.nextNode()) {
-      const txt = nameNode.textContent.trim();
-      if (txt !== '') {
-        if (!nameReplaced) {
-          nameNode.textContent = item.name;
-          nameReplaced = true;
-        } else {
-          const lowerTxt = txt.toLowerCase();
-          if (lowerTxt.includes('product') || lowerTxt.includes('name') || lowerTxt === item.name.toLowerCase()) {
-            nameNode.textContent = '';
+        const txt = nameNode.textContent.trim();
+        if (txt !== '') {
+          if (!nameReplaced) {
+            nameNode.textContent = item.name;
+            nameReplaced = true;
+          } else {
+            const lowerTxt = txt.toLowerCase();
+            if (lowerTxt.includes('product') || lowerTxt.includes('name') || lowerTxt === item.name.toLowerCase()) {
+              nameNode.textContent = '';
+            }
           }
         }
       }
     }
-    }
-    // If we didn't find any text node to replace, inject a span for the name
     if (!nameReplaced && (cols[0] || itemEl)) {
       const span = doc.createElement('span');
       span.textContent = item.name;
@@ -105,7 +107,7 @@ const CartItem = ({ item, templateHtml, mapping }) => {
     }
     
     if (priceEls.length === 0) {
-      priceEls = Array.from(itemEl.querySelectorAll('[class*="price"]'));
+      priceEls = Array.from(itemEl.querySelectorAll('[class*="price"], [class*="total"]'));
       if (priceEls.length === 0) {
         if (cols.length >= 2) priceEls.push(cols[1]);
         if (cols.length >= 4) priceEls.push(cols[3]); // Total
@@ -119,39 +121,39 @@ const CartItem = ({ item, templateHtml, mapping }) => {
       }
     }
 
-    // Quantity Input
-    let inputEls = [];
+    // Quantity Text (Read Only for Checkout)
+    let qtyEls = [];
     if (mapping?.cart?.quantityInput) {
-       inputEls = Array.from(itemEl.querySelectorAll(mapping.cart.quantityInput));
+       qtyEls = Array.from(itemEl.querySelectorAll(mapping.cart.quantityInput));
     }
-    if (inputEls.length === 0) {
-       inputEls = Array.from(itemEl.querySelectorAll('input[type="number"], input[name="quantity"], [class*="qty"] input'));
+    if (qtyEls.length === 0) {
+       qtyEls = Array.from(itemEl.querySelectorAll('input[type="number"], input[name="quantity"], [class*="qty"]'));
     }
     
-    if (inputEls.length === 0) {
-      const anyInputs = itemEl.querySelectorAll('input');
-      if (anyInputs.length > 0) {
-        inputEls = Array.from(anyInputs);
-      } else if (cols.length >= 3) {
-        cols[2].innerHTML = '';
-        const input = doc.createElement('input');
-        input.type = 'number';
-        input.style.width = '60px';
-        cols[2].appendChild(input);
-        inputEls.push(input);
-      }
-    }
-    inputEls.forEach(input => {
-      if (input.tagName === 'INPUT') {
-        input.setAttribute('value', item.quantity);
-        input.value = item.quantity; // Set property as well
-        if (item.stock) input.setAttribute('max', item.stock);
-        input.setAttribute('min', '1');
-        input.setAttribute('data-cart-action', 'update-qty');
+    qtyEls.forEach(el => {
+      if (el.tagName === 'INPUT') {
+         // Replace input with plain text span for checkout summary
+         const span = doc.createElement('span');
+         span.textContent = item.quantity;
+         span.className = el.className;
+         if(el.parentElement) el.parentElement.replaceChild(span, el);
+      } else {
+         // Just replace text containing numbers
+         const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null, false);
+         let node;
+         while (node = walker.nextNode()) {
+           if (node.textContent.trim().match(/^\d+$/)) {
+             node.textContent = item.quantity;
+           }
+         }
+         // Fallback if no specific digit text node
+         if (!el.textContent.match(/\d/)) {
+            el.innerHTML += ` <span style="margin-left:5px">× ${item.quantity}</span>`;
+         }
       }
     });
 
-    // Remove Button
+    // Remove "Remove" Button from Checkout Summary
     let removeEls = [];
     if (mapping?.cart?.removeBtn) {
        removeEls = Array.from(itemEl.querySelectorAll(mapping.cart.removeBtn));
@@ -159,25 +161,8 @@ const CartItem = ({ item, templateHtml, mapping }) => {
     if (removeEls.length === 0) {
        removeEls = Array.from(itemEl.querySelectorAll('[class*="remove"], [class*="delete"], .btn-remove'));
     }
-    
-    if (removeEls.length === 0 && cols.length >= 5) {
-      let btn = cols[4].querySelector('button, a');
-      if (!btn) {
-        cols[4].innerHTML = '';
-        btn = doc.createElement('button');
-        btn.textContent = 'Remove';
-        btn.className = 'btn btn-danger btn-sm';
-        cols[4].appendChild(btn);
-      }
-      removeEls.push(btn);
-    }
-    removeEls.forEach(btn => {
-      btn.setAttribute('data-cart-action', 'remove');
-      if (btn.tagName === 'A' && !btn.getAttribute('href')) btn.href = '#';
-    });
+    removeEls.forEach(btn => btn.remove());
 
-    itemEl.setAttribute('data-cart-item-id', item.id);
-    
     const attrs = {};
     Array.from(itemEl.attributes).forEach(attr => {
       if (attr.name === 'class') attrs.className = attr.value;
@@ -190,45 +175,6 @@ const CartItem = ({ item, templateHtml, mapping }) => {
       attrs
     };
   }, [templateHtml, item, workspaceId, websiteId, storeId]);
-
-  // Bind native event listeners to the injected HTML
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const handleClick = (e) => {
-      const removeBtn = e.target.closest('[data-cart-action="remove"]');
-      if (removeBtn) {
-        e.preventDefault();
-        e.stopPropagation();
-        removeFromCart(item.id);
-      }
-    };
-
-    const handleChange = (e) => {
-      const input = e.target.closest('[data-cart-action="update-qty"]');
-      if (input) {
-        const val = parseInt(input.value, 10);
-        if (val > 0) {
-          const result = updateQty(item.id, val);
-          if (result && !result.success) {
-            import('antd').then(({ message }) => message.warning(result.message));
-            input.value = result.value; // Revert visually to max allowed
-          }
-        }
-      }
-    };
-
-    container.addEventListener('click', handleClick);
-    container.addEventListener('change', handleChange); // input event better for number inputs
-    container.addEventListener('input', handleChange);
-
-    return () => {
-      container.removeEventListener('click', handleClick);
-      container.removeEventListener('change', handleChange);
-      container.removeEventListener('input', handleChange);
-    };
-  }, [item, removeFromCart, updateQty]);
 
   if (!processedHtml) return null;
 
@@ -254,4 +200,4 @@ const CartItem = ({ item, templateHtml, mapping }) => {
   );
 };
 
-export default CartItem;
+export default CheckoutItem;

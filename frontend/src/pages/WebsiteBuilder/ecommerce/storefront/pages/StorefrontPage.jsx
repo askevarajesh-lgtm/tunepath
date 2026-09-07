@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { resolveAssetUrls } from '../../utils/zipExtractor';
 import { useStorefront } from '../StorefrontContext';
@@ -8,8 +8,18 @@ const StorefrontPage = ({ page, assets, children, portalSelector, isImported }) 
   const iframeRef = useRef(null);
   const [portalTarget, setPortalTarget] = useState(null);
   const { cart } = useStorefront();
+  const [iframeError, setIframeError] = useState(false);
 
-  const handleInternalClick = (e) => {
+  // Stable assets reference so we don't recalculate HTML when Cart/Products change
+  const assetsRef = useRef(assets);
+  const lastPageIdRef = useRef(page?.id);
+  const loadingRef = useRef(true);
+  
+  if (!assetsRef.current || (assets && Object.keys(assets).length !== Object.keys(assetsRef.current).length)) {
+      assetsRef.current = assets;
+  }
+
+  const handleInternalClick = React.useCallback((e) => {
     // Find the closest actionable element
     const actionable = e.target.closest('a, button, [role="button"], [data-cart], [class*="cart"], [id*="cart"]');
     
@@ -64,7 +74,7 @@ const StorefrontPage = ({ page, assets, children, portalSelector, isImported }) 
         window.dispatchEvent(new CustomEvent('storefront_navigate', { detail: href }));
       }
     }
-  };
+  }, []);
 
   const updateCartBadge = (containerDoc) => {
     if (!containerDoc) return;
@@ -96,7 +106,7 @@ const StorefrontPage = ({ page, assets, children, portalSelector, isImported }) 
     const doc = parser.parseFromString(html, 'text/html');
     
     // Remove common preloaders since stripped JS won't hide them automatically
-    const preloaders = doc.querySelectorAll('#preloader, .preloader, #loader, .loader, #spinner, .spinner, .preloading');
+    const preloaders = doc.querySelectorAll('#preloader, .preloader, #loader, .loader, #spinner, .spinner, .preloading, #js-preloader, .js-preloader, #loading, .loading, .page-loader');
     preloaders.forEach(el => el.remove());
     
     // If we have a specific portal target, find it and mark it
@@ -215,7 +225,7 @@ const StorefrontPage = ({ page, assets, children, portalSelector, isImported }) 
         container.removeEventListener('click', handleInternalClick);
       }
     };
-  }, [isImported]);
+  }, [isImported, handleInternalClick]);
 
   // Sync Cart Badge for built-in
   useEffect(() => {
@@ -232,31 +242,109 @@ const StorefrontPage = ({ page, assets, children, portalSelector, isImported }) 
     }
   }, [cart, isImported]);
 
-  const handleIframeLoad = () => {
+  // Memoize resolved HTML to strictly prevent unnecessary iframe updates
+  const iframeHtml = useMemo(() => {
+    if (!isImported || !page) return '';
+    return (assetsRef.current && Object.keys(assetsRef.current).length > 0)
+      ? resolveAssetUrls(page.html, assetsRef.current)
+      : (page.html || '');
+  }, [isImported, page?.id, page?.html]);
+
+  // Reset portal target only when the actual page ID changes, not when the page object reference changes
+  useEffect(() => {
+    if (lastPageIdRef.current !== page?.id) {
+       loadingRef.current = true;
+       setPortalTarget(null);
+       setIframeError(false);
+       lastPageIdRef.current = page?.id;
+    }
+  }, [page?.id]);
+
+  const handleIframeLoad = React.useCallback(() => {
     const iframeDoc = iframeRef.current?.contentDocument;
     if (!iframeDoc) return;
+    setIframeError(false);
 
     // Remove preloaders
-    const preloaders = iframeDoc.querySelectorAll('#preloader, .preloader, #loader, .loader, #spinner, .spinner, .preloading');
+    const preloaders = iframeDoc.querySelectorAll('#preloader, .preloader, #loader, .loader, #spinner, .spinner, .preloading, #js-preloader, .js-preloader, #loading, .loading, .page-loader');
     preloaders.forEach(el => el.remove());
 
     iframeDoc.addEventListener('click', handleInternalClick);
     updateCartBadge(iframeDoc);
+
+    // Setup React Portal Target for dynamic grids/cards inside the iframe
+    if (portalSelector) {
+        let targetEl = iframeDoc.querySelector(portalSelector);
+        
+        // If targetEl is a product-card, or we couldn't find a grid but we have a product-card mapping
+        if ((targetEl && targetEl.hasAttribute('data-commerce') && targetEl.getAttribute('data-commerce') === 'product-card') || 
+            (!targetEl && (iframeDoc.querySelector('[data-commerce="product-card"]') || page.mapping?.productCard))) {
+            
+            const cardEl = targetEl && targetEl.hasAttribute('data-commerce') ? targetEl : 
+                           (iframeDoc.querySelector('[data-commerce="product-card"]') || iframeDoc.querySelector(page.mapping?.productCard));
+                           
+            if (cardEl) {
+                let current = cardEl;
+                let levels = 0;
+                while (
+                  current.parentElement && 
+                  current.parentElement.tagName !== 'BODY' &&
+                  current.parentElement.tagName !== 'HTML' &&
+                  current.parentElement.children.length === 1 && 
+                  (!current.parentElement.className || (typeof current.parentElement.className === 'string' && !current.parentElement.className.includes('row') && !current.parentElement.className.includes('grid'))) &&
+                  levels < 3
+                ) {
+                  current = current.parentElement;
+                  levels++;
+                }
+                targetEl = current.parentElement;
+                
+                if (!targetEl || targetEl.tagName === 'BODY' || targetEl.tagName === 'HTML') {
+                  targetEl = current;
+                }
+            }
+        }
+        
+        if (targetEl) {
+            // Only clear it if it hasn't been portal'd yet, to avoid wiping React's injected DOM during a late iframe load event
+            if (targetEl.getAttribute('id') !== 'storefront-react-portal') {
+              targetEl.innerHTML = ''; // Clear original static products
+              targetEl.setAttribute('id', 'storefront-react-portal');
+            }
+            setPortalTarget(targetEl);
+        }
+    }
+    
+    // Only dispatch the event once per iframe load
+    window.dispatchEvent(new CustomEvent('storefront_iframe_loaded', { detail: iframeDoc }));
+  }, [page, portalSelector, handleInternalClick]);
+
+  const handleIframeError = () => {
+    console.error("Iframe failed to load.");
+    setIframeError(true);
   };
 
-  if (isImported) {
-    const html = (assets && Object.keys(assets).length > 0)
-      ? resolveAssetUrls(page.html, assets)
-      : (page.html || '');
+  if (!page) return null;
 
+  if (isImported) {
     return (
-      <iframe
-        ref={iframeRef}
-        srcDoc={html}
-        style={{ width: '100%', minHeight: '100vh', border: 'none', display: 'block' }}
-        onLoad={handleIframeLoad}
-        title="Storefront Imported Preview"
-      />
+      <div style={{ width: '100%', minHeight: '100vh', position: 'relative' }}>
+        {iframeError ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#ff4d4f' }}>
+             Failed to load store template.
+          </div>
+        ) : (
+          <iframe
+            ref={iframeRef}
+            srcDoc={iframeHtml}
+            style={{ width: '100%', minHeight: '100vh', border: 'none', display: 'block' }}
+            onLoad={handleIframeLoad}
+            onError={handleIframeError}
+            title="Storefront Imported Preview"
+          />
+        )}
+        {portalTarget && children ? createPortal(children, portalTarget) : null}
+      </div>
     );
   }
 

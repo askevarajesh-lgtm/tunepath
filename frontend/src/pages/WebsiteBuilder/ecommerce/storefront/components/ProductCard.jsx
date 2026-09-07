@@ -138,8 +138,12 @@ const ProductCard = ({ product, templateHtml, mapping }) => {
         e.preventDefault();
         e.stopPropagation();
         if (product.stock > 0) {
-          addToCart(product);
-          message.success(`${product.name} added to cart`);
+          const result = addToCart(product);
+          if (result && !result.success) {
+            message.warning(result.message);
+          } else {
+            message.success(`${product.name} added to cart`);
+          }
         } else {
           message.warning(`${product.name} is out of stock`);
         }

@@ -47,8 +47,14 @@ exports.getCatalogTemplate = async (req, res, next) => {
 
 exports.importCatalogTemplate = async (req, res, next) => {
   try {
+    // Payload size safeguard (approximate check on raw string)
+    const payloadSize = JSON.stringify(req.body).length;
+    if (payloadSize > 5 * 1024 * 1024) { // 5MB limit
+      return res.status(413).json({ success: false, message: 'Payload too large. Avoid base64 embedding of binary assets.' });
+    }
+
     const { templateId, name, category, pages, assets, commerceBindings, metadata } = req.body;
-    
+
     if (!templateId || !name) {
       return res.status(400).json({ success: false, message: 'templateId and name are required' });
     }
@@ -56,16 +62,16 @@ exports.importCatalogTemplate = async (req, res, next) => {
     // Upsert the catalog entry
     const template = await EcommerceTemplateCatalog.findOneAndUpdate(
       { templateId },
-      { 
-        $set: { 
-          name, 
+      {
+        $set: {
+          name,
           category: category || 'General',
-          pages, 
-          assets, 
+          pages,
+          assets,
           commerceBindings,
           metadata: metadata || { importedFrom: 'zip-upload' },
           active: true
-        } 
+        }
       },
       { new: true, upsert: true }
     );
@@ -78,15 +84,15 @@ exports.importCatalogTemplate = async (req, res, next) => {
 exports.getStores = async (req, res, next) => {
   try {
     const stores = await EcommerceStore.find(getTemplateQuery(req));
-    
+
     // Map to object keyed by storeId (which uses the templateId field in DB)
     const storeMap = {};
     stores.forEach(s => {
       const sObj = s.toObject();
-      sObj.id = sObj.templateId; 
+      sObj.id = sObj.templateId;
       storeMap[sObj.templateId] = sObj;
     });
-    
+
     res.json({ success: true, data: storeMap });
   } catch (error) { next(error); }
 };
@@ -95,7 +101,7 @@ exports.createStore = async (req, res, next) => {
   try {
     let pages = req.body.pages || {};
     let assets = req.body.assets || {};
-    
+
     // If a catalogTemplateId is provided, we clone it
     if (req.body.catalogTemplateId) {
       const sourceTpl = await EcommerceTemplateCatalog.findOne({ templateId: req.body.catalogTemplateId });
@@ -104,7 +110,7 @@ exports.createStore = async (req, res, next) => {
         assets = sourceTpl.assets || {};
       }
     }
-    
+
     const store = new EcommerceStore({
       ...getTemplateQuery(req),
       templateId: req.body.id || `store_${Date.now()}`, // Using templateId field as store ID
@@ -136,10 +142,10 @@ exports.createStore = async (req, res, next) => {
       });
       await product.save();
     }
-    
+
     const sObj = store.toObject();
     sObj.id = sObj.templateId;
-    
+
     res.json({ success: true, data: sObj });
   } catch (error) { next(error); }
 };
@@ -147,7 +153,7 @@ exports.createStore = async (req, res, next) => {
 exports.updateStore = async (req, res, next) => {
   try {
     const query = { ...getTemplateQuery(req), templateId: req.params.storeId || req.params.templateId };
-    
+
     const updateData = req.body;
     if (updateData.id) delete updateData.id;
     if (updateData.templateId) delete updateData.templateId;
@@ -157,10 +163,10 @@ exports.updateStore = async (req, res, next) => {
       { $set: updateData },
       { new: true, upsert: true }
     );
-    
+
     const sObj = store.toObject();
     sObj.id = sObj.templateId;
-    
+
     res.json({ success: true, data: sObj });
   } catch (error) { next(error); }
 };
@@ -322,7 +328,7 @@ exports.checkout = async (req, res, next) => {
       let method = null;
       if (settings.shippingMethods && settings.shippingMethods.length > 0) {
         method = settings.shippingMethods.find(m => String(m.id).toLowerCase() === String(shippingMethodId).toLowerCase() && m.enabled)
-              || settings.shippingMethods.find(m => m.enabled);
+          || settings.shippingMethods.find(m => m.enabled);
       }
       if (method) {
         shippingFee = method.price;
@@ -340,7 +346,7 @@ exports.checkout = async (req, res, next) => {
     // 4. Server-Side Price & Quantity Validation
     let subtotal = 0;
     const validatedItems = [];
-    
+
     for (const item of cart) {
       if (!item.quantity || !Number.isInteger(item.quantity) || item.quantity <= 0) {
         return res.status(400).json({ success: false, message: `Invalid quantity for product ${item.name}` });
@@ -369,7 +375,7 @@ exports.checkout = async (req, res, next) => {
     // 5. Atomic Stock Deduction with Manual Rollback
     const successfullyDeducted = [];
     let failedProduct = null;
-    
+
     for (const item of validatedItems) {
       const updateRes = await EcommerceProduct.updateOne(
         { ...query, _id: item.productId, stock: { $gte: item.quantity } },
@@ -394,7 +400,19 @@ exports.checkout = async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Checkout failed: Insufficient stock for ${failedProduct.name}. Someone just bought the last item.` });
     }
 
-    // 6. Customer Upsertion
+    // 6. Customer Validation & Upsertion
+    if (!customerDetails || !customerDetails.email || typeof customerDetails.email !== 'string') {
+       // Rollback stock if customer details are missing since we already deducted it!
+       for (const item of successfullyDeducted) {
+         await EcommerceProduct.updateOne({ ...query, _id: item.productId }, { $inc: { stock: item.quantity } });
+       }
+       return res.status(400).json({ success: false, message: 'Customer email is required for checkout.' });
+    }
+    
+    if (!customerDetails.name) {
+       customerDetails.name = 'Guest Customer';
+    }
+
     const normalizedEmail = customerDetails.email.toLowerCase().trim();
     const customer = await EcommerceCustomer.findOneAndUpdate(
       { ...query, email: normalizedEmail },
@@ -473,7 +491,7 @@ exports.updateOrderStatus = async (req, res, next) => {
     const query = getIsolatedQuery(req);
     const { orderId } = req.params;
     const { status } = req.body;
-    
+
     if (!status) return res.status(400).json({ success: false, message: 'Status is required' });
 
     const order = await EcommerceOrder.findOneAndUpdate(
@@ -490,7 +508,7 @@ exports.updateOrderStatus = async (req, res, next) => {
         { status }
       );
     }
-    
+
     res.json({ success: true, order });
   } catch (error) { next(error); }
 };

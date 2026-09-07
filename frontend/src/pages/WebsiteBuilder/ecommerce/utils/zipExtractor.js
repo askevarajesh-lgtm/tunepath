@@ -158,52 +158,78 @@ export const processZipFile = async (file) => {
 
 export const resolveAssetUrls = (html, assets) => {
   if (!html && !assets) return html;
+  if (!assets || Object.keys(assets).length === 0) return html;
   
-  // Create a deep copy of assets so we can mutate the CSS content
-  const processedAssets = JSON.parse(JSON.stringify(assets));
-  const assetPaths = Object.keys(processedAssets).sort((a, b) => b.length - a.length);
+  const assetPaths = Object.keys(assets).sort((a, b) => b.length - a.length);
 
-  const getReplacement = (asset) => {
-    if (asset.ext === 'js') return '#';
+  // Local cache for this run
+  const replacementCache = new Map();
+
+  const getReplacement = (asset, assetPath) => {
+    if (replacementCache.has(assetPath)) {
+      const cached = replacementCache.get(assetPath);
+      if (cached === 'PENDING') return '';
+      return cached;
+    }
+
+    if (asset.ext === 'js') {
+      replacementCache.set(assetPath, '#');
+      return '#';
+    }
+    if (asset.type === 'url') {
+      replacementCache.set(assetPath, asset.content);
+      return asset.content;
+    }
+    
+    if (asset.ext === 'css' && asset.type === 'text') {
+      replacementCache.set(assetPath, 'PENDING'); // Prevent recursion
+      let cssContent = asset.content;
+      assetPaths.forEach(innerPath => {
+        if (innerPath === assetPath) return; // don't self-replace
+        
+        // Fast path: skip replacement if this asset isn't even mentioned
+        if (!cssContent.includes(innerPath)) return;
+        
+        const innerAsset = assets[innerPath];
+        const innerReplacement = getReplacement(innerAsset, innerPath);
+        if (innerReplacement && innerReplacement !== '#') {
+          const escapedPath = innerPath.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const regex = new RegExp(`url\\(\\s*['"]?([^'"]*?)(${escapedPath})([^'"]*)['"]?\\s*\\)`, 'gi');
+          cssContent = cssContent.replace(regex, `url("${innerReplacement}")`);
+        }
+      });
+      const result = `data:text/css;base64,${btoa(unescape(encodeURIComponent(cssContent)))}`;
+      replacementCache.set(assetPath, result);
+      return result;
+    }
+
     if (asset.type === 'text') {
-      // Base64 encode text assets to avoid any URI parsing issues
-      if (asset.ext === 'css') return `data:text/css;base64,${btoa(unescape(encodeURIComponent(asset.content)))}`;
-      if (asset.ext === 'svg') return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(asset.content)))}`;
-      if (asset.ext === 'json') return `data:application/json;base64,${btoa(unescape(encodeURIComponent(asset.content)))}`;
+      if (asset.ext === 'svg') {
+         const result = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(asset.content)))}`;
+         replacementCache.set(assetPath, result);
+         return result;
+      }
+      if (asset.ext === 'json') {
+         const result = `data:application/json;base64,${btoa(unescape(encodeURIComponent(asset.content)))}`;
+         replacementCache.set(assetPath, result);
+         return result;
+      }
     }
     let mime = asset.ext;
     if (asset.ext === 'jpg') mime = 'jpeg';
     if (['woff', 'woff2', 'ttf', 'otf'].includes(asset.ext)) mime = `font/${asset.ext}`;
     else if (['mp4', 'webm'].includes(asset.ext)) mime = `video/${asset.ext}`;
     else mime = `image/${mime}`;
-    return `data:${mime};base64,${asset.content}`;
+    const result = `data:${mime};base64,${asset.content}`;
+    replacementCache.set(assetPath, result);
+    return result;
   };
 
-  // Pre-process CSS files to resolve URLs inside them
-  assetPaths.forEach(cssPath => {
-    if (processedAssets[cssPath].ext === 'css') {
-      let cssContent = processedAssets[cssPath].content;
-      assetPaths.forEach(assetPath => {
-        if (assetPath === cssPath) return; // don't self-replace
-        const asset = processedAssets[assetPath];
-        const replacement = getReplacement(asset);
-        if (replacement && replacement !== '#') {
-          const escapedPath = assetPath.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-          // Match url(...) with optional quotes and spaces, and any suffix like ?#
-          const regex = new RegExp(`url\\(\\s*['"]?([^'"]*?)(${escapedPath})([^'"]*)['"]?\\s*\\)`, 'gi');
-          cssContent = cssContent.replace(regex, `url("${replacement}")`);
-        }
-      });
-      processedAssets[cssPath].content = cssContent;
-    }
-  });
-
-  if (!html) return html;
   let resolvedHtml = html;
 
   assetPaths.forEach(assetPath => {
-    const asset = processedAssets[assetPath];
-    const replacement = getReplacement(asset);
+    const asset = assets[assetPath];
+    const replacement = getReplacement(asset, assetPath);
     
     if (replacement && replacement !== '#') {
       const escapedPath = assetPath.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
@@ -221,7 +247,7 @@ export const resolveAssetUrls = (html, assets) => {
           if (lowerMatch.startsWith('src')) return `src="${replacement}"`;
           if (lowerMatch.startsWith('href')) return `href="${replacement}"`;
           if (lowerMatch.startsWith('url')) return `url("${replacement}")`;
-          if (lowerMatch.startsWith('srcset')) return `srcset="${replacement}"`; // drop suffix for srcset in MVP
+          if (lowerMatch.startsWith('srcset')) return `srcset="${replacement}"`;
           return match;
         });
       });

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Drawer, Badge, List, Button, Typography, Space } from 'antd';
+import { Drawer, Badge, List, Button, Typography, Space, Spin } from 'antd';
 import { ShoppingCart } from 'lucide-react';
 import { StorefrontProvider, useStorefront } from './StorefrontContext';
 import ProductListPage from './pages/ProductListPage';
@@ -13,8 +13,35 @@ import { useParams } from 'react-router-dom';
 
 const { Text } = Typography;
 
+class StorefrontErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Storefront Error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 40, textAlign: 'center', color: '#ff4d4f' }}>
+          <h3>Something went wrong in the storefront.</h3>
+          <p>Please try refreshing the page.</p>
+        </div>
+      );
+    }
+    return this.props.children; 
+  }
+}
+
 const StorefrontRendererContent = () => {
-  const { template, currentPageId, cart, wishlist, workspaceId, websiteId, navigateTo } = useStorefront();
+  const { template, isLoading, currentPageId, cart, wishlist, workspaceId, websiteId, navigateTo } = useStorefront();
 
   // Intercept navigation events emitted by StorefrontPage
   React.useEffect(() => {
@@ -80,6 +107,10 @@ const StorefrontRendererContent = () => {
     return () => window.removeEventListener('storefront_navigate', handleNavigate);
   }, [template, navigateTo]);
 
+  if (isLoading) {
+    return <div style={{ padding: 40, textAlign: 'center' }}><Spin size="large" /></div>;
+  }
+
   if (!template) {
     return <div style={{ padding: 40, textAlign: 'center' }}>No template active.</div>;
   }
@@ -93,29 +124,39 @@ const StorefrontRendererContent = () => {
 
   let PageComponent = null;
 
-  if (!isImported && page.role === 'Product Listing') {
-    PageComponent = <ProductListPage />;
-  } else if (!isImported && page.role === 'Product Detail') {
-    PageComponent = <ProductDetailPage />;
-  } else if (!isImported && page.role === 'Cart') {
-    PageComponent = <CartPage />;
-  } else if (!isImported && page.role === 'Checkout') {
-    PageComponent = <CheckoutPage />;
+  if (page.role === 'Product Listing') {
+    PageComponent = <ProductListPage isImported={isImported} />;
+  } else if (page.role === 'Product Detail') {
+    PageComponent = <ProductDetailPage isImported={isImported} />;
+  } else if (page.role === 'Cart') {
+    PageComponent = <CartPage isImported={isImported} />;
+  } else if (page.role === 'Checkout') {
+    PageComponent = <CheckoutPage isImported={isImported} />;
   } else {
-    // Generic page
-    const hasGrid = !isImported && (page.html?.includes('data-commerce="product-grid"') || page.mapping?.productGrid);
-    const hasWishlistGrid = !isImported && (page.html?.includes('data-commerce="wishlist-grid"') || page.html?.includes('data-commerce="wishlist"'));
+    // Generic page (works for both built-in and imported templates)
+    const hasGrid = page.html?.includes('data-commerce="product-grid"') || page.html?.includes('data-commerce="product-card"') || page.mapping?.productGrid || page.mapping?.productCard;
+    const hasWishlistGrid = page.html?.includes('data-commerce="wishlist-grid"') || page.html?.includes('data-commerce="wishlist"');
     
     if (hasGrid) {
       PageComponent = (
-        <StorefrontPage page={page} assets={template.assets} portalSelector={`[data-commerce="product-grid"]${page.mapping?.productGrid ? `, ${page.mapping.productGrid}` : ''}`}>
+        <StorefrontPage 
+          page={page} 
+          assets={template.assets} 
+          isImported={isImported}
+          portalSelector={`[data-commerce="product-grid"]${page.mapping?.productGrid ? `, ${page.mapping.productGrid}` : ''}`}
+        >
           <ProductGrid mapping={page.mapping} html={page.html} />
         </StorefrontPage>
       );
     } else if (hasWishlistGrid) {
       const selector = page.html?.includes('data-commerce="wishlist-grid"') ? '[data-commerce="wishlist-grid"]' : '[data-commerce="wishlist"]';
       PageComponent = (
-        <StorefrontPage page={page} assets={template.assets} portalSelector={selector}>
+        <StorefrontPage 
+          page={page} 
+          assets={template.assets} 
+          isImported={isImported}
+          portalSelector={selector}
+        >
           <ProductGrid mapping={page.mapping} html={page.html} items={wishlist} />
         </StorefrontPage>
       );
@@ -145,7 +186,9 @@ const StorefrontRenderer = ({ templateId: propTemplateId }) => {
 
   return (
     <StorefrontProvider templateId={targetTemplateId}>
-      <StorefrontRendererContent />
+      <StorefrontErrorBoundary>
+        <StorefrontRendererContent />
+      </StorefrontErrorBoundary>
     </StorefrontProvider>
   );
 };

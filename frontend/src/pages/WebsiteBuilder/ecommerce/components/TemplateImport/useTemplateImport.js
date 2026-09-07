@@ -151,35 +151,94 @@ export const useTemplateImport = (websiteId) => {
       return resolveAssetUrls(pages[path].html, assets);
   };
   
+  const base64ToBlob = (base64, mime) => {
+      const byteCharacters = atob(base64);
+      const byteArrays = [];
+      for (let i = 0; i < byteCharacters.length; i += 512) {
+          const slice = byteCharacters.slice(i, i + 512);
+          const byteNumbers = new Array(slice.length);
+          for (let i = 0; i < slice.length; i++) {
+              byteNumbers[i] = slice.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          byteArrays.push(byteArray);
+      }
+      return new Blob(byteArrays, { type: mime });
+  };
+
+  const getMimeType = (ext) => {
+      let mime = ext;
+      if (ext === 'jpg') mime = 'jpeg';
+      if (['woff', 'woff2', 'ttf', 'otf'].includes(ext)) return `font/${ext}`;
+      if (['mp4', 'webm'].includes(ext)) return `video/${ext}`;
+      if (['css', 'js', 'json', 'html', 'svg'].includes(ext)) return 'text/plain'; // handled as text or base64 text
+      return `image/${mime}`;
+  };
+
   const importToCatalog = async () => {
       setLoading(true);
+      message.loading({ content: 'Uploading assets...', key: 'importStatus', duration: 0 });
       try {
           const boundPages = generateCommerceBindings();
           
-          // CRITICAL FIX: Pre-resolve all assets (images, fonts, etc.) into data URIs
-          // BEFORE sending to backend. This makes each page's HTML self-contained,
-          // ensuring Import Preview === Store Preview (both render from the same resolved HTML).
-          //
-          // Previously: raw HTML with relative paths was stored, then assets (with binary stripped)
-          // were sent separately. StorefrontPage tried to re-resolve but binary content was gone,
-          // causing all images/fonts to break in Store Preview.
-          const resolvedPages = {};
-          for (const path in boundPages) {
-              const page = boundPages[path];
-              const resolvedHtml = resolveAssetUrls(page.html, assets);
-              resolvedPages[path] = { ...page, html: resolvedHtml };
+          const safeAssets = { ...assets };
+          const uploadTasks = [];
+          
+          const allowedCloudinaryExts = ['jpeg', 'jpg', 'png', 'gif', 'ico', 'svg', 'webp'];
+          
+          for (const path in safeAssets) {
+              const asset = safeAssets[path];
+              if (asset.type === 'base64') {
+                  const ext = (asset.ext || '').toLowerCase();
+                  if (allowedCloudinaryExts.includes(ext)) {
+                      uploadTasks.push({ path, asset });
+                  }
+              }
           }
           
-          // Only send text assets (CSS) to backend — they are needed by StorefrontPage
-          // for the page.css field injection. Binary assets are now embedded in HTML.
-          const safeAssets = {};
+          // Batch upload (concurrency = 5)
+          const BATCH_SIZE = 5;
+          for (let i = 0; i < uploadTasks.length; i += BATCH_SIZE) {
+              const batch = uploadTasks.slice(i, i + BATCH_SIZE);
+              
+              await Promise.all(batch.map(async ({ path, asset }) => {
+                  try {
+                      const mime = getMimeType(asset.ext);
+                      const blob = base64ToBlob(asset.content, mime);
+                      
+                      const formData = new FormData();
+                      const filename = path.split('/').pop() || 'asset';
+                      formData.append('file', blob, filename);
+                      formData.append('folder', 'ecommerce_templates');
+                      
+                      const res = await api.post('/media/upload', formData, {
+                          headers: { 'Content-Type': 'multipart/form-data' }
+                      });
+                      
+                      if (res.data && res.data.success && res.data.data && res.data.data.url) {
+                          safeAssets[path] = {
+                              ...asset,
+                              type: 'url',
+                              content: res.data.data.url
+                          };
+                      } else {
+                          throw new Error('Upload failed for ' + path);
+                      }
+                  } catch (err) {
+                      console.error('Failed to upload asset:', path, err);
+                      throw new Error(`Failed to upload asset: ${path}`);
+                  }
+              }));
+          }
           
+          message.loading({ content: 'Saving to catalog...', key: 'importStatus', duration: 0 });
+
           const payload = {
               templateId: `import-${templateMeta.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${Date.now()}`,
               name: templateMeta.name,
               category: templateMeta.category,
-              pages: resolvedPages,
-              assets: safeAssets,
+              pages: boundPages, // Using lightweight HTML
+              assets: safeAssets, // Containing URLs for images and text for CSS/JS
               commerceBindings: analysisResults,
               metadata: {
                   importedFrom: 'zip-upload',
@@ -190,14 +249,14 @@ export const useTemplateImport = (websiteId) => {
           const res = await api.post(`/ecommerce/${websiteId}/catalog/import`, payload);
           
           if (res.data.success) {
-              message.success('Template imported to catalog successfully!');
+              message.success({ content: 'Template imported successfully!', key: 'importStatus' });
               return true;
           } else {
               throw new Error(res.data.message || 'Import failed');
           }
       } catch (err) {
           console.error(err);
-          message.error(err.message || 'Import to catalog failed.');
+          message.error({ content: err.message || 'Import to catalog failed.', key: 'importStatus' });
           return false;
       } finally {
           setLoading(false);

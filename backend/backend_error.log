@@ -1221,4 +1221,4 @@ Require stack:
     at async Collection.insertOne (D:\Louis\Task\BCC\bcc 1\bcc\backend\node_modules\mongodb\lib\collection.js:154:16)
     at async model.$__save (D:\Louis\Task\BCC\bcc 1\bcc\backend\node_modules\mongoose\lib\model.js:434:16)
     at async maybeTracedSave (D:\Louis\Task\BCC\bcc 1\bcc\backend\node_modules\mongoose\lib\model.js:675:7)
-    at async exports.checkout (D:\Louis\Task\BCC\bcc 1\bcc\backend\src\modules\ecommerce\ecommerce.controller.js:150:7)\n\n
+    at async exports.checkout (D:\Louis\Task\BCC\bcc 1\bcc\backend\src\modules\ecommerce\ecommerce.controller.js:150:7)\n\n2026-09-05T11:09:08.064Z\nundefined\n\n2026-09-05T11:09:08.127Z\nundefined\n\n
