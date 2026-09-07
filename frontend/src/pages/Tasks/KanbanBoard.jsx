@@ -153,6 +153,8 @@ const TaskCardInner = ({
 }) => {
   const [mobileMoveSelectKey, setMobileMoveSelectKey] = useState(0);
 
+  const isAssigned = task.assignedTo &&
+    ((task.assignedTo._id || task.assignedTo)?.toString() === user?._id?.toString());
   const isCreator = task.createdBy &&
     ((task.createdBy._id || task.createdBy)?.toString() === user?._id?.toString());
   const canEditThisTask = canEdit && isCreator;
@@ -195,8 +197,8 @@ const TaskCardInner = ({
     "commander_admin",
   ];
   const isAdmin = adminRoles.includes(userRole);
-  // Task creator should also be able to drag (e.g., to move from Review for Correction/Redesign)
-  const canDragHandle = isAdmin || isCreator;
+  // Task creator or assignee should also be able to drag/move task between columns
+  const canDragHandle = isAdmin || isCreator || isAssigned;
   const canEditTaskDetails = canEdit;
 
   // Category chip config
@@ -2079,13 +2081,19 @@ const KanbanBoard = ({
       (a, b) => (a.order ?? 0) - (b.order ?? 0),
     );
     const currentStatusIndex = sortedStatuses.findIndex(
-      (s) => s.id === currentStatusId,
+      (s) => s.id === currentStatusId || (s.id === "done" && currentStatusId === "complete") || (s.id === "complete" && currentStatusId === "done"),
     );
     if (currentStatusIndex === -1) return statuses.map((s) => s.id);
     const validStatusIds = new Set();
     validStatusIds.add(currentStatusId);
-    if (currentStatusIndex < sortedStatuses.length - 1)
-      validStatusIds.add(sortedStatuses[currentStatusIndex + 1].id);
+    if (currentStatusId === "done") validStatusIds.add("complete");
+    if (currentStatusId === "complete") validStatusIds.add("done");
+    if (currentStatusIndex < sortedStatuses.length - 1) {
+      const nextId = sortedStatuses[currentStatusIndex + 1].id;
+      validStatusIds.add(nextId);
+      if (nextId === "done") validStatusIds.add("complete");
+      if (nextId === "complete") validStatusIds.add("done");
+    }
     if (currentStatusIndex > 0)
       validStatusIds.add(sortedStatuses[currentStatusIndex - 1].id);
     for (let i = 0; i < currentStatusIndex; i++)
@@ -2132,22 +2140,27 @@ const KanbanBoard = ({
         return false;
       }
       
+      const isAssigned = task.assignedTo &&
+        ((task.assignedTo._id || task.assignedTo)?.toString() === user?._id?.toString());
       const isCreator = task.createdBy &&
         ((task.createdBy._id || task.createdBy)?.toString() === user?._id?.toString());
-      const canBypassWorkflow = isCreator || kanbanIsAdmin;
-      // Globally prevent moving backward before In Progress once it has started
+      const canBypassWorkflow = isCreator || isAssigned || isAdmin;
+      
+      // Prevent moving backward before In Progress once it has started, unless authorized (creator/assignee/admin)
       if (
+        !canBypassWorkflow &&
         inProgressOrBeyond.includes(currentStatusId) &&
         beforeInProgress.includes(id)
       ) {
         return false;
       }
-      // Globally prevent moving from Hold/backlog to anything other than In Progress
+      // Prevent moving from Hold/backlog to anything other than In Progress / To Do
       if (
         (currentStatusId === "backlog" || currentStatusId === "hold") &&
         id !== "backlog" &&
         id !== "hold" &&
-        id !== "in_progress"
+        id !== "in_progress" &&
+        id !== "to_do"
       ) {
         return false;
       }
@@ -2223,7 +2236,7 @@ const KanbanBoard = ({
     if (
       sourceStatus === "to_do" &&
       targetStatusId !== "in_progress" &&
-      !isAdmin
+      !isAdmin && !draggedTask.assignedTo
     ) {
       message.warning(
         "Tasks must be moved to 'In Progress' from 'To Do' before being completed.",
@@ -2261,7 +2274,11 @@ const KanbanBoard = ({
       return;
     }
     const validNextStatuses = getValidNextStatuses(draggedTask, sourceStatus);
-    if (!validNextStatuses.includes(targetStatusId)) {
+    const isTargetValid = validNextStatuses.includes(targetStatusId) ||
+      (targetStatusId === "complete" && validNextStatuses.includes("done")) ||
+      (targetStatusId === "done" && validNextStatuses.includes("complete"));
+
+    if (!isTargetValid) {
       message.warning(
         `Cannot move task to "${statuses.find((s) => s.id === targetStatusId)?.name || targetStatusId}". Please follow the workflow order.`,
       );
