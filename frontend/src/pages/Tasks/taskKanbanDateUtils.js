@@ -18,27 +18,24 @@ export function taskMatchesKanbanDay(task, day) {
     const createdAt = d(task.createdAt);
     const actualCompletionDate = d(task.actualCompletionDate);
     const validatedAt = d(task.validatedAt);
+    const updatedAt = d(task.updatedAt);
 
     const hasStart =
         ok(startDate) && task.startDate !== null && task.startDate !== undefined;
 
-    const completionGuard = () => {
-        return !ok(actualCompletionDate);
-    };
-
     if (hasStart && ok(dueDate)) {
-        const optionA =
-            startDate.valueOf() <= e && dueDate.valueOf() >= s && completionGuard();
-        if (optionA) return true;
+        if (startDate.valueOf() <= e && dueDate.valueOf() >= s) return true;
     }
 
     const noStart =
         !hasStart || task.startDate === null || task.startDate === undefined;
 
-    if (noStart && ok(createdAt) && ok(dueDate)) {
-        const optionB =
-            createdAt.valueOf() <= e && dueDate.valueOf() >= s && completionGuard();
-        if (optionB) return true;
+    if (noStart && ok(dueDate)) {
+        if (dueDate.valueOf() >= s && dueDate.valueOf() <= e) return true;
+    }
+
+    if (noStart && !ok(dueDate) && ok(createdAt)) {
+        if (createdAt.valueOf() >= s && createdAt.valueOf() <= e) return true;
     }
 
     if (ok(actualCompletionDate)) {
@@ -49,6 +46,11 @@ export function taskMatchesKanbanDay(task, day) {
     if (ok(validatedAt)) {
         const va = validatedAt.valueOf();
         if (va >= s && va <= e) return true;
+    }
+
+    if (ok(updatedAt)) {
+        const u = updatedAt.valueOf();
+        if (u >= s && u <= e) return true;
     }
 
     return false;
@@ -64,21 +66,12 @@ export function taskScheduledForKanbanDay(task, day) {
     const startDate = d(task.startDate);
     const dueDate = d(task.dueDate);
     const createdAt = d(task.createdAt);
-    const actualCompletionDate = d(task.actualCompletionDate);
 
     const hasStart =
         ok(startDate) && task.startDate !== null && task.startDate !== undefined;
 
-    const completionGuard = () => {
-        return !ok(actualCompletionDate);
-    };
-
     if (hasStart && ok(dueDate)) {
-        if (
-            startDate.valueOf() <= e &&
-            dueDate.valueOf() >= s &&
-            completionGuard()
-        ) {
+        if (startDate.valueOf() <= e && dueDate.valueOf() >= s) {
             return true;
         }
     }
@@ -86,17 +79,19 @@ export function taskScheduledForKanbanDay(task, day) {
     const noStart =
         !hasStart || task.startDate === null || task.startDate === undefined;
 
-    if (noStart && ok(createdAt) && ok(dueDate)) {
-        return (
-            createdAt.valueOf() <= e && dueDate.valueOf() >= s && completionGuard()
-        );
+    if (noStart && ok(dueDate)) {
+        return dueDate.valueOf() >= s && dueDate.valueOf() <= e;
+    }
+
+    if (noStart && !ok(dueDate) && ok(createdAt)) {
+        return createdAt.valueOf() >= s && createdAt.valueOf() <= e;
     }
 
     return false;
 }
 
 export function taskCompletedOnDay(task, day) {
-    const terminal = ["completed", "complete", "validated", "done", "review"];
+    const terminal = ["completed", "complete", "validated", "done", "review", "rejected"];
     const taskStatus = (task?.status || "").toLowerCase();
     if (!terminal.includes(taskStatus)) return false;
 

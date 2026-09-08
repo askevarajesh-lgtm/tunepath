@@ -394,7 +394,8 @@ const TasksPage = () => {
     if (!user) return;
     if (!isGlobalAdmin) {
       if (userDepartmentSlug) {
-        setSelectedDepartment(userDepartmentSlug);
+        const isValidInItems = departmentTabItems.some((i) => i.value === userDepartmentSlug);
+        setSelectedDepartment(isValidInItems ? userDepartmentSlug : "all");
       }
     } else {
       if (userDepartmentSlug) {

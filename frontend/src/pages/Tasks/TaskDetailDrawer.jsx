@@ -53,7 +53,7 @@ import TaskReopenModal from "./TaskReopenModal";
 
 const { TextArea } = Input;
 
-const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
+const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverablesModule = false }) => {
   const navigate = useNavigate();
   const [commentText, setCommentText] = useState("");
   const [activeTab, setActiveTab] = useState("details");
@@ -65,6 +65,10 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
 
   const [isHoldModalVisible, setIsHoldModalVisible] = useState(false);
   const [holdReason, setHoldReason] = useState("");
+  const [isRejectModalVisible, setIsRejectModalVisible] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [isRejecting, setIsRejecting] = useState(false);
+
   const [updateTask] = useUpdateTaskMutation();
   const [clientApproveTask, { isLoading: isApproving }] = useClientApproveTaskMutation();
   const [holdTask, { isLoading: isHoldingTask }] = useHoldTaskMutation();
@@ -131,6 +135,13 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
     if (item?.metadata?.holdReason) return item.metadata.holdReason;
     const desc = item?.description || "";
     const match = desc.match(/hold reason:\s*(.*)$/i);
+    return match?.[1]?.trim() || null;
+  };
+
+  const getRejectionReasonFromActivity = (item) => {
+    if (item?.metadata?.rejectionReason) return item.metadata.rejectionReason;
+    const desc = item?.description || "";
+    const match = desc.match(/rejection reason:\s*(.*)$/i);
     return match?.[1]?.trim() || null;
   };
 
@@ -204,6 +215,45 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
       onClose();
     } catch (err) {
       notifyError('hold', task._id, err.data?.message || "Failed to hold task");
+    }
+  };
+
+  const isClientPanel = window.location.pathname.startsWith('/client') || ['brand_super_admin', 'brand_manager', 'agency_client', 'client', 'brand_team_user'].includes(userRole);
+  const isDeliverable = isDeliverablesModule || window.location.pathname.includes('deliverables') || liveTask?.deliverableId || liveTask?.serviceType;
+  const hideHoldAndReopen = (isClientPanel && isDeliverable) || isDeliverablesModule || window.location.pathname.includes('/client/deliverables');
+
+  const handleRejectSubmit = async () => {
+    if (!rejectReason.trim()) {
+      message.warning("Please enter the rejection reason and specify required changes.");
+      return;
+    }
+    const taskId = liveTask?._id || task._id;
+    setIsRejecting(true);
+    try {
+      const reasonText = rejectReason.trim();
+      await updateTask({ id: taskId, status: 'rejected', clientReviewStatus: 'correction_requested', rejectionReason: reasonText }).unwrap();
+      
+      try {
+        await addComment({
+          taskId,
+          content: `[Rejection Reason & Required Changes]\n${reasonText}`,
+        }).unwrap();
+      } catch (commentErr) {
+        console.error("Failed to post rejection comment:", commentErr);
+      }
+
+      notifySuccess('task', taskId, 'Task rejected and feedback submitted');
+      setIsRejectModalVisible(false);
+      setRejectReason("");
+      
+      if (typeof onTaskCompleted === 'function') {
+        onTaskCompleted();
+      }
+      onClose();
+    } catch (err) {
+      notifyError('task', taskId, err.data?.message || "Failed to reject task");
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -485,42 +535,51 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
               <Empty description="No comments yet" />
             ) : (
               <Space direction="vertical" style={{ width: "100%" }}>
-                {comments.map((comment) => (
-                  <div
-                    key={comment._id}
-                    style={{
-                      padding: 12,
-                      backgroundColor: "hsl(var(--muted))",
-                      borderRadius: 8,
-                      marginBottom: 8,
-                    }}
-                  >
+                {comments.map((comment) => {
+                  const isRejectionComment = comment.content?.includes("Rejection Reason") || comment.content?.includes("correction_requested");
+                  return (
                     <div
+                      key={comment._id}
                       style={{
-                        display: "flex",
-                        alignItems: "center",
+                        padding: 12,
+                        backgroundColor: isRejectionComment ? "rgba(255, 77, 79, 0.05)" : "hsl(var(--muted))",
+                        border: isRejectionComment ? "1px solid #ffccc7" : "none",
+                        borderRadius: 8,
                         marginBottom: 8,
                       }}
                     >
-                      <Avatar size="small" src={comment.userId?.avatar}>
-                        {comment.userId?.name?.charAt(0) || <UserOutlined />}
-                      </Avatar>
-                      <span style={{ marginLeft: 8, fontWeight: "bold" }}>
-                        {comment.userId?.name || "Unknown"}
-                      </span>
-                      <span
+                      <div
                         style={{
-                          marginLeft: 8,
-                          color: "#999",
-                          fontSize: "12px",
+                          display: "flex",
+                          alignItems: "center",
+                          marginBottom: 8,
                         }}
                       >
-                        {dayjs(comment.createdAt).format("MMM DD, YYYY HH:mm")}
-                      </span>
+                        <Avatar size="small" src={comment.userId?.avatar}>
+                          {comment.userId?.name?.charAt(0) || <UserOutlined />}
+                        </Avatar>
+                        <span style={{ marginLeft: 8, fontWeight: "bold" }}>
+                          {comment.userId?.name || "Unknown"}
+                        </span>
+                        <span
+                          style={{
+                            marginLeft: 8,
+                            color: "#999",
+                            fontSize: "12px",
+                          }}
+                        >
+                          {dayjs(comment.createdAt).format("MMM DD, YYYY HH:mm")}
+                        </span>
+                        {isRejectionComment && (
+                          <Tag color="red" style={{ marginLeft: "auto" }}>
+                            Rejection Feedback
+                          </Tag>
+                        )}
+                      </div>
+                      <div style={{ whiteSpace: "pre-wrap" }}>{comment.content}</div>
                     </div>
-                    <div>{comment.content}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </Space>
             )}
           </div>
@@ -546,6 +605,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
                 <Timeline.Item key={item._id}>
                   {(() => {
                     const holdReason = getHoldReasonFromActivity(item);
+                    const rejectionReason = getRejectionReasonFromActivity(item);
                     return (
                       <div>
                         <strong>{item.userId?.name || "System"}</strong>
@@ -555,6 +615,11 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
                         {holdReason && (
                           <div style={{ marginTop: 6 }}>
                             <Tag color="orange">Hold Reason: {holdReason}</Tag>
+                          </div>
+                        )}
+                        {rejectionReason && (
+                          <div style={{ marginTop: 6 }}>
+                            <Tag color="red">Rejection Reason: {rejectionReason}</Tag>
                           </div>
                         )}
                         <div
@@ -721,19 +786,13 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
                     >
                       Approve
                     </Button>
-                    <Popconfirm
-                      title="Are you sure you want to reject this task?"
-                      onConfirm={() => handleClientAction('rejected')}
-                      okText="Yes"
-                      cancelText="No"
+                    <Button
+                      type="primary"
+                      danger
+                      onClick={() => setIsRejectModalVisible(true)}
                     >
-                      <Button
-                        type="primary"
-                        danger
-                      >
-                        Reject
-                      </Button>
-                    </Popconfirm>
+                      Reject
+                    </Button>
                   </>
                 )}
               {liveTask && liveTask.clientReviewStatus === 'approved' && (
@@ -742,6 +801,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
                 </Tag>
               )}
               {task &&
+                !hideHoldAndReopen &&
                 (canEditTaskDetails || (task.assignedTo && (task.assignedTo._id === user._id || task.assignedTo === user._id))) &&
                 task.status !== "hold" &&
                 !["done", "validated", "completed", "complete"].includes(task.status) && (
@@ -780,6 +840,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
                 </Popconfirm>
               )}
               {task &&
+                !hideHoldAndReopen &&
                 canEdit &&
                 isCompletedTask(task.status) && (
                   <Button
@@ -854,6 +915,28 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted }) => {
           placeholder="Enter reason for putting this task on hold..."
           value={holdReason}
           onChange={(e) => setHoldReason(e.target.value)}
+        />
+      </Modal>
+      <Modal
+        title="Reject Task / Deliverable"
+        open={isRejectModalVisible}
+        onOk={handleRejectSubmit}
+        onCancel={() => {
+          setIsRejectModalVisible(false);
+          setRejectReason("");
+        }}
+        confirmLoading={isRejecting}
+        okText="Submit Rejection"
+        okButtonProps={{ danger: true }}
+      >
+        <div style={{ marginBottom: 8 }}>
+          <span style={{ color: "red" }}>*</span> Rejection Reason & Required Changes:
+        </div>
+        <TextArea
+          rows={4}
+          placeholder="Please describe why this deliverable is being rejected and mention any required changes..."
+          value={rejectReason}
+          onChange={(e) => setRejectReason(e.target.value)}
         />
       </Modal>
     </>

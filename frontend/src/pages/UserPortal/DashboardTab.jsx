@@ -7,6 +7,7 @@ import { useGetTodayNoteQuery, useCreateOrUpdateTodayNoteMutation } from '../../
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
+import { taskMatchesKanbanDay } from '../Tasks/taskKanbanDateUtils';
 
 const { Title, Text } = Typography;
 const { TabPane } = Tabs;
@@ -41,10 +42,12 @@ const UserDashboard = () => {
     const allTasks = tasksData?.data?.data || tasksData?.data?.tasks || [];
 
     const tasks = useMemo(() => {
-        // Filter tasks assigned to the current user just to be safe
+        if (!user?._id) return [];
+        const userIdStr = String(user._id);
         return allTasks.filter(t => {
-            const assignedId = t.assignedTo?._id || t.assignedTo;
-            return assignedId === user?._id || !assignedId; // If no assignee but returned by API, assume it's theirs
+            const assignedIdStr = String(t.assignedTo?._id || t.assignedTo || "");
+            const creatorIdStr = String(t.createdBy?._id || t.createdBy || "");
+            return assignedIdStr === userIdStr || creatorIdStr === userIdStr || (!assignedIdStr && !creatorIdStr);
         });
     }, [allTasks, user]);
 
@@ -53,11 +56,7 @@ const UserDashboard = () => {
     // Selected Date Tasks (or All Tasks if selectedDate is cleared/null)
     const tasksForSelectedDate = useMemo(() => {
         if (!selectedDate) return tasks;
-        return tasks.filter(t => {
-            const taskDate = t.dueDate || t.startDate || t.createdAt;
-            if (!taskDate) return false;
-            return dayjs(taskDate).isSame(selectedDate, 'day');
-        });
+        return tasks.filter(t => taskMatchesKanbanDay(t, selectedDate));
     }, [tasks, selectedDate]);
 
     // Metrics for Top Cards (for selected date or all tasks if cleared)

@@ -459,6 +459,7 @@ const DeliverablesPage = () => {
         task={selectedTaskDetails}
         visible={!!selectedTaskDetails}
         onClose={() => setSelectedTaskDetails(null)}
+        isDeliverablesModule={true}
         onTaskCompleted={() => {
           setShowCelebration(true);
           if (refetchProjects) refetchProjects();

@@ -44,15 +44,37 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
         if (seoDept?.slug) return seoDept.slug;
       }
 
-      // Digital Marketing / Creative / Design group
-      const isDmTerm = ["dm", "digital-marketing", "digital_marketing", "designer", "design", "graphic-designer", "ui-ux", "video-editor", "content-writer", "copywriter", "marketing"].some(
+      // Video Editor group
+      const isVideoTerm = ["video-editor", "video_editor", "video-edit", "video"].some((alias) => normSanitized.includes(alias));
+      if (isVideoTerm) {
+        const videoDept = departments.find(d => {
+          const s = (d.slug || "").toLowerCase();
+          const n = (d.name || "").toLowerCase();
+          return s.includes("video") || n.includes("video");
+        });
+        if (videoDept?.slug) return videoDept.slug;
+      }
+
+      // Designer group
+      const isDesignerTerm = ["designer", "graphic-designer", "ui-ux", "design"].some((alias) => normSanitized.includes(alias));
+      if (isDesignerTerm) {
+        const designDept = departments.find(d => {
+          const s = (d.slug || "").toLowerCase();
+          const n = (d.name || "").toLowerCase();
+          return s.includes("design") || n.includes("design");
+        });
+        if (designDept?.slug) return designDept.slug;
+      }
+
+      // Digital Marketing group
+      const isDmTerm = ["dm", "digital-marketing", "digital_marketing", "marketing"].some(
         (alias) => normSanitized.includes(alias)
       );
       if (isDmTerm) {
         const dmDept = departments.find(d => {
           const s = (d.slug || "").toLowerCase();
           const n = (d.name || "").toLowerCase();
-          return s === "digital-marketing" || s === "dm" || n.includes("digital marketing") || n.includes("marketing") || n.includes("design");
+          return s === "digital-marketing" || s === "dm" || n.includes("digital marketing") || n.includes("marketing");
         });
         if (dmDept?.slug) return dmDept.slug;
       }
@@ -75,8 +97,14 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
     if (["seo", "seo_specialist", "seo_manager", "seo_lead", "seo_executive", "seo_analyst"].includes(normSanitized) || normSanitized.includes("seo")) {
       return "seo";
     }
+    if (["video-editor", "video_editor", "video-edit", "video"].some((alias) => normSanitized.includes(alias))) {
+      return "video-editor";
+    }
+    if (["designer", "graphic-designer", "ui-ux", "design"].some((alias) => normSanitized.includes(alias))) {
+      return "designer";
+    }
     if (
-      ["dm", "digital-marketing", "digital_marketing", "designer", "graphic-designer", "ui-ux", "video-editor", "content-writer", "copywriter", "marketing"].some(
+      ["dm", "digital-marketing", "digital_marketing", "marketing"].some(
         (alias) => normSanitized.includes(alias)
       )
     ) {
@@ -157,15 +185,19 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
     seo_executive: "seo",
     seo_analyst: "seo",
 
-    // Digital Marketing / Design
-    designer: "digital-marketing",
-    graphic_designer: "digital-marketing",
-    ui_ux_designer: "digital-marketing",
-    ui_designer: "digital-marketing",
-    ux_designer: "digital-marketing",
-    creative_designer: "digital-marketing",
-    video_editor: "digital-marketing",
-    video_editing: "digital-marketing",
+    // Video Editor
+    video_editor: "video-editor",
+    video_editing: "video-editor",
+
+    // Design
+    designer: "designer",
+    graphic_designer: "designer",
+    ui_ux_designer: "designer",
+    ui_designer: "designer",
+    ux_designer: "designer",
+    creative_designer: "designer",
+
+    // Digital Marketing
     content_writer: "digital-marketing",
     copywriter: "digital-marketing",
     digital_marketing: "digital-marketing",

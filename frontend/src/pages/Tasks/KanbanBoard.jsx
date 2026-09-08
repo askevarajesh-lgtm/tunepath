@@ -1895,6 +1895,23 @@ const KanbanBoard = ({
     const normalizedDept = effectiveDept?.toLowerCase();
     const isDigitalMarketing = normalizedDept === "digital-marketing";
 
+    // Ensure 'Rejected' column is included in board statuses after completion column for 4-step workflows if missing
+    const hasRejectedStatus = result.some(
+      (s) =>
+        (s.id || "").toLowerCase() === "rejected" ||
+        (s.name || "").toLowerCase() === "rejected",
+    );
+
+    if (!hasRejectedStatus) {
+      const maxOrder = Math.max(...result.map((s) => s.order ?? 0), 0);
+      result.push({
+        id: "Rejected",
+        name: "Rejected",
+        color: "#ff4d4f",
+        order: maxOrder + 1,
+      });
+    }
+
     // Return the exact workflow statuses from DB (or fallback) in their exact configured order, ensuring completion status displays as 'Complete' and appears at the end
     return result
       .map((status) => {
@@ -2944,10 +2961,49 @@ const KanbanBoard = ({
                 (status.name || "").toLowerCase() === "complete" ||
                 (status.name || "").toLowerCase() === "done" ||
                 (status.name || "").toLowerCase() === "approved";
+              const isRejectedCol =
+                ["rejected", "Rejected"].includes(statusIdLower) ||
+                (status.name || "").toLowerCase() === "rejected";
+              const isInProgressCol =
+                ["in_progress", "in-progress", "in progress", "inprogress", "submitted"].includes(statusIdLower) ||
+                (status.name || "").toLowerCase() === "in progress" ||
+                (status.name || "").toLowerCase() === "in_progress";
+              const isToDoCol =
+                ["to_do", "to-do", "to do", "todo", "assigned", "created"].includes(statusIdLower) ||
+                (status.name || "").toLowerCase() === "to do" ||
+                (status.name || "").toLowerCase() === "to_do";
+              const isHoldCol =
+                ["backlog", "hold"].includes(statusIdLower) ||
+                (status.name || "").toLowerCase() === "hold" ||
+                (status.name || "").toLowerCase() === "backlog";
 
               if (isCompletionCol) {
                 const combinedSet = new Set();
                 ["complete", "done", "completed", "validated", "approved", status.id].forEach((key) => {
+                  (tasksByStatus[key] || []).forEach((t) => combinedSet.add(t));
+                });
+                rawTasks = Array.from(combinedSet);
+              } else if (isRejectedCol) {
+                const combinedSet = new Set();
+                ["rejected", "Rejected", status.id].forEach((key) => {
+                  (tasksByStatus[key] || []).forEach((t) => combinedSet.add(t));
+                });
+                rawTasks = Array.from(combinedSet);
+              } else if (isInProgressCol) {
+                const combinedSet = new Set();
+                ["in_progress", "in-progress", "in progress", "inprogress", "submitted", status.id].forEach((key) => {
+                  (tasksByStatus[key] || []).forEach((t) => combinedSet.add(t));
+                });
+                rawTasks = Array.from(combinedSet);
+              } else if (isToDoCol) {
+                const combinedSet = new Set();
+                ["to_do", "to-do", "to do", "todo", "assigned", "created", status.id].forEach((key) => {
+                  (tasksByStatus[key] || []).forEach((t) => combinedSet.add(t));
+                });
+                rawTasks = Array.from(combinedSet);
+              } else if (isHoldCol) {
+                const combinedSet = new Set();
+                ["backlog", "hold", status.id].forEach((key) => {
                   (tasksByStatus[key] || []).forEach((t) => combinedSet.add(t));
                 });
                 rawTasks = Array.from(combinedSet);

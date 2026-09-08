@@ -1958,11 +1958,16 @@ const updateTask = async (
     ];
     const requesterRole = cleanedTaskData._requesterRole || null;
 
-    // COMPLETION LOCK: Block non-admin users from editing tasks that are already completed
+    // COMPLETION LOCK: Block non-admin users from editing tasks that are already completed (unless rejecting/reviewing)
     const isCompleted = ["completed", "validated", "done", "complete"].includes(oldStatus);
     const isClientRole = ["agency_client", "brand_super_admin", "brand_manager", "brand_team_user", "client"].includes(requesterRole);
+    const isRejectionOrReview =
+      ["rejected", "Rejected", "in_progress", "In Progress"].includes(cleanedTaskData.status) ||
+      cleanedTaskData.clientReviewStatus === "correction_requested" ||
+      cleanedTaskData.clientReviewStatus === "approved" ||
+      cleanedTaskData.validationStatus === "rejected";
 
-    if (isCompleted && !adminRoles.includes(requesterRole)) {
+    if (isCompleted && !adminRoles.includes(requesterRole) && !isClientRole && !isRejectionOrReview) {
       throw new Error(
         "Completed tasks cannot be edited. Please contact an admin if changes are required.",
       );
@@ -3123,16 +3128,9 @@ const getTasksForKanban = async (
                 { startDate: { $ne: null, $exists: true } },
                 { startDate: { $lte: end } },
                 { dueDate: { $gte: start } },
-                // If completed, don't show on days other than completion day (handled by Option C)
-                {
-                  $or: [
-                    { actualCompletionDate: { $exists: false } },
-                    { actualCompletionDate: { $eq: null } },
-                  ],
-                },
               ],
             },
-            // Option B: Task only has dueDate (show from createdAt to dueDate)
+            // Option B: Task only has dueDate (no explicit startDate -> matches on dueDate)
             {
               $and: [
                 {
@@ -3141,20 +3139,13 @@ const getTasksForKanban = async (
                     { startDate: { $exists: false } },
                   ],
                 },
-                { createdAt: { $lte: end } },
-                { dueDate: { $gte: start } },
-                // If completed, don't show on days other than completion day (handled by Option C)
-                {
-                  $or: [
-                    { actualCompletionDate: { $exists: false } },
-                    { actualCompletionDate: { $eq: null } },
-                  ],
-                },
+                { dueDate: { $gte: start, $lte: end } },
               ],
             },
-            // Option C: Task was actually completed/validated in this range (regardless of scheduled dates)
+            // Option C: Task was actually completed/validated/updated in this range (regardless of scheduled dates)
             { actualCompletionDate: { $gte: start, $lte: end } },
             { validatedAt: { $gte: start, $lte: end } },
+            { updatedAt: { $gte: start, $lte: end } },
             // Option D: Task was created in this range and has no dueDate (newly created tasks)
             {
               $and: [
@@ -3204,9 +3195,9 @@ const getTasksForKanban = async (
 
     const statusOrFilter = [
       {
-        // Non-completed: only show tasks due today or later (not overdue)
+        // Non-completed & non-rejected: only show active tasks due today or later (not overdue)
         $and: [
-          { status: { $nin: ["completed", "validated", "done"] } },
+          { status: { $nin: ["completed", "validated", "done", "rejected", "Rejected"] } },
           {
             $or: [
               { dueDate: { $gte: todayStart } }, // Due today or future
@@ -3217,14 +3208,17 @@ const getTasksForKanban = async (
         ],
       },
       {
-        // Completed/validated TODAY - always shown regardless of due date
+        // Completed/validated/rejected TODAY (or due today/future) - always shown regardless of due date
         $and: [
-          { status: { $in: ["completed", "validated", "done"] } },
+          { status: { $in: ["completed", "validated", "done", "rejected", "Rejected"] } },
           {
             $or: [
               { actualCompletionDate: { $gte: todayStart } },
               { validatedAt: { $gte: todayStart } },
               { updatedAt: { $gte: todayStart } }, // Fallback for safety
+              { dueDate: { $gte: todayStart } },
+              { dueDate: { $exists: false } },
+              { dueDate: null },
             ],
           },
         ],
