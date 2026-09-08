@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
-import { Typography, Row, Col, Card, Button, Select, Avatar, Tag } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Typography, Row, Col, Card, Button, Select, Avatar, Tag, Table } from 'antd';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 import { motion } from 'framer-motion';
 import { Download, Calendar as CalendarIcon, Camera, MessageSquare, Briefcase, Video, Image as ImageIcon, Edit3, X, Heart, MessageCircle, Share2, TrendingUp } from 'lucide-react';
 import { socialPosts, organicTrafficSparkline } from '../../data/mock';
+import { campaignScheduledApi } from '../Campaign Scheduled/api';
 
 import GenerateSocialReportModal from './components/GenerateSocialReportModal';
 
@@ -13,6 +14,19 @@ const { Option } = Select;
 const SocialMedia = () => {
   const [activeTab, setActiveTab] = useState('Instagram');
   const [reportModalOpen, setReportModalOpen] = useState(false);
+  const [realAnalytics, setRealAnalytics] = useState(null);
+
+  useEffect(() => {
+    const loadRealAnalytics = async () => {
+      try {
+        const data = await campaignScheduledApi.getAnalytics();
+        setRealAnalytics(data);
+      } catch (err) {
+        console.error("Failed loading real analytics:", err);
+      }
+    };
+    loadRealAnalytics();
+  }, []);
 
   // Expand to 30 days
   const expandedReach = Array.from({ length: 30 }, (_, i) => ({ day: i + 1, reach: 10000 + Math.random() * 10000 + (i > 15 ? 5000 : 0) }));
@@ -165,6 +179,97 @@ const SocialMedia = () => {
             </div>
           </div>
         </div>
+      </motion.div>
+
+      {/* INSTAGRAM INSIGHTS MATRIX */}
+      <motion.div variants={itemVariants} style={{ marginBottom: 32 }}>
+        <Card
+          title={
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, padding: '8px 0' }}>
+              <div>
+                <Title level={5} style={{ margin: 0, fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Instagram & Social Activity Insights Matrix
+                </Title>
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  Live metrics matrix synced with <b>instagram_manage_insights</b> & <b>read_insights</b> permissions
+                </Text>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <Tag color="magenta" style={{ borderRadius: 12, padding: '2px 10px', fontWeight: 700 }}>✓ instagram_manage_insights</Tag>
+                <Tag color="purple" style={{ borderRadius: 12, padding: '2px 10px', fontWeight: 700 }}>✓ read_insights</Tag>
+              </div>
+            </div>
+          }
+          className="glassmorphism"
+          style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}
+          bodyStyle={{ padding: 24 }}
+        >
+          <Table
+            dataSource={realAnalytics?.insightsMatrix || []}
+            rowKey="accountId"
+            pagination={false}
+            columns={[
+              {
+                title: 'Account & Platform',
+                dataIndex: 'accountName',
+                key: 'accountName',
+                render: (text, record) => (
+                  <div>
+                    <strong style={{ display: 'block', color: 'var(--text-primary)', fontSize: 14 }}>{text}</strong>
+                    <Text type="secondary" style={{ fontSize: 12, textTransform: 'capitalize' }}>{record.platform}</Text>
+                  </div>
+                )
+              },
+              {
+                title: 'Followers',
+                dataIndex: 'followers',
+                key: 'followers',
+                render: (val) => <strong style={{ color: 'var(--accent-primary)' }}>{val?.toLocaleString() || 0}</strong>
+              },
+              {
+                title: 'Likes',
+                dataIndex: 'likes',
+                key: 'likes',
+                render: (val) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Heart size={14} color="#ec4899" /> {val?.toLocaleString() || 0}</span>
+              },
+              {
+                title: 'Comments',
+                dataIndex: 'comments',
+                key: 'comments',
+                render: (val) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><MessageCircle size={14} color="#3b82f6" /> {val?.toLocaleString() || 0}</span>
+              },
+              {
+                title: 'Shares',
+                dataIndex: 'shares',
+                key: 'shares',
+                render: (val) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><Share2 size={14} color="#10b981" /> {val?.toLocaleString() || 0}</span>
+              },
+              {
+                title: 'Impressions / Reach',
+                dataIndex: 'impressions',
+                key: 'impressions',
+                render: (_, record) => (
+                  <div>
+                    <Text strong style={{ display: 'block', fontSize: 13, color: 'var(--text-primary)' }}>{record.impressions?.toLocaleString() || 0} imp</Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>{record.reach?.toLocaleString() || 0} reach</Text>
+                  </div>
+                )
+              },
+              {
+                title: 'Engagement Rate',
+                dataIndex: 'engagementRate',
+                key: 'engagementRate',
+                render: (val) => <Tag color="success" style={{ borderRadius: 12, fontWeight: 700 }}>{val || 0}%</Tag>
+              },
+              {
+                title: 'Status',
+                dataIndex: 'status',
+                key: 'status',
+                render: (val) => <Tag color="processing" style={{ borderRadius: 12, fontWeight: 700 }}>● {val}</Tag>
+              }
+            ]}
+          />
+        </Card>
       </motion.div>
 
       <motion.div variants={itemVariants} style={{ marginBottom: 16, marginTop: 40 }}>

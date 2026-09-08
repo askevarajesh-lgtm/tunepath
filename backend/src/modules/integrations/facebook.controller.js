@@ -51,7 +51,7 @@ exports.generateAuthUrl = async (req, res, next) => {
     // Embed companyId, clientId, redirectPath, and userId in the state parameter
     const stateObj = { companyId, clientId, redirectPath, userId: decoded._id };
     const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
-    const scopes = ['pages_show_list', 'pages_read_engagement', 'pages_manage_metadata', 'pages_manage_ads', 'leads_retrieval', 'ads_read', 'business_management', 'pages_read_user_content'].join(',');
+    const scopes = ['pages_show_list', 'pages_read_engagement', 'pages_manage_metadata', 'pages_manage_ads', 'leads_retrieval', 'ads_read', 'business_management', 'pages_read_user_content', 'instagram_basic', 'instagram_manage_insights', 'read_insights'].join(',');
     
     const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(META_REDIRECT_URI)}&state=${state}&scope=${scopes}`;
     
