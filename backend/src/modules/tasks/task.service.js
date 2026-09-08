@@ -93,9 +93,24 @@ const Department = require('./shimDepartmentModel');
 
 const WEBSITE_COORDINATOR_DEPARTMENTS = [
   "website-designing",
+  "website_designing",
+  "website",
+  "Website Designing",
   "web-application-development",
+  "web_application_development",
   "tech_team",
   "tech-team",
+  "web-app",
+  "application",
+  "development",
+  "developer",
+  "dev",
+  "Developer",
+  "project",
+  "projects",
+  "Project",
+  "Projects",
+  "PROJECTS",
 ];
 
 const ROLES_WITH_FULL_TASK_ACCESS = [
@@ -290,7 +305,7 @@ const getDepartmentFilterValues = (value) => {
 };
 
 const buildDepartmentFilterAsync = async (value, userRole) => {
-  if (!value) return null;
+  if (!value || value === "all" || value === "ALL") return null;
 
   const filterValuesSet = new Set();
   getDepartmentFilterValues(value).forEach((val) => filterValuesSet.add(val));
@@ -691,6 +706,7 @@ const getAllTasks = async (
     additionalFilters.$or = [
       { department: { $in: WEBSITE_COORDINATOR_DEPARTMENTS } },
       { assignedTo: userObjId },
+      { createdBy: userObjId },
       { watchers: userObjId },
     ];
   } else if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) && userId) {
@@ -720,12 +736,15 @@ const getAllTasks = async (
 
   if (reqQuery.status) additionalFilters.status = reqQuery.status;
   if (reqQuery.companyId) additionalFilters.companyId = reqQuery.companyId;
-  if (reqQuery.department) {
+  if (reqQuery.department && reqQuery.department !== "all") {
     let deptValue = reqQuery.department;
-    additionalFilters.department = await buildDepartmentFilterAsync(
+    const deptFilter = await buildDepartmentFilterAsync(
       deptValue,
       userRole,
     );
+    if (deptFilter !== null) {
+      additionalFilters.department = deptFilter;
+    }
   }
   if (reqQuery.projectId) additionalFilters.projectId = reqQuery.projectId;
   if (reqQuery.priority) additionalFilters.priority = reqQuery.priority;
@@ -789,20 +808,11 @@ const getAllTasks = async (
       const dateOrFilter = [
         {
           $or: [
-            // Option A: Task has a defined range (startDate to dueDate)
+            // Option A: Task has a defined startDate -> match ONLY on startDate
             {
               $and: [
                 { startDate: { $ne: null, $exists: true } },
-                { startDate: { $lte: end } },
-                { dueDate: { $gte: start } },
-                // If completed early, don't show on days after completion
-                {
-                  $or: [
-                    { actualCompletionDate: { $exists: false } },
-                    { actualCompletionDate: { $eq: null } },
-                    { actualCompletionDate: { $gte: start } },
-                  ],
-                },
+                { startDate: { $gte: start, $lte: end } },
               ],
             },
             // Option B: Task only has dueDate (show from createdAt to dueDate)
@@ -3016,6 +3026,7 @@ const getTasksForKanban = async (
     query.$or = [
       { department: { $in: WEBSITE_COORDINATOR_DEPARTMENTS } },
       { assignedTo: userObjId },
+      { createdBy: userObjId },
       { watchers: userObjId },
     ];
   } else if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) && userId) {
@@ -3060,9 +3071,12 @@ const getTasksForKanban = async (
   ) {
     query.projectId = filters.projectId;
   }
-  if (filters.department) {
+  if (filters.department && filters.department !== "all") {
     let deptValue = filters.department;
-    query.department = await buildDepartmentFilterAsync(deptValue, userRole);
+    const deptFilter = await buildDepartmentFilterAsync(deptValue, userRole);
+    if (deptFilter !== null) {
+      query.department = deptFilter;
+    }
   }
   if (filters.priority) query.priority = filters.priority;
   if (filters.companyId) query.companyId = filters.companyId;
@@ -3122,12 +3136,11 @@ const getTasksForKanban = async (
       const dateOrFilter = [
         {
           $or: [
-            // Option A: Task has a defined range (startDate to dueDate)
+            // Option A: Task has a defined startDate -> match ONLY on startDate
             {
               $and: [
                 { startDate: { $ne: null, $exists: true } },
-                { startDate: { $lte: end } },
-                { dueDate: { $gte: start } },
+                { startDate: { $gte: start, $lte: end } },
               ],
             },
             // Option B: Task only has dueDate (no explicit startDate -> matches on dueDate)
@@ -3142,10 +3155,9 @@ const getTasksForKanban = async (
                 { dueDate: { $gte: start, $lte: end } },
               ],
             },
-            // Option C: Task was actually completed/validated/updated in this range (regardless of scheduled dates)
+            // Option C: Task was actually completed/validated in this range (regardless of scheduled dates)
             { actualCompletionDate: { $gte: start, $lte: end } },
             { validatedAt: { $gte: start, $lte: end } },
-            { updatedAt: { $gte: start, $lte: end } },
             // Option D: Task was created in this range and has no dueDate (newly created tasks)
             {
               $and: [

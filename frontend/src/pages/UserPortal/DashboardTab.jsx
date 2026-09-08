@@ -52,6 +52,12 @@ const UserDashboard = () => {
     }, [allTasks, user]);
 
     const [selectedDate, setSelectedDate] = useState(dayjs());
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(5);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedDate]);
 
     // Selected Date Tasks (or All Tasks if selectedDate is cleared/null)
     const tasksForSelectedDate = useMemo(() => {
@@ -280,6 +286,19 @@ const UserDashboard = () => {
                                     </div>
                                 ) : (
                                     <List
+                                        pagination={{
+                                            current: currentPage,
+                                            pageSize: pageSize,
+                                            onChange: (page, size) => {
+                                                setCurrentPage(page);
+                                                setPageSize(size);
+                                            },
+                                            pageSizeOptions: ['5', '10', '15', '20'],
+                                            showSizeChanger: true,
+                                            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} tasks`,
+                                            size: 'small',
+                                            style: { marginTop: 16, textAlign: 'right' }
+                                        }}
                                         dataSource={tasksForSelectedDate}
                                         renderItem={item => (
                                             <List.Item

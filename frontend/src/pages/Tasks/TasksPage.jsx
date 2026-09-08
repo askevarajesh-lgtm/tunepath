@@ -392,21 +392,11 @@ const TasksPage = () => {
 
   useEffect(() => {
     if (!user) return;
-    if (!isGlobalAdmin) {
-      if (userDepartmentSlug) {
-        const isValidInItems = departmentTabItems.some((i) => i.value === userDepartmentSlug);
-        setSelectedDepartment(isValidInItems ? userDepartmentSlug : "all");
-      }
-    } else {
-      if (userDepartmentSlug) {
-        const isValidInItems = departmentTabItems.some((i) => i.value === selectedDepartment);
-        if (!hasInitializedDept.current || selectedDepartment === "all" || !isValidInItems) {
-          setSelectedDepartment(userDepartmentSlug);
-          hasInitializedDept.current = true;
-        }
-      }
+    if (!hasInitializedDept.current) {
+      setSelectedDepartment("all");
+      hasInitializedDept.current = true;
     }
-  }, [user, isGlobalAdmin, userDepartmentSlug, departmentTabItems, selectedDepartment]);
+  }, [user]);
 
   const settingsTabItems = [
     {

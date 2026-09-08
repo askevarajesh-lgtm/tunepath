@@ -23,8 +23,8 @@ export function taskMatchesKanbanDay(task, day) {
     const hasStart =
         ok(startDate) && task.startDate !== null && task.startDate !== undefined;
 
-    if (hasStart && ok(dueDate)) {
-        if (startDate.valueOf() <= e && dueDate.valueOf() >= s) return true;
+    if (hasStart) {
+        if (startDate.valueOf() >= s && startDate.valueOf() <= e) return true;
     }
 
     const noStart =
@@ -48,11 +48,6 @@ export function taskMatchesKanbanDay(task, day) {
         if (va >= s && va <= e) return true;
     }
 
-    if (ok(updatedAt)) {
-        const u = updatedAt.valueOf();
-        if (u >= s && u <= e) return true;
-    }
-
     return false;
 }
 
@@ -70,10 +65,8 @@ export function taskScheduledForKanbanDay(task, day) {
     const hasStart =
         ok(startDate) && task.startDate !== null && task.startDate !== undefined;
 
-    if (hasStart && ok(dueDate)) {
-        if (startDate.valueOf() <= e && dueDate.valueOf() >= s) {
-            return true;
-        }
+    if (hasStart) {
+        return startDate.valueOf() >= s && startDate.valueOf() <= e;
     }
 
     const noStart =

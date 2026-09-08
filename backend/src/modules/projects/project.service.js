@@ -20,7 +20,24 @@ const {
 
 const WEBSITE_COORDINATOR_DEPARTMENTS = [
   "website-designing",
+  "website_designing",
+  "website",
+  "Website Designing",
   "web-application-development",
+  "web_application_development",
+  "tech_team",
+  "tech-team",
+  "web-app",
+  "application",
+  "development",
+  "developer",
+  "dev",
+  "Developer",
+  "project",
+  "projects",
+  "Project",
+  "Projects",
+  "PROJECTS",
 ];
 
 const parseHandlingDurationMonths = (duration) => {
