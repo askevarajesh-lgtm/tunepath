@@ -179,20 +179,25 @@ const SettingsTab = () => {
             ) : (
               <Space direction="vertical" style={{ width: '100%' }} size={16}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text strong>Anthropic Claude 3.5 Sonnet:</Text>
+                  <Text strong>Active Provider: <Tag color="purple">{status?.activeProvider || 'anthropic'}</Tag></Text>
+                  <Tag color="blue">{status?.activeModel || 'claude-sonnet-5'}</Tag>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text strong>Anthropic API Key:</Text>
                   {status?.isAnthropicConfigured
                     ? <Tag color="green">Active ({status.maskedAnthropicKey})</Tag>
-                    : <Tag color="orange">System Default / Unset</Tag>}
+                    : <Tag color="orange">Not Configured</Tag>}
                 </div>
 
                 <Text type="secondary" style={{ fontSize: 13 }}>
-                  Used across Content AI generator modules, AEO answer engine scoring, Technical SEO code remediation, and Automated Executive Reports.
+                  Used across all SEO agents (Keyword Research, Competitor Analysis, Technical SEO, AEO, GEO, Reports, and Content AI).
                 </Text>
 
                 <Form form={globalForm} layout="vertical" onFinish={handleSaveGlobal}>
                   <Form.Item
                     name="anthropicApiKey"
-                    label={status?.isAnthropicConfigured ? 'Replace API Key' : 'API Key'}
+                    label={status?.isAnthropicConfigured ? 'Replace Anthropic API Key' : 'Anthropic API Key'}
                     rules={[{ required: !status?.isAnthropicConfigured, message: 'Enter an API key' }]}
                   >
                     <Input.Password placeholder="sk-ant-api03-..." />
@@ -201,6 +206,7 @@ const SettingsTab = () => {
                 </Form>
               </Space>
             )}
+
           </Card>
         </Col>
       </Row>

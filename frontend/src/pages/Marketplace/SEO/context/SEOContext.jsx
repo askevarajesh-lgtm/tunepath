@@ -45,9 +45,15 @@ export const SEOProvider = ({ children }) => {
     }
   }, [STORAGE_KEY]);
 
+  // Handle Account Switch
   useEffect(() => {
+    const savedId = localStorage.getItem(STORAGE_KEY);
+    setActiveProjectId(savedId || null);
+    setProjects([]); // Clear old projects instantly on account switch
     fetchProjects();
+  }, [user?._id, STORAGE_KEY, fetchProjects]);
 
+  useEffect(() => {
     // Listen for storage changes across browser tabs
     const handleStorageChange = (e) => {
       if (e.key === STORAGE_KEY && e.newValue && e.newValue !== activeProjectId) {

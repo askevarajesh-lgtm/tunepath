@@ -38,7 +38,7 @@ const cryptoUtils = require('../../utils/crypto');
 
 const getWorkspaceId = (req) => {
   const user = req.user;
-  if (!user) return req.companyId || req.workspaceId;
+  if (!user) return null;
   const clientRoles = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'];
   if (clientRoles.includes(user.role)) {
     return user.brandId || user._id;
@@ -46,14 +46,61 @@ const getWorkspaceId = (req) => {
   return user.agencyId || user._id;
 };
 
+exports.requireProjectAccess = async (req, res, next) => {
+  try {
+    const { projectId } = req.params;
+    if (!projectId) return res.status(400).json({ success: false, message: 'projectId is required' });
+
+    // Super admins bypass project access check
+    const isSuperAdmin = ['supreme_super_admin', 'commander_admin'].includes(req.user?.role);
+    if (isSuperAdmin) {
+      const project = await WorkspaceProject.findById(projectId);
+      if (!project || project.isDeleted) return res.status(404).json({ success: false, message: 'Project not found' });
+      req.seoProject = project;
+      return next();
+    }
+
+    // Resolve tenant ID
+    const tenantId = getWorkspaceId(req);
+    if (!tenantId) {
+      return res.status(403).json({ success: false, message: 'No workspace context found' });
+    }
+
+    // Explicit ownership boundaries
+    const query = {
+      _id: projectId,
+      isDeleted: false,
+      $or: [
+        { companyId: tenantId },
+        { clientId: tenantId },
+        { createdBy: req.user._id }
+      ]
+    };
+
+    const project = await WorkspaceProject.findOne(query);
+    if (!project) {
+      return res.status(404).json({ success: false, message: 'Project not found or unauthorized' });
+    }
+
+    req.seoProject = project;
+    next();
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error authorizing project access' });
+  }
+};
+
+
 exports.getSettingsStatus = async (req, res) => {
   try {
     const workspaceId = getWorkspaceId(req);
     if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
+    const { DEFAULT_AI_PROVIDER, DEFAULT_AI_MODEL } = require('../aiCore/config/aiDefaults');
     const settings = await AiSettings.findOne({ workspaceId });
+
     let isAnthropicConfigured = false;
     let maskedAnthropicKey = '';
+    let isOpenAiConfigured = false;
 
     if (settings && settings.anthropicApiKey) {
       isAnthropicConfigured = true;
@@ -65,9 +112,22 @@ exports.getSettingsStatus = async (req, res) => {
       }
     }
 
+    if (settings && settings.openaiApiKey) {
+      isOpenAiConfigured = true;
+    }
+
+    const activeProvider = settings?.aiProvider || DEFAULT_AI_PROVIDER;
+    const activeModel = settings?.model || DEFAULT_AI_MODEL;
+
     return res.status(200).json({
       success: true,
-      data: { isAnthropicConfigured, maskedAnthropicKey }
+      data: {
+        isAnthropicConfigured,
+        maskedAnthropicKey,
+        isOpenAiConfigured,
+        activeProvider,
+        activeModel
+      }
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -76,18 +136,31 @@ exports.getSettingsStatus = async (req, res) => {
 
 exports.saveSettings = async (req, res) => {
   try {
-    const { anthropicApiKey } = req.body;
+    const { anthropicApiKey, openaiApiKey, aiProvider, model } = req.body;
     const workspaceId = getWorkspaceId(req);
 
     if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const updateFields = {};
+
     if (anthropicApiKey !== undefined) {
-      if (anthropicApiKey.trim() !== '') {
-        updateFields.anthropicApiKey = cryptoUtils.encrypt(anthropicApiKey.trim());
-      } else {
-        updateFields.anthropicApiKey = null;
-      }
+      updateFields.anthropicApiKey = anthropicApiKey.trim()
+        ? cryptoUtils.encrypt(anthropicApiKey.trim())
+        : null;
+    }
+
+    if (openaiApiKey !== undefined) {
+      updateFields.openaiApiKey = openaiApiKey.trim()
+        ? cryptoUtils.encrypt(openaiApiKey.trim())
+        : null;
+    }
+
+    if (aiProvider !== undefined) {
+      updateFields.aiProvider = aiProvider;
+    }
+
+    if (model !== undefined) {
+      updateFields.model = model;
     }
 
     await AiSettings.findOneAndUpdate(
@@ -102,11 +175,23 @@ exports.saveSettings = async (req, res) => {
   }
 };
 
+
 exports.getProjects = async (req, res) => {
   try {
-    const companyId = req.user.companyId || req.user.agencyId || req.user._id;
-    // Strictly isolate data: Users only see projects they explicitly created
-    const query = { companyId, isDeleted: false, createdBy: req.user._id };
+    const isSuperAdmin = ['supreme_super_admin', 'commander_admin'].includes(req.user?.role);
+    let query = { isDeleted: false };
+    
+    if (!isSuperAdmin) {
+       const tenantId = getWorkspaceId(req);
+       if (!tenantId) {
+         return res.status(403).json({ success: false, message: 'No workspace context found' });
+       }
+       query.$or = [
+         { companyId: tenantId },
+         { clientId: tenantId },
+         { createdBy: req.user._id }
+       ];
+    }
 
     if (req.query.clientId) {
       query.clientId = req.query.clientId;
@@ -125,7 +210,11 @@ exports.getProjects = async (req, res) => {
 
 exports.createProject = async (req, res) => {
   try {
-    const companyId = req.user.companyId || req.user.agencyId || req.user._id;
+    const tenantId = getWorkspaceId(req);
+    if (!tenantId) {
+      return res.status(403).json({ success: false, message: 'No workspace context found' });
+    }
+
     const { domain, siteUrl, name, clientId, projectId, targetLocations, searchEngines, languages } = req.body;
 
     let projectDomain = domain || siteUrl;
@@ -138,13 +227,13 @@ exports.createProject = async (req, res) => {
 
     const resolvedClientId = clientId || req.user._id;
 
-    const existing = await WorkspaceProject.findOne({ domain: projectDomain, companyId, isDeleted: false });
+    const existing = await WorkspaceProject.findOne({ domain: projectDomain, companyId: tenantId, isDeleted: false });
     if (existing) {
       return res.status(400).json({ success: false, message: 'Workspace Project for this domain already exists.' });
     }
 
     const project = await WorkspaceProject.create({
-      companyId,
+      companyId: tenantId,
       clientId: resolvedClientId,
       projectId: projectId || null,
       domain: projectDomain,
@@ -1179,7 +1268,20 @@ exports.getAutomationExecutionHistory = async (req, res) => {
 
 exports.getAudits = async (req, res) => {
   try {
-    const projects = await WorkspaceProject.find({ createdBy: req.user._id }, '_id');
+    const isSuperAdmin = ['supreme_super_admin', 'commander_admin'].includes(req.user?.role);
+    let projectQuery = { isDeleted: false };
+    
+    if (!isSuperAdmin) {
+       const tenantId = getWorkspaceId(req);
+       if (!tenantId) return res.status(403).json({ success: false, message: 'No workspace context found' });
+       projectQuery.$or = [
+         { companyId: tenantId },
+         { clientId: tenantId },
+         { createdBy: req.user._id }
+       ];
+    }
+
+    const projects = await WorkspaceProject.find(projectQuery, '_id');
     const projectIds = projects.map(p => p._id);
 
     const query = { projectId: { $in: projectIds } };
@@ -1269,7 +1371,20 @@ exports.compareAudits = async (req, res) => {
 
 exports.getKeywords = async (req, res) => {
   try {
-    const projects = await WorkspaceProject.find({ createdBy: req.user._id }, '_id');
+    const isSuperAdmin = ['supreme_super_admin', 'commander_admin'].includes(req.user?.role);
+    let projectQuery = { isDeleted: false };
+    
+    if (!isSuperAdmin) {
+       const tenantId = getWorkspaceId(req);
+       if (!tenantId) return res.status(403).json({ success: false, message: 'No workspace context found' });
+       projectQuery.$or = [
+         { companyId: tenantId },
+         { clientId: tenantId },
+         { createdBy: req.user._id }
+       ];
+    }
+
+    const projects = await WorkspaceProject.find(projectQuery, '_id');
     const projectIds = projects.map(p => p._id);
 
     const query = { projectId: { $in: projectIds } };
@@ -1487,7 +1602,20 @@ exports.getKeywordGap = async (req, res) => {
 
 exports.getStrategies = async (req, res) => {
   try {
-    const projects = await WorkspaceProject.find({ createdBy: req.user._id }, '_id');
+    const isSuperAdmin = ['supreme_super_admin', 'commander_admin'].includes(req.user?.role);
+    let projectQuery = { isDeleted: false };
+    
+    if (!isSuperAdmin) {
+       const tenantId = getWorkspaceId(req);
+       if (!tenantId) return res.status(403).json({ success: false, message: 'No workspace context found' });
+       projectQuery.$or = [
+         { companyId: tenantId },
+         { clientId: tenantId },
+         { createdBy: req.user._id }
+       ];
+    }
+
+    const projects = await WorkspaceProject.find(projectQuery, '_id');
     const projectIds = projects.map(p => p._id);
 
     const query = { projectId: { $in: projectIds } };
@@ -1674,10 +1802,7 @@ exports.getAnalytics = async (req, res) => {
 
 exports.getTasks = async (req, res) => {
   try {
-    const project = await WorkspaceProject.findOne({ _id: req.params.projectId, createdBy: req.user._id });
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found or unauthorized' });
-    }
+    // Project access is already guaranteed by requireProjectAccess middleware
     const tasks = await WorkspaceTask.find({ projectId: req.params.projectId }).sort({ createdAt: -1 });
     res.json(tasks);
   } catch (error) {
@@ -1746,10 +1871,7 @@ exports.getReports = async (req, res) => {
     const { projectId } = req.params;
     const { page = 1, limit = 10, search, status, type } = req.query;
 
-    const project = await WorkspaceProject.findOne({ _id: projectId, createdBy: req.user._id });
-    if (!project) {
-      return res.status(404).json({ error: 'Project not found or unauthorized' });
-    }
+    // Project access is already guaranteed by requireProjectAccess middleware
 
     const query = { projectId };
     if (search) query.name = { $regex: search, $options: 'i' };
@@ -1962,6 +2084,36 @@ exports.getReportAnalytics = async (req, res) => {
   }
 };
 
+// --- Helper for Polymorphic Access Validation ---
+const verifyTargetAccess = async (targetType, targetId, req) => {
+  let targetDoc;
+  if (targetType === 'Strategy') targetDoc = await WorkspaceStrategy.findById(targetId);
+  else if (targetType === 'Task') targetDoc = await WorkspaceTask.findById(targetId);
+  else if (targetType === 'Report') targetDoc = await WorkspaceReport.findById(targetId);
+
+  if (!targetDoc) throw new Error('Target not found');
+
+  const projectId = targetDoc.projectId;
+  const isSuperAdmin = ['supreme_super_admin', 'commander_admin'].includes(req.user?.role);
+  if (isSuperAdmin) return projectId;
+
+  const tenantId = getWorkspaceId(req);
+  if (!tenantId) throw new Error('No workspace context found');
+
+  const project = await WorkspaceProject.findOne({
+    _id: projectId,
+    isDeleted: false,
+    $or: [
+      { companyId: tenantId },
+      { clientId: tenantId },
+      { createdBy: req.user._id }
+    ]
+  });
+
+  if (!project) throw new Error('Unauthorized project access');
+  return projectId;
+};
+
 // --- Comments (polymorphic across Strategy/Task/Report) ---
 
 const VALID_TARGET_TYPES = ['Strategy', 'Task', 'Report'];
@@ -1972,6 +2124,12 @@ exports.getComments = async (req, res) => {
     if (!VALID_TARGET_TYPES.includes(targetType)) {
       return res.status(400).json({ success: false, message: `Invalid targetType. Must be one of: ${VALID_TARGET_TYPES.join(', ')}` });
     }
+    try {
+      await verifyTargetAccess(targetType, targetId, req);
+    } catch (err) {
+      return res.status(403).json({ success: false, message: err.message });
+    }
+
     const comments = await WorkspaceComment.find({ targetType, targetId, isDeleted: false })
       .populate('userId', 'name email')
       .sort({ createdAt: 1 });
@@ -1987,12 +2145,17 @@ exports.createComment = async (req, res) => {
     if (!VALID_TARGET_TYPES.includes(targetType)) {
       return res.status(400).json({ success: false, message: `Invalid targetType. Must be one of: ${VALID_TARGET_TYPES.join(', ')}` });
     }
-    const { projectId, body } = req.body;
-    if (!body || !body.trim()) {
-      return res.status(400).json({ success: false, message: 'Comment body is required.' });
+
+    let projectId;
+    try {
+      projectId = await verifyTargetAccess(targetType, targetId, req);
+    } catch (err) {
+      return res.status(403).json({ success: false, message: err.message });
     }
-    if (!projectId) {
-      return res.status(400).json({ success: false, message: 'projectId is required.' });
+
+    const body = req.body.body || req.body.content || req.body.projectId; // frontend might send `content`
+    if (!body || typeof body !== 'string' || !body.trim()) {
+      return res.status(400).json({ success: false, message: 'Comment body/content is required.' });
     }
 
     const comment = await WorkspaceComment.create({
@@ -2034,6 +2197,12 @@ exports.getAttachments = async (req, res) => {
     if (!VALID_TARGET_TYPES.includes(targetType)) {
       return res.status(400).json({ success: false, message: `Invalid targetType. Must be one of: ${VALID_TARGET_TYPES.join(', ')}` });
     }
+    try {
+      await verifyTargetAccess(targetType, targetId, req);
+    } catch (err) {
+      return res.status(403).json({ success: false, message: err.message });
+    }
+
     const attachments = await WorkspaceAttachment.find({ targetType, targetId })
       .populate('uploadedBy', 'name email')
       .sort({ createdAt: -1 });
@@ -2049,12 +2218,16 @@ exports.createAttachment = async (req, res) => {
     if (!VALID_TARGET_TYPES.includes(targetType)) {
       return res.status(400).json({ success: false, message: `Invalid targetType. Must be one of: ${VALID_TARGET_TYPES.join(', ')}` });
     }
-    const { projectId } = req.body;
+    
+    let projectId;
+    try {
+      projectId = await verifyTargetAccess(targetType, targetId, req);
+    } catch (err) {
+      return res.status(403).json({ success: false, message: err.message });
+    }
+
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'No file uploaded.' });
-    }
-    if (!projectId) {
-      return res.status(400).json({ success: false, message: 'projectId is required.' });
     }
 
     const attachment = await WorkspaceAttachment.create({
@@ -2125,17 +2298,21 @@ exports.getDashboard = async (req, res) => {
     let projectQuery = { isDeleted: false };
 
     if (!isSuperAdmin) {
-      const companyId = req.user.companyId || req.user.agencyId;
-      if (companyId) {
-        projectQuery.$or = [{ companyId }, { createdBy: req.user._id }];
-      } else if (req.user._id) {
-        projectQuery.createdBy = req.user._id;
+      const tenantId = getWorkspaceId(req);
+      if (!tenantId) {
+        return res.status(403).json({ success: false, message: 'No workspace context found' });
       }
-    }
 
-    const isClientRole = ['agency_client', 'client', 'brand_manager', 'brand_super_admin', 'brand_team_user'].includes(req.user.role);
-    if (isClientRole) {
-      projectQuery.clientId = req.user.brandId || req.user._id;
+      const isClientRole = ['agency_client', 'client', 'brand_manager', 'brand_super_admin', 'brand_team_user'].includes(req.user.role);
+      if (isClientRole) {
+        projectQuery.clientId = tenantId;
+      } else {
+        projectQuery.$or = [
+          { companyId: tenantId },
+          { clientId: tenantId },
+          { createdBy: req.user._id }
+        ];
+      }
     }
 
     const targetProjectId = req.query.projectId;
@@ -2280,3 +2457,183 @@ exports.globalSearch = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// ============================================================
+// COMMENTS (polymorphic: targetType = 'Strategy' | 'Task' | 'Report')
+// ============================================================
+
+const ALLOWED_TARGET_TYPES = ['Strategy', 'Task', 'Report'];
+
+function validateTargetType(res, targetType) {
+  if (!ALLOWED_TARGET_TYPES.includes(targetType)) {
+    res.status(400).json({ success: false, message: `Invalid targetType. Must be one of: ${ALLOWED_TARGET_TYPES.join(', ')}` });
+    return false;
+  }
+  return true;
+}
+
+exports.getComments = async (req, res) => {
+  try {
+    const { targetType, targetId } = req.params;
+    if (!validateTargetType(res, targetType)) return;
+
+    const comments = await WorkspaceComment.find({ targetType, targetId, isDeleted: false })
+      .populate('userId', 'name email')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ success: true, data: comments });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+exports.createComment = async (req, res) => {
+  try {
+    const { targetType, targetId } = req.params;
+    if (!validateTargetType(res, targetType)) return;
+
+    const body = req.body.content || req.body.body;
+    if (!body || !body.trim()) {
+      return res.status(400).json({ success: false, message: 'Comment content is required.' });
+    }
+
+    const projectId = req.query.projectId || req.body.projectId || null;
+
+    const comment = await WorkspaceComment.create({
+      targetType,
+      targetId,
+      projectId,
+      body: body.trim(),
+      userId: req.user._id
+    });
+
+    const populated = await comment.populate('userId', 'name email');
+    res.status(201).json({ success: true, data: populated });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+exports.deleteComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const comment = await WorkspaceComment.findById(commentId);
+    if (!comment) return res.status(404).json({ success: false, message: 'Comment not found.' });
+
+    // Only the creator (or admin roles) can delete
+    const isOwner = comment.userId.toString() === req.user._id.toString();
+    const isAdmin = ['super_admin', 'agency_owner', 'agency_admin'].includes(req.user.role);
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Not authorised to delete this comment.' });
+    }
+
+    await WorkspaceComment.findByIdAndUpdate(commentId, { isDeleted: true });
+    res.json({ success: true, message: 'Comment deleted.' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// ============================================================
+// ATTACHMENTS (polymorphic, same targetType set as comments)
+// Upload is handled by the uploadAttachment middleware BEFORE this function.
+// req.file.path is the Cloudinary secure_url set by the middleware.
+// ============================================================
+
+exports.getAttachments = async (req, res) => {
+  try {
+    const { targetType, targetId } = req.params;
+    if (!validateTargetType(res, targetType)) return;
+
+    const attachments = await WorkspaceAttachment.find({ targetType, targetId })
+      .populate('uploadedBy', 'name email')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ success: true, data: attachments });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+exports.createAttachment = async (req, res) => {
+  try {
+    const { targetType, targetId } = req.params;
+    if (!validateTargetType(res, targetType)) return;
+
+    // req.file is populated by the uploadAttachment middleware (Cloudinary URL is at req.file.path)
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No file provided. Use multipart/form-data with a "file" field.' });
+    }
+
+    // projectId is optional context — try to derive it from the query or body
+    const projectId = req.query.projectId || req.body.projectId || null;
+
+    const attachment = await WorkspaceAttachment.create({
+      targetType,
+      targetId,
+      projectId,
+      fileUrl: req.file.path,       // Cloudinary secure_url set by uploadAttachment middleware
+      fileName: req.file.originalname,
+      fileType: req.file.mimetype,
+      fileSize: req.file.size,
+      uploadedBy: req.user._id
+    });
+
+    const populated = await attachment.populate('uploadedBy', 'name email');
+    res.status(201).json({ success: true, data: populated });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+exports.deleteAttachment = async (req, res) => {
+  try {
+    const { attachmentId } = req.params;
+    const attachment = await WorkspaceAttachment.findById(attachmentId);
+    if (!attachment) return res.status(404).json({ success: false, message: 'Attachment not found.' });
+
+    // Only the uploader or admin roles can delete
+    const isOwner = attachment.uploadedBy.toString() === req.user._id.toString();
+    const isAdmin = ['super_admin', 'agency_owner', 'agency_admin'].includes(req.user.role);
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Not authorised to delete this attachment.' });
+    }
+
+    await WorkspaceAttachment.deleteOne({ _id: attachmentId });
+    // Note: Cloudinary asset cleanup can be added here if desired using cloudinary.uploader.destroy
+    res.json({ success: true, message: 'Attachment deleted.' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// ============================================================
+// HISTORY (project-level audit log)
+// ============================================================
+
+exports.getHistory = async (req, res) => {
+  try {
+    const { projectId, targetType, targetId } = req.params;
+    const limit = parseInt(req.query.limit, 10) || 50;
+
+    const query = {};
+    if (projectId) {
+      query.projectId = projectId;
+    } else if (targetId) {
+      query.targetId = targetId;
+      if (targetType) query.targetType = targetType;
+    }
+
+    const logs = await WorkspaceAuditLog.find(query)
+      .populate('userId', 'name email')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json({ success: true, data: logs });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};

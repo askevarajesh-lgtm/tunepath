@@ -24,6 +24,9 @@ router.route('/projects')
   .get(workspaceController.getProjects)
   .post(blockViewOnly, workspaceController.createProject);
 
+// Protect ALL project-scoped routes
+router.use('/projects/:projectId', workspaceController.requireProjectAccess);
+
 router.put('/projects/:projectId/settings', blockViewOnly, workspaceController.updateSettings);
 router.put('/projects/:projectId/credentials/ga4', blockViewOnly, workspaceController.configureGA4Property);
 
