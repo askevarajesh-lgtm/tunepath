@@ -113,6 +113,18 @@ const buildSlaMatchFilter = async (req) => {
     ];
   }
 
+  const selectedClientId = req.query?.clientId;
+  if (selectedClientId && selectedClientId !== 'all' && selectedClientId !== 'null' && selectedClientId !== 'undefined') {
+    query.$and = [
+      {
+        $or: [
+          { clientId: new mongoose.Types.ObjectId(selectedClientId) },
+          { agencyId: new mongoose.Types.ObjectId(selectedClientId) }
+        ]
+      }
+    ];
+  }
+
   return query;
 };
 

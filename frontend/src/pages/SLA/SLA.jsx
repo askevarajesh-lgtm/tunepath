@@ -3,6 +3,7 @@ import { Typography, Row, Col, Card, Table, Tag, Button, Input, Progress, Avatar
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, ReferenceLine, Tooltip as RechartsTooltip } from 'recharts';
 import { motion } from 'framer-motion';
 import { Download, Settings, Search, AlertCircle, Target, CheckCircle, AlertOctagon, AlertTriangle, MessageSquare, ArrowUpRight, TrendingUp, Filter, RefreshCw } from 'lucide-react';
+import { useClientContext } from '../../contexts/ClientContext';
 import { slaTrendData } from '../../data/mock';
 import { slaApi } from '../../api/slaApi';
 import { exportToCSV } from '../../utils/exportUtils';
@@ -11,6 +12,7 @@ const { Title, Text } = Typography;
 const { Option } = Select;
 
 const SLA = () => {
+  const { selectedClient } = useClientContext();
   const [slas, setSlas] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -31,9 +33,10 @@ const SLA = () => {
   const fetchSlaData = async (page = 1, pageSize = 10) => {
     setLoading(true);
     try {
+      const clientId = selectedClient?._id;
       const [slasRes, statsRes] = await Promise.all([
-        slaApi.getSlas({ page, limit: pageSize, status: filters.status, triggerType: filters.triggerType, search: filters.search }),
-        slaApi.getSlaDashboardStats()
+        slaApi.getSlas({ page, limit: pageSize, status: filters.status, triggerType: filters.triggerType, search: filters.search, clientId }),
+        slaApi.getSlaDashboardStats({ clientId })
       ]);
       setSlas(slasRes.data);
       setPagination({ current: slasRes.pagination.page, pageSize, total: slasRes.pagination.total });
@@ -48,7 +51,7 @@ const SLA = () => {
 
   useEffect(() => {
     fetchSlaData(pagination.current, pagination.pageSize);
-  }, [filters, pagination.current, pagination.pageSize]);
+  }, [filters, pagination.current, pagination.pageSize, selectedClient]);
 
   const handleTableChange = (newPagination) => {
     setPagination(newPagination);

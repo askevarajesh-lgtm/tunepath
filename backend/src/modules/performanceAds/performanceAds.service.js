@@ -63,6 +63,7 @@ const syncPerformanceAds = async (agencyId) => {
   let totalSpend = 0;
   let totalImpressions = 0;
   let totalClicks = 0;
+  let totalLeads = 0;
   
   let liveCampaigns = [];
   let allDailyData = [];
@@ -77,7 +78,7 @@ const syncPerformanceAds = async (agencyId) => {
         params: {
           access_token: accessToken,
           date_preset: 'last_30d',
-          fields: 'spend,impressions,clicks,cpm,cpc'
+          fields: 'spend,impressions,clicks,cpm,cpc,actions'
         }
       });
 
@@ -86,6 +87,17 @@ const syncPerformanceAds = async (agencyId) => {
         totalSpend += parseFloat(insights.spend || 0);
         totalImpressions += parseInt(insights.impressions || 0, 10);
         totalClicks += parseInt(insights.clicks || 0, 10);
+
+        if (insights.actions && Array.isArray(insights.actions)) {
+          const leadAction = insights.actions.find(a => 
+            a.action_type === 'lead' || 
+            a.action_type === 'onsite_conversion.lead_grouped' ||
+            a.action_type === 'offsite_conversion.fb_pixel_lead'
+          );
+          if (leadAction) {
+            totalLeads += parseInt(leadAction.value || 0, 10);
+          }
+        }
       }
 
       // Fetch Daily Insights for Graph (Last 30 Days)
@@ -94,7 +106,7 @@ const syncPerformanceAds = async (agencyId) => {
           access_token: accessToken,
           date_preset: 'last_30d',
           time_increment: 1,
-          fields: 'spend,clicks,cpc'
+          fields: 'spend,clicks,cpc,actions'
         }
       });
       const dailyData = dailyInsightsRes.data.data || [];
@@ -104,13 +116,24 @@ const syncPerformanceAds = async (agencyId) => {
       const campaignsRes = await axios.get(`https://graph.facebook.com/v18.0/${actId}/campaigns`, {
         params: {
           access_token: accessToken,
-          fields: 'id,name,status,objective,daily_budget,lifetime_budget,insights{spend,cpc,cpm,ctr,reach,clicks},adsets{id,name,status,daily_budget,lifetime_budget,insights{spend,cpc,cpm,ctr,reach,clicks},ads{id,name,status,insights{spend,cpc,cpm,ctr,reach,clicks}}}',
+          fields: 'id,name,status,objective,daily_budget,lifetime_budget,insights{spend,cpc,cpm,ctr,reach,clicks,actions},adsets{id,name,status,daily_budget,lifetime_budget,insights{spend,cpc,cpm,ctr,reach,clicks,actions},ads{id,name,status,insights{spend,cpc,cpm,ctr,reach,clicks,actions}}}',
           effective_status: ['ACTIVE']
         }
       });
 
       const campaigns = campaignsRes.data.data || [];
       campaigns.forEach(c => {
+        const cInsights = c.insights && c.insights.data[0] ? c.insights.data[0] : null;
+        let cLeads = 0;
+        if (cInsights && cInsights.actions && Array.isArray(cInsights.actions)) {
+          const lAct = cInsights.actions.find(a => 
+            a.action_type === 'lead' || 
+            a.action_type === 'onsite_conversion.lead_grouped' ||
+            a.action_type === 'offsite_conversion.fb_pixel_lead'
+          );
+          if (lAct) cLeads = parseInt(lAct.value || 0, 10);
+        }
+
         const adSets = (c.adsets && c.adsets.data) ? c.adsets.data.map(adset => ({
           id: adset.id,
           name: adset.name,
@@ -125,21 +148,24 @@ const syncPerformanceAds = async (agencyId) => {
           })) : []
         })) : [];
 
+        const spendVal = cInsights ? parseFloat(cInsights.spend || 0) : 0;
+        const cplVal = cLeads > 0 ? (spendVal / cLeads).toFixed(2) : (cInsights && cInsights.cpc ? cInsights.cpc : '0');
+
         liveCampaigns.push({
           id: c.id,
           campaign: c.name,
           platform: 'Meta',
           status: c.status,
           budget: c.daily_budget ? (parseInt(c.daily_budget)/100) : (c.lifetime_budget ? parseInt(c.lifetime_budget)/100 : 0),
-          spend: c.insights && c.insights.data[0] ? parseFloat(c.insights.data[0].spend) : 0,
+          spend: spendVal,
           progress: 100, // Assuming active
-          leads: c.insights && c.insights.data[0] ? parseInt(c.insights.data[0].clicks || 0, 10) : 0,
-          cpl: c.insights && c.insights.data[0] ? c.insights.data[0].cpc : '0',
+          leads: cLeads,
+          cpl: cplVal,
           roas: '-',
-          ctr: c.insights && c.insights.data[0] && c.insights.data[0].ctr ? c.insights.data[0].ctr : '-',
+          ctr: cInsights && cInsights.ctr ? cInsights.ctr : '-',
           adAccount: adAccount.name,
           objective: c.objective,
-          insights: c.insights && c.insights.data[0] ? c.insights.data[0] : null,
+          insights: cInsights,
           adSets
         });
       });
@@ -148,8 +174,8 @@ const syncPerformanceAds = async (agencyId) => {
     const data = getEmptyData();
     data.metrics.adSpendMTD = totalSpend;
     data.metrics.impressions = totalImpressions;
-    data.metrics.totalLeads = totalClicks;
-    data.metrics.costPerLead = totalClicks > 0 ? (totalSpend / totalClicks).toFixed(2) : 0;
+    data.metrics.totalLeads = totalLeads;
+    data.metrics.costPerLead = totalLeads > 0 ? (totalSpend / totalLeads).toFixed(2) : 0;
     data.metrics.roas = 0; // Not fetching purchases for ROAS calculation yet
     data.activeCampaigns = liveCampaigns;
     
@@ -166,7 +192,17 @@ const syncPerformanceAds = async (agencyId) => {
           dailyMap[dateStr] = { day: dateStr.split('-').slice(1).join('/'), leads: 0, roas: 0, spend: 0 };
         }
         dailyMap[dateStr].spend += parseFloat(d.spend || 0);
-        dailyMap[dateStr].leads += parseInt(d.clicks || 0, 10); 
+
+        let dLeads = 0;
+        if (d.actions && Array.isArray(d.actions)) {
+          const lAct = d.actions.find(a => 
+            a.action_type === 'lead' || 
+            a.action_type === 'onsite_conversion.lead_grouped' ||
+            a.action_type === 'offsite_conversion.fb_pixel_lead'
+          );
+          if (lAct) dLeads = parseInt(lAct.value || 0, 10);
+        }
+        dailyMap[dateStr].leads += dLeads; 
       });
       data.dailyPerformance = Object.values(dailyMap).sort((a, b) => a.day.localeCompare(b.day));
     }

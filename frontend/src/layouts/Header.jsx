@@ -326,13 +326,15 @@ const Header = ({ collapsed, setCollapsed }) => {
                     <div style={{ marginRight: 16, display: 'flex', alignItems: 'center' }}>
                         <Select
                             showSearch
-                            placeholder="All Clients"
+                            placeholder={`${user?.agencyName || user?.companyName || 'Agency'} (Overall)`}
                             optionFilterProp="children"
                             value={draftSelectedClientId}
                             onChange={(val) => setDraftSelectedClientId(val)}
                             style={{ width: 220 }}
                         >
-                            <Select.Option value="all">All Clients</Select.Option>
+                            <Select.Option value="all">
+                                {`${user?.agencyName || user?.companyName || 'Agency'} (Overall)`}
+                            </Select.Option>
                             {agencyClients.map(c => (
                                 <Select.Option key={c._id} value={c._id}>
                                     {c.name || c.companyName}

@@ -6,8 +6,8 @@ export const slaApi = {
     return response.data;
   },
 
-  getSlaDashboardStats: async () => {
-    const response = await api.get('/sla-success/dashboard-stats');
+  getSlaDashboardStats: async (params) => {
+    const response = await api.get('/sla-success/dashboard-stats', { params });
     return response.data;
   },
 

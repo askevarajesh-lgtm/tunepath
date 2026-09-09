@@ -7,6 +7,7 @@ import { performanceAdsApi } from '../../api/performanceAdsApi';
 import api from '../../services/api';
 import { useGetClientsQuery } from '../../api/clientApi';
 import { useAuth } from '../../contexts/AuthContext';
+import { useClientContext } from '../../contexts/ClientContext';
 import CampaignBuilderWizard from './CampaignBuilderWizard';
 
 const { Title, Text } = Typography;
@@ -14,11 +15,22 @@ const { Option } = Select;
 
 const PerformanceAds = () => {
   const { user } = useAuth();
+  const { selectedClient: globalSelectedClient } = useClientContext();
   const [adminClients, setAdminClients] = useState([]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [selectedClient, setSelectedClient] = useState(null);
+  // Initialize selectedClient from URL if returning from Meta OAuth redirect or fallback to globalSelectedClient
+  const searchParams = new URLSearchParams(window.location.search);
+  const initialClientIdFromUrl = searchParams.get('clientId');
+  const [selectedClient, setSelectedClient] = useState(initialClientIdFromUrl || globalSelectedClient?._id || null);
+
+  useEffect(() => {
+    if (globalSelectedClient?._id && !initialClientIdFromUrl) {
+      setSelectedClient(globalSelectedClient._id);
+    }
+  }, [globalSelectedClient, initialClientIdFromUrl]);
+
   const [isMetaConnected, setIsMetaConnected] = useState(false);
   const [metaIntegration, setMetaIntegration] = useState(null);
   const [adAccounts, setAdAccounts] = useState([]);
@@ -67,15 +79,20 @@ const PerformanceAds = () => {
   useEffect(() => {
     // Handle OAuth redirect success/error and clean URL
     if (window.location.hash === '#_=_' || window.location.hash === '#') {
-      window.history.replaceState(null, document.title, window.location.pathname + window.location.search);
       message.success('Meta Ads account connected successfully!');
     }
     
-    const searchParams = new URLSearchParams(window.location.search);
     const error = searchParams.get('meta_error');
     if (error) {
       message.error('Failed to connect Meta Ads. Please try again.');
-      window.history.replaceState(null, document.title, window.location.pathname);
+    }
+
+    if (initialClientIdFromUrl || error || window.location.hash.includes('#')) {
+      const cleanParams = new URLSearchParams(window.location.search);
+      cleanParams.delete('clientId');
+      cleanParams.delete('meta_error');
+      const newSearch = cleanParams.toString() ? `?${cleanParams.toString()}` : '';
+      window.history.replaceState(null, document.title, window.location.pathname + newSearch);
     }
   }, []);
 
@@ -83,19 +100,10 @@ const PerformanceAds = () => {
   const clients = isSuperAdmin ? adminClients : (clientsData?.data || []);
 
   useEffect(() => {
-    if (isSuperAdmin) {
-      if (selectedClient) fetchDashboardData();
-    } else {
-      // Standard users do not need a selectedClient, just fetch
-      if (user) fetchDashboardData();
+    if (user) {
+      fetchDashboardData();
     }
-  }, [selectedClient, isSuperAdmin, user]);
-
-  useEffect(() => {
-    if (isSuperAdmin && clients.length > 0 && !selectedClient) {
-      setSelectedClient(clients[0]._id);
-    }
-  }, [clients, selectedClient, isSuperAdmin]);
+  }, [selectedClient, user]);
 
   const fetchDashboardData = async () => {
     try {
@@ -108,7 +116,7 @@ const PerformanceAds = () => {
       }
 
       // Check Meta Integration Status
-      const intRes = await api.get('/integrations/meta/status', { params: { clientId: selectedClient } });
+      const intRes = await api.get('/integrations/meta/status', { params: selectedClient ? { clientId: selectedClient } : {} });
       const intData = intRes.data;
       if (intData.success && intData.isConnected && intData.data) {
         const metaInt = intData.data;
@@ -137,7 +145,7 @@ const PerformanceAds = () => {
       const fetchAccounts = async () => {
         setIsFetchingAccounts(true);
         try {
-          const res = await api.get(`/integrations/meta/ad-accounts?clientId=${selectedClient}`);
+          const res = await api.get(`/integrations/meta/ad-accounts${selectedClient ? `?clientId=${selectedClient}` : ''}`);
           if (res.data.success) {
             if (res.data.data && res.data.data.adAccounts !== undefined) {
               setAvailableAdAccounts(res.data.data.adAccounts || []);
@@ -176,7 +184,7 @@ const PerformanceAds = () => {
     }));
     setIsSavingAccounts(true);
     try {
-      const res = await api.post(`/integrations/meta/ad-accounts?clientId=${selectedClient}`, { selectedAdAccounts: selectedAccounts });
+      const res = await api.post(`/integrations/meta/ad-accounts${selectedClient ? `?clientId=${selectedClient}` : ''}`, { selectedAdAccounts: selectedAccounts });
       if (res.data.success) {
         message.success('Ad accounts saved successfully!');
         setAdAccounts(selectedAccounts);
@@ -194,11 +202,9 @@ const PerformanceAds = () => {
 
   const handleConnectMeta = async () => {
     try {
-      if (!selectedClient) {
-        return message.warning('Please select a client first');
-      }
-      const returnUrl = encodeURIComponent(window.location.pathname);
-      const res = await api.get(`/integrations/meta/auth?returnUrl=${returnUrl}&clientId=${selectedClient}`);
+      const clientParam = selectedClient ? `clientId=${selectedClient}` : '';
+      const returnUrl = encodeURIComponent(`${window.location.pathname}${clientParam ? `?${clientParam}` : ''}`);
+      const res = await api.get(`/integrations/meta/auth?returnUrl=${returnUrl}${clientParam ? `&${clientParam}` : ''}`);
       if (res.data.success && res.data.url) {
         window.location.href = res.data.url;
       } else {
@@ -397,15 +403,6 @@ const PerformanceAds = () => {
         </div>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            <Select 
-              value={selectedClient} 
-              onChange={(val) => setSelectedClient(val)}
-              style={{ width: 220, height: 40 }} 
-              options={clients.map(c => ({ 
-                value: c._id, 
-                label: c.clientType ? `${c.clientType}: ${c.name || c.companyName}` : `Client: ${c.name || c.companyName}` 
-              }))} 
-            />
             <Button onClick={handleSync} loading={syncing} icon={<RefreshCcw size={14} />} style={{ borderRadius: 8, height: 40, fontWeight: 600 }}>Sync data</Button>
             {!isMetaConnected ? (
               <Button type="primary" onClick={handleConnectMeta} style={{ borderRadius: 8, background: 'linear-gradient(135deg, #1877F2 0%, #0652C5 100%)', height: 40, fontWeight: 700, border: 'none', boxShadow: '0 4px 12px rgba(24, 119, 242, 0.3)', padding: '0 24px', display: 'flex', alignItems: 'center', gap: 8, transition: 'all 0.3s ease' }}>Connect Meta Ads</Button>
