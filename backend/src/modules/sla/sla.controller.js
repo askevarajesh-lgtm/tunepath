@@ -2,6 +2,7 @@ const SlaRecord = require('./sla.model');
 const mongoose = require('mongoose');
 const Notification = require('../tasks/notification.model');
 const User = require('../auth/user.model');
+const Task = require('../tasks/task.model');
 
 // Helper to notify relevant users about SLA events
 const notifySlaEvent = async (sla, type, title, message, excludeUserId = null) => {
@@ -226,13 +227,34 @@ exports.getSlas = async (req, res, next) => {
       }
     }
 
-    const slas = await SlaRecord.find(query)
+    let slas = await SlaRecord.find(query)
       .populate('clientId', 'name companyName email')
       .populate('agencyId', 'name companyName email')
       .populate('assignedTo', 'name email')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
+
+    // Fallback: for Task SLA records without assignedTo populated, fetch assignedTo from Task
+    const missingAssigneeTaskIds = slas
+      .filter(s => s.entityType === 'Task' && !s.assignedTo && s.entityId)
+      .map(s => s.entityId);
+
+    if (missingAssigneeTaskIds.length > 0) {
+      const relatedTasks = await Task.find({ _id: { $in: missingAssigneeTaskIds } }).populate('assignedTo', 'name email');
+      const taskMap = new Map(relatedTasks.map(t => [t._id.toString(), t.assignedTo]));
+      slas = slas.map(s => {
+        if (s.entityType === 'Task' && !s.assignedTo && s.entityId) {
+          const taskAssignee = taskMap.get(s.entityId.toString());
+          if (taskAssignee) {
+            const sObj = s.toObject ? s.toObject() : { ...s };
+            sObj.assignedTo = taskAssignee;
+            return sObj;
+          }
+        }
+        return s;
+      });
+    }
 
     const total = await SlaRecord.countDocuments(query);
 
@@ -252,7 +274,7 @@ exports.getSlas = async (req, res, next) => {
 
 exports.getSlaById = async (req, res, next) => {
   try {
-    const sla = await SlaRecord.findById(req.params.id)
+    let sla = await SlaRecord.findById(req.params.id)
       .populate('clientId', 'name companyName email')
       .populate('agencyId', 'name companyName email')
       .populate('assignedTo', 'name email')
@@ -261,6 +283,15 @@ exports.getSlaById = async (req, res, next) => {
 
     if (!sla) {
       return res.status(404).json({ success: false, message: 'SLA Record not found' });
+    }
+
+    if (sla.entityType === 'Task' && !sla.assignedTo && sla.entityId) {
+      const task = await Task.findById(sla.entityId).populate('assignedTo', 'name email');
+      if (task?.assignedTo) {
+        const slaObj = sla.toObject();
+        slaObj.assignedTo = task.assignedTo;
+        sla = slaObj;
+      }
     }
 
     res.status(200).json({ success: true, data: sla });

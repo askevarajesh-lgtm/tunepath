@@ -159,6 +159,7 @@ const SLA = () => {
           return entity?.companyName || entity?.name || 'Unknown';
         }
       },
+      { title: "Assigned User", getValue: (r) => r.assignedTo?.name || r.assignedTo?.email || 'Unassigned' },
       { title: "Trigger Type", dataIndex: "triggerType" },
       { title: "Due Date", getValue: (r) => new Date(r.dueDate).toLocaleDateString() },
       { title: "Priority", dataIndex: "priority" },
@@ -188,6 +189,19 @@ const SLA = () => {
             <Avatar style={{ backgroundColor: 'var(--accent-primary)' }}>{initial}</Avatar>
             <strong style={{ color: 'var(--text-primary)' }}>{name}</strong>
           </div>
+        );
+      }
+    },
+    { 
+      title: 'ASSIGNED USER', 
+      key: 'assignedTo', 
+      render: (_, r) => {
+        const user = r.assignedTo;
+        const name = user?.name || user?.email || 'Unassigned';
+        return (
+          <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+            {name}
+          </span>
         );
       }
     },
@@ -349,7 +363,10 @@ const SLA = () => {
                         <strong style={{ fontSize: 16, color: 'var(--text-primary)' }}>{c.title}</strong>
                         <Tag color="error" style={{ margin: 0, borderRadius: 12 }}>BREACHED</Tag>
                       </div>
-                      <Text type="secondary" style={{ display: 'block', marginBottom: 16 }}>{c.description}</Text>
+                      <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>{c.description}</Text>
+                      <Text style={{ display: 'block', fontSize: 13, color: 'var(--text-primary)', marginBottom: 12 }}>
+                        <strong>Assigned User:</strong> {c.assignedTo?.name || c.assignedTo?.email || 'Unassigned'}
+                      </Text>
                       <div style={{ display: 'flex', gap: 12 }}>
                         <Button type="primary" onClick={() => handleView(c._id)} style={{ flex: 1, borderRadius: 8 }}>View Details</Button>
                       </div>
@@ -466,6 +483,7 @@ const SLA = () => {
               <p><strong>Priority:</strong> <strong style={{ color: getPriorityColor(selectedSla.priority) }}>{selectedSla.priority}</strong></p>
               <p><strong>Due Date:</strong> {new Date(selectedSla.dueDate).toLocaleString()}</p>
               <p><strong>Description:</strong> {selectedSla.description}</p>
+              <p><strong>Assigned User:</strong> {selectedSla.assignedTo ? (selectedSla.assignedTo.name || selectedSla.assignedTo.email || 'Unassigned') : 'Unassigned'}</p>
               <p><strong>Client:</strong> {selectedSla.clientId ? (selectedSla.clientId.companyName || selectedSla.clientId.name || 'Unknown') : 'N/A'}</p>
               <p><strong>Agency:</strong> {selectedSla.agencyId ? (selectedSla.agencyId.companyName || selectedSla.agencyId.name || 'Unknown') : 'N/A'}</p>
             </Card>

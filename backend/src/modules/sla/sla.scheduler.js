@@ -15,7 +15,7 @@ const runSlaCheck = async () => {
     // 1. Check Due Dates for Tasks
     const pendingTasks = await Task.find({ 
       status: { $nin: ['completed', 'complete', 'validated', 'done', 'rejected'] } 
-    });
+    }).populate('assignedTo', 'name email');
 
     for (const task of pendingTasks) {
       if (!task.dueDate) {
@@ -44,6 +44,10 @@ const runSlaCheck = async () => {
       const existingSla = await SlaRecord.findOne({ entityId: task._id, entityType: 'Task' });
       const oldStatus = existingSla ? existingSla.status : 'Normal';
 
+      const assignedUser = task.assignedTo;
+      const assignedName = assignedUser && typeof assignedUser === 'object' ? (assignedUser.name || assignedUser.email) : null;
+      const assignedInfo = assignedName ? ` (Assigned to ${assignedName})` : '';
+
       // Upsert SLA Record for Breached task
       const updatedSla = await SlaRecord.findOneAndUpdate(
         { entityId: task._id, entityType: 'Task' },
@@ -56,11 +60,11 @@ const runSlaCheck = async () => {
           entityId: task._id,
           entityType: 'Task',
           title: `Task: ${task.title}`,
-          description: `Overdue Task: ${task.title} was not completed by 11:59 PM on ${new Date(task.dueDate).toLocaleDateString()}.`,
+          description: `Overdue Task: ${task.title}${assignedInfo} was not completed by 11:59 PM on ${new Date(task.dueDate).toLocaleDateString()}.`,
           dueDate: task.dueDate,
           priority: task.priority === 'high' || task.priority === 'critical' ? task.priority : 'High',
           status: 'Breached',
-          assignedTo: task.assignedTo
+          assignedTo: task.assignedTo?._id || task.assignedTo
         },
         { upsert: true, returnDocument: 'after' }
       );
