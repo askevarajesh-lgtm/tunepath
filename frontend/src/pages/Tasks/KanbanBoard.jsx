@@ -1790,12 +1790,8 @@ const KanbanBoard = ({
         const set = new Set([s, norm, norm.replace(/-/g, "_")]);
         if (["dev", "developer", "development", "web-application-development", "tech-team", "tech_team", "project", "projects"].includes(norm)) {
           ["dev", "developer", "development", "web-application-development", "web_application_development", "tech_team", "tech-team", "project", "projects"].forEach(x => set.add(x));
-        } else if (["video-editor", "video_editor", "video-editing", "video"].includes(norm)) {
-          ["video-editor", "video_editor", "video-editing", "video"].forEach(x => set.add(x));
-        } else if (["designer", "design", "graphic-designer", "graphic_designer"].includes(norm)) {
-          ["designer", "design", "graphic-designer", "graphic_designer"].forEach(x => set.add(x));
-        } else if (["digital-marketing", "digital_marketing", "dm", "marketing"].includes(norm)) {
-          ["digital-marketing", "digital_marketing", "dm", "marketing"].forEach(x => set.add(x));
+        } else if (["video-editor", "video_editor", "video-editing", "video", "designer", "design", "graphic-designer", "graphic_designer", "digital-marketing", "digital_marketing", "dm", "marketing"].includes(norm)) {
+          ["video-editor", "video_editor", "video-editing", "video", "designer", "design", "graphic-designer", "graphic_designer", "digital-marketing", "digital_marketing", "dm", "marketing"].forEach(x => set.add(x));
         } else if (["deployment", "deploy", "deployer"].includes(norm)) {
           ["deployment", "deploy", "deployer"].forEach(x => set.add(x));
         } else if (["seo", "seo-specialist", "seo_specialist"].includes(norm)) {

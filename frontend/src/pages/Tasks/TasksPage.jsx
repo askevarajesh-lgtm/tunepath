@@ -392,13 +392,14 @@ const TasksPage = () => {
 
   useEffect(() => {
     if (!user) return;
-    if (isGlobalAdmin) {
-      if (!hasInitializedDept.current) {
+    if (!hasInitializedDept.current) {
+      if (isGlobalAdmin) {
         setSelectedDepartment("all");
-        hasInitializedDept.current = true;
+      } else if (userDepartmentSlug) {
+        setSelectedDepartment(userDepartmentSlug);
+      } else {
+        setSelectedDepartment("all");
       }
-    } else if (userDepartmentSlug) {
-      setSelectedDepartment(userDepartmentSlug);
       hasInitializedDept.current = true;
     }
   }, [user, isGlobalAdmin, userDepartmentSlug]);
