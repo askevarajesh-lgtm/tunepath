@@ -1186,6 +1186,7 @@ const ClientCanvaPage = () => {
   const { isDark } = useTheme();
   const [searchParams, setSearchParams] = useSearchParams();
   const [workspaceView, setWorkspaceView] = useState("home");
+  const [callbackAlert, setCallbackAlert] = useState(null);
   const [searchValue, setSearchValue] = useState("");
   const [designType, setDesignType] = useState("presentation");
   const [selectedDesignId, setSelectedDesignId] = useState(null);
@@ -1199,7 +1200,9 @@ const ClientCanvaPage = () => {
     isLoading: isStatusLoading,
     isFetching: isStatusFetching,
     refetch: refetchStatus,
-  } = useGetCanvaStatusQuery();
+  } = useGetCanvaStatusQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+  });
   const isConnected = Boolean(statusData?.connected);
 
   const {
@@ -1286,25 +1289,7 @@ const ClientCanvaPage = () => {
   const callbackConnected = searchParams.get("canva_connected");
   const callbackError = searchParams.get("canva_error");
 
-  const callbackAlert = useMemo(() => {
-    if (callbackConnected === "true") {
-      return {
-        type: "success",
-        message: "Canva connected successfully",
-        description: "Your client workspace is ready to browse and manage designs.",
-      };
-    }
 
-    if (callbackError) {
-      return {
-        type: "error",
-        message: "Canva connection could not be completed",
-        description: `Canva returned: ${callbackError.split("_").join(" ")}.`,
-      };
-    }
-
-    return null;
-  }, [callbackConnected, callbackError]);
 
   const account = statusData?.account || null;
 
@@ -1325,22 +1310,47 @@ const ClientCanvaPage = () => {
 
   useEffect(() => {
     if (callbackConnected === "true") {
+      setCallbackAlert({
+        type: "success",
+        message: "Canva connected successfully",
+        description: "Your client workspace is ready to browse and manage designs.",
+      });
+      refetchStatus();
+      refetchDesigns();
       setWorkspaceView("designs");
+      clearCallbackParams();
     } else if (callbackError) {
+      setCallbackAlert({
+        type: "error",
+        message: "Canva connection could not be completed",
+        description: `Canva returned: ${callbackError.split("_").join(" ")}.`,
+      });
       setWorkspaceView("connection");
+      clearCallbackParams();
     }
-  }, [callbackConnected, callbackError]);
+  }, [callbackConnected, callbackError, refetchStatus, refetchDesigns]);
 
   const clearCallbackParams = () => {
     const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete("canva_connected");
-    nextParams.delete("canva_error");
-    setSearchParams(nextParams, { replace: true });
+    if (nextParams.has("canva_connected") || nextParams.has("canva_error")) {
+      nextParams.delete("canva_connected");
+      nextParams.delete("canva_error");
+      setSearchParams(nextParams, { replace: true });
+    }
   };
 
   const handleConnect = async () => {
-    message.info("Canva integration is coming soon!");
-    return;
+    try {
+      const result = await connectCanva().unwrap();
+      if (!result?.authUrl) {
+        throw new Error("Canva authorization URL was not returned.");
+      }
+      window.location.assign(result.authUrl);
+    } catch (error) {
+      message.error(
+        getApiErrorMessage(error, "Unable to start the Canva connection."),
+      );
+    }
   };
 
   const handleDisconnect = () => {
@@ -1354,6 +1364,8 @@ const ClientCanvaPage = () => {
       onOk: async () => {
         try {
           await disconnectCanva().unwrap();
+          await refetchStatus();
+          await refetchDesigns();
           setLastCreatedDesign(null);
           setLastExportJob(null);
           setWorkspaceView("connection");
@@ -2259,9 +2271,6 @@ const ClientCanvaPage = () => {
           <Title level={2} style={{ margin: 0 }}>
             Canva Workspace
           </Title>
-          <Tag color="orange" style={{ margin: 0, fontSize: 14, padding: "2px 8px" }}>
-            Coming Soon
-          </Tag>
         </div>
         <Text type="secondary">
           A Canva-style client workspace for My designs, templates, create, export, and connection.
@@ -2273,7 +2282,7 @@ const ClientCanvaPage = () => {
           type={callbackAlert.type}
           showIcon
           closable
-          onClose={clearCallbackParams}
+          onClose={() => setCallbackAlert(null)}
           style={{ marginBottom: 18, borderRadius: 18 }}
           message={callbackAlert.message}
           description={callbackAlert.description}

@@ -19,6 +19,19 @@ function sha256(buffer) {
   return crypto.createHash('sha256').update(buffer).digest();
 }
 
+const getPossibleCompanyIds = (req) => {
+  const ids = [
+    req.companyId,
+    req.user?.companyId,
+    req.user?.agencyId,
+    req.user?.brandId,
+    req.user?.workspaceId,
+    req.user?.adminId,
+    req.user?._id
+  ].map(id => id ? id.toString() : null);
+  return [...new Set(ids.filter(Boolean))];
+};
+
 exports.connectCanva = async (req, res) => {
   try {
     const clientId = process.env.CANVA_CLIENT_ID;
@@ -32,12 +45,14 @@ exports.connectCanva = async (req, res) => {
     const codeVerifier = base64URLEncode(crypto.randomBytes(32));
     const codeChallenge = base64URLEncode(sha256(codeVerifier));
     const state = crypto.randomBytes(16).toString('hex');
-    const companyId = req.user.companyId || req.user.agencyId || req.user._id;
+    const possibleIds = getPossibleCompanyIds(req);
+    const companyId = possibleIds[0] || req.user?._id;
 
     // Store verifier in memory with 10 minute expiry
     pkceStore.set(state, {
       codeVerifier,
       companyId,
+      possibleIds,
       expiresAt: Date.now() + 10 * 60 * 1000
     });
 
@@ -75,7 +90,7 @@ exports.canvaCallback = async (req, res) => {
       return res.redirect(`${frontendUrl}/agency/canva?canva_error=invalid_session_or_state`);
     }
 
-    const { codeVerifier, companyId } = sessionData;
+    const { codeVerifier, companyId, possibleIds = [companyId] } = sessionData;
     pkceStore.delete(state);
 
     const clientId = process.env.CANVA_CLIENT_ID;
@@ -113,10 +128,14 @@ exports.canvaCallback = async (req, res) => {
       console.warn("Could not fetch user profile from Canva", profileErr.message);
     }
 
+    const existing = await Integration.findOne({ companyId: { $in: possibleIds }, type: 'canva' });
+    const targetCompanyId = existing?.companyId || companyId;
+
     // Upsert the integration
     await Integration.findOneAndUpdate(
-      { companyId: companyId, type: 'canva' },
+      { companyId: targetCompanyId, type: 'canva' },
       {
+        companyId: targetCompanyId,
         name: 'Canva Workspace',
         isActive: true,
         config: {
@@ -138,8 +157,8 @@ exports.canvaCallback = async (req, res) => {
 
 exports.getCanvaStatus = async (req, res) => {
   try {
-    const companyId = req.user.companyId || req.user.agencyId || req.user._id;
-    const integration = await Integration.findOne({ companyId, type: 'canva', isActive: true });
+    const possibleIds = getPossibleCompanyIds(req);
+    const integration = await Integration.findOne({ companyId: { $in: possibleIds }, type: 'canva', isActive: true });
     
     if (!integration) {
       return res.json({ connected: false });
@@ -148,8 +167,8 @@ exports.getCanvaStatus = async (req, res) => {
     res.json({
       connected: true,
       account: {
-        displayName: integration.config.displayName || 'Canva Account',
-        tokenExpiry: integration.config.expiresAt,
+        displayName: integration.config?.displayName || 'Canva Account',
+        tokenExpiry: integration.config?.expiresAt,
       }
     });
   } catch (err) {
@@ -160,8 +179,8 @@ exports.getCanvaStatus = async (req, res) => {
 
 exports.disconnectCanva = async (req, res) => {
   try {
-    const companyId = req.user.companyId || req.user.agencyId || req.user._id;
-    await Integration.findOneAndDelete({ companyId, type: 'canva' });
+    const possibleIds = getPossibleCompanyIds(req);
+    await Integration.deleteMany({ companyId: { $in: possibleIds }, type: 'canva' });
     res.json({ success: true, message: 'Canva disconnected successfully' });
   } catch (err) {
     console.error("Error disconnecting Canva:", err);
@@ -205,8 +224,8 @@ const refreshCanvaToken = async (integration) => {
 
 exports.getCanvaDesigns = async (req, res) => {
   try {
-    const companyId = req.user.companyId || req.user.agencyId || req.user._id;
-    let integration = await Integration.findOne({ companyId, type: 'canva', isActive: true });
+    const possibleIds = getPossibleCompanyIds(req);
+    let integration = await Integration.findOne({ companyId: { $in: possibleIds }, type: 'canva', isActive: true });
     
     if (!integration) {
       return res.status(401).json({ success: false, error: 'Canva account not connected' });
