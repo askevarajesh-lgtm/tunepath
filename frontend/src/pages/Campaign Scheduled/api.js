@@ -85,6 +85,18 @@ export const campaignScheduledApi = {
   async getAnalytics(clientCompanyId = null) {
     return request("/analytics", { clientCompanyId });
   },
+  async getInsightsMatrix(clientCompanyId = null) {
+    return request("/insights-matrix", { clientCompanyId });
+  },
+  async getAccountFollowers(accountId, clientCompanyId = null) {
+    return request(`/accounts/${accountId}/followers`, { clientCompanyId });
+  },
+  async getAccountLikers(accountId, clientCompanyId = null) {
+    return request(`/accounts/${accountId}/likers`, { clientCompanyId });
+  },
+  async getAccountCommentsList(accountId, clientCompanyId = null) {
+    return request(`/accounts/${accountId}/comments-list`, { clientCompanyId });
+  },
   async refreshPostMetrics(clientCompanyId = null) {
     const data = await request("/posts/refresh-metrics", {
       method: "POST",
