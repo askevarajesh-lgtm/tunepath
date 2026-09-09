@@ -189,7 +189,7 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
   if (['brand_super_admin', 'brand_manager', 'user', 'brand_team_user', 'client_user'].includes(role)) {
     allMenuItems.push({
       key: 'task_management',
-      label: 'Task Management',
+      label: 'TASK MANAGEMENT',
       icon: getIcon(CheckSquare),
       moduleGroup: 'Workspace',
       moduleId: 'Task Management',

@@ -181,7 +181,7 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
         },
         {
             key: 'task_management',
-            label: 'Task Management',
+            label: 'TASK MANAGEMENT',
             icon: getIcon(CheckSquare),
             children: [
                 ...(role === 'commander_admin' ? [] : [

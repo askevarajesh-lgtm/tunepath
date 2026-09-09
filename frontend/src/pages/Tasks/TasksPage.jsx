@@ -392,11 +392,16 @@ const TasksPage = () => {
 
   useEffect(() => {
     if (!user) return;
-    if (!hasInitializedDept.current) {
-      setSelectedDepartment("all");
+    if (isGlobalAdmin) {
+      if (!hasInitializedDept.current) {
+        setSelectedDepartment("all");
+        hasInitializedDept.current = true;
+      }
+    } else if (userDepartmentSlug) {
+      setSelectedDepartment(userDepartmentSlug);
       hasInitializedDept.current = true;
     }
-  }, [user]);
+  }, [user, isGlobalAdmin, userDepartmentSlug]);
 
   const settingsTabItems = [
     {

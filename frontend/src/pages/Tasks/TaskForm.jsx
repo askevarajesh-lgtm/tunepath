@@ -60,6 +60,25 @@ import { ensureNamedCategories } from "../../utils/categoryUtils";
 const { TextArea } = Input;
 const { Option } = Select;
 
+const filterOptionByChildrenOrLabel = (input, option) => {
+  if (!input) return true;
+  const search = input.toLowerCase().trim();
+  if (option?.label && typeof option.label === "string") {
+    return option.label.toLowerCase().includes(search);
+  }
+  if (option?.children !== undefined && option?.children !== null) {
+    if (Array.isArray(option.children)) {
+      const text = option.children
+        .filter(Boolean)
+        .map((c) => (typeof c === "object" ? "" : String(c)))
+        .join(" ");
+      return text.toLowerCase().includes(search);
+    }
+    return String(option.children).toLowerCase().includes(search);
+  }
+  return false;
+};
+
 const extractProjectCategoriesWithCounts = (proj) => {
   if (!proj) return [];
   const list = [];
@@ -265,11 +284,17 @@ const TaskForm = () => {
     );
   }, [departments, selectedDepartment]);
 
-  const isProjectsDepartment = useMemo(() => {
-    if (!selectedDepartment) return false;
-    const slug = selectedDeptObj?.slug?.toLowerCase() || "";
-    const name = selectedDeptObj?.name?.toLowerCase() || "";
-    const raw = String(selectedDepartment).toLowerCase();
+  const isProjectsDeptCheck = (deptVal) => {
+    if (!deptVal) return false;
+    const deptObj = departments?.find(
+      (d) =>
+        d._id === deptVal ||
+        d.slug === deptVal ||
+        d.name?.toLowerCase() === String(deptVal).toLowerCase()
+    );
+    const slug = deptObj?.slug?.toLowerCase() || (typeof deptVal === "string" ? deptVal.toLowerCase() : "");
+    const name = deptObj?.name?.toLowerCase() || "";
+    const raw = String(deptVal).toLowerCase();
 
     return (
       slug === "projects" ||
@@ -280,7 +305,11 @@ const TaskForm = () => {
       raw === "project" ||
       raw.includes("project")
     );
-  }, [selectedDepartment, selectedDeptObj]);
+  };
+
+  const isProjectsDepartment = useMemo(() => {
+    return isProjectsDeptCheck(selectedDepartment);
+  }, [selectedDepartment, departments]);
 
   const websiteDeptId = useMemo(() => {
     return departments.find((d) => d.slug === "website-designing")?._id;
@@ -291,7 +320,7 @@ const TaskForm = () => {
       ?._id;
   }, [departments]);
 
-  const isFixedWatcher = (u) => {
+  const isFixedWatcher = (u, deptVal = selectedDepartment) => {
     if (!u || !currentUser) return false;
     const currentUserCompanyId =
       currentUser?.companyId?._id || currentUser?.companyId;
@@ -313,10 +342,18 @@ const TaskForm = () => {
     if (isAgencyManager) return true;
 
     // 3. Lekashri is fixed ONLY for Projects department
-    if (isProjectsDepartment && u.email?.toLowerCase() === "leka@tunepath.com")
+    const isProjDept = isProjectsDeptCheck(deptVal);
+    if (isProjDept && u.email?.toLowerCase() === "leka@tunepath.com")
       return true;
 
     return false;
+  };
+
+  const getFixedWatcherIds = (deptVal) => {
+    if (!allAvailableUsers || allAvailableUsers.length === 0) return [];
+    return allAvailableUsers
+      .filter((u) => isFixedWatcher(u, deptVal))
+      .map((u) => u._id);
   };
 
   const tagRender = (props) => {
@@ -888,9 +925,42 @@ const TaskForm = () => {
     }
   }, [selectedProject, isEdit, form]);
 
+  // Synchronize taskBlocks default watchers when allAvailableUsers or departments load
+  useEffect(() => {
+    if (isEdit || !allAvailableUsers || allAvailableUsers.length === 0) return;
+
+    setTaskBlocks((prevBlocks) => {
+      let changed = false;
+      const newBlocks = prevBlocks.map((block) => {
+        const fixedIds = getFixedWatcherIds(block.department);
+        const lekaUser = allAvailableUsers.find(
+          (u) => u.email?.toLowerCase() === "leka@tunepath.com"
+        );
+        const lekaId = lekaUser?._id;
+        const isProj = isProjectsDeptCheck(block.department);
+
+        let currentWatchers = block.watchers || [];
+        const missingFixed = fixedIds.filter((id) => !currentWatchers.includes(id));
+        const shouldRemoveLeka = !isProj && lekaId && currentWatchers.includes(lekaId);
+
+        if (missingFixed.length > 0 || shouldRemoveLeka) {
+          changed = true;
+          let updatedWatchers = [...new Set([...currentWatchers, ...fixedIds])];
+          if (shouldRemoveLeka) {
+            updatedWatchers = updatedWatchers.filter((id) => id !== lekaId);
+          }
+          return { ...block, watchers: updatedWatchers };
+        }
+        return block;
+      });
+
+      return changed ? newBlocks : prevBlocks;
+    });
+  }, [allAvailableUsers, departments, isEdit]);
+
   const handleAddTaskBlock = () => {
     const nextId = Date.now();
-    const defaultWatchers = allAvailableUsers.filter(isFixedWatcher).map((u) => u._id);
+    const defaultWatchers = getFixedWatcherIds(undefined);
 
     setTaskBlocks((prev) => [
       ...prev,
@@ -922,6 +992,21 @@ const TaskForm = () => {
           if (projObj?.clientId) {
             updated.companyId = projObj.clientId._id || projObj.clientId;
           }
+        }
+        if (field === "department") {
+          const fixedIds = getFixedWatcherIds(value);
+          const lekaUser = allAvailableUsers.find(
+            (u) => u.email?.toLowerCase() === "leka@tunepath.com"
+          );
+          const lekaId = lekaUser?._id;
+          const isProj = isProjectsDeptCheck(value);
+
+          let currentWatchers = block.watchers || [];
+          let newWatchers = [...new Set([...currentWatchers, ...fixedIds])];
+          if (!isProj && lekaId) {
+            newWatchers = newWatchers.filter((id) => id !== lekaId);
+          }
+          updated.watchers = newWatchers;
         }
         return updated;
       })
@@ -1227,6 +1312,7 @@ const TaskForm = () => {
                       showSearch
                       allowClear
                       disabled={!!selectedProject?.clientId}
+                      filterOption={filterOptionByChildrenOrLabel}
                       onChange={(value) => {
                         setSelectedCompanyId(value);
                         if (!selectedProject?.clientId) {
@@ -1257,6 +1343,7 @@ const TaskForm = () => {
                       loading={selectedCompanyId ? isLoadingProjects : isLoadingAllProjects}
                       allowClear
                       showSearch
+                      filterOption={filterOptionByChildrenOrLabel}
                       onChange={(value) => {
                         setSelectedProjectId(value);
                         if (!value) {
@@ -1389,7 +1476,7 @@ const TaskForm = () => {
                         onChange={(val) => handleUpdateTaskBlock(index, "department", val)}
                         style={{ width: "100%" }}
                         showSearch
-                        optionFilterProp="children"
+                        filterOption={filterOptionByChildrenOrLabel}
                       >
                         {departments.map((d) => (
                           <Option key={d._id} value={d._id}>
@@ -1411,7 +1498,7 @@ const TaskForm = () => {
                         onChange={(val) => handleUpdateTaskBlock(index, "assignedTo", val)}
                         style={{ width: "100%" }}
                         showSearch
-                        optionFilterProp="children"
+                        filterOption={filterOptionByChildrenOrLabel}
                       >
                         {usersForAssigneesSorted.map((u) => (
                           <Option key={u._id} value={u._id} disabled={isAbsentUser(u)}>
@@ -1438,6 +1525,7 @@ const TaskForm = () => {
                           style={{ width: "100%" }}
                           showSearch
                           allowClear
+                          filterOption={filterOptionByChildrenOrLabel}
                         >
                           {finalAvailableCompanies.map((c) => (
                             <Option key={c._id} value={c._id}>
@@ -1462,6 +1550,7 @@ const TaskForm = () => {
                           style={{ width: "100%" }}
                           showSearch
                           allowClear
+                          filterOption={filterOptionByChildrenOrLabel}
                         >
                           {availableProjects.map((p) => (
                             <Option key={p._id || p.id} value={p._id || p.id}>
@@ -1583,13 +1672,15 @@ const TaskForm = () => {
                       <Select
                         mode="multiple"
                         placeholder="Select watchers"
+                        showSearch
+                        filterOption={filterOptionByChildrenOrLabel}
                         value={block.watchers}
                         onChange={(vals) => handleUpdateTaskBlock(index, "watchers", vals)}
                         style={{ width: "100%" }}
                         options={allAvailableUsersSorted.map((u) => ({
                           value: u._id,
                           label: `${u.name} (${u.email})`,
-                          disabled: isFixedWatcher(u) || isAbsentUser(u),
+                          disabled: isFixedWatcher(u, block.department) || isAbsentUser(u),
                         }))}
                       />
                     </div>

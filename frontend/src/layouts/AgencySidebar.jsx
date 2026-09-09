@@ -159,7 +159,7 @@ const AgencySidebar = ({ collapsed, setCollapsed }) => {
   if (role !== 'agency_super_admin') {
     menuItems.push({
       key: 'task_management',
-      label: 'Task Management',
+      label: 'TASK MANAGEMENT',
       icon: getIcon(CheckSquare),
       children: [
         { key: '/agency/projects', icon: getIcon(Target), label: 'Projects' },

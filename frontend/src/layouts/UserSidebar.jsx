@@ -72,7 +72,7 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   if (hasPerm('Workspace-Task Management') || taskManagementChildren.length > 0) {
     menuItems.push({
       key: 'task_management',
-      label: 'Task Management',
+      label: 'TASK MANAGEMENT',
       icon: getIcon(CheckSquare),
       children: taskManagementChildren
     });
