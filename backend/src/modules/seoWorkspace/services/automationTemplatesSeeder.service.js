@@ -6,7 +6,7 @@ const TAG = 'AutomationTemplatesSeeder';
 const ENTERPRISE_TEMPLATES = [
   {
     name: 'Daily 19:00 Site Audit & Multi-Channel Alert',
-    description: 'Runs an automated end-to-end website crawl and technical SEO audit daily at 19:00 UTC for https://askeva.io, logs the snapshot to the workspace database, and sends executive PDF digests to Email and Slack.',
+    description: 'Runs an automated end-to-end website crawl and technical SEO audit daily at 19:00 UTC for {{project.domain}}, logs the snapshot to the workspace database, and sends executive PDF digests to Email and Slack.',
     category: 'Website Audit',
     tags: ['Site Audit', 'Daily', 'Scheduled', 'Email', 'Slack', 'Executive'],
     difficulty: 'Intermediate',
@@ -30,11 +30,11 @@ const ENTERPRISE_TEMPLATES = [
         position: { x: 250, y: 180 },
         data: {
           label: 'Run Website Audit',
-          subtitle: 'Deep crawl https://askeva.io',
+          subtitle: 'Deep crawl {{project.domain}}',
           type: 'action',
           subtype: 'run_site_audit',
           config: {
-            targetDomain: 'https://askeva.io',
+            targetDomain: '{{project.domain}}',
             maxPages: 25,
             crawlDepth: 3,
             jsRendering: false,
@@ -54,9 +54,9 @@ const ENTERPRISE_TEMPLATES = [
           subtype: 'send_email_digest',
           config: {
             channel: 'email',
-            title: 'Daily Site Audit: https://askeva.io - {{date}}',
+            title: 'Daily Site Audit: {{project.domain}} - {{date}}',
             recipient: 'seo-team@company.com',
-            message: 'Daily 19:00 Site Audit completed for https://askeva.io.\nOverall Score: {{steps.run_site_audit.score}}/100\nPages Crawled: {{steps.run_site_audit.pagesCrawled}}\nFindings: {{steps.run_site_audit.findingsCount}}\n\nDownload Report: {{steps.run_site_audit.reportPdfUrl}}'
+            message: 'Daily 19:00 Site Audit completed for {{project.domain}}.\nOverall Score: {{steps.run_site_audit.score}}/100\nPages Crawled: {{steps.run_site_audit.pagesCrawled}}\nFindings: {{steps.run_site_audit.findingsCount}}\n\nDownload Report: {{steps.run_site_audit.reportPdfUrl}}'
           }
         }
       },
@@ -71,7 +71,7 @@ const ENTERPRISE_TEMPLATES = [
           subtype: 'send_slack_message',
           config: {
             channel: 'slack',
-            title: 'Audit Complete: https://askeva.io',
+            title: 'Audit Complete: {{project.domain}}',
             recipient: '#seo-alerts',
             message: 'Daily Audit completed with score *{{steps.run_site_audit.score}}/100*. Report URL: {{steps.run_site_audit.reportPdfUrl}}',
             severity: 'info'
@@ -85,7 +85,7 @@ const ENTERPRISE_TEMPLATES = [
       { id: 'e2-4', source: 'node-2', target: 'node-4', animated: true, style: { stroke: '#3b82f6', strokeWidth: 2 } }
     ],
     variables: {
-      targetDomain: 'https://askeva.io'
+      targetDomain: '{{project.domain}}'
     }
   },
   {

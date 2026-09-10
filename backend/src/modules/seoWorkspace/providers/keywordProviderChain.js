@@ -5,11 +5,12 @@
  * forward, anything else that needs keyword data) is allowed to import.
  * Tries each registered provider in order and falls through to the next on
  * "unconfigured", "threw", or "returned nothing" — mirroring the
- * DataForSEO → Semrush → AI-estimate fallback pattern `competitorAgent`
- * already uses today, but generalized so it isn't reimplemented per-feature.
+ * DataForSEO → AI-estimate fallback pattern `competitorAgent` already uses,
+ * but generalized so it isn't reimplemented per-feature.
+ *
+ * NOTE: Semrush is NOT in this chain. Marketplace SEO uses only DataForSEO.
  *
  *   Keyword Intelligence → Keyword Provider (this file) → DataForSEO
- *                                                        → Semrush
  *                                                        → Future providers
  *
  * Adding a provider = require it here, push it into PROVIDERS. Nothing
@@ -18,12 +19,11 @@
 const logger = require('../../aiCore/logger.service');
 
 const dataForSeoProvider = require('./dataForSeoKeywordProvider');
-const semrushProvider = require('./semrushKeywordProvider');
 
 const TAG = 'KeywordProviderChain';
 
 // Ordered fallback chain. Future providers (Ahrefs, Moz, ...) get appended here.
-const PROVIDERS = [dataForSeoProvider, semrushProvider];
+const PROVIDERS = [dataForSeoProvider];
 
 function isEmpty(result) {
   if (result == null) return true;

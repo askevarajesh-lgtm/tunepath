@@ -308,9 +308,10 @@ exports.runAudit = async (req, res) => {
     if (!project) {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
-    const newAudit = await seoAuditorAgent.collectRawAudit(project, companyId, 1);
+    const workspaceId = req.user.workspaceId || req.user.brandId || req.user.agencyId || req.user.companyId || req.user._id;
+    const newAudit = await seoAuditorAgent.run(projectId, workspaceId, {});
 
-    res.status(200).json({ success: true, data: newAudit, score: newAudit.metrics.overall || newAudit.metrics.onpageScore });
+    res.status(200).json({ success: true, data: newAudit });
   } catch (error) {
     console.error('Error running audit:', error);
     res.status(500).json({ success: false, message: error.message || 'Server error running audit' });
@@ -327,7 +328,7 @@ exports.runAuditorAgent = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Project not found' });
     }
 
-    const workspaceId = getWorkspaceId(req);
+    const workspaceId = req.user.workspaceId || req.user.brandId || req.user.agencyId || req.user.companyId || req.user._id;
     const options = req.body || {};
     const audit = await seoAuditorAgent.run(projectId, workspaceId, options);
 
@@ -1585,14 +1586,117 @@ exports.getKeywordGap = async (req, res) => {
     const project = await WorkspaceProject.findOne({ _id: projectId, companyId, isDeleted: false });
     if (!project) return res.status(404).json({ success: false, error: 'Project not found' });
 
-    // Since we cannot fabricate metrics, we would normally query an external API here (like DataForSEO).
-    // In this stub, we return an explicit empty payload indicating external data isn't directly wired.
+    // Fetch both datasets separately to capture individual failure reasons
+    const opts = { projectId, bypassCache: false };
+    let targetRanked = null, competitorRanked = null;
+    let targetError = null, competitorError = null;
+
+    const [targetResult, competitorResult] = await Promise.allSettled([
+      keywordIntelligence.getDomainRankedKeywords(project.domain, opts),
+      keywordIntelligence.getDomainRankedKeywords(competitorUrl, opts)
+    ]);
+
+    if (targetResult.status === 'fulfilled') {
+      targetRanked = targetResult.value;
+    } else {
+      targetError = targetResult.reason?.message || 'Unknown error fetching target keywords';
+    }
+
+    if (competitorResult.status === 'fulfilled') {
+      competitorRanked = competitorResult.value;
+    } else {
+      competitorError = competitorResult.reason?.message || 'Unknown error fetching competitor keywords';
+    }
+
+    // If either provider call failed (not just empty), report unavailable
+    if (targetError || competitorError) {
+      return res.json({
+        success: false,
+        status: 'unavailable',
+        reason: 'keyword_provider_error',
+        message: 'One or more keyword datasets could not be retrieved from the provider.',
+        details: {
+          targetDomain: targetError ? `Failed: ${targetError}` : 'OK',
+          competitorDomain: competitorError ? `Failed: ${competitorError}` : 'OK'
+        }
+      });
+    }
+
+    // Both fetches succeeded (may have 0 results — that's a legitimate provider response)
+    if (!targetRanked.length && !competitorRanked.length) {
+      return res.json({
+        success: false,
+        status: 'no_data',
+        reason: 'no_ranked_keywords_found',
+        message: 'The keyword provider returned no ranked keywords for either domain. This may mean the domains are not yet indexed in the provider database.'
+      });
+    }
+
+    const normalize = (kw) => (kw || '').toLowerCase().trim().replace(/\s+/g, ' ');
+
+    const targetMap = new Map();
+    targetRanked.forEach((k) => {
+      const norm = normalize(k.keyword);
+      if (norm) targetMap.set(norm, k);
+    });
+
+    const compMap = new Map();
+    competitorRanked.forEach((k) => {
+      const norm = normalize(k.keyword);
+      if (norm) compMap.set(norm, k);
+    });
+
+    const sharedKeywords = [];
+    const missingKeywords = []; // competitor has, target doesn't
+    const targetOnlyKeywords = [];
+
+    // Evaluate competitor keywords (Shared / Missing)
+    for (const [normKw, compData] of compMap.entries()) {
+      if (targetMap.has(normKw)) {
+        sharedKeywords.push({
+          keyword: normKw,
+          searchVolume: compData.searchVolume || 0,
+          keywordDifficulty: compData.keywordDifficulty || 0,
+          competitorRank: compData.rank || null,
+          targetRank: targetMap.get(normKw).rank || null
+        });
+      } else {
+        missingKeywords.push({
+          keyword: normKw,
+          searchVolume: compData.searchVolume || 0,
+          keywordDifficulty: compData.keywordDifficulty || 0,
+          competitorRank: compData.rank || null
+        });
+      }
+    }
+
+    // Evaluate target keywords (Target Only)
+    for (const [normKw, targetData] of targetMap.entries()) {
+      if (!compMap.has(normKw)) {
+        targetOnlyKeywords.push({
+          keyword: normKw,
+          searchVolume: targetData.searchVolume || 0,
+          keywordDifficulty: targetData.keywordDifficulty || 0,
+          targetRank: targetData.rank || null
+        });
+      }
+    }
+
     res.json({
       success: true,
+      status: 'success',
       data: {
-        competitorUrl,
-        missingKeywords: [],
-        message: 'External Competitor API not configured. Cannot generate gap keywords without valid provider.'
+        targetDomain: project.domain,
+        competitorDomain: competitorUrl,
+        sharedKeywords,
+        missingKeywords,
+        targetOnlyKeywords,
+        counts: {
+          shared: sharedKeywords.length,
+          missing: missingKeywords.length,
+          targetOnly: targetOnlyKeywords.length
+        },
+        dataSource: 'provider-chain'
       }
     });
   } catch (error) {

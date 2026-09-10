@@ -16,6 +16,16 @@ const WorkspaceAuditPage = require('../models/workspaceAuditPage.model');
 const AGENT_KEY = 'seo-auditor';
 const TAG = 'SeoAuditorAgent';
 
+// Start worker immediately on boot so it resumes interrupted jobs
+try {
+  const enterpriseCrawlWorker = require('./enterpriseCrawl.worker.js');
+  if (!enterpriseCrawlWorker.isRunning && process.env.NODE_ENV !== 'test') {
+    enterpriseCrawlWorker.start();
+  }
+} catch (e) {
+  logger.error(TAG, `Failed to initialize enterprise crawl worker: ${e.message}`);
+}
+
 async function run(projectId, workspaceId, options = {}, userId = 'system') {
   logger.info(TAG, `[Audit Start Request] Project ID: ${projectId} | User ID: ${userId} | Profile: ${options.profile || 'standard'}`);
   
@@ -104,13 +114,15 @@ async function synthesizeSiteAudit(jobId) {
     const issues = allFindings.filter(f => f.category.toLowerCase() === category.toLowerCase());
     let pointsLost = 0;
     issues.forEach(i => {
-      if (i.severity === 'critical') pointsLost += 10;
-      else if (i.severity === 'high') pointsLost += 5;
-      else if (i.severity === 'medium') pointsLost += 2;
+      if (i.severity === 'critical') pointsLost += 15;
+      else if (i.severity === 'high') pointsLost += 8;
+      else if (i.severity === 'medium') pointsLost += 4;
       else if (i.severity === 'low') pointsLost += 1;
     });
-    // Proportion points lost to total pages so large sites aren't automatically 0
-    const normalizedLoss = Math.min(100, Math.round((pointsLost / totalPages) * 20));
+    // Proportion points lost to total pages to get an average loss per page
+    const avgLossPerPage = pointsLost / totalPages;
+    // Cap the penalty at a maximum of 100 points
+    const normalizedLoss = Math.min(100, Math.round(avgLossPerPage * 5)); // Multiply by 5 to scale it appropriately (e.g. 1 high issue = 40 points lost)
     return Math.max(0, 100 - normalizedLoss);
   };
 
@@ -122,8 +134,8 @@ async function synthesizeSiteAudit(jobId) {
     accessibility: calcScore('Accessibility'),
     images: calcScore('Images'),
     indexability: calcScore('Indexability'),
-    schema: 100, // Placeholder for schema parsing score
-    internalLinking: 100 // Placeholder for link network score
+    schema: null, // Unmeasured in initial crawl
+    internalLinking: null // Unmeasured in initial crawl
   };
 
   const scoreValues = Object.values(scores).filter(v => typeof v === 'number');
@@ -207,7 +219,7 @@ async function analyzeAudit(project, audit, workspaceId) {
     messages: [{ role: 'user', content: prompt }],
     model: agentConfig.modelName,
     temperature: 0.1,
-    maxTokens: 2500,
+    maxTokens: 4096,
     jsonMode: true,
     retryOptions: { retries: 2 }
   });

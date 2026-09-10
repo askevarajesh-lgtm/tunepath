@@ -53,53 +53,94 @@ async function collectKeywordCandidates(project, agencyId, seedKeyword) {
     }));
   }
 
-  // 2. If the DB is empty (i.e. the crawler literally just started), synchronously scrape the homepage right now!
-  try {
-    const siteUrl = project.domain.startsWith('http') ? project.domain : `https://${project.domain}`;
-    logger.info(TAG, `DB empty. Synchronously scraping homepage for instant candidates: ${siteUrl}`);
-    
-    const response = await axios.get(siteUrl, { timeout: 10000, maxRedirects: 3 });
-    const html = response.data;
-    
-    const rawKeywords = hybridKeywordExtractor.extractFromHtml(html, siteUrl);
-    
-    const keywordQuality = require('./keywordQuality.service');
-    const keywordIntent = require('./keywordIntent.service');
-    const keywordOpportunity = require('./keywordOpportunity.service');
+  // 2. Fetch Ranked Keywords & Extract HTML Themes to use as Seeds
+  let rankedKeywords = [];
+  let htmlThemes = [];
+  const siteUrl = project.domain.startsWith('http') ? project.domain : `https://${project.domain}`;
+  const cleanDomain = (project.domain || '').replace(/^https?:\/\/(www\.)?/, '').replace(/\/.*$/, '').trim();
 
-    const validKeywords = [];
-    
-    for (const k of rawKeywords) {
-      const quality = keywordQuality.assessQuality(k.keyword, { searchVolume: 0 });
-      if (quality.isRejected) continue;
-      
-      const intentData = keywordIntent.classify(k.keyword);
-      const opportunity = keywordOpportunity.calculateOpportunity({
-        searchVolume: 0,
-        keywordDifficulty: 0,
-        cpc: 0,
-        currentRank: null,
-        intent: intentData.intent
-      });
+  const providerConfigured = providerChain.hasAnyConfiguredProvider();
+  const opts = {
+    projectId: project._id,
+    locationCode: DEFAULT_LOCATION_CODE,
+    languageCode: DEFAULT_LANGUAGE_CODE,
+    limit: MAX_CANDIDATES,
+    bypassCache: false
+  };
 
-      validKeywords.push({
-        keyword: k.keyword,
-        searchVolume: 0,
-        cpc: 0,
-        competition: 0,
-        intent: intentData.intent,
-        keywordDifficulty: 0,
-        opportunityScore: opportunity.score
-      });
+  if (providerConfigured) {
+    try {
+      const ranked = await keywordIntelligence.getDomainRankedKeywords(cleanDomain, opts);
+      if (ranked && ranked.length > 0) {
+        rankedKeywords = ranked.map(k => ({ ...k, intent: 'unknown', keywordDifficulty: 0 }));
+        logger.info(TAG, `Found ${rankedKeywords.length} existing ranked keywords for ${cleanDomain}`);
+      }
+    } catch (e) {
+      logger.warn(TAG, `Failed to fetch ranked keywords for ${cleanDomain}: ${e.message}`);
     }
-
-    // Sort by opportunity score and take the top ones
-    validKeywords.sort((a, b) => b.opportunityScore - a.opportunityScore);
-    return validKeywords.slice(0, MAX_CANDIDATES);
-  } catch (error) {
-    logger.error(TAG, `Synchronous scrape failed for instant candidates: ${error.message}`);
   }
 
+  try {
+    logger.info(TAG, `Synchronously scraping homepage to find business themes for seeds: ${siteUrl}`);
+    const response = await axios.get(siteUrl, { timeout: 10000, maxRedirects: 3 });
+    const rawHtmlKeywords = hybridKeywordExtractor.extractFromHtml(response.data, siteUrl);
+    const keywordQuality = require('./keywordQuality.service');
+    
+    // Get top 3 high-quality multi-word phrases to use as DataForSEO seeds
+    htmlThemes = rawHtmlKeywords
+      .filter((k) => {
+        if (keywordQuality.assessQuality(k.keyword, { searchVolume: 0 }).isRejected) return false;
+        return (k.keyword || '').trim().split(/\s+/).length >= 2;
+      })
+      .slice(0, 3)
+      .map(k => k.keyword);
+  } catch (e) {
+    logger.warn(TAG, `Homepage scrape failed: ${e.message}`);
+  }
+
+  // 3. Query DataForSEO using the discovered themes (and the brand as fallback)
+  let allCandidates = [...rankedKeywords];
+
+  if (providerConfigured) {
+    // If we didn't find any HTML themes, fall back to the brand name / domain
+    const seedsToQuery = htmlThemes.length > 0 ? htmlThemes : [...new Set([cleanDomain, seed].filter(Boolean))];
+    logger.info(TAG, `Querying DataForSEO with seeds: ${seedsToQuery.join(', ')}`);
+
+    for (const s of seedsToQuery) {
+      if (!s) continue;
+      try {
+        const discovered = await keywordIntelligence.discoverKeywords(s, opts);
+        if (discovered && discovered.length > 0) {
+          allCandidates.push(...discovered);
+        }
+      } catch (error) {
+        logger.warn(TAG, `DataForSEO discovery failed for seed "${s}": ${error.message}`);
+      }
+    }
+  }
+
+  if (allCandidates.length > 0) {
+    // Deduplicate, sort by search volume descending, cap at MAX_CANDIDATES
+    const seen = new Set();
+    const deduped = allCandidates.filter((c) => {
+      const key = (c.keyword || '').toLowerCase().trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    deduped.sort((a, b) => (b.searchVolume || 0) - (a.searchVolume || 0));
+    return deduped.slice(0, MAX_CANDIDATES).map((c) => ({
+      keyword: c.keyword,
+      searchVolume: c.searchVolume || 0,
+      cpc: c.cpc || 0,
+      competition: c.competition || 0,
+      intent: c.intent || 'unknown',
+      keywordDifficulty: c.keywordDifficulty || 0,
+      rank: c.rank || null
+    }));
+  }
+
+  logger.warn(TAG, 'No keyword candidates could be found from DB, HTML, or DataForSEO.');
   return [];
 }
 
@@ -187,6 +228,14 @@ async function run(projectId, workspaceId, options = {}) {
 
   const agencyId = workspaceId || project.createdBy || project.companyId;
 
+  // Clear stale discovery_crawler keywords (HTML-scraped words) so DataForSEO runs fresh.
+  // Keywords that have been approved/rejected by users are preserved (they have non-Suggested status).
+  await WorkspaceKeyword.deleteMany({
+    projectId: project._id,
+    source: 'discovery_crawler',
+    status: { $in: ['Suggested', 'Discovered'] }
+  });
+
   // 1. Kick off the background crawl (fire and forget)
   try {
     const existingJob = await WorkspaceCrawlJob.findOne({ projectId: project._id, status: 'running' });
@@ -225,35 +274,65 @@ async function run(projectId, workspaceId, options = {}) {
   const candidates = await collectKeywordCandidates(project, agencyId, options.seedKeyword);
   
   if (candidates.length > 0) {
-    const suggestedKeywords = candidates.slice(0, MAX_SUGGESTIONS).map(c => ({
-       keyword: c.keyword,
-       opportunityScore: 75,
-       rationale: 'Discovered instantly',
-       theme: 'General',
-       ...c
-    }));
-    
-    // Save them to DB immediately as Suggested so they appear in the UI table
-    const bulkOps = suggestedKeywords.map(k => ({
-      updateOne: {
-        filter: { projectId, keyword: k.keyword },
-        update: {
-          $set: { agencyId, source: 'discovery' },
-          $setOnInsert: {
-            status: 'Approved',
-            lifecycle: 'Discovered',
-            'metrics.searchVolume': k.searchVolume || 0,
-            'metrics.cpc': k.cpc || 0,
-            'metrics.keywordDifficulty': k.keywordDifficulty || 0,
-            'metrics.competition': k.competition || 0,
-            'metrics.intent': k.intent || 'unknown',
-            isQuestion: false
-          },
-          $max: { 'agent.opportunityScore': k.opportunityScore || 50 }
-        },
-        upsert: true
+    let suggestedKeywords = [];
+    let summaryText = `Found ${candidates.length} keyword candidates immediately. A deeper crawl is also running in the background.`;
+
+    try {
+      // 3. If AI is configured, call the existing AI analysis/prioritization flow.
+      const aiAnalysis = await analyzeAndSuggest(project, candidates, agencyId);
+      if (aiAnalysis && aiAnalysis.selected && aiAnalysis.selected.length > 0) {
+        suggestedKeywords = aiAnalysis.selected;
+        if (aiAnalysis.summary) summaryText = `Found ${candidates.length} keyword candidates immediately. ${aiAnalysis.summary} A deeper crawl is also running in the background.`;
+      } else {
+        throw new Error('AI analysis returned empty selection');
       }
-    }));
+    } catch (err) {
+      logger.warn(TAG, `AI analysis failed or unavailable, falling back to deterministic values: ${err.message}`);
+      suggestedKeywords = candidates.slice(0, MAX_SUGGESTIONS).map(c => ({
+         keyword: c.keyword,
+         opportunityScore: c.opportunityScore || (c.keywordDifficulty ? Math.max(0, 100 - c.keywordDifficulty) : 50),
+         rationale: 'Discovered instantly via deterministic metrics',
+         theme: 'General',
+         ...c
+      }));
+    }
+    
+    // Save them to DB immediately so they appear in the UI table
+    const bulkOps = suggestedKeywords.map(k => {
+      const op = {
+        updateOne: {
+          filter: { projectId, keyword: k.keyword },
+          update: {
+            $set: { 
+              agencyId, 
+              source: 'discovery',
+              'agent.rationale': k.rationale,
+              'agent.theme': k.theme
+            },
+            $setOnInsert: {
+              status: 'Approved',
+              lifecycle: 'Discovered',
+              'metrics.searchVolume': k.searchVolume || 0,
+              'metrics.cpc': k.cpc || 0,
+              'metrics.keywordDifficulty': k.keywordDifficulty || 0,
+              'metrics.competition': k.competition || 0,
+              'metrics.intent': k.intent || 'unknown',
+              isQuestion: false
+            },
+            $max: { 'agent.opportunityScore': k.opportunityScore || 50 }
+          },
+          upsert: true
+        }
+      };
+      
+      if (k.rank) {
+        op.updateOne.update.$set['ranking.currentRank'] = k.rank;
+        op.updateOne.update.$set['ranking.rankingSource'] = 'DataForSEO';
+        op.updateOne.update.$set['ranking.status'] = 'FOUND';
+      }
+      
+      return op;
+    });
 
     if (bulkOps.length > 0) {
       await WorkspaceKeyword.bulkWrite(bulkOps);
@@ -262,7 +341,7 @@ async function run(projectId, workspaceId, options = {}) {
     return { 
       candidateCount: candidates.length, 
       suggestedKeywords, 
-      summary: `Found ${candidates.length} keyword candidates immediately. A deeper crawl is also running in the background.` 
+      summary: summaryText
     };
   }
 

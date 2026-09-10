@@ -462,7 +462,24 @@ const KeywordsTab = () => {
                     <Input placeholder="Optional seed keyword (e.g. 'marathon training')" value={seedKeyword} onChange={(e) => setSeedKeyword(e.target.value)} />
                     <Button type="primary" loading={running} onClick={runResearch} icon={<Sparkles size={14}/>}>Run Deep Research</Button>
                     {runResult && (
-                      <Alert type="success" showIcon message={`${runResult.suggestedKeywords?.length || 0} suggestion(s) from ${runResult.candidateCount || 0} candidate(s). Go to Tracked Keywords to approve them.`} />
+                      <>
+                        <Alert type="success" showIcon style={{ marginBottom: 16 }} message={`${runResult.suggestedKeywords?.length || 0} suggestion(s) from ${runResult.candidateCount || 0} candidate(s). They have been automatically added to your Tracked Keywords.`} />
+                        {runResult.suggestedKeywords && runResult.suggestedKeywords.length > 0 && (
+                          <Table
+                            size="small"
+                            dataSource={runResult.suggestedKeywords}
+                            pagination={{ pageSize: 5 }}
+                            rowKey="keyword"
+                            columns={[
+                              { title: 'Keyword', dataIndex: 'keyword', ellipsis: true },
+                              { title: 'Theme', dataIndex: 'theme', ellipsis: true },
+                              { title: 'Volume', dataIndex: 'searchVolume', align: 'right', render: v => v ? v.toLocaleString() : '-' },
+                              { title: 'KD %', dataIndex: 'keywordDifficulty', align: 'right', render: v => v || '-' },
+                              { title: 'Score', dataIndex: 'opportunityScore', align: 'center', render: v => <Badge count={v || 0} showZero color={(v || 0) > 70 ? '#52c41a' : '#faad14'} /> }
+                            ]}
+                          />
+                        )}
+                      </>
                     )}
                   </Space>
                 </Card>

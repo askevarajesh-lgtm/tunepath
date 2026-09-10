@@ -51,9 +51,10 @@ class SkillLoaderService {
    *
    * @param {string[]} skillNames
    * @param {string} [agentKey] - for logging context
+   * @param {Array<{name: string, content: string}>} [uploadedSkills] - optional custom skills uploaded by user/tenant
    * @returns {{ context: string, loaded: string[], missing: string[] }}
    */
-  loadSkillsForAgent(skillNames, agentKey) {
+  loadSkillsForAgent(skillNames, agentKey, uploadedSkills = []) {
     const loaded = [];
     const missing = [];
     let combinedContext = '\n--- REQUIRED METHODOLOGIES & SKILLS ---\n';
@@ -67,6 +68,17 @@ class SkillLoaderService {
         missing.push(skill);
       }
     });
+
+    // Support runtime custom skills injected via Workspace DB/attachments
+    if (Array.isArray(uploadedSkills) && uploadedSkills.length > 0) {
+      combinedContext += '\n--- CUSTOM UPLOADED SKILLS ---\n';
+      uploadedSkills.forEach(customSkill => {
+        if (customSkill && customSkill.name && customSkill.content) {
+          combinedContext += `\n# Custom Skill: ${customSkill.name}\n${customSkill.content}\n`;
+          loaded.push(`custom:${customSkill.name}`);
+        }
+      });
+    }
 
     if (missing.length > 0 && IS_DEV) {
       console.warn(

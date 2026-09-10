@@ -38,7 +38,7 @@ const WorkspaceCompetitorSchema = new mongoose.Schema({
 
   lastCrawl: { type: Date, default: null }, // last time this competitor's data was refreshed
 
-  dataSource: { type: String, enum: ['dataforseo', 'semrush', 'ai-estimate'], default: 'dataforseo' },
+  dataSource: { type: String, enum: ['dataforseo', 'ai-estimate'], default: 'dataforseo' },
   source:     { type: String, enum: ['manual', 'competitor-agent'], default: 'competitor-agent' },
   status:     { type: String, enum: ['Suggested', 'Approved', 'Rejected'], default: 'Suggested' },
 

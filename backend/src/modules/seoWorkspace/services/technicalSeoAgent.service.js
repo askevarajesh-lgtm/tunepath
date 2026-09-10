@@ -217,7 +217,7 @@ Return at most ${MAX_FINDINGS} findings, ranked by likely impact. Respond ONLY w
     messages: [{ role: 'user', content: prompt }],
     model: agentConfig.modelName,
     temperature: 0.3,
-    maxTokens: 1500,
+    maxTokens: 4096,
     jsonMode: true,
     retryOptions: { retries: 2 }
   });

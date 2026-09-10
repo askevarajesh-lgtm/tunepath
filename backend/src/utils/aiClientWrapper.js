@@ -96,9 +96,12 @@ class AiClientWrapper {
             console.log("usage:", msg?.usage);
             console.log("================================");
 
-            const textBlocks = Array.isArray(msg?.content)
-              ? msg.content.filter(block => block?.type === "text")
-              : [];
+            let textBlocks = [];
+            if (typeof msg?.content === 'string') {
+              textBlocks = [{ text: msg.content }];
+            } else if (Array.isArray(msg?.content)) {
+              textBlocks = msg.content.filter(block => block?.type === "text" || block?.text);
+            }
 
             let textContent = textBlocks
               .map(block => block.text || "")
@@ -107,11 +110,9 @@ class AiClientWrapper {
 
             if (!textContent) {
               console.error("Claude returned no text content");
-              console.error("content_types:", msg?.content?.map(c => c?.type));
-              console.error("content_blocks:", msg?.content?.length);
+              console.error("content_types:", Array.isArray(msg?.content) ? msg.content.map(c => c?.type) : typeof msg?.content);
               console.error("stop_reason:", msg?.stop_reason);
-              console.error("usage:", msg?.usage);
-              throw new Error("Claude returned no text content.");
+              throw new Error(`Claude returned no text content. Stop reason: ${msg?.stop_reason}. Content types: ${Array.isArray(msg?.content) ? msg.content.map(c => c?.type).join(',') : typeof msg?.content}`);
             }
 
             if (params.response_format && params.response_format.type === 'json_object' && textContent) {

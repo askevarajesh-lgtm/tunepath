@@ -61,7 +61,7 @@ const DashboardTab = () => {
     message.loading({ content: 'Gathering SEO intelligence and generating Master PDF...', key: 'master-pdf', duration: 10 });
     try {
       const targetId = (activeProjectId && activeProjectId !== 'undefined' && activeProjectId !== 'null') ? activeProjectId : 'default';
-      const currentProjectObj = activeProject || (Array.isArray(projects) ? projects.find(p => String(p._id) === String(activeProjectId)) : null) || { name: 'Askeva', domain: 'https://askeva.io/' };
+      const currentProjectObj = activeProject || (Array.isArray(projects) ? projects.find(p => String(p._id) === String(activeProjectId)) : null) || { name: 'Project', domain: window.location.origin };
 
       // Parallel fetch of all SEO modules data safely
       const [

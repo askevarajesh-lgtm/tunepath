@@ -4,10 +4,10 @@
  * This is the contract every keyword data source must satisfy to plug into
  * `keywordProviderChain.js`. It exists so `keywordIntelligence.service.js`
  * (the layer every keyword feature calls into) never imports
- * `dataForSeo.service.js` or `semrush.service.js` directly:
+ * `dataForSeo.service.js` directly:
  *
- *   Keyword Intelligence → Keyword Provider (this contract) → DataForSEO
- *                                                            → Semrush
+ *   Keyword Intelligence
+ *     → Keyword Provider Chain
  *                                                            → Future providers
  *
  * Adding a new vendor (e.g. Ahrefs, Moz, GSC-derived data) means writing one
@@ -20,8 +20,7 @@
  *   - Only throw for genuine failures (auth, network, rate-limit) that the
  *     chain should log and fall through on anyway.
  *   - Return data already normalized to the shapes documented below —
- *     provider-specific field names (DataForSEO's `keyword_info`, Semrush's
- *     `Nq`/`Kd` CSV columns, etc.) must not leak past the adapter.
+ *     provider-specific field names (DataForSEO's `keyword_info`)
  *
  * Normalized shapes:
  *

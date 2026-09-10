@@ -64,30 +64,75 @@ class EnterpriseCrawlWorker {
   }
 
   async parseSitemap(job, domain) {
-    try {
-      const sitemapUrl = `${domain.startsWith('http') ? domain : `https://${domain}`}/sitemap.xml`;
-      const res = await axios.get(sitemapUrl, { timeout: 10000, validateStatus: () => true });
-      if (res.status === 200 && res.headers['content-type']?.includes('xml')) {
-        const $ = cheerio.load(res.data, { xmlMode: true });
-        const urls = new Set();
-        $('url loc').each((_, el) => {
-          urls.add(this.normalizeUrl($(el).text().trim()));
-        });
-        
-        let queuedCount = 0;
-        for (const url of urls) {
-          try {
-            await WorkspaceAuditQueue.create({ jobId: job._id, url, depth: 1, status: 'pending' });
-            queuedCount++;
-          } catch(e) {} // ignore duplicates
-        }
-        
-        if (queuedCount > 0) {
-          await WorkspaceAuditJob.findByIdAndUpdate(job._id, { 
-            $inc: { 'progress.urlsDiscovered': queuedCount, 'progress.urlsRemaining': queuedCount }
+    const baseUrl = domain.startsWith('http') ? domain : `https://${domain}`;
+    const potentialSitemaps = [
+      `${baseUrl}/sitemap.xml`,
+      `${baseUrl}/sitemap_index.xml`,
+      `${baseUrl}/wp-sitemap.xml`
+    ];
+
+    const robots = await this.getRobotsTxt(domain);
+    if (robots && robots.getSitemaps().length > 0) {
+      potentialSitemaps.unshift(...robots.getSitemaps());
+    }
+
+    const urls = new Set();
+    const checkedSitemaps = new Set();
+
+    const fetchSitemap = async (sitemapUrl) => {
+      if (checkedSitemaps.has(sitemapUrl)) return;
+      checkedSitemaps.add(sitemapUrl);
+
+      try {
+        const res = await axios.get(sitemapUrl, { timeout: 10000, validateStatus: () => true });
+        if (res.status === 200 && (res.headers['content-type']?.includes('xml') || res.data.includes('<?xml'))) {
+          const $ = cheerio.load(res.data, { xmlMode: true });
+          
+          // Check for nested sitemaps (sitemapindex)
+          $('sitemap loc').each((_, el) => {
+            const nestedUrl = $(el).text().trim();
+            if (nestedUrl) {
+              fetchSitemap(nestedUrl); // Async fire-and-forget for nested
+            }
           });
-          logger.info(TAG, `Discovered ${queuedCount} URLs from sitemap for ${domain}`);
+
+          // Check for actual page URLs
+          const skipExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.mp4', '.webm', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.zip', '.rar', '.exe', '.css', '.js', '.woff', '.woff2', '.ttf'];
+          $('url loc').each((_, el) => {
+            const rawUrl = $(el).text().trim();
+            try {
+              const urlObj = new URL(rawUrl);
+              const pathname = urlObj.pathname.toLowerCase();
+              if (!skipExtensions.some(ext => pathname.endsWith(ext))) {
+                urls.add(this.normalizeUrl(rawUrl));
+              }
+            } catch(e) {}
+          });
         }
+      } catch(e) {}
+    };
+
+    try {
+      // Try fetching sitemaps in order until we find URLs
+      for (const sitemapUrl of potentialSitemaps) {
+        if (urls.size === 0) {
+          await fetchSitemap(sitemapUrl);
+        }
+      }
+      
+      let queuedCount = 0;
+      for (const url of urls) {
+        try {
+          await WorkspaceAuditQueue.create({ jobId: job._id, url, depth: 1, status: 'pending' });
+          queuedCount++;
+        } catch(e) {} // ignore duplicates
+      }
+      
+      if (queuedCount > 0) {
+        await WorkspaceAuditJob.findByIdAndUpdate(job._id, { 
+          $inc: { 'progress.urlsDiscovered': queuedCount, 'progress.urlsRemaining': queuedCount }
+        });
+        logger.info(TAG, `Discovered ${queuedCount} URLs from sitemap(s) for ${domain}`);
       }
     } catch(e) {
       logger.warn(TAG, `Failed to parse sitemap for ${domain}: ${e.message}`);
@@ -97,60 +142,70 @@ class EnterpriseCrawlWorker {
   async poll() {
     while (this.isRunning) {
       try {
-        const jobs = await WorkspaceAuditJob.find({ status: 'running' }).limit(1);
+        const jobs = await WorkspaceAuditJob.find({ status: 'running' });
         if (jobs.length === 0) {
           await new Promise(r => setTimeout(r, 5000));
           continue;
         }
 
-        const job = jobs[0];
-        
-        // 1. Enforce maxDuration budget
-        const duration = Date.now() - new Date(job.startedAt).getTime();
-        if (job.budgets.maxDuration && duration >= job.budgets.maxDuration) {
-          await this.completeJob(job, 'budget_reached');
-          continue;
-        }
-
-        // 2. Fetch queue items honoring maxConcurrentRequests
-        const queueItems = await WorkspaceAuditQueue.find({ jobId: job._id, status: 'pending' })
-          .limit(job.budgets.maxConcurrentRequests || 5);
-
-        if (queueItems.length === 0) {
-          const processingCount = await WorkspaceAuditQueue.countDocuments({ jobId: job._id, status: 'processing' });
-          if (processingCount === 0) {
-            await this.completeJob(job, 'completed');
-          } else {
-            // Heartbeat check for stalled items
-            const staleItems = await WorkspaceAuditQueue.find({ jobId: job._id, status: 'processing', updatedAt: { $lt: new Date(Date.now() - 60000) } });
-            if (staleItems.length > 0) {
-               await WorkspaceAuditQueue.updateMany({ _id: { $in: staleItems.map(i => i._id) } }, { $set: { status: 'pending' } });
-            }
-            await new Promise(r => setTimeout(r, 2000));
-          }
-          continue;
-        }
-
-        const itemIds = queueItems.map(q => q._id);
-        await WorkspaceAuditQueue.updateMany({ _id: { $in: itemIds } }, { $set: { status: 'processing', updatedAt: new Date() } });
-
-        const startBatch = Date.now();
-        const rps = job.budgets.requestsPerSecond || 5;
-        const delayMs = Math.floor(1000 / rps);
-        
-        for (const item of queueItems) {
-          await this.processUrl(job, item);
-          await new Promise(r => setTimeout(r, delayMs));
-        }
-        
-        const endBatch = Date.now();
-        const pagesPerSecond = Math.round((queueItems.length / ((endBatch - startBatch) / 1000)) * 10) / 10;
-        await WorkspaceAuditJob.findByIdAndUpdate(job._id, { $set: { 'progress.pagesPerSecond': pagesPerSecond } });
-
+        await Promise.allSettled(jobs.map(job => this.processJobBatch(job)));
       } catch (error) {
         logger.error(TAG, `Worker polling error: ${error.message}`);
         await new Promise(r => setTimeout(r, 5000));
       }
+    }
+  }
+
+  async processJobBatch(job) {
+    try {
+      // 1. Enforce maxDuration budget
+      const duration = Date.now() - new Date(job.startedAt).getTime();
+      if (job.budgets && job.budgets.maxDuration && duration >= job.budgets.maxDuration) {
+        await this.completeJob(job, 'budget_reached');
+        return;
+      }
+
+      // 2. Fetch queue items honoring maxConcurrentRequests
+      const queueItems = await WorkspaceAuditQueue.find({ jobId: job._id, status: 'pending' })
+        .limit((job.budgets && job.budgets.maxConcurrentRequests) || 5);
+
+      if (queueItems.length === 0) {
+        const processingCount = await WorkspaceAuditQueue.countDocuments({ jobId: job._id, status: 'processing' });
+        if (processingCount === 0) {
+          await this.completeJob(job, 'completed');
+        } else {
+          // Heartbeat check for stalled items
+          const staleItems = await WorkspaceAuditQueue.find({ jobId: job._id, status: 'processing', updatedAt: { $lt: new Date(Date.now() - 60000) } });
+          if (staleItems.length > 0) {
+             await WorkspaceAuditQueue.updateMany({ _id: { $in: staleItems.map(i => i._id) } }, { $set: { status: 'pending' } });
+          }
+        }
+        return;
+      }
+
+      const itemIds = queueItems.map(q => q._id);
+      await WorkspaceAuditQueue.updateMany({ _id: { $in: itemIds } }, { $set: { status: 'processing', updatedAt: new Date() } });
+
+      const startBatch = Date.now();
+      
+      // Process URLs concurrently for speed and to prevent a single hang from blocking the job
+      await Promise.allSettled(queueItems.map(item => this.processUrl(job, item)));
+      
+      const endBatch = Date.now();
+      const durationMs = endBatch - startBatch;
+      if (durationMs > 0) {
+        const pagesPerSecond = Math.round((queueItems.length / (durationMs / 1000)) * 10) / 10;
+        await WorkspaceAuditJob.findByIdAndUpdate(job._id, { $set: { 'progress.pagesPerSecond': pagesPerSecond } });
+      }
+
+      // Honor requestsPerSecond
+      const rps = (job.budgets && job.budgets.requestsPerSecond) || 5;
+      const minBatchTime = (queueItems.length / rps) * 1000;
+      if (durationMs < minBatchTime) {
+        await new Promise(r => setTimeout(r, minBatchTime - durationMs));
+      }
+    } catch (e) {
+      logger.error(TAG, `Error processing batch for job ${job._id}: ${e.message}`);
     }
   }
 
@@ -191,7 +246,7 @@ class EnterpriseCrawlWorker {
       if (job.budgets.maxPages && job.progress.urlsCrawled >= job.budgets.maxPages) {
         queueItem.status = 'skipped';
         await queueItem.save();
-        await WorkspaceAuditJob.findByIdAndUpdate(job._id, { $inc: { 'progress.urlsSkipped': 1 } });
+        await WorkspaceAuditJob.findByIdAndUpdate(job._id, { $inc: { 'progress.urlsSkipped': 1, 'progress.urlsRemaining': -1 } });
         return;
       }
 
@@ -206,7 +261,7 @@ class EnterpriseCrawlWorker {
       if (robots && !robots.isAllowed(queueItem.url, USER_AGENT)) {
         queueItem.status = 'skipped';
         await queueItem.save();
-        await WorkspaceAuditJob.findByIdAndUpdate(job._id, { $inc: { 'progress.urlsSkipped': 1 } });
+        await WorkspaceAuditJob.findByIdAndUpdate(job._id, { $inc: { 'progress.urlsSkipped': 1, 'progress.urlsRemaining': -1 } });
         return;
       }
 
@@ -215,6 +270,15 @@ class EnterpriseCrawlWorker {
         'progress.currentStage': 'Crawling',
         'progress.currentAnalyzer': 'HTML/DOM Parser'
       } });
+
+      const skipExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.mp4', '.webm', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.zip', '.rar', '.exe', '.css', '.js', '.woff', '.woff2', '.ttf'];
+      const pathname = urlObj.pathname.toLowerCase();
+      if (skipExtensions.some(ext => pathname.endsWith(ext))) {
+        queueItem.status = 'skipped';
+        await queueItem.save();
+        await WorkspaceAuditJob.findByIdAndUpdate(job._id, { $inc: { 'progress.urlsSkipped': 1, 'progress.urlsRemaining': -1 } });
+        return;
+      }
 
       const startMs = Date.now();
       const res = await axios.get(queueItem.url, { 
@@ -446,6 +510,9 @@ class EnterpriseCrawlWorker {
     const $ = cheerio.load(html);
     const host = new URL(parentQueueItem.url).hostname.replace(/^www\./, '');
     const newLinks = new Set();
+    
+    // Ignored extensions
+    const skipExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.mp4', '.webm', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.zip', '.rar', '.exe', '.css', '.js', '.woff', '.woff2', '.ttf'];
 
     $('a[href]').each((_, el) => {
       const href = $(el).attr('href');
@@ -453,7 +520,11 @@ class EnterpriseCrawlWorker {
         try {
           const absoluteUrl = new URL(href, parentQueueItem.url).href.split('#')[0];
           const urlObj = new URL(absoluteUrl);
-          if (['http:', 'https:'].includes(urlObj.protocol) && urlObj.hostname.replace(/^www\./, '') === host) {
+          
+          const pathname = urlObj.pathname.toLowerCase();
+          const hasSkipExt = skipExtensions.some(ext => pathname.endsWith(ext));
+
+          if (['http:', 'https:'].includes(urlObj.protocol) && urlObj.hostname.replace(/^www\./, '') === host && !hasSkipExt) {
             newLinks.add(this.normalizeUrl(absoluteUrl));
           }
         } catch (e) { }

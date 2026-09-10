@@ -1,7 +1,6 @@
 const WorkspaceProject = require('../models/workspaceProject.model');
 const WorkspaceCompetitor = require('../models/workspaceCompetitor.model');
 const dataForSeoService = require('../../seoIntelligence/dataForSeo.service');
-const semrushService = require('../../semrush/semrush.service');
 const auditLogService = require('./auditLog.service');
 const domainNormalizationEngine = require('./domainNormalization.utils');
 
@@ -75,12 +74,8 @@ async function collectCompetitorCandidates(project, agencyId) {
         }));
       }
     } catch (error) {
-      logger.warn(TAG, `DataForSEO competitor lookup failed for ${domain}, falling back to Semrush: ${error.message}`, { projectId: project._id });
+      logger.warn(TAG, `DataForSEO competitor lookup failed for ${domain}, falling back to AI competitor seed generation: ${error.message}`, { projectId: project._id });
     }
-  }
-
-  if (candidates.length === 0) {
-    candidates = await collectFromSemrush(project, domain);
   }
 
   if (candidates.length === 0) {
@@ -90,29 +85,7 @@ async function collectCompetitorCandidates(project, agencyId) {
   return candidates;
 }
 
-async function collectFromSemrush(project, domain) {
-  if (!process.env.SEMRUSH_API_KEY) return [];
 
-  try {
-    const overview = await retry.withRetry(() => semrushService.getDomainOverview(domain), { retries: 1 });
-    const competitors = overview?.[0]?.competitors || [];
-
-    return competitors.slice(0, MAX_CANDIDATES).map((c) => ({
-      domain: c.domain,
-      commonKeywords: Number(c.commonKeywords) || 0,
-      organicKeywords: Number(c.organicKeywords) || 0,
-      organicTraffic: Number(c.organicTraffic) || 0,
-      organicCost: 0,
-      referringDomains: 0,
-      backlinks: 0,
-      domainRank: 0,
-      dataSource: 'semrush'
-    })).filter((c) => c.domain);
-  } catch (error) {
-    logger.warn(TAG, `Semrush competitor lookup failed for ${domain}, falling back to AI estimate: ${error.message}`, { projectId: project._id });
-    return [];
-  }
-}
 
 async function generateAiCompetitorSeeds(project, workspaceId, domain) {
   const agentConfig = await agentLoader.resolve(AGENT_KEY);
@@ -295,17 +268,9 @@ async function run(projectId, workspaceId) {
 
   const agencyId = workspaceId || project.createdBy || project.companyId;
 
-  const settings = await AiSettings.findOne({ workspaceId: agencyId });
-  if (!settings || !settings.anthropicApiKey) {
-    throw new Error('Anthropic API key is not configured. Please configure it in AI Settings.');
-  }
-  const dec = cryptoUtils.decrypt(settings.anthropicApiKey);
-  if (!dec || dec.length < 10) {
-    throw new Error('Anthropic API key is invalid or malformed. Please configure it in AI Settings.');
-  }
-
-  logger.info(TAG, `AI Settings Loaded - Anthropic Key Found for project ${projectId}`);
-
+  // The AI Engine automatically resolves workspaceId -> AiSettings -> configured provider.
+  // We do not decrypt or require Anthropic specifically here.
+  
   return executionQueue.run(`competitor-agent:${projectId}`, async () => {
     const executionId = `competitorAgent:${projectId}:${Date.now()}`;
     const startedAt = Date.now();
