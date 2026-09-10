@@ -21,14 +21,25 @@ const DiscoverySchema = new mongoose.Schema({
 const Discovery =
     mongoose.models.Discovery || mongoose.model("Discovery", DiscoverySchema);
 const cloudinary = require("../../config/cloudinary");
-async function uploadAnyFileToCloudinary(filePath, folder = "campaign-posts", _options, extra = {}) {
+async function uploadAnyFileToCloudinary(filePath, folder = "campaign-posts", options = {}, extra = {}, retries = 2) {
     let resource_type = "auto";
-    if (extra.mimetype && extra.mimetype.startsWith("video/")) {
+    if (extra && extra.mimetype && extra.mimetype.startsWith("video/")) {
         resource_type = "video";
-    } else if (extra.mimetype && extra.mimetype.startsWith("image/")) {
-        resource_type = "image";
     }
-    return await cloudinary.uploader.upload(filePath, { resource_type, folder });
+    const uploadOptions = { resource_type, folder, timeout: 120000, ...(options || {}) };
+    let lastError;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            return await cloudinary.uploader.upload(filePath, uploadOptions);
+        } catch (err) {
+            lastError = err;
+            console.warn(`[Cloudinary] Upload attempt ${attempt}/${retries} failed:`, err?.message || err?.error?.message || err);
+            if (attempt < retries) {
+                await new Promise((res) => setTimeout(res, 1000));
+            }
+        }
+    }
+    throw lastError;
 }
 const {
     REDIRECT_URI,
@@ -2739,9 +2750,10 @@ router.post("/posts", mediaUpload.any(), async (req, res, next) => {
                 }
             } catch (err) {
                 console.error("[Cloudinary] Upload failed:", err);
+                const errorMessage = err?.message || err?.error?.message || (typeof err === "string" ? err : JSON.stringify(err)) || "Unknown error";
                 res.status(500).json({
                     success: false,
-                    error: `Media upload to Cloudinary failed: ${err.message || "Unknown error"}`,
+                    error: `Media upload to Cloudinary failed: ${errorMessage}`,
                 });
                 return;
             }
