@@ -1345,11 +1345,25 @@ const getProfitLoss = async (companyId, startDate, endDate) => {
   includeGstRevenueFinal = includeGstRevenue;
   // ========== MARKETPLACE PURCHASES CALCULATION ==========
   const MarketplacePurchase = require('../marketplace/marketplace.model');
-  const marketplacePurchases = await MarketplacePurchase.find({
-    companyId,
-    status: 'completed',
-    createdAt: { $gte: new Date(startDate), $lte: new Date(endDate) }
-  });
+  const mpQuery = { companyId, status: 'completed' };
+  if (startDate && endDate) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+      mpQuery.createdAt = { $gte: start, $lte: end };
+    }
+  } else if (startDate) {
+    const start = new Date(startDate);
+    if (!isNaN(start.getTime())) {
+      mpQuery.createdAt = { $gte: start };
+    }
+  } else if (endDate) {
+    const end = new Date(endDate);
+    if (!isNaN(end.getTime())) {
+      mpQuery.createdAt = { $lte: end };
+    }
+  }
+  const marketplacePurchases = await MarketplacePurchase.find(mpQuery);
   
   const totalMarketplaceRevenue = marketplacePurchases.reduce((sum, mp) => sum + (mp.amount / 100), 0);
   tunepathRevenueFinal += totalMarketplaceRevenue;

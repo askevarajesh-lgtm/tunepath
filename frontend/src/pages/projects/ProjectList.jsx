@@ -344,27 +344,73 @@ const ProjectList = () => {
       render: (status, record) => {
         let displayStatus = status ? status.replace(/_/g, " ").toUpperCase() : "CREATED";
         
-        let totalDeliverables = (record.numberOfPosters || 0) + (record.numberOfVideos || 0) + (record.numberOfShoots || 0);
-        let completedDeliverables = (record.completedPosters || 0) + (record.completedVideos || 0) + (record.completedShoots || 0);
+        const categoryMap = new Map();
 
-        if (record.selectedCategories && Array.isArray(record.selectedCategories)) {
+        // 1. Process selectedCategories (Dynamic / custom deliverables, as shown in project form)
+        if (record?.selectedCategories && Array.isArray(record.selectedCategories)) {
           record.selectedCategories.forEach(cat => {
-            const rawName = cat.name || cat.categoryName || "";
-            const isStandard = ["poster", "video", "shoot"].some(k => rawName.toLowerCase().includes(k));
-            if (!isStandard) {
-              const qty = cat.quantity || 0;
-              const completed = cat.completed || 0;
-              totalDeliverables += qty;
-              completedDeliverables += completed;
-            }
+            const rawName = (cat.name || cat.categoryName || "").toLowerCase().trim();
+            if (!rawName) return;
+            const qty = Math.max(0, Number(cat.quantity || cat.count || cat.total || 0));
+            const remaining = cat.remaining !== undefined ? Math.max(0, Number(cat.remaining) || 0) : null;
+            const completed = cat.completed !== undefined 
+              ? Math.max(0, Number(cat.completed) || 0) 
+              : (remaining !== null ? Math.max(0, qty - remaining) : 0);
+
+            categoryMap.set(rawName, {
+              quantity: qty,
+              remaining: remaining !== null ? remaining : Math.max(0, qty - completed),
+              completed: completed,
+            });
           });
         }
-        
+
+        // 2. Process standard fields if not already present in categoryMap
+        const stdPosters = Math.max(0, Number(record?.numberOfPosters) || 0);
+        if (stdPosters > 0 && !categoryMap.has("poster")) {
+          const rem = record?.remainingPosters !== undefined ? Math.max(0, Number(record.remainingPosters) || 0) : null;
+          const comp = record?.completedPosters !== undefined ? Math.max(0, Number(record.completedPosters) || 0) : (rem !== null ? Math.max(0, stdPosters - rem) : 0);
+          categoryMap.set("poster", { quantity: stdPosters, remaining: rem !== null ? rem : Math.max(0, stdPosters - comp), completed: comp });
+        }
+
+        const stdVideos = Math.max(0, Number(record?.numberOfVideos) || 0);
+        if (stdVideos > 0 && !categoryMap.has("video")) {
+          const rem = record?.remainingVideos !== undefined ? Math.max(0, Number(record.remainingVideos) || 0) : null;
+          const comp = record?.completedVideos !== undefined ? Math.max(0, Number(record.completedVideos) || 0) : (rem !== null ? Math.max(0, stdVideos - rem) : 0);
+          categoryMap.set("video", { quantity: stdVideos, remaining: rem !== null ? rem : Math.max(0, stdVideos - comp), completed: comp });
+        }
+
+        const stdShoots = Math.max(0, Number(record?.numberOfShoots) || 0);
+        if (stdShoots > 0 && !categoryMap.has("shoot")) {
+          const rem = record?.remainingShoots !== undefined ? Math.max(0, Number(record.remainingShoots) || 0) : null;
+          const comp = record?.completedShoots !== undefined ? Math.max(0, Number(record.completedShoots) || 0) : (rem !== null ? Math.max(0, stdShoots - rem) : 0);
+          categoryMap.set("shoot", { quantity: stdShoots, remaining: rem !== null ? rem : Math.max(0, stdShoots - comp), completed: comp });
+        }
+
+        let totalDeliverables = 0;
+        let completedDeliverables = 0;
+        let totalRemaining = 0;
+
+        categoryMap.forEach((item) => {
+          totalDeliverables += item.quantity;
+          completedDeliverables += Math.min(item.quantity, item.completed);
+          totalRemaining += item.remaining;
+        });
+
         let completionPercentage = 0;
         let showPercentage = false;
-        
-        if (totalDeliverables > 0) {
-          completionPercentage = Math.round((completedDeliverables / totalDeliverables) * 100);
+
+        const isCompletedStatus = ["completed", "workflow_approved", "approved", "done", "validated"].includes((status || "").toLowerCase());
+
+        if (isCompletedStatus) {
+          completionPercentage = 100;
+          showPercentage = true;
+        } else if (totalDeliverables > 0) {
+          if (totalRemaining === 0) {
+            completionPercentage = 100;
+          } else {
+            completionPercentage = Math.min(99, Math.round((completedDeliverables / totalDeliverables) * 100));
+          }
           showPercentage = true;
         }
 

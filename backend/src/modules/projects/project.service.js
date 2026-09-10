@@ -854,10 +854,11 @@ const reconcileProjectTaskCounts = async (
     }
     
     let completionPercentage = 0;
-    if (totalDeliverables > 0) {
-      completionPercentage = Math.round((completedDeliverables / totalDeliverables) * 100);
-    } else if (remainingServices.length === 0) {
+    const isCompletedStatus = ["completed", "workflow_approved", "approved", "done", "validated"].includes((project.status || "").toLowerCase());
+    if (isCompletedStatus || remainingServices.length === 0) {
       completionPercentage = 100;
+    } else if (totalDeliverables > 0) {
+      completionPercentage = Math.min(100, Math.round((completedDeliverables / totalDeliverables) * 100));
     }
     let remainingPercentage = 100 - completionPercentage;
     

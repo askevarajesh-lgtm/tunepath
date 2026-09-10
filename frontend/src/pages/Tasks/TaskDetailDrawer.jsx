@@ -774,7 +774,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
             <span>{liveTask?.title || task?.title || "Task Details"}</span>
             <Space>
               {liveTask &&
-                ['brand_super_admin', 'brand_manager', 'agency_client', 'client', 'brand_team_user', 'admin', 'super_admin', 'agency_manager'].includes(userRole) &&
+                (['brand_super_admin', 'brand_manager', 'agency_client', 'client', 'brand_team_user'].includes(userRole) || (userRole === 'user' && user?.brandId)) &&
                 (['review', 'sent_for_client_review', 'in_review'].includes(liveTask.status?.toLowerCase()) ||
                  (['complete', 'completed', 'done', 'validated'].includes(liveTask.status?.toLowerCase()) && liveTask.clientReviewStatus !== 'approved')) && (
                   <>

@@ -319,6 +319,43 @@ const ProjectForm = () => {
     }
   };
 
+  const handleCategoryQuantityChange = (fieldIndex, newQuantity) => {
+    const categories = form.getFieldValue("selectedCategories") || [];
+    const currentCat = categories[fieldIndex];
+
+    if (!currentCat) return;
+
+    const newQty = Math.max(0, Number(newQuantity) || 0);
+
+    // Find initial saved category data from project to get completed count
+    const initialCategories = project?.selectedCategories || [];
+    const initialCat = initialCategories[fieldIndex] || 
+      initialCategories.find(c => (c.name || c.categoryName || "").toLowerCase().trim() === (currentCat.name || currentCat.categoryName || "").toLowerCase().trim());
+
+    let completedCount = 0;
+    if (initialCat) {
+      const initQty = Math.max(0, Number(initialCat.quantity || initialCat.count || 0));
+      const initRem = initialCat.remaining !== undefined 
+        ? Math.max(0, Number(initialCat.remaining) || 0) 
+        : initQty;
+      completedCount = Math.max(0, initQty - initRem);
+    }
+
+    // New remaining = newQty - completedCount
+    const newRemaining = Math.max(0, newQty - completedCount);
+
+    const updatedCategories = [...categories];
+    updatedCategories[fieldIndex] = {
+      ...currentCat,
+      quantity: newQty,
+      remaining: newRemaining,
+    };
+
+    form.setFieldsValue({
+      selectedCategories: updatedCategories,
+    });
+  };
+
   const onFinish = async (values) => {
     try {
       if (isEdit) {
@@ -936,6 +973,7 @@ const ProjectForm = () => {
                               placeholder="Total"
                               min={0}
                               style={{ width: "100%" }}
+                              onChange={(val) => handleCategoryQuantityChange(name, val)}
                             />
                           </Form.Item>
                         </Col>
