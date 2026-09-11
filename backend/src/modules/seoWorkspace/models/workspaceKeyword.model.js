@@ -144,7 +144,7 @@ const WorkspaceKeywordSchema = new mongoose.Schema({
   isDeleted: { type: Boolean, default: false },
 
   // Source and Lifecycle
-  source: { type: String, enum: ['manual', 'ranked-import', 'keyword-research-agent', 'discovery_crawler'], default: 'manual' },
+  source: { type: String, enum: ['manual', 'ranked-import', 'keyword-research-agent', 'discovery_crawler', 'GSC', 'NLP_CANDIDATE'], default: 'manual' },
   status: { type: String, enum: ['Suggested', 'Approved', 'Rejected'], default: 'Approved' },
   lifecycle: { 
     type: String, 

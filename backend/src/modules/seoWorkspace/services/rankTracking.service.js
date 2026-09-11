@@ -114,7 +114,12 @@ class RankTrackingService {
           currentStatus = 'NOT_FOUND_TOP100';
           confidenceScore = 100;
           confidenceReason = 'Absence verified across top 100 results';
-          kw.verificationStatus = 'NOT_RANKING';
+          
+          if (kw.gsc && kw.gsc.averagePosition != null) {
+            kw.verificationStatus = 'VERIFIED_RANKING';
+          } else {
+            kw.verificationStatus = 'NOT_RANKING';
+          }
         }
       } else {
         currentStatus = pipelineStatus;

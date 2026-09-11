@@ -103,8 +103,12 @@ const KeywordsTab = () => {
 
   useEffect(() => {
     if (projectId) {
-      if (activeTab === 'tracked') load();
-      if (activeTab === 'clusters') loadClusters();
+      if (['tracked', 'opportunities', 'not_ranking', 'unverified'].includes(activeTab)) {
+        load();
+      }
+      if (activeTab === 'clusters') {
+        loadClusters();
+      }
     }
   }, [projectId, statusFilter, activeTab]);
 
@@ -181,9 +185,17 @@ const KeywordsTab = () => {
   };
 
   const filteredKeywords = useMemo(() => {
-    const baseList = activeTab === 'opportunities'
-      ? keywords.filter(k => k.verificationStatus === 'CANDIDATE')
-      : keywords.filter(k => k.verificationStatus !== 'CANDIDATE');
+    let baseList = keywords;
+    if (activeTab === 'tracked') {
+      // Show all keywords that are actively being tracked (not just opportunities)
+      baseList = keywords.filter(k => k.verificationStatus !== 'CANDIDATE');
+    } else if (activeTab === 'opportunities') {
+      baseList = keywords.filter(k => k.verificationStatus === 'CANDIDATE');
+    } else if (activeTab === 'not_ranking') {
+      baseList = keywords.filter(k => k.verificationStatus === 'NOT_RANKING');
+    } else if (activeTab === 'unverified') {
+      baseList = keywords.filter(k => k.verificationStatus === 'UNVERIFIED');
+    }
 
     return baseList.filter(k => {
       const matchesSearch = k.keyword.toLowerCase().includes(searchText.toLowerCase());
@@ -452,19 +464,74 @@ const KeywordsTab = () => {
                 columns={columns}
                 sticky={true}
                 scroll={{ x: 'max-content' }}
-                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '500'] }}
+                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                 rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
                 footer={() => {
-                  const hiddenCount = keywords.length - filteredKeywords.length;
+                  const baseLength = keywords.filter(k => k.verificationStatus !== 'CANDIDATE').length;
+                  const hiddenCount = baseLength - filteredKeywords.length;
                   return hiddenCount > 0 ? (
                     <Text type="secondary">
-                      Showing {filteredKeywords.length} of {keywords.length} keywords. {hiddenCount} keywords are hidden due to active filters.
+                      Showing {filteredKeywords.length} of {baseLength} tracked keywords. {hiddenCount} keywords are hidden due to active filters.
                     </Text>
                   ) : (
-                    <Text type="secondary">Showing all {keywords.length} keywords.</Text>
+                    <Text type="secondary">Showing all {baseLength} tracked keywords.</Text>
                   );
                 }}
                 locale={{ emptyText: <Empty description="No keywords found. Switch to the Discovery tab to find opportunities." /> }}
+              />
+            </div>
+          </TabPane>
+
+          <TabPane tab={<Space><Target size={16} /> Not Ranking</Space>} key="not_ranking">
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Space>
+                <Input prefix={<Search size={14} />} placeholder="Search keyword..." value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: 200 }} />
+              </Space>
+              <Space>
+                <Button icon={<RefreshCcw size={14} />} onClick={handleRefreshKeywords}>Manual Refresh</Button>
+              </Space>
+            </div>
+            <div style={{ background: isDark ? '#111c31' : '#fff', borderRadius: 8, overflow: 'hidden', border: isDark ? '1px solid #1e293b' : '1px solid #f0f0f0' }}>
+              <Table
+                rowKey="_id"
+                className="enterprise-table"
+                size="middle"
+                tableLayout="fixed"
+                loading={loading}
+                dataSource={filteredKeywords}
+                columns={columns}
+                sticky={true}
+                scroll={{ x: 'max-content' }}
+                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '500'] }}
+                rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+                locale={{ emptyText: <Empty description="No keywords found." /> }}
+              />
+            </div>
+          </TabPane>
+
+          <TabPane tab={<Space><Target size={16} /> Unverified</Space>} key="unverified">
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Space>
+                <Input prefix={<Search size={14} />} placeholder="Search keyword..." value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: 200 }} />
+              </Space>
+              <Space>
+                <Button icon={<RefreshCcw size={14} />} onClick={handleRefreshKeywords}>Manual Refresh</Button>
+              </Space>
+            </div>
+            <div style={{ background: isDark ? '#111c31' : '#fff', borderRadius: 8, overflow: 'hidden', border: isDark ? '1px solid #1e293b' : '1px solid #f0f0f0' }}>
+              <Table
+                rowKey="_id"
+                className="enterprise-table"
+                size="middle"
+                tableLayout="fixed"
+                loading={loading}
+                dataSource={filteredKeywords}
+                columns={columns}
+                sticky={true}
+                scroll={{ x: 'max-content' }}
+                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '500'] }}
+                rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+                locale={{ emptyText: <Empty description="No keywords found." /> }}
               />
             </div>
           </TabPane>

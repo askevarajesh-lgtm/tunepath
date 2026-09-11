@@ -1,79 +1,101 @@
-require('dotenv').config();
 const mongoose = require('mongoose');
 const WorkspaceKeyword = require('../modules/seoWorkspace/models/workspaceKeyword.model');
 
+/**
+ * Migration script for legacy SEO Workspace Keywords.
+ * Aligns legacy `verificationStatus` to the new strict evidence-based rules.
+ * 
+ * Safe to run multiple times (idempotent).
+ * Use --dry-run to preview changes without modifying the database.
+ */
 async function migrateKeywords() {
-  console.log('Connecting to MongoDB...');
-  await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/tunepath');
-  console.log('Connected.');
+  const isDryRun = process.argv.includes('--dry-run');
 
-  console.log('Fetching keywords...');
-  const keywords = await WorkspaceKeyword.find({});
-  let migratedCount = 0;
-  let candidateCount = 0;
-  let unverifiedCount = 0;
-  let serpCount = 0;
-  let gscCount = 0;
-  let gscSerpCount = 0;
-
-  for (const kw of keywords) {
-    let changed = false;
-
-    // Ensure metrics object exists
-    if (!kw.metrics) {
-       kw.metrics = { searchVolume: 0, cpc: 0, keywordDifficulty: 0, competition: 0, intent: 'unknown' };
-       changed = true;
-    }
-
-    // Determine evidence
-    const hasSerpEvidence = kw.ranking && kw.ranking.currentRank != null && kw.ranking.currentRank > 0;
-    const hasGscEvidence = kw.gsc && kw.gsc.averagePosition != null;
-
-    if (hasSerpEvidence || hasGscEvidence) {
-      kw.verificationStatus = 'VERIFIED_RANKING';
-      
-      if (hasSerpEvidence && hasGscEvidence) {
-         kw.ranking.rankingSource = 'GSC_AND_SERP';
-         gscSerpCount++;
-      } else if (hasSerpEvidence) {
-         kw.ranking.rankingSource = 'SERP';
-         serpCount++;
-      } else if (hasGscEvidence) {
-         kw.ranking.rankingSource = 'GSC';
-         gscCount++;
-         // Rule B: currentRank MUST remain null unless independently verified by SERP
-         kw.ranking.currentRank = null; 
-      }
-      changed = true;
-    } else if (kw.source === 'NLP_CANDIDATE' || kw.source === 'keyword-research-agent') {
-      kw.verificationStatus = 'CANDIDATE';
-      candidateCount++;
-      changed = true;
-    } else {
-      // Legacy keyword marked Ranking but no evidence -> UNVERIFIED
-      // Never NOT_RANKING since it wasn't explicitly checked and failed.
-      kw.verificationStatus = 'UNVERIFIED';
-      unverifiedCount++;
-      changed = true;
-    }
-
-    if (changed) {
-      await kw.save();
-      migratedCount++;
-    }
+  if (isDryRun) {
+    console.log('[MIGRATION] Running in DRY-RUN mode. No data will be modified.');
+  } else {
+    console.log('[MIGRATION] Running in APPLY mode. Modifying data...');
   }
 
-  console.log(`Migration Complete. Migrated ${migratedCount} keywords.`);
-  console.log(`- SERP Verified: ${serpCount}`);
-  console.log(`- GSC Verified: ${gscCount}`);
-  console.log(`- GSC+SERP Verified: ${gscSerpCount}`);
-  console.log(`- Candidates: ${candidateCount}`);
-  console.log(`- Unverified: ${unverifiedCount}`);
+  let verifiedCount = 0;
+  let candidateCount = 0;
+  let unverifiedCount = 0;
 
-  process.exit(0);
+  try {
+    if (isDryRun) {
+      console.log('Dry-run does not perform actual updates. Run without --dry-run to apply.');
+      return;
+    }
+
+    // 1. Valid SERP evidence -> VERIFIED_RANKING
+    const serpResult = await WorkspaceKeyword.updateMany(
+      { 
+        'ranking.currentRank': { $ne: null },
+        'ranking.status': 'FOUND',
+        verificationStatus: { $ne: 'VERIFIED_RANKING' }
+      },
+      { $set: { verificationStatus: 'VERIFIED_RANKING', 'ranking.rankingSource': 'SERP' } }
+    );
+    verifiedCount += serpResult.modifiedCount;
+
+    // 2. Valid GSC evidence -> VERIFIED_RANKING
+    const gscResult = await WorkspaceKeyword.updateMany(
+      { 
+        'gsc.averagePosition': { $ne: null },
+        verificationStatus: { $ne: 'VERIFIED_RANKING' }
+      },
+      { $set: { verificationStatus: 'VERIFIED_RANKING' } }
+    );
+    verifiedCount += gscResult.modifiedCount;
+
+    // 3. AI/NLP/Provider suggestion without ranking evidence -> CANDIDATE
+    const candidateResult = await WorkspaceKeyword.updateMany(
+      { 
+        $and: [
+          { 'ranking.currentRank': null },
+          { 'gsc.averagePosition': null },
+          { source: { $in: ['NLP_CANDIDATE', 'discovery_crawler', 'DataForSEO'] } },
+          { verificationStatus: { $nin: ['CANDIDATE', 'NOT_RANKING'] } } // Never overwrite NOT_RANKING
+        ]
+      },
+      { $set: { verificationStatus: 'CANDIDATE' } }
+    );
+    candidateCount += candidateResult.modifiedCount;
+
+    // 4. Legacy records without reliable evidence -> UNVERIFIED
+    const unverifiedResult = await WorkspaceKeyword.updateMany(
+      { 
+        $and: [
+          { 'ranking.currentRank': null },
+          { 'gsc.averagePosition': null },
+          { source: { $nin: ['NLP_CANDIDATE', 'discovery_crawler', 'DataForSEO'] } },
+          { verificationStatus: { $nin: ['UNVERIFIED', 'NOT_RANKING', 'CANDIDATE', 'VERIFIED_RANKING'] } }
+        ]
+      },
+      { $set: { verificationStatus: 'UNVERIFIED' } }
+    );
+    unverifiedCount += unverifiedResult.modifiedCount;
+
+    // NOT_RANKING is never inferred from missing data, only from active SERP checks.
+
+    console.log('--------------------------------------------------');
+    console.log('Migration Complete.');
+    console.log(`Updated to VERIFIED_RANKING: ${verifiedCount}`);
+    console.log(`Updated to CANDIDATE:        ${candidateCount}`);
+    console.log(`Updated to UNVERIFIED:       ${unverifiedCount}`);
+    console.log('--------------------------------------------------');
+
+  } catch (err) {
+    console.error('Migration failed:', err);
+  }
 }
 
-migrateKeywords().catch(err => {
-  console.error('Migration failed:', err);
-  process.exit(1);
-});
+if (require.main === module) {
+  require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+  require('../config/db')().then(async () => {
+    await migrateKeywords();
+    process.exit(0);
+  });
+}
+
+module.exports = migrateKeywords;

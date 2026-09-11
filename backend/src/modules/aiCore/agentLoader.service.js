@@ -51,7 +51,7 @@ const DEFAULT_AGENTS = {
   'keyword-research': {
     key: 'keyword-research',
     displayName: 'Keyword Research',
-    skills: ['keyword-opportunity-scoring', 'keyword-intent-classification'],
+    skills: ['keyword-opportunity-scoring', 'keyword-intent-classification', 'google-keyword-allocation-logic'],
     modelProvider: DEFAULT_AI_PROVIDER,
     modelName: DEFAULT_AI_MODEL,
     isSystemDefault: true

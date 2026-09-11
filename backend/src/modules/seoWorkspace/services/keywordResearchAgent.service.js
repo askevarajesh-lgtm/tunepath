@@ -1,5 +1,9 @@
 const WorkspaceProject = require('../models/workspaceProject.model');
 const WorkspaceKeyword = require('../models/workspaceKeyword.model');
+const WorkspaceAuditPage = require('../models/workspaceAuditPage.model');
+const WorkspaceCrawlJob = require('../models/workspaceCrawlJob.model');
+const WorkspaceCrawlQueue = require('../models/workspaceCrawlQueue.model');
+const GoogleService = require('../../seoIntelligence/services/google.service');
 const keywordIntelligence = require('./keywordIntelligence.service');
 const providerChain = require('../providers/keywordProviderChain');
 const auditLogService = require('./auditLog.service');
@@ -13,230 +17,100 @@ const logger = require('../../aiCore/logger.service');
 const sharedMemory = require('../../aiCore/sharedMemory.service');
 const agentLoader = require('../../aiCore/agentLoader.service');
 const axios = require('axios');
+const cheerio = require('cheerio');
 const hybridKeywordExtractor = require('./hybridKeywordExtractor.service');
+const rankTrackingService = require('./rankTracking.service');
 
 const AGENT_KEY = 'keyword-research';
 const TAG = 'KeywordResearchAgent';
 
 const MAX_CANDIDATES = 40;
 const MAX_SUGGESTIONS = 15;
-const DEFAULT_LOCATION_CODE = 2840; // US, matches WorkspaceKeyword's own default
+const DEFAULT_LOCATION_CODE = 2840;
 const DEFAULT_LANGUAGE_CODE = 'en';
 
-/**
- * @param {Object} project - a WorkspaceProject document
- * @param {string} agencyId
- * @param {string} [seedKeyword] - explicit seed; defaults to the project's name
- * @returns {Promise<Array>} candidate objects: { keyword, searchVolume, cpc, competition, intent, keywordDifficulty }
- */
-async function collectKeywordCandidates(project, agencyId, seedKeyword) {
-  const seed = (seedKeyword || project.name || project.domain || '').trim();
-
-  // 1. First, try to fetch existing keywords discovered by the background crawler in the database
-  const dbKeywords = await WorkspaceKeyword.find({
-    projectId: project._id,
-    source: 'discovery_crawler'
-  })
-    .sort({ 'agent.opportunityScore': -1 })
-    .limit(MAX_CANDIDATES)
-    .lean();
-
-  if (dbKeywords && dbKeywords.length > 0) {
-    logger.info(TAG, `Found ${dbKeywords.length} deterministic crawler keywords in DB for "${seed}"`);
-    return dbKeywords.map((k) => ({
-      keyword: k.keyword,
-      searchVolume: k.metrics?.searchVolume || 0,
-      cpc: k.metrics?.cpc || 0,
-      competition: k.metrics?.competition || 0,
-      intent: k.metrics?.intent || 'unknown',
-      keywordDifficulty: k.metrics?.keywordDifficulty || 0
-    }));
-  }
-
-  // 2. Fetch Ranked Keywords & Extract HTML Themes to use as Seeds
-  let rankedKeywords = [];
-  let htmlThemes = [];
-  const siteUrl = project.domain.startsWith('http') ? project.domain : `https://${project.domain}`;
-  const cleanDomain = (project.domain || '').replace(/^https?:\/\/(www\.)?/, '').replace(/\/.*$/, '').trim();
-
-  const providerConfigured = providerChain.hasAnyConfiguredProvider();
-  const opts = {
-    projectId: project._id,
-    locationCode: DEFAULT_LOCATION_CODE,
-    languageCode: DEFAULT_LANGUAGE_CODE,
-    limit: MAX_CANDIDATES,
-    bypassCache: false
-  };
-
-  if (providerConfigured) {
-    try {
-      const ranked = await keywordIntelligence.getDomainRankedKeywords(cleanDomain, opts);
-      if (ranked && ranked.length > 0) {
-        rankedKeywords = ranked.map(k => ({ ...k, intent: 'unknown', keywordDifficulty: 0 }));
-        logger.info(TAG, `Found ${rankedKeywords.length} existing ranked keywords for ${cleanDomain}`);
-      }
-    } catch (e) {
-      logger.warn(TAG, `Failed to fetch ranked keywords for ${cleanDomain}: ${e.message}`);
-    }
-  }
-
+async function fetchGscQueries(project) {
+  let gscQueries = [];
   try {
-    logger.info(TAG, `Synchronously scraping homepage to find business themes for seeds: ${siteUrl}`);
-    const response = await axios.get(siteUrl, { timeout: 10000, maxRedirects: 3 });
-    const rawHtmlKeywords = hybridKeywordExtractor.extractFromHtml(response.data, siteUrl);
-    const keywordQuality = require('./keywordQuality.service');
-
-    // Get top 3 high-quality multi-word phrases to use as DataForSEO seeds
-    htmlThemes = rawHtmlKeywords
-      .filter((k) => {
-        if (keywordQuality.assessQuality(k.keyword, { searchVolume: 0 }).isRejected) return false;
-        return (k.keyword || '').trim().split(/\s+/).length >= 2;
-      })
-      .slice(0, 3)
-      .map(k => k.keyword);
-  } catch (e) {
-    logger.warn(TAG, `Homepage scrape failed: ${e.message}`);
-  }
-
-  // 3. Query DataForSEO using the discovered themes (and the brand as fallback)
-  let allCandidates = [...rankedKeywords];
-
-  if (providerConfigured) {
-    // If we didn't find any HTML themes, fall back to the brand name / domain
-    const seedsToQuery = htmlThemes.length > 0 ? htmlThemes : [...new Set([cleanDomain, seed].filter(Boolean))];
-    logger.info(TAG, `Querying DataForSEO with seeds: ${seedsToQuery.join(', ')}`);
-
-    for (const s of seedsToQuery) {
-      if (!s) continue;
-      try {
-        const discovered = await keywordIntelligence.discoverKeywords(s, opts);
-        if (discovered && discovered.length > 0) {
-          allCandidates.push(...discovered);
-        }
-      } catch (error) {
-        logger.warn(TAG, `DataForSEO discovery failed for seed "${s}": ${error.message}`);
-      }
+    const gscPath = process.env.GSC_CREDENTIALS || process.env.GA4_CREDENTIALS;
+    if (gscPath) {
+       const googleService = new GoogleService(gscPath);
+       const domain = project.domain.replace(/^https?:\/\/(www\.)?/, '').replace(/\/.*$/, '').trim();
+       const siteUrl = project.siteUrl || `sc-domain:${domain}`;
+       const endDate = new Date().toISOString().split('T')[0];
+       const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+       const gscData = await googleService.getSearchConsoleData(siteUrl, startDate, endDate);
+       if (gscData && gscData.rows) {
+          gscQueries = gscData.rows.map(r => ({
+             keyword: r.keys[0],
+             clicks: r.clicks,
+             impressions: r.impressions,
+             ctr: r.ctr,
+             position: r.position,
+             source: 'GSC'
+          }));
+          logger.info(TAG, `Fetched ${gscQueries.length} queries from GSC for ${siteUrl}`);
+       }
     }
-  }
-
-  if (allCandidates.length > 0) {
-    // Deduplicate, sort by search volume descending, cap at MAX_CANDIDATES
-    const seen = new Set();
-    const deduped = allCandidates.filter((c) => {
-      const key = (c.keyword || '').toLowerCase().trim();
-      if (!key || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    deduped.sort((a, b) => (b.searchVolume || 0) - (a.searchVolume || 0));
-    return deduped.slice(0, MAX_CANDIDATES).map((c) => ({
-      keyword: c.keyword,
-      searchVolume: c.searchVolume || 0,
-      cpc: c.cpc || 0,
-      competition: c.competition || 0,
-      intent: c.intent || 'unknown',
-      keywordDifficulty: c.keywordDifficulty || 0,
-      rank: c.rank || null
-    }));
-  }
-
-  logger.warn(TAG, 'No keyword candidates could be found from DB, HTML, or DataForSEO.');
-  return [];
-}
-
-/**
- * @param {Object} project
- * @param {Array} candidates - from collectKeywordCandidates
- * @param {string} workspaceId
- * @returns {Promise<{ summary: string, selected: Array }>}
- */
-async function analyzeAndSuggest(project, candidates, workspaceId) {
-  if (candidates.length === 0) {
-    return { summary: 'No keyword candidates were available to analyze.', selected: [] };
-  }
-
-  const agentConfig = await agentLoader.resolve(AGENT_KEY);
-  const skillsBlock = agentLoader.loadSkillsForAgent(agentConfig);
-  const memoryBlock = await sharedMemory.recallAsPromptContext({ agencyId: workspaceId, projectId: project._id });
-  const recommendationHistoryBlock = await recommendationMemory.recallAsPromptContext(project._id);
-  const targetCount = Math.min(MAX_SUGGESTIONS, candidates.length);
-
-  const prompt = `You are the Keyword Research Agent for ${project.name} (${project.domain}).
-
-Candidate Keywords (metrics of 0/"unknown" mean no measured data was available — treat these conservatively, do not assume they're bad or good):
-${JSON.stringify(candidates, null, 2)}
-${skillsBlock}
-${memoryBlock}
-${recommendationHistoryBlock}
-
-Select the best ${targetCount} keywords from the candidate list above to actively pursue. Do not invent keywords that aren't in the list.
-
-Respond with a JSON object of this exact shape:
-{
-  "summary": "2-4 sentence summary of the overall opportunity",
-  "keywords": [
-    { "keyword": "must exactly match one candidate above", "opportunityScore": 0-100, "rationale": "...", "theme": "short grouping label" }
-  ]
-}
-Respond ONLY with valid JSON, no markdown formatting or commentary.`;
-
-  const raw = await aiEngine.complete({
-    workspaceId,
-    agentKey: AGENT_KEY,
-    projectId: project._id,
-    messages: [{ role: 'user', content: prompt }],
-    model: agentConfig.modelName,
-    temperature: 0.4,
-    maxTokens: 1800,
-    jsonMode: true,
-    retryOptions: { retries: 2 }
-  });
-
-  let parsed;
-  try {
-    parsed = JSON.parse(raw);
   } catch (error) {
-    logger.error(TAG, `Failed to parse AI keyword-selection JSON: ${error.message}`, { projectId: project._id });
-    parsed = { summary: 'Automated analysis did not return structured output; manual review recommended.', keywords: [] };
+    logger.warn(TAG, `GSC fetch failed for ${project.domain}: ${error.message}`);
   }
-
-  const candidateMap = new Map(candidates.map((c) => [c.keyword.toLowerCase(), c]));
-  const selected = (Array.isArray(parsed.keywords) ? parsed.keywords : [])
-    .filter((k) => k.keyword && candidateMap.has(k.keyword.toLowerCase()))
-    .slice(0, MAX_SUGGESTIONS)
-    .map((k) => {
-      const candidate = candidateMap.get(k.keyword.toLowerCase());
-      const score = Number(k.opportunityScore);
-      return {
-        ...candidate,
-        keyword: candidate.keyword, // preserve original casing from the candidate, not the AI's echo
-        opportunityScore: Number.isFinite(score) ? Math.max(0, Math.min(100, Math.round(score))) : 50,
-        rationale: k.rationale || '',
-        theme: k.theme || 'general'
-      };
-    });
-
-  return { summary: parsed.summary || '', selected };
+  return gscQueries;
 }
 
-const WorkspaceCrawlJob = require('../models/workspaceCrawlJob.model');
-const WorkspaceCrawlQueue = require('../models/workspaceCrawlQueue.model');
+async function fetchCrawlEvidence(project) {
+  let pages = await WorkspaceAuditPage.find({ projectId: project._id }).limit(5).lean();
+  let partial = false;
+  
+  if (pages.length === 0) {
+     logger.info(TAG, `No crawl data found for ${project.domain}. Attempting synchronous partial crawl.`);
+     try {
+       const siteUrl = project.domain.startsWith('http') ? project.domain : `https://${project.domain}`;
+       const response = await axios.get(siteUrl, { timeout: 10000, maxRedirects: 3 });
+       const $ = cheerio.load(response.data);
+       pages = [{
+          url: siteUrl,
+          title: $('title').text().trim(),
+          metaDescription: $('meta[name="description"]').attr('content') || '',
+          h1: $('h1').map((_, el) => $(el).text().trim()).get(),
+          textSnippet: $('p').map((_, el) => $(el).text().trim()).get().join(' ').substring(0, 1000)
+       }];
+       partial = true;
+     } catch (err) {
+       logger.warn(TAG, `Synchronous partial crawl failed: ${err.message}`);
+     }
+  } else {
+     pages = pages.map(p => ({
+        url: p.url,
+        title: p.title,
+        metaDescription: p.metaDescription,
+        h1: p.h1,
+        h2: p.h2
+     }));
+  }
+  return { pages, partial };
+}
+
+async function collectKeywordCandidates() {
+  return []; // Deprecated, unused but kept for backwards compatibility if called elsewhere
+}
+
+async function analyzeAndSuggest() {
+  return { summary: '', selected: [] }; // Deprecated, unused but kept for backwards compatibility
+}
 
 async function run(projectId, workspaceId, options = {}) {
   const project = await WorkspaceProject.findById(projectId);
   if (!project) throw new Error('Project not found');
-
   const agencyId = workspaceId || project.createdBy || project.companyId;
 
-  // Clear stale discovery_crawler keywords (HTML-scraped words) so DataForSEO runs fresh.
-  // Keywords that have been approved/rejected by users are preserved (they have non-Suggested status).
+  // Clear stale discovery_crawler keywords
   await WorkspaceKeyword.deleteMany({
     projectId: project._id,
     source: 'discovery_crawler',
     status: { $in: ['Suggested', 'Discovered'] }
   });
 
-  // 1. Kick off the background crawl (fire and forget)
   try {
     const existingJob = await WorkspaceCrawlJob.findOne({ projectId: project._id, status: 'running' });
     if (!existingJob) {
@@ -247,14 +121,8 @@ async function run(projectId, workspaceId, options = {}) {
         startedAt: new Date(),
         progress: { pagesCrawled: 0, keywordsExtracted: 0, duplicatesRemoved: 0, keywordsSaved: 0 }
       });
-
       const siteUrl = project.domain.startsWith('http') ? project.domain : `https://${project.domain}`;
-      await WorkspaceCrawlQueue.create({
-        jobId: job._id,
-        url: siteUrl,
-        status: 'pending'
-      });
-
+      await WorkspaceCrawlQueue.create({ jobId: job._id, url: siteUrl, status: 'pending' });
       const crawlWorker = require('./crawler.worker.js');
       if (!crawlWorker.isRunning) crawlWorker.start();
     }
@@ -270,44 +138,147 @@ async function run(projectId, workspaceId, options = {}) {
     status: 'started'
   });
 
-  // 2. Synchronously fetch initial candidates so the UI can display them immediately
-  const candidates = await collectKeywordCandidates(project, agencyId, options.seedKeyword);
+  const [{ pages, partial }, gscQueries] = await Promise.all([
+     fetchCrawlEvidence(project),
+     fetchGscQueries(project)
+  ]);
 
-  if (candidates.length > 0) {
-    let suggestedKeywords = [];
-    let summaryText = `Found ${candidates.length} keyword candidates immediately. A deeper crawl is also running in the background.`;
+  if (pages.length === 0 && gscQueries.length === 0) {
+     return { candidateCount: 0, suggestedKeywords: [], summary: 'Keyword discovery crawl has been queued. No existing data found. Keywords will appear shortly.' };
+  }
 
-    try {
-      // 3. If AI is configured, call the existing AI analysis/prioritization flow.
-      const aiAnalysis = await analyzeAndSuggest(project, candidates, agencyId);
-      if (aiAnalysis && aiAnalysis.selected && aiAnalysis.selected.length > 0) {
-        suggestedKeywords = aiAnalysis.selected;
-        if (aiAnalysis.summary) summaryText = `Found ${candidates.length} keyword candidates immediately. ${aiAnalysis.summary} A deeper crawl is also running in the background.`;
-      } else {
-        throw new Error('AI analysis returned empty selection');
+  const agentConfig = await agentLoader.resolve(AGENT_KEY);
+  const skillsBlock = agentLoader.loadSkillsForAgent(agentConfig);
+  const targetCount = 5;
+  
+  let claudeCandidates = [];
+  let aiSummary = "";
+  if (pages.length > 0) {
+      const prompt = `You are the Keyword Research Agent for ${project.name} (${project.domain}).
+      
+      Here is the actual crawled evidence from the website:
+      ${JSON.stringify(pages, null, 2)}
+      ${skillsBlock}
+      
+      Based STRICTLY on the content provided above, extract ${targetCount} high-intent B2B or relevant keywords.
+      For each keyword, you MUST provide the exact URL and HTML element (e.g. Title, H1) that supports it.
+      DO NOT invent generic keywords that are not directly supported by this evidence.
+      
+      Respond with a JSON object of this exact shape:
+      {
+        "summary": "2-4 sentence summary of the SEO themes found on the site.",
+        "keywords": [
+          { 
+            "keyword": "example keyword",
+            "opportunityScore": 80, 
+            "rationale": "Why this is a good target", 
+            "theme": "short label",
+            "sourceUrls": ["https://..."],
+            "supportingElements": ["H1: ..."]
+          }
+        ]
       }
-    } catch (err) {
-      logger.warn(TAG, `AI analysis failed or unavailable, falling back to deterministic values: ${err.message}`);
-      suggestedKeywords = candidates.slice(0, MAX_SUGGESTIONS).map(c => ({
-        keyword: c.keyword,
-        opportunityScore: c.opportunityScore || (c.keywordDifficulty ? Math.max(0, 100 - c.keywordDifficulty) : 50),
-        rationale: 'Discovered instantly via deterministic metrics',
-        theme: 'General',
-        ...c
-      }));
-    }
+      Respond ONLY with valid JSON, no markdown formatting.`;
 
-    // Save them to DB immediately so they appear in the UI table
-    const bulkOps = suggestedKeywords.map(k => {
-      const isVerified = k.rank != null;
-      const op = {
+      try {
+          const raw = await aiEngine.complete({
+            workspaceId: agencyId,
+            agentKey: AGENT_KEY,
+            projectId: project._id,
+            messages: [{ role: 'user', content: prompt }],
+            model: agentConfig.modelName,
+            temperature: 0.2,
+            maxTokens: 4000,
+            jsonMode: true,
+            retryOptions: { retries: 2 }
+          });
+          const parsed = JSON.parse(raw);
+          claudeCandidates = parsed.keywords || [];
+          aiSummary = parsed.summary || '';
+      } catch (error) {
+          logger.error(TAG, `Failed to parse AI keyword extraction JSON: ${error.message}`);
+      }
+  }
+
+  const mergedMap = new Map();
+  for (const q of gscQueries) {
+      mergedMap.set(q.keyword.toLowerCase(), {
+          keyword: q.keyword,
+          gscPosition: q.position,
+          clicks: q.clicks,
+          impressions: q.impressions,
+          isGsc: true,
+          opportunityScore: 80,
+          rationale: 'Identified via Search Console',
+          theme: 'GSC Query'
+      });
+  }
+  for (const c of claudeCandidates) {
+      const key = c.keyword.toLowerCase();
+      if (mergedMap.has(key)) {
+         const existing = mergedMap.get(key);
+         existing.rationale = c.rationale;
+         existing.theme = c.theme;
+         existing.sourceUrls = c.sourceUrls;
+         existing.supportingElements = c.supportingElements;
+      } else {
+         mergedMap.set(key, {
+            keyword: c.keyword,
+            isGsc: false,
+            opportunityScore: c.opportunityScore || 50,
+            rationale: c.rationale,
+            theme: c.theme,
+            sourceUrls: c.sourceUrls,
+            supportingElements: c.supportingElements
+         });
+      }
+  }
+
+  const allCandidates = Array.from(mergedMap.values());
+  const finalCandidates = allCandidates.slice(0, 40); 
+
+  if (finalCandidates.length === 0) {
+      return { candidateCount: 0, suggestedKeywords: [], summary: 'No keywords could be extracted from evidence.' };
+  }
+
+  try {
+     const kwsToFetch = finalCandidates.map(c => c.keyword);
+     const providerConfigured = providerChain.hasAnyConfiguredProvider();
+     if (providerConfigured) {
+        let volumes = [];
+        try {
+           volumes = await keywordIntelligence.getSearchVolumeAndTrend(kwsToFetch, { projectId: project._id, locationCode: DEFAULT_LOCATION_CODE, languageCode: DEFAULT_LANGUAGE_CODE });
+        } catch(err) {
+           volumes = await keywordIntelligence.discoverKeywords(kwsToFetch[0], { projectId: project._id, limit: 100 });
+        }
+        
+        if (volumes && volumes.length > 0) {
+           const volMap = new Map(volumes.map(v => [v.keyword.toLowerCase(), v]));
+           for (const c of finalCandidates) {
+              const vData = volMap.get(c.keyword.toLowerCase());
+              if (vData) {
+                 c.searchVolume = vData.searchVolume;
+                 c.cpc = vData.cpc;
+                 c.keywordDifficulty = vData.keywordDifficulty;
+                 let comp = parseFloat(vData.competition);
+                 c.competition = isNaN(comp) ? (vData.competition === 'LOW' ? 0.3 : vData.competition === 'MEDIUM' ? 0.6 : vData.competition === 'HIGH' ? 0.9 : 0) : comp;
+              }
+           }
+        }
+     }
+  } catch (error) {
+     logger.warn(TAG, `Failed to fetch search volumes: ${error.message}`);
+  }
+
+  const bulkOps = finalCandidates.map(k => {
+      return {
         updateOne: {
           filter: { projectId, keyword: k.keyword },
           update: {
             $set: {
               agencyId,
-              source: isVerified ? 'SERP' : 'NLP_CANDIDATE',
-              verificationStatus: isVerified ? 'VERIFIED_RANKING' : 'CANDIDATE',
+              source: k.isGsc ? 'GSC' : 'NLP_CANDIDATE',
+              verificationStatus: k.isGsc ? 'VERIFIED_RANKING' : 'CANDIDATE',
               'agent.rationale': k.rationale,
               'agent.theme': k.theme
             },
@@ -326,35 +297,53 @@ async function run(projectId, workspaceId, options = {}) {
           upsert: true
         }
       };
-
-      if (k.rank) {
-        op.updateOne.update.$set['ranking.currentRank'] = k.rank;
-        op.updateOne.update.$set['ranking.rankingSource'] = 'SERP';
-        op.updateOne.update.$set['ranking.status'] = 'FOUND';
+  });
+  
+  const gscUpdates = finalCandidates.filter(k => k.isGsc).map(k => {
+      return {
+          updateOne: {
+             filter: { projectId, keyword: k.keyword },
+             update: {
+                $set: {
+                   'gsc.averagePosition': k.gscPosition,
+                   'gsc.clicks': k.clicks,
+                   'gsc.impressions': k.impressions,
+                   'gsc.ctr': k.ctr,
+                   verificationStatus: 'VERIFIED_RANKING'
+                }
+             }
+          }
       }
+  });
 
-      return op;
-    });
-
-    if (bulkOps.length > 0) {
-      await WorkspaceKeyword.bulkWrite(bulkOps);
-    }
-
-    return {
-      candidateCount: candidates.length,
-      suggestedKeywords,
-      summary: summaryText
-    };
+  await WorkspaceKeyword.bulkWrite(bulkOps);
+  if (gscUpdates.length > 0) {
+      await WorkspaceKeyword.bulkWrite(gscUpdates);
   }
 
-  return { candidateCount: 0, suggestedKeywords: [], summary: 'Keyword discovery crawl has been queued and is processing in the background. Keywords will appear shortly.' };
+  try {
+      const newlyInsertedKeywords = await WorkspaceKeyword.find({
+        projectId,
+        keyword: { $in: finalCandidates.map(k => k.keyword) }
+      });
+      
+      if (newlyInsertedKeywords.length > 0) {
+        logger.info(TAG, `Synchronously running SERP track for ${newlyInsertedKeywords.length} extracted candidates.`);
+        await rankTrackingService.trackKeywords(project, newlyInsertedKeywords);
+      }
+  } catch (err) {
+      logger.error(TAG, `Failed to synchronously track ranks: ${err.message}`);
+  }
+
+  let summaryText = `Found ${finalCandidates.length} evidence-based candidates. ${aiSummary} ${partial ? '(Based on partial homepage crawl while deep crawl runs)' : ''}`;
+
+  return {
+    candidateCount: finalCandidates.length,
+    suggestedKeywords: finalCandidates,
+    summary: summaryText
+  };
 }
 
-/**
- * @param {string} projectId
- * @param {string[]} keywordIds
- * @param {string} userId
- */
 async function approveKeywords(projectId, keywordIds, userId) {
   if (!Array.isArray(keywordIds) || keywordIds.length === 0) {
     throw new Error('At least one keywordId is required');
@@ -435,10 +424,6 @@ async function recordExcludedThemesIfRepeated(projectId, keywordIds, userId) {
   }
 }
 
-/**
- * @param {string} projectId
- * @param {number} [limit=20]
- */
 async function getExecutionHistory(projectId, limit = 20) {
   const ExecutionLog = require('../../aiCore/executionLog.model');
 
