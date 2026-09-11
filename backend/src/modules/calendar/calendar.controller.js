@@ -22,7 +22,8 @@ const getAllEvents = async (req, res) => {
       req.companyId,
       req.query,
       req.user?.role,
-      req.user?._id
+      req.user?._id,
+      req.user
     );
     return sendSuccess(res, 'Events retrieved successfully', { events });
   } catch (error) {
@@ -117,8 +118,10 @@ const getCalendarAnalytics = async (req, res) => {
   try {
     const analytics = await calendarService.getCalendarAnalytics(
       req.companyId,
+      req.query,
       req.user?.role,
-      req.user?._id
+      req.user?._id,
+      req.user
     );
     return sendSuccess(res, 'Calendar analytics retrieved successfully', { analytics });
   } catch (error) {

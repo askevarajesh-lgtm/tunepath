@@ -74,7 +74,7 @@ const createMutationHook = (method) => {
 
 export const useGetEventsQuery = createQueryHook((params) => ({ url: '/calendar', params }));
 export const useGetEventByIdQuery = (id, options) => createQueryHook(() => `/calendar/${id}`)(null, options);
-export const useGetCalendarAnalyticsQuery = createQueryHook('/calendar/analytics');
+export const useGetCalendarAnalyticsQuery = createQueryHook((params) => ({ url: '/calendar/analytics', params }));
 
 export const useCreateEventMutation = createMutationHook('post')('/calendar');
 export const useUpdateEventMutation = createMutationHook('put')((arg) => {

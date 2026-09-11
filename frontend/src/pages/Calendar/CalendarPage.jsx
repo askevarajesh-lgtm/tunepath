@@ -108,7 +108,7 @@ const CalendarPage = () => {
     endDate: dateRange.endDate
   });
 
-  const { data: analyticsResponse, refetch: refetchAnalytics } = useGetCalendarAnalyticsQuery({});
+  const { data: analyticsResponse, refetch: refetchAnalytics } = useGetCalendarAnalyticsQuery({ clientId: effectiveClientId });
 
   const { data: detailResponse, refetch: refetchDetail } = useGetEventByIdQuery(selectedEventId, {
     skip: !selectedEventId
@@ -140,6 +140,7 @@ const CalendarPage = () => {
   // Re-fetch on filter changes (including global client switch)
   useEffect(() => {
     refetchEvents();
+    refetchAnalytics();
   }, [search, statusFilter, typeFilter, effectiveClientId, dateRange]);
 
   // Handle drawer close

@@ -12,6 +12,8 @@ const { Campaign } = require('../campaigns/campaign.model');
 const Deal = require('../salesPipeline/deal.model');
 const mongoose = require('mongoose');
 
+const CLIENT_ROLES = ['brand_super_admin', 'brand_manager', 'agency_client', 'client', 'brand_team_user', 'client_user'];
+
 // Helper to determine scoping query based on user role
 const getScopingFilters = (userRole, userId, companyId) => {
   const eventFilter = {};
@@ -39,19 +41,10 @@ const getScopingFilters = (userRole, userId, companyId) => {
     return { eventFilter, meetingFilter, taskFilter, leadFilter };
   }
 
-  // For Brand Admins / Managers (Client side)
-  if (['brand_super_admin', 'brand_manager'].includes(userRole)) {
-    eventFilter.$or = [{ companyId }, { clientId: companyId }];
-    meetingFilter.$or = [{ companyId }, { clientId: companyId }];
-    taskFilter.companyId = companyId;
-    leadFilter.clientId = companyId;
-    return { eventFilter, meetingFilter, taskFilter, leadFilter };
-  }
-
-  // For Client
-  if (userRole === 'agency_client' || userRole === 'client') {
-    eventFilter.$or = [{ clientId: companyId }, { attendees: userId }];
-    meetingFilter.$or = [{ clientId: companyId }, { participants: userId }];
+  // For Brand Admins / Managers & Clients (Client side)
+  if (CLIENT_ROLES.includes(userRole)) {
+    eventFilter.$or = [{ clientId: companyId }, { companyId }, { attendees: userId }];
+    meetingFilter.$or = [{ clientId: companyId }, { companyId }, { participants: userId }];
     taskFilter.companyId = companyId;
     leadFilter.clientId = companyId;
     return { eventFilter, meetingFilter, taskFilter, leadFilter };
@@ -103,8 +96,18 @@ const calendarService = {
   },
 
   // Get all events from custom events, meetings, tasks, and lead followups
-  getAllEvents: async (companyId, query, userRole, userId) => {
+  getAllEvents: async (companyId, query, userRole, userId, userObj) => {
     const { startDate, endDate, eventType, search, clientId, hostId } = query;
+    const isClientRole = CLIENT_ROLES.includes(userRole);
+
+    // For agency_client/client roles, their own _id IS the clientId stored on tasks/invoices/etc.
+    // companyId for these users is their agencyId, NOT their own client company ID.
+    const selfClientId = isClientRole
+      ? (userObj?.brandId || userObj?.clientId || userId)
+      : null;
+
+    const targetClientId = clientId || selfClientId || null;
+
     const { eventFilter, meetingFilter, taskFilter, leadFilter } = getScopingFilters(userRole, userId, companyId);
 
     // Apply date range filters if present
@@ -119,12 +122,15 @@ const calendarService = {
       leadFilter.nextFollowUpDate = { $gte: start, $lte: end };
     }
 
-    // Apply Client Filter
-    if (clientId) {
-      eventFilter.clientId = clientId;
-      meetingFilter.clientId = clientId;
-      taskFilter.companyId = clientId;
-      leadFilter.clientId = clientId;
+    // Apply Client Filter — overwrite any $or set by getScopingFilters to avoid conflicts
+    if (targetClientId) {
+      // Reset to a clean direct match so there's no conflict with $or from getScopingFilters
+      delete eventFilter.$or;
+      delete meetingFilter.$or;
+      eventFilter.clientId = targetClientId;
+      meetingFilter.clientId = targetClientId;
+      taskFilter.companyId = targetClientId;
+      leadFilter.clientId = targetClientId;
     }
 
     // Apply Host / AssignedTo Filter
@@ -243,17 +249,9 @@ const calendarService = {
 
     // 5. Fetch Client creation events
     const clientCreationFilter = { role: 'agency_client' };
-    if (clientId) {
-      clientCreationFilter._id = clientId;
-    }
-    
-    if (['agency_super_admin', 'agency_manager'].includes(userRole)) {
-      clientCreationFilter.agencyId = companyId;
-    } else if (['brand_super_admin', 'brand_manager', 'agency_client', 'client'].includes(userRole)) {
-      clientCreationFilter._id = companyId;
-    } else if (['supreme_super_admin', 'commander_admin'].includes(userRole) && companyId) {
-      clientCreationFilter.agencyId = companyId;
-    } else {
+    if (targetClientId) {
+      clientCreationFilter._id = targetClientId;
+    } else if (companyId) {
       clientCreationFilter.agencyId = companyId;
     }
 
@@ -285,13 +283,11 @@ const calendarService = {
 
     // 6. Proposals Created
     const proposalFilter = {};
-    if (['agency_super_admin', 'agency_manager'].includes(userRole) ||
-        ['supreme_super_admin', 'commander_admin'].includes(userRole)) {
-      proposalFilter.agencyId = companyId;
-    } else {
+    if (targetClientId) {
+      proposalFilter.clientId = targetClientId;
+    } else if (companyId) {
       proposalFilter.agencyId = companyId;
     }
-    if (clientId) proposalFilter.clientId = clientId;
     applyDateRange(proposalFilter, 'createdAt', startDate, endDate);
 
     const proposals = await Proposal.find(proposalFilter)
@@ -321,12 +317,11 @@ const calendarService = {
 
     // 7. Invoices Created
     const invoiceFilter = {};
-    if (['agency_super_admin', 'agency_manager', 'supreme_super_admin', 'commander_admin'].includes(userRole)) {
-      invoiceFilter.agencyId = companyId;
-    } else {
+    if (targetClientId) {
+      invoiceFilter.clientId = targetClientId;
+    } else if (companyId) {
       invoiceFilter.agencyId = companyId;
     }
-    if (clientId) invoiceFilter.clientId = clientId;
     applyDateRange(invoiceFilter, 'createdAt', startDate, endDate);
 
     const invoices = await Invoice.find(invoiceFilter)
@@ -355,8 +350,12 @@ const calendarService = {
     });
 
     // 8. Projects Created
-    const projectFilter = { companyId };
-    if (clientId) projectFilter.clientId = clientId;
+    const projectFilter = {};
+    if (targetClientId) {
+      projectFilter.clientId = targetClientId;
+    } else if (companyId) {
+      projectFilter.companyId = companyId;
+    }
     applyDateRange(projectFilter, 'createdAt', startDate, endDate);
 
     const projects = await Project.find(projectFilter)
@@ -386,22 +385,21 @@ const calendarService = {
     });
 
     // 9. Transactions Recorded
-    // Transaction.companyId = the agency (tenant). It doesn't have a direct agencyId field.
-    const transactionFilter = { companyId };
+    const transactionFilter = {};
+    if (!targetClientId && companyId) {
+      transactionFilter.companyId = companyId;
+    }
     applyDateRange(transactionFilter, 'paymentDate', startDate, endDate);
-    // Note: Transaction doesn't store clientId directly; we scope by agency companyId.
-    // Populate invoiceId to get client info for display and client filtering.
 
     const transactions = await Transaction.find(transactionFilter)
       .populate('invoiceId', 'invoiceNumber clientId')
       .populate({ path: 'invoiceId', populate: { path: 'clientId', select: 'name companyName' } })
       .populate('recordedBy', 'name email');
 
-    // If clientId filter is active, post-filter transactions via populated invoice
-    const filteredTransactions = clientId
+    const filteredTransactions = targetClientId
       ? transactions.filter(t => {
           const tClientId = t.invoiceId?.clientId?._id?.toString() || t.invoiceId?.clientId?.toString();
-          return tClientId === clientId.toString();
+          return tClientId === targetClientId.toString();
         })
       : transactions;
 
@@ -428,8 +426,12 @@ const calendarService = {
     });
 
     // 10. SEO Projects (Workspace Projects) Created
-    const seoProjectFilter = { companyId, isDeleted: { $ne: true } };
-    if (clientId) seoProjectFilter.clientId = clientId;
+    const seoProjectFilter = { isDeleted: { $ne: true } };
+    if (targetClientId) {
+      seoProjectFilter.clientId = targetClientId;
+    } else if (companyId) {
+      seoProjectFilter.companyId = companyId;
+    }
     applyDateRange(seoProjectFilter, 'createdAt', startDate, endDate);
 
     const seoProjects = await WorkspaceProject.find(seoProjectFilter)
@@ -457,14 +459,13 @@ const calendarService = {
       };
     });
 
-    // 11. Tasks Created (by createdAt — distinct from task due-date entries above)
+    // 11. Tasks Created (by createdAt)
     const taskCreatedFilter = {};
-    if (['agency_super_admin', 'agency_manager', 'supreme_super_admin', 'commander_admin'].includes(userRole)) {
-      taskCreatedFilter.tenantCompanyId = companyId;
-    } else {
+    if (targetClientId) {
+      taskCreatedFilter.companyId = targetClientId;
+    } else if (companyId) {
       taskCreatedFilter.tenantCompanyId = companyId;
     }
-    if (clientId) taskCreatedFilter.companyId = clientId;
     applyDateRange(taskCreatedFilter, 'createdAt', startDate, endDate);
 
     const createdTasks = await Task.find(taskCreatedFilter)
@@ -495,9 +496,11 @@ const calendarService = {
     });
 
     // 12. Campaigns Created
-    const campaignFilter = { companyId };
-    if (clientId) {
-      campaignFilter.$or = [{ clientCompanyId: clientId }, { clientId }];
+    const campaignFilter = {};
+    if (targetClientId) {
+      campaignFilter.$or = [{ clientCompanyId: targetClientId }, { clientId: targetClientId }];
+    } else if (companyId) {
+      campaignFilter.companyId = companyId;
     }
     applyDateRange(campaignFilter, 'createdAt', startDate, endDate);
 
@@ -529,8 +532,12 @@ const calendarService = {
     });
 
     // 13. Sales Deals Created
-    const dealFilter = { companyId };
-    if (clientId) dealFilter.clientId = clientId;
+    const dealFilter = {};
+    if (targetClientId) {
+      dealFilter.clientId = targetClientId;
+    } else if (companyId) {
+      dealFilter.companyId = companyId;
+    }
     applyDateRange(dealFilter, 'createdAt', startDate, endDate);
 
     const deals = await Deal.find(dealFilter);
@@ -768,8 +775,23 @@ const calendarService = {
   },
 
   // Compute analytics
-  getCalendarAnalytics: async (companyId, userRole, userId) => {
+  getCalendarAnalytics: async (companyId, query = {}, userRole, userId, userObj) => {
+    const isClientRole = CLIENT_ROLES.includes(userRole);
+    // For agency_client/client: their _id is the clientId on records, not companyId (which is agencyId)
+    const selfClientId = isClientRole
+      ? (userObj?.brandId || userObj?.clientId || userId)
+      : null;
+    const targetClientId = query.clientId || selfClientId || null;
+
     const { eventFilter, meetingFilter, taskFilter } = getScopingFilters(userRole, userId, companyId);
+    if (targetClientId) {
+      // Remove $or from scoping filter to avoid conflict with direct clientId match
+      delete eventFilter.$or;
+      delete meetingFilter.$or;
+      eventFilter.clientId = targetClientId;
+      meetingFilter.clientId = targetClientId;
+      taskFilter.companyId = targetClientId;
+    }
     
     const customCount = await CalendarEvent.countDocuments(eventFilter);
     const meetingCount = await Meeting.countDocuments(meetingFilter);
@@ -787,34 +809,43 @@ const calendarService = {
     const meetingCompleted = await Meeting.countDocuments({ ...meetingFilter, status: 'completed' });
     const meetingCancelled = await Meeting.countDocuments({ ...meetingFilter, status: 'cancelled' });
 
-    // Count new activity sources
-    const proposalCount = await Proposal.countDocuments({ agencyId: companyId });
-    const invoiceCount = await Invoice.countDocuments({ agencyId: companyId });
-    const projectCount = await Project.countDocuments({ companyId });
-    const transactionCount = await Transaction.countDocuments({ companyId });
-    const seoProjectCount = await WorkspaceProject.countDocuments({ companyId, isDeleted: { $ne: true } });
-    const campaignCount = await Campaign.countDocuments({ companyId });
-    const dealCount = await Deal.countDocuments({ companyId });
+    // Count activity sources with targetClientId check
+    const proposalFilter = targetClientId ? { clientId: targetClientId } : { agencyId: companyId };
+    const invoiceFilter = targetClientId ? { clientId: targetClientId } : { agencyId: companyId };
+    const projectFilter = targetClientId ? { clientId: targetClientId } : { companyId };
+    const seoProjectFilter = targetClientId ? { clientId: targetClientId, isDeleted: { $ne: true } } : { companyId, isDeleted: { $ne: true } };
+    const campaignFilter = targetClientId ? { $or: [{ clientCompanyId: targetClientId }, { clientId: targetClientId }] } : { companyId };
+    const dealFilter = targetClientId ? { clientId: targetClientId } : { companyId };
+
+    const proposalCount = await Proposal.countDocuments(proposalFilter);
+    const invoiceCount = await Invoice.countDocuments(invoiceFilter);
+    const projectCount = await Project.countDocuments(projectFilter);
+    const seoProjectCount = await WorkspaceProject.countDocuments(seoProjectFilter);
+    const campaignCount = await Campaign.countDocuments(campaignFilter);
+    const dealCount = await Deal.countDocuments(dealFilter);
 
     // Group custom events by type
+    const matchFilter = targetClientId 
+      ? { clientId: new mongoose.Types.ObjectId(targetClientId) }
+      : (companyId ? { companyId: new mongoose.Types.ObjectId(companyId) } : {});
+      
     const typeAgg = await CalendarEvent.aggregate([
-      { $match: { companyId: new mongoose.Types.ObjectId(companyId) } },
+      { $match: matchFilter },
       { $group: { _id: '$eventType', count: { $sum: 1 } } }
     ]);
     const typeStats = {};
     typeAgg.forEach(t => {
-      typeStats[t._id] = t.count;
+      if (t._id) typeStats[t._id] = t.count;
     });
 
     return {
-      totalEvents: customCount + meetingCount + taskCount,
+      totalEvents: customCount + meetingCount + taskCount + proposalCount + invoiceCount + projectCount + seoProjectCount + campaignCount + dealCount,
       customEventsCount: customCount,
       meetingsCount: meetingCount,
       tasksCount: taskCount,
       proposalsCount: proposalCount,
       invoicesCount: invoiceCount,
       projectsCount: projectCount,
-      transactionsCount: transactionCount,
       seoProjectsCount: seoProjectCount,
       campaignsCount: campaignCount,
       dealsCount: dealCount,
