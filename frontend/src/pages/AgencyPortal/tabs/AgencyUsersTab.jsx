@@ -33,7 +33,8 @@ const AgencyUsersTab = () => {
       setLoading(true);
       const res = await api.get('/agency/users');
       if (res.data && res.data.success) {
-        setUsers(res.data.data);
+        const managerRoles = ['agency_manager', 'agency_super_admin'];
+        setUsers((res.data.data || []).filter(u => managerRoles.includes(u.role)));
       }
     } catch (err) {
       console.error(err);

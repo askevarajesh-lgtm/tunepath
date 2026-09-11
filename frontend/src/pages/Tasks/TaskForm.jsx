@@ -232,13 +232,17 @@ const TaskForm = () => {
   // When creating: use navigation state (set by Create Task button choosing 'own_brand').
   // When editing: infer from the loaded task — no companyId means it's an Own Brand task.
   const task_raw = taskData?.data?.task;
+  const isBrandPortal = location.pathname.startsWith('/client') ||
+    ['brand_admin', 'brand_manager', 'brand_super_admin', 'brand_team_user', 'client', 'agency_client'].includes(userRole) ||
+    userRole?.startsWith('brand');
+
   const inferredTaskTarget = isEdit
     ? (locationTaskTarget || (task_raw && !task_raw.companyId ? 'own_brand' : 'client'))
-    : (locationTaskTarget || 'client');
+    : (locationTaskTarget || (isBrandPortal ? 'own_brand' : 'client'));
   const taskTarget = inferredTaskTarget;
   const hideClientDropdown =
     userRole === 'commander_admin' ||
-    userRole === 'brand_manager' ||
+    isBrandPortal ||
     taskTarget === 'own_brand';
   const selectedDepartment = Form.useWatch("department", form);
   const watchedCompanyId = Form.useWatch("companyId", form);

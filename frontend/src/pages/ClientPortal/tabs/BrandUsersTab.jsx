@@ -42,7 +42,8 @@ const BrandUsersTab = ({ user }) => {
       });
       const data = await res.json();
       if (data.success) {
-        setUsers(data.data.filter(u => u.role !== 'user'));
+        const managerRoles = ['brand_manager', 'brand_super_admin', 'brand_admin'];
+        setUsers(data.data.filter(u => managerRoles.includes(u.role) && !u.customRoleId));
       }
     } catch (error) {
       console.error('Failed to fetch users', error);

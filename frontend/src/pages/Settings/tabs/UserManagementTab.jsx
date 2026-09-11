@@ -183,10 +183,10 @@ const UserManagementTab = () => {
       const excludedRoles = [
         'supreme_super_admin', 'superadmin', 'super_admin', 'commander_admin', 'admin',
         'agency_super_admin', 'agency_manager',
-        'brand_super_admin', 'brand_manager',
+        'brand_super_admin', 'brand_manager', 'brand_admin',
         'manager', 'agency_client', 'client'
       ];
-      setUsers(allUsers.filter(u => !excludedRoles.includes(u.role)));
+      setUsers(allUsers.filter(u => u.customRoleId || !excludedRoles.includes(u.role)));
       setDepartments(deptsRes.data?.data || []);
       setRoles(rolesRes.data?.data || []);
     } catch (err) {

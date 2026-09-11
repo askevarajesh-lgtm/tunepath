@@ -205,10 +205,10 @@ exports.createUser = async (req, res, next) => {
       userData.brandId = req.user.brandId || (req.user.role === 'agency_client' ? req.user._id : null);
       userData.agencyId = req.user.agencyId;
       
-      if (req.user.role === 'brand_super_admin') {
-         userData.role = 'brand_manager'; // Brand Super Admin always creates Brand Managers
+      if (incomingRole === 'brand_manager' || incomingRole === 'brand_admin' || incomingRole === 'brand_super_admin') {
+        userData.role = incomingRole;
       } else {
-         userData.role = 'user'; // Brand Manager, Agency Client, and User create generic users
+        userData.role = 'user';
       }
 
       // Ensure features are a subset of the creator's features
