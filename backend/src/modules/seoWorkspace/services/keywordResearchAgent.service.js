@@ -459,21 +459,4 @@ module.exports = {
   approveKeywords,
   rejectKeywords,
   getExecutionHistory
-}; return ExecutionLog.find({
-  projectId,
-  $or: [{ agentKey: AGENT_KEY }, { source: 'keywordResearchAgent' }]
-})
-  .sort({ createdAt: -1 })
-  .limit(limit)
-  .lean();
-}
-
-module.exports = {
-  AGENT_KEY,
-  run,
-  collectKeywordCandidates,
-  analyzeAndSuggest,
-  approveKeywords,
-  rejectKeywords,
-  getExecutionHistory
 };
