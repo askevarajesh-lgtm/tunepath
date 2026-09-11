@@ -40,9 +40,42 @@ const MasterItemDetailsCard = ({
 
   const cardTitle = packageName ? `Package Details: ${packageName}` : 'Master Item Details';
 
-  const posters = numberOfPosters ?? service.numberOfPosters;
-  const videos = numberOfVideos ?? service.numberOfVideos;
-  const shoots = numberOfShoots ?? service.numberOfShoots;
+  const posterCat = selectedCategories?.find(c => {
+    const rawName = (c.name || c.categoryName || "").toLowerCase().trim();
+    return rawName.includes("poster") || rawName.includes("paster");
+  });
+  const videoCat = selectedCategories?.find(c => {
+    const rawName = (c.name || c.categoryName || "").toLowerCase().trim();
+    return rawName.includes("video");
+  });
+  const shootCat = selectedCategories?.find(c => {
+    const rawName = (c.name || c.categoryName || "").toLowerCase().trim();
+    return rawName.includes("shoot");
+  });
+
+  const effectivePosters = posterCat 
+    ? Math.max(0, Number(posterCat.quantity ?? posterCat.count ?? 0))
+    : (numberOfPosters !== undefined && numberOfPosters !== null ? numberOfPosters : service.numberOfPosters);
+    
+  const effectiveRemainingPosters = posterCat
+    ? (posterCat.remaining !== undefined && posterCat.remaining !== null ? Math.max(0, Number(posterCat.remaining) || 0) : effectivePosters)
+    : remainingPosters;
+
+  const effectiveVideos = videoCat 
+    ? Math.max(0, Number(videoCat.quantity ?? videoCat.count ?? 0))
+    : (numberOfVideos !== undefined && numberOfVideos !== null ? numberOfVideos : service.numberOfVideos);
+    
+  const effectiveRemainingVideos = videoCat
+    ? (videoCat.remaining !== undefined && videoCat.remaining !== null ? Math.max(0, Number(videoCat.remaining) || 0) : effectiveVideos)
+    : remainingVideos;
+
+  const effectiveShoots = shootCat 
+    ? Math.max(0, Number(shootCat.quantity ?? shootCat.count ?? 0))
+    : (numberOfShoots !== undefined && numberOfShoots !== null ? numberOfShoots : service.numberOfShoots);
+    
+  const effectiveRemainingShoots = shootCat
+    ? (shootCat.remaining !== undefined && shootCat.remaining !== null ? Math.max(0, Number(shootCat.remaining) || 0) : effectiveShoots)
+    : remainingShoots;
 
   const campaignAmt = overriddenCampaignAmount ?? (service.isCampaign ? service.campaignDetails?.campaignAmount : service.campaignAmount);
   const basePrice = overriddenBasePrice ?? service.basePrice ?? service.price ?? service.rate;
@@ -103,45 +136,45 @@ const MasterItemDetailsCard = ({
           {formatCurrency(campaignAmt)}
         </Descriptions.Item>
 
-        {posters > 0 && (
+        {effectivePosters > 0 && (
           <Descriptions.Item label="Number of Posters">
-            <Text strong>{posters}</Text>
-            {remainingPosters !== undefined && remainingPosters !== null && (
-              <Tag color="cyan" style={{ marginLeft: 8 }}>Remaining: {remainingPosters}</Tag>
+            <Text strong>{effectivePosters}</Text>
+            {effectiveRemainingPosters !== undefined && effectiveRemainingPosters !== null && (
+              <Tag color="cyan" style={{ marginLeft: 8 }}>Remaining: {effectiveRemainingPosters}</Tag>
             )}
           </Descriptions.Item>
         )}
 
-        {videos > 0 && (
+        {effectiveVideos > 0 && (
           <Descriptions.Item label="Number of Videos">
-            <Text strong>{videos}</Text>
-            {remainingVideos !== undefined && remainingVideos !== null && (
-              <Tag color="cyan" style={{ marginLeft: 8 }}>Remaining: {remainingVideos}</Tag>
+            <Text strong>{effectiveVideos}</Text>
+            {effectiveRemainingVideos !== undefined && effectiveRemainingVideos !== null && (
+              <Tag color="cyan" style={{ marginLeft: 8 }}>Remaining: {effectiveRemainingVideos}</Tag>
             )}
           </Descriptions.Item>
         )}
 
-        {shoots > 0 && (
+        {effectiveShoots > 0 && (
           <Descriptions.Item label="Number of Shoots">
-            <Text strong>{shoots ?? 0}</Text>
-            {remainingShoots !== undefined && remainingShoots !== null && (
-              <Tag color="cyan" style={{ marginLeft: 8 }}>Remaining: {remainingShoots}</Tag>
+            <Text strong>{effectiveShoots}</Text>
+            {effectiveRemainingShoots !== undefined && effectiveRemainingShoots !== null && (
+              <Tag color="cyan" style={{ marginLeft: 8 }}>Remaining: {effectiveRemainingShoots}</Tag>
             )}
           </Descriptions.Item>
         )}
 
         {selectedCategories && selectedCategories.length > 0 && selectedCategories.map((cat, idx) => {
-          const rawName = cat.name || cat.categoryName || "";
-          const isPoster = rawName.toLowerCase().includes("poster");
-          const isVideo = rawName.toLowerCase().includes("video");
-          const isShoot = rawName.toLowerCase().includes("shoot");
+          const rawName = (cat.name || cat.categoryName || "").toLowerCase().trim();
+          const isPoster = rawName.includes("poster") || rawName.includes("paster");
+          const isVideo = rawName.includes("video");
+          const isShoot = rawName.includes("shoot");
           
           // Only skip if the legacy separate fields are actually going to render them
-          if (isPoster && posters > 0) return null;
-          if (isVideo && videos > 0) return null;
-          if (isShoot && shoots > 0) return null;
+          if (isPoster && effectivePosters > 0) return null;
+          if (isVideo && effectiveVideos > 0) return null;
+          if (isShoot && effectiveShoots > 0) return null;
 
-          const singularName = rawName.toLowerCase().endsWith('s') ? rawName.slice(0, -1) : rawName;
+          const singularName = rawName.endsWith('s') ? rawName.slice(0, -1) : rawName;
           const formattedName = singularName ? `Number of ${singularName.charAt(0).toUpperCase() + singularName.slice(1)}s` : "Unknown Item";
 
           return (

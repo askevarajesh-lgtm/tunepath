@@ -360,6 +360,34 @@ const ProjectForm = () => {
     try {
       if (isEdit) {
         // For edit, only allow updating certain fields
+        const processedCategories = (values.selectedCategories || []).map((cat) => {
+          const catName = cat.name || cat.categoryName || "";
+          const qty = Math.max(0, Number(cat.quantity || cat.count || 0));
+          return {
+            ...cat,
+            name: catName,
+            categoryName: catName,
+            quantity: qty,
+            remaining:
+              cat.remaining !== undefined && cat.remaining !== null
+                ? Math.max(0, Number(cat.remaining) || 0)
+                : qty,
+          };
+        });
+
+        const posterCat = processedCategories.find(c => {
+          const n = (c.name || "").toLowerCase();
+          return n.includes("poster") || n.includes("paster");
+        });
+        const videoCat = processedCategories.find(c => {
+          const n = (c.name || "").toLowerCase();
+          return n.includes("video");
+        });
+        const shootCat = processedCategories.find(c => {
+          const n = (c.name || "").toLowerCase();
+          return n.includes("shoot");
+        });
+
         const projectData = {
           name: values.name,
           description: values.description,
@@ -369,27 +397,14 @@ const ProjectForm = () => {
           renewalDate: values.renewalDate
             ? values.renewalDate.toISOString()
             : null,
-          isActive: values.isActive !== false, // Handle Switch component (checked = true, unchecked = false)
-          numberOfPosters: values.numberOfPosters || 0,
-          numberOfVideos: values.numberOfVideos || 0,
-          numberOfShoots: values.numberOfShoots || 0,
-          remainingPosters: values.remainingPosters || 0,
-          remainingVideos: values.remainingVideos || 0,
-          remainingShoots: values.remainingShoots || 0,
-          selectedCategories: (values.selectedCategories || []).map((cat) => {
-            const catName = cat.name || cat.categoryName;
-            return {
-              ...cat,
-              name: catName,
-              categoryName: catName,
-              // If remaining is not provided (e.g. newly added manual category),
-              // default it to the total quantity
-              remaining:
-                cat.remaining !== undefined && cat.remaining !== null
-                  ? cat.remaining
-                  : cat.quantity || 0,
-            };
-          }),
+          isActive: values.isActive !== false,
+          numberOfPosters: posterCat ? posterCat.quantity : (values.numberOfPosters || 0),
+          remainingPosters: posterCat ? posterCat.remaining : (values.remainingPosters || 0),
+          numberOfVideos: videoCat ? videoCat.quantity : (values.numberOfVideos || 0),
+          remainingVideos: videoCat ? videoCat.remaining : (values.remainingVideos || 0),
+          numberOfShoots: shootCat ? shootCat.quantity : (values.numberOfShoots || 0),
+          remainingShoots: shootCat ? shootCat.remaining : (values.remainingShoots || 0),
+          selectedCategories: processedCategories,
         };
         const result = await updateProject({ id, ...projectData });
         if (result.error) throw result.error;

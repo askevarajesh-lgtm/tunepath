@@ -20,6 +20,7 @@ import PhoneInput from '../../components/common/PhoneInput';
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import dayjs from 'dayjs';
 import { useActionPermissions } from "../../hooks/useActionPermissions";
+import { useAuth } from "../../contexts/AuthContext";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -33,7 +34,16 @@ const CustomLabel = ({ text }) => (
 );
 
 const AdminLeadsList = ({ leads = [], refetch }) => {
+  const { user, role } = useAuth();
   const { canAdd, canEdit, canDelete, canView } = useActionPermissions('/crm');
+
+  const isBrandOrClient = useMemo(() => {
+    const r = (role || user?.role || '').toLowerCase();
+    const ut = (user?.userType || '').toLowerCase();
+    return r.startsWith('brand') || r === 'client' || r === 'agency_client' || ut.startsWith('brand') || ut === 'client';
+  }, [role, user]);
+
+  const canConvertClient = !isBrandOrClient;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
   const [viewingLead, setViewingLead] = useState(null);
@@ -695,7 +705,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
             <Title level={4} style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>
               Lead — {currentViewingLead?.fullName}
             </Title>
-            {currentViewingLead && (
+            {canConvertClient && currentViewingLead && (
               <Button
                 type="primary"
                 icon={<UserAddOutlined />}
@@ -810,23 +820,25 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                     </div>
                   )}
 
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
-                    <Button
-                      type="primary"
-                      size="large"
-                      icon={<UserAddOutlined />}
-                      onClick={() => handleOpenConvertModal(currentViewingLead)}
-                      style={{
-                        background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                        borderColor: '#10b981',
-                        borderRadius: 8,
-                        fontWeight: 700,
-                        boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
-                      }}
-                    >
-                      Convert to Client
-                    </Button>
-                  </div>
+                  {canConvertClient && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>
+                      <Button
+                        type="primary"
+                        size="large"
+                        icon={<UserAddOutlined />}
+                        onClick={() => handleOpenConvertModal(currentViewingLead)}
+                        style={{
+                          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                          borderColor: '#10b981',
+                          borderRadius: 8,
+                          fontWeight: 700,
+                          boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
+                        }}
+                      >
+                        Convert to Client
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )
             },

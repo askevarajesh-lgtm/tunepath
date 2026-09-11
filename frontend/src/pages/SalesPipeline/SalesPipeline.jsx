@@ -662,7 +662,7 @@ const SalesPipeline = () => {
                     <Button 
                       type="primary" 
                       onClick={() => {
-                        const isAdminOrManager = ['supreme_super_admin', 'superadmin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency', 'admin', 'brand_super_admin', 'brand_admin', 'brand_manager'].includes(role);
+                        const isAdminOrManager = ['supreme_super_admin', 'superadmin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency', 'admin'].includes(role);
                         const hasAccountAccessAll = user?.permissions?.['Clients-Accounts']?.All;
                         if (isAdminOrManager || hasAccountAccessAll) {
                           navigate('/agency/clients', { 

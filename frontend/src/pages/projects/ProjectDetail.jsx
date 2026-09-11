@@ -261,6 +261,85 @@ const ProjectDetail = () => {
     return deliverablesCompleted && renewalDateReached;
   }, [project, currentUser]);
 
+  const deliverablesProgressStats = useMemo(() => {
+    if (!project) return { percentage: 0, completed: 0, total: 0, remaining: 0 };
+    
+    const categoryMap = new Map();
+
+    // 1. Process selectedCategories (Dynamic / custom deliverables)
+    if (project.selectedCategories && Array.isArray(project.selectedCategories)) {
+      project.selectedCategories.forEach((cat) => {
+        const rawName = (cat.name || cat.categoryName || "").toLowerCase().trim();
+        if (!rawName) return;
+        const qty = Math.max(0, Number(cat.quantity || cat.count || cat.total || 0));
+        const remaining = cat.remaining !== undefined ? Math.max(0, Number(cat.remaining) || 0) : null;
+        const completed = cat.completed !== undefined
+          ? Math.max(0, Number(cat.completed) || 0)
+          : (remaining !== null ? Math.max(0, qty - remaining) : 0);
+
+        categoryMap.set(rawName, {
+          quantity: qty,
+          remaining: remaining !== null ? remaining : Math.max(0, qty - completed),
+          completed: completed,
+        });
+      });
+    }
+
+    // 2. Standard fields if not present in selectedCategories
+    const stdPosters = Math.max(0, Number(project.numberOfPosters) || 0);
+    if (stdPosters > 0 && !categoryMap.has("poster") && !categoryMap.has("paster")) {
+      const rem = project.remainingPosters !== undefined ? Math.max(0, Number(project.remainingPosters) || 0) : null;
+      const comp = project.completedPosters !== undefined ? Math.max(0, Number(project.completedPosters) || 0) : (rem !== null ? Math.max(0, stdPosters - rem) : 0);
+      categoryMap.set("poster", { quantity: stdPosters, remaining: rem !== null ? rem : Math.max(0, stdPosters - comp), completed: comp });
+    }
+
+    const stdVideos = Math.max(0, Number(project.numberOfVideos) || 0);
+    if (stdVideos > 0 && !categoryMap.has("video")) {
+      const rem = project.remainingVideos !== undefined ? Math.max(0, Number(project.remainingVideos) || 0) : null;
+      const comp = project.completedVideos !== undefined ? Math.max(0, Number(project.completedVideos) || 0) : (rem !== null ? Math.max(0, stdVideos - rem) : 0);
+      categoryMap.set("video", { quantity: stdVideos, remaining: rem !== null ? rem : Math.max(0, stdVideos - comp), completed: comp });
+    }
+
+    const stdShoots = Math.max(0, Number(project.numberOfShoots) || 0);
+    if (stdShoots > 0 && !categoryMap.has("shoot")) {
+      const rem = project.remainingShoots !== undefined ? Math.max(0, Number(project.remainingShoots) || 0) : null;
+      const comp = project.completedShoots !== undefined ? Math.max(0, Number(project.completedShoots) || 0) : (rem !== null ? Math.max(0, stdShoots - rem) : 0);
+      categoryMap.set("shoot", { quantity: stdShoots, remaining: rem !== null ? rem : Math.max(0, stdShoots - comp), completed: comp });
+    }
+
+    let totalDeliverables = 0;
+    let completedDeliverables = 0;
+    let totalRemaining = 0;
+
+    categoryMap.forEach((item) => {
+      totalDeliverables += item.quantity;
+      completedDeliverables += Math.min(item.quantity, item.completed);
+      totalRemaining += item.remaining;
+    });
+
+    const isCompletedStatus = ["completed", "workflow_approved", "approved", "done", "validated"].includes(
+      (project.status || "").toLowerCase()
+    );
+
+    let percentage = 0;
+    if (isCompletedStatus) {
+      percentage = 100;
+    } else if (totalDeliverables > 0) {
+      if (totalRemaining === 0) {
+        percentage = 100;
+      } else {
+        percentage = Math.min(99, Math.round((completedDeliverables / totalDeliverables) * 100));
+      }
+    }
+
+    return {
+      percentage,
+      completed: completedDeliverables,
+      total: totalDeliverables,
+      remaining: totalRemaining
+    };
+  }, [project]);
+
   const handleRenewProject = () => {
     const clientId = project.clientId?._id || project.clientId;
 
@@ -855,6 +934,14 @@ const ProjectDetail = () => {
             >
               {project.isActive !== false ? "ACTIVE" : "INACTIVE"}
             </Tag>
+            {deliverablesProgressStats.total > 0 && (
+              <Tag
+                color="cyan"
+                style={{ fontSize: 14, padding: "4px 12px", fontWeight: 700 }}
+              >
+                Deliverables Progress: {deliverablesProgressStats.percentage}% ({deliverablesProgressStats.completed} / {deliverablesProgressStats.total} Completed)
+              </Tag>
+            )}
           </div>
           {/* Quick Action Buttons for Active/Inactive */}
           <Space>
