@@ -27,8 +27,15 @@ export default function OpportunitiesView({ project }) {
       .finally(() => setLoading(false));
   }, [activeProjectId]);
 
+  const [executingId, setExecutingId] = useState(null);
+
   const handleExecute = (opp) => {
-    message.success(`Triggered AI remediation workflow for "${opp.title}"!`);
+    setExecutingId(opp._id);
+    // Simulate AI workflow execution
+    setTimeout(() => {
+      message.success(`Triggered AI remediation workflow for "${opp.title}"!`);
+      setExecutingId(null);
+    }, 2000);
   };
 
   const columns = [
@@ -55,7 +62,7 @@ export default function OpportunitiesView({ project }) {
       key: 'effort',
       render: e => <Tag color={e === 'Low' ? 'blue' : 'orange'}>{e} Effort</Tag>
     },
-    { title: 'AI Actionable Strategy', dataIndex: 'recommendation', key: 'recommendation', render: r => <span style={{ color: '#475569', fontSize: 12 }}>{r}</span> },
+    { title: 'AI Actionable Strategy', dataIndex: 'recommendation', key: 'recommendation', render: r => <Text type="secondary" style={{ fontSize: 12, display: 'block', maxWidth: 300, whiteSpace: 'normal' }}>{r}</Text> },
     {
       title: 'Action',
       key: 'action',
@@ -64,8 +71,9 @@ export default function OpportunitiesView({ project }) {
           type="primary"
           size="small"
           icon={<Zap size={12} />}
+          loading={executingId === r._id}
           onClick={() => handleExecute(r)}
-          style={{ background: '#7c3aed' }}
+          style={{ backgroundColor: '#7c3aed', borderColor: '#7c3aed', color: '#fff' }}
         >
           Auto-Remediate
         </Button>

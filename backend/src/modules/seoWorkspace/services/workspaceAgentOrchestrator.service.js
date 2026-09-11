@@ -6,24 +6,37 @@ const WorkspaceTask = require('../models/workspaceTask.model');
 const { WorkspaceReport } = require('../models/workspaceReportAsset.model');
 const DataForSeoService = require('../../seoIntelligence/dataForSeo.service');
 const skillLoader = require('./skillLoader.service');
+const aiEngine = require('../../aiCore/aiEngine.service');
+const agentLoader = require('../../aiCore/agentLoader.service');
+const logger = require('../../aiCore/logger.service');
+
+const TAG = 'WorkspaceAgentOrchestrator';
 
 class WorkspaceAgentOrchestrator {
   constructor() {
     this.dfsService = DataForSeoService;
   }
 
-  async _getAiClient(workspaceId) {
-    if (!workspaceId) throw new Error("Workspace ID is required for AI features.");
-    const AiSettings = require('../../aiStudio/models/aiSettings.model');
-    const cryptoUtils = require('../../../utils/crypto');
-    const AiClientWrapper = require('../../../utils/aiClientWrapper');
-    const settings = await AiSettings.findOne({ workspaceId });
-    if (settings) {
-      if (settings.anthropicApiKey) {
-        return new AiClientWrapper(cryptoUtils.decrypt(settings.anthropicApiKey), 'anthropic');
-      }
-    }
-    throw new Error("AI Provider API key is missing. Please configure it in settings.");
+  /**
+   * Call the centralized AI engine using the workspace's configured AiSettings.
+   * Never uses hardcoded keys or provider-specific clients.
+   */
+  async _callAi(workspaceId, agentKey, projectId, prompt, options = {}) {
+    if (!workspaceId) throw new Error('Workspace ID is required for AI features.');
+    const agentConfig = await agentLoader.resolve(agentKey).catch(() => null);
+    const modelName = agentConfig?.modelName;
+    const raw = await aiEngine.complete({
+      workspaceId,
+      agentKey,
+      projectId,
+      messages: [{ role: 'user', content: prompt }],
+      model: modelName,
+      temperature: options.temperature ?? 0.5,
+      maxTokens: options.maxTokens ?? 800,
+      jsonMode: options.jsonMode ?? false,
+      retryOptions: { retries: 2 }
+    });
+    return raw;
   }
 
   async runOrchestration(projectId, workspaceId) {
@@ -160,31 +173,25 @@ class WorkspaceAgentOrchestrator {
   }
 
   async _generateKeywordSeeds(siteUrl, name, workspaceId) {
-    const aiClient = await this._getAiClient(workspaceId);
-    const skills = skillLoader.loadSkillsForAgent(['keyword-research', 'competitor-identification']);
+    // Use existing skills — 'competitor-threat-assessment' replaces nonexistent 'competitor-identification'
+    const skills = skillLoader.loadSkillsForAgent(['keyword-research', 'competitor-threat-assessment']);
     const prompt = `You are an expert SEO Strategist. Generate 20 highly relevant SEO keyword targets for the website: ${siteUrl} (Company: ${name}).
 ${skills}
 Return ONLY a comma-separated list of 20 keywords, nothing else.`;
-    
-    const response = await aiClient.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      max_tokens: 150
-    });
-    
-    const output = response.choices[0].message.content.trim();
-    return output.split(',').map(k => k.trim());
+
+    const raw = await this._callAi(workspaceId, 'seo-strategist', null, prompt, { temperature: 0.7, maxTokens: 200 });
+    const output = (raw || '').trim();
+    if (!output) throw new Error('AI seed keyword generation returned empty response');
+    return output.split(',').map(k => k.trim()).filter(Boolean);
   }
 
   // AGENT: SEO Strategist
   async seoStrategistAgent(project, audit, keywords, aiWorkspaceId) {
     const workspaceId = aiWorkspaceId || project.createdBy || project.companyId;
-    const aiClient = await this._getAiClient(workspaceId);
     const skills = skillLoader.loadSkillsForAgent(['keyword-research', 'content-gap-analysis', 'serp-intent-mapping', 'roadmap-roi-planning']);
     const kList = keywords.map(k => k.keyword).join(', ');
     const auditData = audit ? `Crawled ${audit.metrics?.pagesCrawled || 0} pages. On-Page Score: ${audit.metrics?.onPage || 0}` : 'No audit data available';
-    
+
     const prompt = `You are the SEO Strategist.
 Create a high-level 3-month SEO Content Strategy for ${project.name} (${project.siteUrl || project.domain}).
 Target Keywords: ${kList}
@@ -198,49 +205,20 @@ Format the output in clean Markdown with:
 3. Month 2: Content Creation (Propose 3 Blog Titles)
 4. Month 3: Off-Page & Authority Building`;
 
-    const response = await aiClient.chat.completions.create({
-      model: 'gpt-4o-mini', // Should be opus in prod for strategist
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      max_tokens: 800
-    });
-    
-    return response.choices[0].message.content;
+    const raw = await this._callAi(workspaceId, 'seo-strategist', project._id, prompt, { temperature: 0.7, maxTokens: 800 });
+    if (!raw) throw new Error('SEO Strategist Agent returned empty response');
+    return raw;
   }
 
   // AGENT: SEO Tech Implementer
   async seoTechImplementerAgent(project, strategyPlan, keywords, aiWorkspaceId) {
     const workspaceId = aiWorkspaceId || project.createdBy || project.companyId;
-    const aiClient = await this._getAiClient(workspaceId);
     const skills = skillLoader.loadSkillsForAgent(['content-brief-generation', 'topic-clustering']);
     const kList = keywords.slice(0, 5).map(k => k.keyword).join(', ');
-    const prompt = `You are the SEO Content Writer. Based on the following SEO Strategy for ${project.siteUrl || project.domain} (Company: ${project.name}) and the top keywords (${kList}), generate exactly 3 specific, actionable content creation tasks.
+
+    const promptObj = `You are the SEO Tech Implementer. Based on the strategy for ${project.siteUrl || project.domain} (Company: ${project.name}) and top keywords (${kList}), generate exactly 3 specific, actionable implementation tasks.
 ${skills}
 
-Return a JSON array of objects. Each object must have this exact structure:
-{
-  "taskType": "Write Blog Post" | "Create Landing Page" | "Update Existing Content",
-  "pageUrl": "/proposed-url-path",
-  "description": "Short description of the content task",
-  "proposedChanges": {
-    "targetKeyword": "main keyword",
-    "wordCount": "approximate word count"
-  }
-}
-
-Respond ONLY with the raw JSON array. Do not include markdown formatting.`;
-
-    try {
-      const response = await aiClient.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.5,
-        response_format: { type: "json_object" }
-      });
-      
-      const promptObj = `You are the SEO Tech Implementer. Based on the strategy for ${project.siteUrl || project.domain} and top keywords (${kList}), generate exactly 3 specific, actionable implementation tasks.
-${skills}
-      
 Respond with a JSON object containing a "tasks" array. Each task object must have:
 - "taskType": "Update Meta Tags" | "Content Edit" | "Schema Injection" | "Internal Linking"
 - "pageUrl": "/path-to-optimize"
@@ -248,20 +226,15 @@ Respond with a JSON object containing a "tasks" array. Each task object must hav
 - "proposedChanges": { "key": "value" }
 `;
 
-      const responseObj = await aiClient.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [{ role: 'user', content: promptObj }],
-        temperature: 0.5,
-        response_format: { type: "json_object" }
-      });
-
-      const content = responseObj.choices[0].message.content;
-      const parsed = JSON.parse(content);
-      return parsed.tasks || [];
+    const raw = await this._callAi(workspaceId, 'seo-tech-implementer', project._id, promptObj, { temperature: 0.5, maxTokens: 800, jsonMode: true });
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
     } catch (error) {
-      console.error('Task generation failed:', error);
-      return [];
+      logger.error(TAG, `seoTechImplementerAgent: failed to parse AI JSON: ${error.message}`);
+      throw new Error(`Tech Implementer Agent returned invalid JSON: ${error.message}`);
     }
+    return parsed.tasks || [];
   }
 
   // AGENT: SEO Reporter
@@ -269,7 +242,6 @@ Respond with a JSON object containing a "tasks" array. Each task object must hav
     const project = await WorkspaceProject.findById(projectId);
     if (!project) throw new Error('Project not found');
     const workspaceId = aiWorkspaceId || project.createdBy || project.companyId;
-    const aiClient = await this._getAiClient(workspaceId);
     const skills = skillLoader.loadSkillsForAgent(['seo-report-writing', 'executive-summary']);
 
     const prompt = `You are the SEO Reporter.
@@ -284,14 +256,8 @@ ${skills}
 
 Write a professional, client-facing Markdown report summarizing the ROI, what was improved, and next steps. Make it persuasive and clear.`;
 
-    const response = await aiClient.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      max_tokens: 800
-    });
-    
-    const reportContent = response.choices[0].message.content;
+    const reportContent = await this._callAi(workspaceId, 'seo-reporter', project._id, prompt, { temperature: 0.7, maxTokens: 800 });
+    if (!reportContent) throw new Error('SEO Reporter Agent returned empty response');
 
     const { isScheduled = false, scheduleFrequency = null, emailRecipients = [] } = scheduleOptions;
 
@@ -317,7 +283,6 @@ Write a professional, client-facing Markdown report summarizing the ROI, what wa
   // AGENT: SEO Monitor
   async seoMonitorAgent(project, keyword, dropAmount) {
     const workspaceId = project.createdBy || project.companyId;
-    const aiClient = await this._getAiClient(workspaceId);
     const skills = skillLoader.loadSkillsForAgent(['rank-tracking', 'alert-configuration']);
     const prompt = `You are the SEO Monitor. The keyword "${keyword.keyword}" for the website ${project.siteUrl || project.domain} has dropped by ${dropAmount} positions in the search rankings.
 ${skills}
@@ -332,15 +297,14 @@ Create a JSON response for a specific action to take to recover the ranking. The
 }
 Respond ONLY with valid JSON.`;
 
-    const response = await aiClient.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.5,
-      response_format: { type: "json_object" }
-    });
-    
-    const content = response.choices[0].message.content;
-    const taskData = JSON.parse(content);
+    const raw = await this._callAi(workspaceId, 'seo-monitor', project._id, prompt, { temperature: 0.5, maxTokens: 400, jsonMode: true });
+    let taskData;
+    try {
+      taskData = JSON.parse(raw);
+    } catch (error) {
+      logger.error(TAG, `seoMonitorAgent: failed to parse AI JSON: ${error.message}`);
+      throw new Error(`SEO Monitor Agent returned invalid JSON: ${error.message}`);
+    }
 
     const task = new WorkspaceTask({
       projectId: project._id,

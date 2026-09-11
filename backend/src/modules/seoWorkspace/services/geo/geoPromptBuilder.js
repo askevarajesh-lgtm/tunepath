@@ -65,7 +65,7 @@ No markdown, no commentary, only JSON.`;
         messages: [{ role: 'user', content: prompt }],
         model,
         temperature: 0.2,
-        maxTokens: 2500,
+        maxTokens: 4096,
         jsonMode: true,
         retryOptions: { retries: 2 }
       });

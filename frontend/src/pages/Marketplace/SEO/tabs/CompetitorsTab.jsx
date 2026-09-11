@@ -28,9 +28,9 @@ const { Title, Text, Paragraph } = Typography;
 const { Option } = Select;
 
 // ── Design tokens ────────────────────────────────────────────────────────────
-const THREAT_COLORS   = { minimal: '#d9d9d9', low: '#52c41a', medium: '#faad14', high: '#f5222d', critical: '#820014' };
-const STATUS_COLORS   = { Suggested: 'gold', Approved: 'green', Rejected: 'red' };
-const CHART_COLORS    = ['#1677ff','#52c41a','#faad14','#f5222d','#722ed1','#13c2c2'];
+const THREAT_COLORS = { minimal: '#d9d9d9', low: '#52c41a', medium: '#faad14', high: '#f5222d', critical: '#820014' };
+const STATUS_COLORS = { Suggested: 'gold', Approved: 'green', Rejected: 'red' };
+const CHART_COLORS = ['#1677ff', '#52c41a', '#faad14', '#f5222d', '#722ed1', '#13c2c2'];
 const GAP_TYPE_LABELS = {
   keyword_gap: 'Keyword Gap', content_gap: 'Content Gap',
   backlink_gap: 'Backlink Gap', page_gap: 'Page Gap'
@@ -164,11 +164,11 @@ const CompetitorsTab = () => {
   const { activeProjectId: projectId, activeProject } = useSEO();
 
   const BUCKET_META = useMemo(() => ({
-    quick_win:  { label: 'Quick Win',  color: '#52c41a', bg: isDark ? 'rgba(82, 196, 26, 0.12)' : '#f6ffed', icon: Zap,       order: 0 },
-    easy_win:   { label: 'Easy Win',   color: '#1677ff', bg: isDark ? 'rgba(22, 119, 255, 0.12)' : '#e6f4ff', icon: Target,    order: 1 },
-    medium:     { label: 'Medium',     color: '#faad14', bg: isDark ? 'rgba(250, 173, 20, 0.12)' : '#fffbe6', icon: Activity,  order: 2 },
-    hard:       { label: 'Hard',       color: '#f5222d', bg: isDark ? 'rgba(245, 34, 45, 0.12)' : '#fff1f0', icon: Flame,     order: 3 },
-    long_term:  { label: 'Long Term',  color: '#722ed1', bg: isDark ? 'rgba(114, 46, 209, 0.12)' : '#f9f0ff', icon: Star,      order: 4 }
+    quick_win: { label: 'Quick Win', color: '#52c41a', bg: isDark ? 'rgba(82, 196, 26, 0.12)' : '#f6ffed', icon: Zap, order: 0 },
+    easy_win: { label: 'Easy Win', color: '#1677ff', bg: isDark ? 'rgba(22, 119, 255, 0.12)' : '#e6f4ff', icon: Target, order: 1 },
+    medium: { label: 'Medium', color: '#faad14', bg: isDark ? 'rgba(250, 173, 20, 0.12)' : '#fffbe6', icon: Activity, order: 2 },
+    hard: { label: 'Hard', color: '#f5222d', bg: isDark ? 'rgba(245, 34, 45, 0.12)' : '#fff1f0', icon: Flame, order: 3 },
+    long_term: { label: 'Long Term', color: '#722ed1', bg: isDark ? 'rgba(114, 46, 209, 0.12)' : '#f9f0ff', icon: Star, order: 4 }
   }), [isDark]);
 
   const [activeTab, setActiveTab] = useState('overview');
@@ -199,6 +199,7 @@ const CompetitorsTab = () => {
   // Recommendations state
   const [recommendations, setRecommendations] = useState([]);
   const [recsLoading, setRecsLoading] = useState(false);
+  const [recsGenerating, setRecsGenerating] = useState(false);
   const [selectedRecKeys, setSelectedRecKeys] = useState([]);
 
   // Trend state
@@ -271,6 +272,16 @@ const CompetitorsTab = () => {
   // On project change, reload core data
   useEffect(() => {
     if (!projectId) return;
+    setCompetitors([]);
+    setSummary(null);
+    setHistory(null);
+    setGapResult(null);
+    setTopPagesResult(null);
+    setSelectedRowKeys([]);
+    setAgentResult(null);
+    setOpportunities(null);
+    setRecommendations([]);
+    
     loadCompetitors();
     loadSummary();
   }, [projectId, loadCompetitors, loadSummary]);
@@ -351,12 +362,17 @@ const CompetitorsTab = () => {
       message.warning('Run a gap analysis first to get data for recommendations');
       return;
     }
+    setRecsGenerating(true);
     try {
       await competitorIntelligenceApi.generateRecommendations(projectId, gapResult);
       message.success('Recommendations generated');
       await loadRecommendations();
       await loadOpportunities();
-    } catch (err) { message.error('Failed to generate recommendations'); }
+    } catch (err) { 
+      message.error('Failed to generate recommendations'); 
+    } finally {
+      setRecsGenerating(false);
+    }
   };
 
   const dismissRecs = async () => {
@@ -459,217 +475,220 @@ const CompetitorsTab = () => {
     }
 
     return (
-    <motion.div {...motionFade}>
-      {/* Executive Summary */}
-      {summaryLoading ? (
-        <Skeleton active paragraph={{ rows: 2 }} style={{ marginBottom: 24 }} />
-      ) : summary ? (
-        <>
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <MetricCard title="Total Competitors" value={summary.totalCompetitors}
-                icon={Globe} color="#1677ff"
-                sub={`${summary.approvedCount} approved`} />
-            </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <MetricCard title="Avg Traffic" value={summary.avgTraffic}
-                icon={TrendingUp} color="#52c41a"
-                sub="vs competitors" />
-            </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <MetricCard title="Total Keywords" value={summary.totalKeywords}
-                icon={BarChart2} color="#722ed1" />
-            </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <MetricCard title="Avg Threat Score" value={summary.avgThreatScore}
-                icon={AlertTriangle} color={scoreColor(summary.avgThreatScore)}
-                sub="0–100" />
-            </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <MetricCard title="Avg Opp Score" value={summary.avgOpportunityScore}
-                icon={Target} color="#13c2c2"
-                sub="0–100" />
-            </Col>
-            <Col xs={12} sm={8} md={4} lg={4}>
-              <MetricCard title="Open Recs" value={summary.openRecommendations}
-                icon={Brain} color="#fa8c16"
-                sub="proposed" />
-            </Col>
-          </Row>
+      <motion.div {...motionFade}>
+        {/* Executive Summary */}
+        {summaryLoading ? (
+          <Skeleton active paragraph={{ rows: 2 }} style={{ marginBottom: 24 }} />
+        ) : summary ? (
+          <>
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+              <Col xs={12} sm={8} md={4} lg={4}>
+                <MetricCard title="Total Competitors" value={summary.totalCompetitors}
+                  icon={Globe} color="#1677ff"
+                  sub={`${summary.approvedCount} approved`} />
+              </Col>
+              <Col xs={12} sm={8} md={4} lg={4}>
+                <MetricCard title="Avg Traffic" value={summary.avgTraffic}
+                  icon={TrendingUp} color="#52c41a"
+                  sub="vs competitors" />
+              </Col>
+              <Col xs={12} sm={8} md={4} lg={4}>
+                <MetricCard title="Total Keywords" value={summary.totalKeywords}
+                  icon={BarChart2} color="#722ed1" />
+              </Col>
+              <Col xs={12} sm={8} md={4} lg={4}>
+                <MetricCard title="Avg Threat Score" value={summary.avgThreatScore}
+                  icon={AlertTriangle} color={scoreColor(summary.avgThreatScore)}
+                  sub="0–100" />
+              </Col>
+              <Col xs={12} sm={8} md={4} lg={4}>
+                <MetricCard title="Avg Opp Score" value={summary.avgOpportunityScore}
+                  icon={Target} color="#13c2c2"
+                  sub="0–100" />
+              </Col>
+              <Col xs={12} sm={8} md={4} lg={4}>
+                <MetricCard title="Open Recs" value={summary.openRecommendations}
+                  icon={Brain} color="#fa8c16"
+                  sub="proposed" />
+              </Col>
+            </Row>
 
-          {/* Threat Distribution */}
-          <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-            <Col xs={24} md={8}>
-              <Card size="small" title="Threat Distribution" bordered={false}
-                style={{ borderRadius: 12, border: '1px solid var(--border-color)' }}>
-                {Object.entries(summary.threatDistribution || {}).map(([level, count]) => (
-                  <div key={level} style={{ marginBottom: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <Tag color={level === 'high' ? 'red' : level === 'medium' ? 'gold' : 'green'}>
+            {/* Threat Distribution */}
+            <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+              <Col xs={24} md={8}>
+                <Card size="small" title="Threat Distribution" bordered={false}
+                  style={{ borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                  {Object.entries(summary.threatDistribution || {}).map(([level, count]) => (
+                    <div key={level} style={{ marginBottom: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                        <Tag color={level === 'high' ? 'red' : level === 'medium' ? 'gold' : 'green'}>
+                          {level.toUpperCase()}
+                        </Tag>
+                        <Text strong>{count}</Text>
+                      </div>
+                      <Progress
+                        percent={summary.totalCompetitors > 0 ? Math.round((count / summary.totalCompetitors) * 100) : 0}
+                        strokeColor={THREAT_COLORS[level]}
+                        showInfo={false}
+                        size="small"
+                      />
+                    </div>
+                  ))}
+                </Card>
+              </Col>
+              <Col xs={24} md={16}>
+                <Card size="small" title="Recent Comparison Runs" bordered={false}
+                  style={{ borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                  {(summary.recentRuns || []).length === 0 ? (
+                    <Empty description="No runs yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  ) : (
+                    <Table
+                      size="small" pagination={false} showHeader={false}
+                      dataSource={summary.recentRuns}
+                      rowKey={(r, i) => i}
+                      columns={[
+                        { key: 't', render: (_, r) => <Tag>{GAP_TYPE_LABELS[r.type] || r.type}</Tag> },
+                        {
+                          key: 's', render: (_, r) => (
+                            <Tag color={r.status === 'completed' ? 'green' : r.status === 'failed' ? 'red' : 'gold'}>
+                              {r.status}
+                            </Tag>
+                          )
+                        },
+                        { key: 'd', render: (_, r) => <Text type="secondary">{r.durationMs ? `${(r.durationMs / 1000).toFixed(1)}s` : '—'}</Text> },
+                        { key: 'at', render: (_, r) => <Text type="secondary" style={{ fontSize: 11 }}>{new Date(r.createdAt).toLocaleString()}</Text> }
+                      ]}
+                    />
+                  )}
+                </Card>
+              </Col>
+            </Row>
+          </>
+        ) : null}
+
+        {/* Agent Discovery Card */}
+        <Card
+          size="small"
+          title={<Space><Swords size={16} />Competitor Agent</Space>}
+          extra={
+            <Space>
+              {selectedRowKeys.length > 0 && (
+                <>
+                  <Popconfirm title={`Approve ${selectedRowKeys.length} competitor(s)?`} onConfirm={approveSelected}>
+                    <Button size="small" type="primary">Approve Selected</Button>
+                  </Popconfirm>
+                  <Button size="small" danger onClick={rejectSelected}>Reject Selected</Button>
+                </>
+              )}
+              <Button type="primary" loading={running} onClick={runAgent} icon={<RefreshCcw size={14} />}>
+                Run Analysis
+              </Button>
+            </Space>
+          }
+          style={{ borderRadius: 12, border: '1px solid var(--border-color)' }}
+        >
+          {agentError && <Alert type="error" showIcon message={agentError.includes('API key') ? 'Anthropic API key is not configured. Please configure it in AI Settings.' : agentError} style={{ marginBottom: 16 }} closable onClose={() => setAgentError(null)} />}
+
+          {agentResult?.summary && (
+            <div style={{
+              background: isDark ? 'linear-gradient(135deg, rgba(22, 119, 255, 0.15) 0%, rgba(22, 119, 255, 0.05) 100%)' : 'linear-gradient(135deg, #e6f4ff 0%, #f0f5ff 100%)',
+              borderRadius: 8, padding: '12px 16px', marginBottom: 16,
+              border: isDark ? '1px solid rgba(22, 119, 255, 0.3)' : '1px solid #bae0ff'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                <Brain size={16} style={{ color: '#1677ff', marginTop: 2, flexShrink: 0 }} />
+                <Text style={{ fontSize: 13 }}>{agentResult.summary}</Text>
+              </div>
+            </div>
+          )}
+
+          <Table
+            rowKey="_id"
+            size="small"
+            dataSource={competitors}
+            rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, getCheckboxProps: (r) => ({ disabled: r.status !== 'Suggested' }) }}
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], showSizeChanger: false }}
+            columns={[
+              {
+                title: 'Competitor', key: 'domain',
+                render: (_, r) => (
+                  <Space>
+                    <img src={getDomainFavicon(r.domain)} width={16} height={16} onError={(e) => e.target.style.display = 'none'} alt="" />
+                    <a href={`https://${r.domain}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>
+                      {r.domain}
+                    </a>
+                    {r.country && <Tag style={{ fontSize: 10 }}>{r.country}</Tag>}
+                  </Space>
+                )
+              },
+              {
+                title: 'Score', key: 'score',
+                render: (_, r) => {
+                  const score = r.competitiveScore || 0;
+                  const level = r.agent?.threatLevel || 'medium';
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Progress type="dashboard" percent={score} size={28} format={(val) => <span style={{fontSize: 10}}>{val}</span>} strokeColor={scoreColor(score)} />
+                      <Tag color={level === 'critical' ? '#820014' : level === 'high' ? 'red' : level === 'medium' ? 'gold' : level === 'low' ? 'green' : 'default'} style={{ fontSize: 10, padding: '0 4px', lineHeight: '18px' }}>
                         {level.toUpperCase()}
                       </Tag>
-                      <Text strong>{count}</Text>
                     </div>
-                    <Progress
-                      percent={summary.totalCompetitors > 0 ? Math.round((count / summary.totalCompetitors) * 100) : 0}
-                      strokeColor={THREAT_COLORS[level]}
-                      showInfo={false}
-                      size="small"
-                    />
-                  </div>
-                ))}
-              </Card>
-            </Col>
-            <Col xs={24} md={16}>
-              <Card size="small" title="Recent Comparison Runs" bordered={false}
-                style={{ borderRadius: 12, border: '1px solid var(--border-color)' }}>
-                {(summary.recentRuns || []).length === 0 ? (
-                  <Empty description="No runs yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-                ) : (
-                  <Table
-                    size="small" pagination={false} showHeader={false}
-                    dataSource={summary.recentRuns}
-                    rowKey={(r, i) => i}
-                    columns={[
-                      { key: 't', render: (_, r) => <Tag>{GAP_TYPE_LABELS[r.type] || r.type}</Tag> },
-                      { key: 's', render: (_, r) => (
-                        <Tag color={r.status === 'completed' ? 'green' : r.status === 'failed' ? 'red' : 'gold'}>
-                          {r.status}
-                        </Tag>
-                      )},
-                      { key: 'd', render: (_, r) => <Text type="secondary">{r.durationMs ? `${(r.durationMs/1000).toFixed(1)}s` : '—'}</Text> },
-                      { key: 'at', render: (_, r) => <Text type="secondary" style={{ fontSize: 11 }}>{new Date(r.createdAt).toLocaleString()}</Text> }
-                    ]}
-                  />
-                )}
-              </Card>
-            </Col>
-          </Row>
-        </>
-      ) : null}
-
-      {/* Agent Discovery Card */}
-      <Card
-        size="small"
-        title={<Space><Swords size={16} />Competitor Agent</Space>}
-        extra={
-          <Space>
-            {selectedRowKeys.length > 0 && (
-              <>
-                <Popconfirm title={`Approve ${selectedRowKeys.length} competitor(s)?`} onConfirm={approveSelected}>
-                  <Button size="small" type="primary">Approve Selected</Button>
-                </Popconfirm>
-                <Button size="small" danger onClick={rejectSelected}>Reject Selected</Button>
-              </>
-            )}
-            <Button type="primary" loading={running} onClick={runAgent} icon={<RefreshCcw size={14} />}>
-              Run Analysis
-            </Button>
-          </Space>
-        }
-        style={{ borderRadius: 12, border: '1px solid var(--border-color)' }}
-      >
-        {agentError && <Alert type="error" showIcon message={agentError.includes('API key') ? 'Anthropic API key is not configured. Please configure it in AI Settings.' : agentError} style={{ marginBottom: 16 }} closable onClose={() => setAgentError(null)} />}
-
-        {agentResult?.summary && (
-          <div style={{
-            background: isDark ? 'linear-gradient(135deg, rgba(22, 119, 255, 0.15) 0%, rgba(22, 119, 255, 0.05) 100%)' : 'linear-gradient(135deg, #e6f4ff 0%, #f0f5ff 100%)',
-            borderRadius: 8, padding: '12px 16px', marginBottom: 16,
-            border: isDark ? '1px solid rgba(22, 119, 255, 0.3)' : '1px solid #bae0ff'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-              <Brain size={16} style={{ color: '#1677ff', marginTop: 2, flexShrink: 0 }} />
-              <Text style={{ fontSize: 13 }}>{agentResult.summary}</Text>
-            </div>
-          </div>
-        )}
-
-        <Table
-          rowKey="_id"
-          size="small"
-          dataSource={competitors}
-          rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys, getCheckboxProps: (r) => ({ disabled: r.status !== 'Suggested' }) }}
-          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], showSizeChanger: false }}
-          columns={[
-            {
-              title: 'Competitor', key: 'domain',
-              render: (_, r) => (
-                <Space>
-                  <img src={getDomainFavicon(r.domain)} width={16} height={16} onError={(e) => e.target.style.display='none'} alt="" />
-                  <a href={`https://${r.domain}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600 }}>
-                    {r.domain}
-                  </a>
-                  {r.country && <Tag style={{ fontSize: 10 }}>{r.country}</Tag>}
-                </Space>
-              )
-            },
-            {
-              title: 'Threat', key: 'threat',
-              render: (_, r) => {
-                const level = r.agent?.threatLevel || 'medium';
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Tag color={level === 'high' ? 'red' : level === 'medium' ? 'gold' : 'green'}>
-                      {level.toUpperCase()}
-                    </Tag>
-                    {r.threatScore > 0 && (
-                      <Progress percent={r.threatScore} size="small" showInfo={false}
-                        strokeColor={scoreColor(r.threatScore)}
-                        style={{ width: 60 }} />
-                    )}
-                  </div>
-                );
+                  );
+                }
+              },
+              { title: 'Source', key: 'source', render: (_, r) => (
+                <Tag color={r.dataSource === 'dataforseo' ? 'blue' : 'default'}>
+                  {r.dataSource === 'legacy-ai-estimate' ? 'Legacy AI' : 'DataForSEO'}
+                </Tag>
+              ) },
+              { title: 'Shared KWs', key: 'ck', render: (_, r) => fmt(r.metrics?.commonKeywords) },
+              { title: 'Org. Traffic', key: 'ot', render: (_, r) => fmt(r.metrics?.organicTraffic) },
+              { title: 'Total KWs', key: 'kw', render: (_, r) => fmt(r.metrics?.organicKeywords) },
+              {
+                title: 'Status', key: 'status',
+                render: (_, r) => <Tag color={STATUS_COLORS[r.status] || 'default'}>{r.status}</Tag>
               }
-            },
-            { title: 'Org. Traffic', key: 'ot', render: (_, r) => fmt(r.metrics?.organicTraffic) },
-            { title: 'Keywords', key: 'kw', render: (_, r) => fmt(r.metrics?.organicKeywords) },
-            { title: 'Backlinks', key: 'bl', render: (_, r) => fmt(r.metrics?.backlinks) },
-            { title: 'Authority', key: 'da', render: (_, r) => r.metrics?.authority ? <Badge count={r.metrics.authority} style={{ background: '#722ed1' }} /> : '—' },
-            {
-              title: 'Status', key: 'status',
-              render: (_, r) => <Tag color={STATUS_COLORS[r.status] || 'default'}>{r.status}</Tag>
-            }
-          ]}
-          expandable={{
-            rowExpandable: (r) => r.agent?.strengths?.length || r.agent?.weaknesses?.length || r.agent?.contentGaps?.length,
-            expandedRowRender: (r) => (
-              <div style={{ padding: '8px 16px' }}>
-                <Row gutter={16}>
-                  {r.agent?.strengths?.length > 0 && (
-                    <Col span={8}>
-                      <Text strong style={{ color: '#52c41a' }}>Strengths</Text>
-                      <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
-                        {r.agent.strengths.map((s, i) => <li key={i} style={{ fontSize: 12 }}>{s}</li>)}
-                      </ul>
-                    </Col>
-                  )}
-                  {r.agent?.weaknesses?.length > 0 && (
-                    <Col span={8}>
-                      <Text strong style={{ color: '#f5222d' }}>Weaknesses</Text>
-                      <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
-                        {r.agent.weaknesses.map((s, i) => <li key={i} style={{ fontSize: 12 }}>{s}</li>)}
-                      </ul>
-                    </Col>
-                  )}
-                  {r.agent?.contentGaps?.length > 0 && (
-                    <Col span={8}>
-                      <Text strong style={{ color: '#fa8c16' }}>Content Gaps</Text>
-                      <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
-                        {r.agent.contentGaps.map((s, i) => <li key={i} style={{ fontSize: 12 }}>{s}</li>)}
-                      </ul>
-                    </Col>
-                  )}
-                </Row>
-                {r.agent?.rationale && <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>{r.agent.rationale}</Text>}
-              </div>
-            )
-          }}
-          locale={{ emptyText: <Empty description="Run the competitor agent to discover competitors" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-        />
-      </Card>
-    </motion.div>
-  );
-};
+            ]}
+            expandable={{
+              rowExpandable: (r) => r.agent?.strengths?.length || r.agent?.weaknesses?.length || r.agent?.contentGaps?.length,
+              expandedRowRender: (r) => (
+                <div style={{ padding: '8px 16px' }}>
+                  <Row gutter={16}>
+                    {r.agent?.strengths?.length > 0 && (
+                      <Col span={8}>
+                        <Text strong style={{ color: '#52c41a' }}>Strengths</Text>
+                        <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+                          {r.agent.strengths.map((s, i) => <li key={i} style={{ fontSize: 12 }}>{s}</li>)}
+                        </ul>
+                      </Col>
+                    )}
+                    {r.agent?.weaknesses?.length > 0 && (
+                      <Col span={8}>
+                        <Text strong style={{ color: '#f5222d' }}>Weaknesses</Text>
+                        <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+                          {r.agent.weaknesses.map((s, i) => <li key={i} style={{ fontSize: 12 }}>{s}</li>)}
+                        </ul>
+                      </Col>
+                    )}
+                    {r.agent?.contentGaps?.length > 0 && (
+                      <Col span={8}>
+                        <Text strong style={{ color: '#fa8c16' }}>Content Gaps</Text>
+                        <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+                          {r.agent.contentGaps.map((s, i) => <li key={i} style={{ fontSize: 12 }}>{s}</li>)}
+                        </ul>
+                      </Col>
+                    )}
+                  </Row>
+                  {r.agent?.rationale && <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>{r.agent.rationale}</Text>}
+                </div>
+              )
+            }}
+            locale={{ emptyText: <Empty description="Run the competitor agent to discover competitors" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+          />
+        </Card>
+      </motion.div>
+    );
+  };
 
   // ── 2. Keyword / Content / Backlink / Page Gap ────────────────────────────
   const renderGapAnalysis = () => {
@@ -719,7 +738,7 @@ const CompetitorsTab = () => {
           </Button>
           {gapResult && (
             <>
-              <Button onClick={generateRecs} icon={<Brain size={14} />}>
+              <Button type="primary" onClick={generateRecs} loading={recsGenerating} icon={<Brain size={14} />}>
                 Generate Recommendations
               </Button>
               <Button icon={<Download size={14} />} onClick={() => exportCSV(gapResult.rows, `${gapType}_gap.csv`)}>
@@ -811,7 +830,7 @@ const CompetitorsTab = () => {
             key: domain,
             label: (
               <Space>
-                <img src={getDomainFavicon(domain)} width={14} height={14} onError={(e) => e.target.style.display='none'} alt="" />
+                <img src={getDomainFavicon(domain)} width={14} height={14} onError={(e) => e.target.style.display = 'none'} alt="" />
                 {domain}
                 <Badge count={pages.length} style={{ background: '#1677ff' }} />
               </Space>
@@ -823,12 +842,14 @@ const CompetitorsTab = () => {
                 dataSource={pages}
                 pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
                 columns={[
-                  { title: 'URL', dataIndex: 'url', key: 'url', render: (v) => (
-                    <a href={v} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
-                      {v.replace(/^https?:\/\/[^/]+/, '').substring(0, 60) || '/'}
-                      <ExternalLink size={10} style={{ marginLeft: 4 }} />
-                    </a>
-                  )},
+                  {
+                    title: 'URL', dataIndex: 'url', key: 'url', render: (v) => (
+                      <a href={v} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>
+                        {v.replace(/^https?:\/\/[^/]+/, '').substring(0, 60) || '/'}
+                        <ExternalLink size={10} style={{ marginLeft: 4 }} />
+                      </a>
+                    )
+                  },
                   { title: 'Est. Traffic', dataIndex: 'traffic', key: 'traffic', sorter: (a, b) => b.traffic - a.traffic, render: (v) => fmt(v) },
                   { title: 'Keywords', dataIndex: 'keywords', key: 'kw', render: (v) => fmt(v) },
                   { title: 'Backlinks', dataIndex: 'backlinks', key: 'bl', render: (v) => fmt(v) }
@@ -891,7 +912,7 @@ const CompetitorsTab = () => {
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color)" />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} />
                 <RechartsTooltip formatter={(v) => fmt(v)} />
                 <Legend />
                 {allDomains.slice(0, 6).map((domain, i) => (
@@ -913,10 +934,10 @@ const CompetitorsTab = () => {
   // ── 5. Opportunities ───────────────────────────────────────────────────────
   const renderOpportunities = () => {
     if (oppsLoading) return <Skeleton active paragraph={{ rows: 10 }} />;
-    if (!opportunities) return (
+    if (!opportunities || opportunities?.summary?.totalOpportunities === 0) return (
       <EmptyState icon={Target} title="No opportunities yet"
         desc="Run a gap analysis and generate recommendations to see prioritized opportunities."
-        action={<Button type="primary" onClick={loadOpportunities}>Load Opportunities</Button>} />
+        action={<Button type="primary" onClick={() => setActiveTab('gap_analysis')}>Go to Gap Analysis</Button>} />
     );
 
     return (
@@ -1013,10 +1034,10 @@ const CompetitorsTab = () => {
                           </Tooltip>
                         </div>
                       </div>
-                      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, lineHeight: 1.4 }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                         {opp.item?.keyword || opp.item?.pageUrl || opp.item?.referringDomain || 'Gap opportunity'}
                       </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={opp.rationale}>
                         {opp.rationale}
                       </div>
                       <Row gutter={8} style={{ marginBottom: 12 }}>
@@ -1038,7 +1059,7 @@ const CompetitorsTab = () => {
                         <Progress percent={opp.difficulty} size="small" showInfo={false}
                           strokeColor={opp.difficulty > 60 ? '#f5222d' : opp.difficulty > 30 ? '#faad14' : '#52c41a'} />
                       </div>
-                      <Button size="small" type="primary" ghost block icon={<CheckCircle size={12} />}
+                      <Button size="small" type="primary" block icon={<CheckCircle size={12} />}
                         onClick={() => convertToTasks([opp._id])}>
                         Convert to Task
                       </Button>
@@ -1086,24 +1107,33 @@ const CompetitorsTab = () => {
           pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           columns={[
             { title: 'Type', dataIndex: 'type', key: 'type', render: (v) => <Tag>{GAP_TYPE_LABELS[v] || v}</Tag> },
-            { title: 'Opportunity', key: 'item',
+            {
+              title: 'Opportunity', key: 'item',
               render: (_, r) => (
                 <div>
                   <Text strong style={{ fontSize: 13 }}>{r.item?.keyword || r.item?.pageUrl || r.item?.referringDomain || 'Gap'}</Text>
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{r.rationale?.substring(0, 120)}...</div>
                 </div>
-              )},
-            { title: 'Priority', dataIndex: 'priorityScore', key: 'ps', sorter: (a, b) => b.priorityScore - a.priorityScore,
+              )
+            },
+            {
+              title: 'Priority', dataIndex: 'priorityScore', key: 'ps', sorter: (a, b) => b.priorityScore - a.priorityScore,
               render: (v) => (
                 <Progress percent={Math.min(100, Math.round(v / 10))} size="small" showInfo={false}
                   strokeColor={v > 500 ? '#f5222d' : v > 100 ? '#faad14' : '#52c41a'} style={{ width: 80 }} />
-              )},
+              )
+            },
             { title: 'Est. Traffic', dataIndex: 'estimatedTrafficImpact', key: 'eti', sorter: (a, b) => b.estimatedTrafficImpact - a.estimatedTrafficImpact, render: (v) => fmt(v) },
-            { title: 'Effort', dataIndex: 'effortHint', key: 'ef',
-              render: (v) => <Tag color={v === 'low' ? 'green' : v === 'high' ? 'red' : 'gold'}>{v}</Tag> },
-            { title: 'Status', dataIndex: 'status', key: 'st',
-              render: (v) => <Tag color={v === 'proposed' ? 'blue' : v === 'converted_to_task' ? 'green' : 'default'}>{v}</Tag> },
-            { title: 'AI', key: 'ai',
+            {
+              title: 'Effort', dataIndex: 'effortHint', key: 'ef',
+              render: (v) => <Tag color={v === 'low' ? 'green' : v === 'high' ? 'red' : 'gold'}>{v}</Tag>
+            },
+            {
+              title: 'Status', dataIndex: 'status', key: 'st',
+              render: (v) => <Tag color={v === 'proposed' ? 'blue' : v === 'converted_to_task' ? 'green' : 'default'}>{v}</Tag>
+            },
+            {
+              title: 'AI', key: 'ai',
               render: (_, r) => r.agent?.rationaleSource === 'ai'
                 ? <Tooltip title="AI-annotated"><Brain size={14} style={{ color: '#722ed1' }} /></Tooltip>
                 : <Tooltip title="Deterministic"><Shield size={14} style={{ color: '#52c41a' }} /></Tooltip>
@@ -1151,15 +1181,22 @@ const CompetitorsTab = () => {
               scroll={{ x: 'max-content' }}
               columns={[
                 { title: 'Domain', dataIndex: 'domain', key: 'domain', fixed: 'left', render: (v) => <Text strong style={{ fontSize: 12 }}>{v}</Text> },
+                { title: 'Score', key: 'score', render: (_, r) => (
+                  <Progress type="dashboard" percent={r.competitiveScore || 0} size={24} format={(val) => <span style={{fontSize: 9}}>{val}</span>} strokeColor={scoreColor(r.competitiveScore || 0)} />
+                ) },
                 { title: 'Traffic', key: 'traffic', render: (_, r) => fmt(r.metrics?.organicTraffic) },
                 { title: 'Keywords', key: 'kw', render: (_, r) => fmt(r.metrics?.organicKeywords) },
-                { title: 'Backlinks', key: 'bl', render: (_, r) => fmt(r.metrics?.backlinks) },
-                { title: 'Authority', key: 'da', render: (_, r) => r.metrics?.authority || '—' },
-                { title: 'Threat', key: 'ts', render: (_, r) => (
-                  <Tag color={r.agent?.threatLevel === 'high' ? 'red' : r.agent?.threatLevel === 'medium' ? 'gold' : 'green'}>
-                    {r.agent?.threatLevel?.toUpperCase() || '—'}
-                  </Tag>
-                )},
+                { title: 'Shared', key: 'ck', render: (_, r) => fmt(r.metrics?.commonKeywords) },
+                {
+                  title: 'Threat', key: 'ts', render: (_, r) => {
+                    const level = r.agent?.threatLevel || 'medium';
+                    return (
+                      <Tag color={level === 'critical' ? '#820014' : level === 'high' ? 'red' : level === 'medium' ? 'gold' : level === 'low' ? 'green' : 'default'}>
+                        {level.toUpperCase()}
+                      </Tag>
+                    );
+                  }
+                },
                 { title: 'Status', key: 'st', render: (_, r) => <Tag color={STATUS_COLORS[r.status]}>{r.status}</Tag> }
               ]}
             />
@@ -1191,9 +1228,11 @@ const CompetitorsTab = () => {
           pagination={{ defaultPageSize: 15, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           dataSource={history}
           columns={[
-            { title: 'Status', dataIndex: 'status', key: 'status', render: (s) => (
-              <Tag color={s === 'completed' ? 'green' : s === 'failed' ? 'red' : s === 'running' ? 'blue' : 'gold'}>{s}</Tag>
-            )},
+            {
+              title: 'Status', dataIndex: 'status', key: 'status', render: (s) => (
+                <Tag color={s === 'completed' ? 'green' : s === 'failed' ? 'red' : s === 'running' ? 'blue' : 'gold'}>{s}</Tag>
+              )
+            },
             { title: 'Agent', dataIndex: 'agentKey', key: 'ak', render: (v) => v || '—' },
             { title: 'Started', dataIndex: 'createdAt', key: 'createdAt', render: (d) => d ? new Date(d).toLocaleString() : '—' },
             { title: 'Duration', dataIndex: 'durationMs', key: 'durationMs', render: (v) => v ? `${(v / 1000).toFixed(1)}s` : '—' },
@@ -1209,14 +1248,14 @@ const CompetitorsTab = () => {
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   const tabItems = [
-    { key: 'overview',         label: <Space><Globe size={14} />Overview</Space>,         children: renderOverview() },
-    { key: 'gaps',             label: <Space><Swords size={14} />Gap Analysis</Space>,     children: renderGapAnalysis() },
-    { key: 'top-pages',        label: <Space><FileText size={14} />Top Pages</Space>,      children: renderTopPages() },
-    { key: 'trend',            label: <Space><TrendingUp size={14} />Trends</Space>,       children: renderTrend() },
-    { key: 'opportunities',    label: <Space><Target size={14} />Opportunities</Space>,    children: renderOpportunities() },
-    { key: 'recommendations',  label: <Space><Brain size={14} />Recommendations</Space>,   children: renderRecommendations() },
-    { key: 'matrix',           label: <Space><BarChart2 size={14} />Matrix</Space>,        children: renderMatrix() },
-    { key: 'history',          label: <Space><HistoryIcon size={14} />History</Space>,     children: renderHistory() }
+    { key: 'overview', label: <Space><Globe size={14} />Overview</Space>, children: renderOverview() },
+    { key: 'gaps', label: <Space><Swords size={14} />Gap Analysis</Space>, children: renderGapAnalysis() },
+    { key: 'top-pages', label: <Space><FileText size={14} />Top Pages</Space>, children: renderTopPages() },
+    { key: 'trend', label: <Space><TrendingUp size={14} />Trends</Space>, children: renderTrend() },
+    { key: 'opportunities', label: <Space><Target size={14} />Opportunities</Space>, children: renderOpportunities() },
+    { key: 'recommendations', label: <Space><Brain size={14} />Recommendations</Space>, children: renderRecommendations() },
+    { key: 'matrix', label: <Space><BarChart2 size={14} />Matrix</Space>, children: renderMatrix() },
+    { key: 'history', label: <Space><HistoryIcon size={14} />History</Space>, children: renderHistory() }
   ];
 
   return (

@@ -7,11 +7,10 @@
  * calls into. Per the approved architecture:
  *
  *   Keyword Intelligence → Keyword Provider → DataForSEO
- *                                            → Semrush
  *                                            → Future providers
  *
  * This file must NEVER `require('../../seoIntelligence/dataForSeo.service')`
- * or `require('../../semrush/semrush.service')` directly — only
+ * directly — only
  * `keywordProviderChain.js`. That's what keeps the platform
  * provider-independent: swapping/adding a vendor never touches this file.
  *

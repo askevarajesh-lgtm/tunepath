@@ -85,7 +85,7 @@ class AutomationExecutionEngine {
       
       const context = {
         projectId,
-        project: project || { _id: projectId, name: 'SEO Project', domain: 'askeva.io' },
+        project: project || { _id: projectId, name: 'SEO Project' },
         workflowId,
         versionId,
         runId: run._id,

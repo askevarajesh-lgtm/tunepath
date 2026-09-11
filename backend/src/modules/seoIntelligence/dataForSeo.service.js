@@ -246,12 +246,12 @@ class DataForSeoService {
    * Top organic competitors for a domain.
    * Endpoint: POST /dataforseo_labs/google/competitors_domain/live
    */
-  async getCompetitors(domain, locationCode = 2840, languageCode = 'en') {
+  async getCompetitors(domain, locationCode = 2840, languageCode = 'en', limit = 100) {
     const payload = [{
       target:        domain,
       location_code: locationCode,
       language_code: languageCode,
-      limit:         10
+      limit:         limit
     }];
     const raw = await this.makeRequest('/dataforseo_labs/google/competitors_domain/live', 'POST', payload);
     return raw.tasks?.[0]?.result?.[0]?.items || [];

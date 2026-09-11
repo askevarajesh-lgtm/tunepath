@@ -87,6 +87,7 @@ class RankTrackingService {
           currentRank = foundItems[0].rank;
           foundUrl = domainNormalizer.normalizeUrl(foundItems[0].url);
           currentStatus = 'FOUND';
+          kw.verificationStatus = 'VERIFIED_RANKING';
           
           // Confidence Engine
           if (foundItems[0].domain && foundItems[0].domain.includes(project.domain)) {
@@ -99,12 +100,26 @@ class RankTrackingService {
           if (foundItems.length > 1) {
              confidenceReason += ' (Multiple URLs found - possible cannibalization)';
              confidenceScore -= 10;
+             kw.cannibalization = kw.cannibalization || {};
+             kw.cannibalization.conflictUrls = foundItems.map(item => domainNormalizer.normalizeUrl(item.url));
+             kw.cannibalization.isCannibalized = true;
+          } else {
+             if (kw.cannibalization) {
+                 kw.cannibalization.conflictUrls = [foundUrl];
+                 kw.cannibalization.isCannibalized = false;
+             }
           }
 
         } else {
           currentStatus = 'NOT_FOUND_TOP100';
           confidenceScore = 100;
           confidenceReason = 'Absence verified across top 100 results';
+          
+          if (kw.gsc && kw.gsc.averagePosition != null) {
+            kw.verificationStatus = 'VERIFIED_RANKING';
+          } else {
+            kw.verificationStatus = 'NOT_RANKING';
+          }
         }
       } else {
         currentStatus = pipelineStatus;
@@ -170,6 +185,15 @@ class RankTrackingService {
       kw.ranking.confidenceScore = confidenceScore;
       kw.ranking.confidenceReason = confidenceReason;
       kw.ranking.serpFeatures = serpFeatures;
+      
+      kw.serp = kw.serp || {};
+      kw.serp.checkedAt = new Date();
+      kw.serp.provider = 'DataForSEO';
+      
+      // Update the main source if it was just a CANDIDATE or UNVERIFIED
+      if (kw.ranking.rankingSource === 'UNAVAILABLE' || kw.source === 'NLP_CANDIDATE' || kw.source === 'manual') {
+         kw.ranking.rankingSource = kw.gsc?.averagePosition ? 'GSC_AND_SERP' : 'SERP';
+      }
       
       if (currentRank && (!kw.ranking.bestRank || currentRank < kw.ranking.bestRank)) {
           kw.ranking.bestRank = currentRank;

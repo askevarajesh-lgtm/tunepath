@@ -10,29 +10,41 @@ const WorkspaceAuditSchema = new mongoose.Schema({
   
   // High-level scores
   metrics: {
+    // Legacy metrics (kept for backward compatibility)
     onpageScore: { type: Number, default: 0 },
     technicalScore: { type: Number, default: 0 },
     pagesCrawled: { type: Number, default: 0 },
     pagesWithErrors: { type: Number, default: 0 },
     pagesWithWarnings: { type: Number, default: 0 },
     
-    // Category Scores
+    // New Evidence-based Category Scores (100-point scale)
     technical: { type: Number, default: null },
-    content: { type: Number, default: null },
-    performance: { type: Number, default: null },
-    security: { type: Number, default: null },
-    accessibility: { type: Number, default: null },
-    schema: { type: Number, default: null },
-    images: { type: Number, default: null },
-    internalLinking: { type: Number, default: null },
     indexability: { type: Number, default: null },
+    onpage: { type: Number, default: null },
+    content: { type: Number, default: null },
+    internalLinking: { type: Number, default: null },
+    performance: { type: Number, default: null },
+    structuredData: { type: Number, default: null },
+    authority: { type: Number, default: null },
     overall: { type: Number, default: 0 },
+    
+    // New status & confidence metrics
+    healthStatus: { type: String, enum: ['Excellent', 'Good', 'Needs Improvement', 'Poor', 'Critical'], default: 'Needs Improvement' },
+    scoreConfidence: { type: String, enum: ['High', 'Medium', 'Low', 'Partial'], default: 'High' },
+    confidenceReason: { type: String },
+    measurementCoverage: { type: Number, default: 0 }, // Percentage of available core metrics mapped
+
+    // Site Inventory metrics
+    sitemapUrls: { type: Number, default: 0 },
+    discoveredUrls: { type: Number, default: 0 },
+    indexableUrls: { type: Number, default: 0 },
+    nonIndexableUrls: { type: Number, default: 0 },
     
     // Score Explanations
     scoreBreakdown: [mongoose.Schema.Types.Mixed]
   },
 
-  // Breakdown of issues
+  // Legacy breakdown of issues
   issues: {
     brokenLinks: { type: Number, default: 0 },
     duplicateContent: { type: Number, default: 0 },
@@ -41,6 +53,27 @@ const WorkspaceAuditSchema = new mongoose.Schema({
     canonicalIssues: { type: Number, default: 0 },
     sslIssues: { type: Number, default: 0 }
   },
+
+  // New Evidence-based grouped issues
+  groupedIssues: [{
+    id: { type: String, required: true }, // e.g., ONP-001
+    category: { type: String, required: true }, // Technical, On-Page, etc.
+    severity: { type: String, enum: ['Critical', 'High', 'Medium', 'Low', 'Informational'], required: true },
+    impact: { type: String, enum: ['High', 'Medium', 'Low'], default: 'Medium' },
+    confidence: { type: String, enum: ['High', 'Medium', 'Low'], default: 'High' },
+    scope: { type: String, enum: ['sitewide', 'page-specific', 'template'], default: 'page-specific' },
+    affectedUrls: [{ type: String }],
+    affectedCount: { type: Number, default: 0 },
+    analyzedCount: { type: Number, default: 0 },
+    percentageAffected: { type: Number, default: 0 },
+    title: { type: String, required: true },
+    description: { type: String },
+    evidence: [mongoose.Schema.Types.Mixed],
+    rootCause: { type: String },
+    recommendation: { type: String },
+    priority: { type: Number, default: 1 }, // 0=Critical, 1=High, 2=Medium, 3=Low
+    status: { type: String, enum: ['open', 'resolved', 'ignored'], default: 'open' }
+  }],
 
   rawResponseUrl: { type: String, default: null }, // S3 link or similar if we cache the full JSON payload
   

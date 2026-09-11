@@ -83,12 +83,16 @@ const AuditTab = () => {
       interval = setInterval(async () => {
         try {
           const res = await seoWorkspaceApi.getAuditStatus(activeProjectId);
-          if (res.status === 'completed' || res.status === 'budget_reached' || res.status === 'failed') {
+          if (res.status === 'completed' || res.status === 'completed_with_warnings' || res.status === 'budget_reached' || res.status === 'failed') {
             setRunningBasic(false);
             setLiveProgress(null);
             clearInterval(interval);
-            if (res.status === 'completed' || res.status === 'budget_reached') {
-              message.success(`Audit finished (${res.status})`);
+            if (res.status === 'completed' || res.status === 'completed_with_warnings' || res.status === 'budget_reached') {
+              if (res.status === 'completed_with_warnings') {
+                 message.warning(`Audit finished with some failed or timed-out pages.`);
+              } else {
+                 message.success(`Audit finished (${res.status})`);
+              }
               loadPastAudits(activeProjectId);
             } else {
               message.error('Audit failed: ' + (res.error || 'Unknown error'));
@@ -142,9 +146,10 @@ const AuditTab = () => {
   const selectedAudit = useMemo(() => pastAudits.find(a => a._id === selectedAuditId), [pastAudits, selectedAuditId]);
 
   const filteredFindings = useMemo(() => {
-    if (!selectedAudit?.agent?.findings) return [];
-    return selectedAudit.agent.findings.filter(f => {
-      const searchStr = `${f.issue} ${f.category} ${f.affectedUrl}`.toLowerCase();
+    // Read from groupedIssues if available, fallback to legacy agent.findings
+    const issues = selectedAudit?.groupedIssues || selectedAudit?.agent?.findings || [];
+    return issues.filter(f => {
+      const searchStr = `${f.title || f.issue} ${f.category} ${f.affectedUrls?.join(',') || f.affectedUrl}`.toLowerCase();
       const matchesSearch = searchStr.includes(searchText.toLowerCase());
       const matchesSeverity = severityFilter === 'All' || f.severity?.toLowerCase() === severityFilter.toLowerCase();
       return matchesSearch && matchesSeverity;
@@ -165,19 +170,21 @@ const AuditTab = () => {
   };
 
   const findingsColumns = [
-    { title: 'Severity', dataIndex: 'severity', key: 'severity', render: (s) => <SeverityTag severity={s} />, width: 100 },
+    { title: 'Severity', dataIndex: 'severity', key: 'severity', render: (s) => <SeverityTag severity={s?.toLowerCase()} />, width: 100 },
     { title: 'Category', dataIndex: 'category', key: 'category', render: (c) => <Tag icon={<CategoryIcon category={c}/>} color="blue">{c}</Tag>, width: 140 },
-    { title: 'Issue Description', dataIndex: 'issue', key: 'issue' },
+    { title: 'Issue Description', key: 'issue', render: (_, r) => r.title || r.issue },
     { 
-      title: 'Affected URL', 
-      dataIndex: 'affectedUrl', 
-      key: 'affectedUrl', 
-      render: (u) => {
-        if (!u) return 'Site-wide';
+      title: 'Affected URLs', 
+      key: 'affectedUrls', 
+      render: (_, r) => {
+        if (r.affectedCount !== undefined) {
+           return <Text>{r.affectedCount} / {r.analyzedCount} ({r.percentageAffected}%)</Text>;
+        }
+        if (!r.affectedUrl) return 'Site-wide';
         try {
-          return <Text copyable={{text: u}} ellipsis style={{maxWidth: 200}}>{new URL(u).pathname}</Text>;
+          return <Text copyable={{text: r.affectedUrl}} ellipsis style={{maxWidth: 200}}>{new URL(r.affectedUrl).pathname}</Text>;
         } catch {
-          return <Text copyable={{text: u}} ellipsis style={{maxWidth: 200}}>{u}</Text>;
+          return <Text copyable={{text: r.affectedUrl}} ellipsis style={{maxWidth: 200}}>{r.affectedUrl}</Text>;
         }
       }
     },
@@ -229,8 +236,13 @@ const AuditTab = () => {
               <Space split={<Divider type="vertical" />} wrap>
                 <Text>Discovered: <b>{liveProgress.progress?.urlsDiscovered || 0}</b></Text>
                 <Text style={{ color: '#1890ff' }}>Crawled: <b>{liveProgress.progress?.urlsCrawled || 0}</b></Text>
-                <Text type="secondary">Remaining Queue: <b>{liveProgress.progress?.urlsRemaining || 0}</b></Text>
-                <Text type="danger">Failed: <b>{liveProgress.progress?.failedUrls || 0}</b></Text>
+                <Text type="secondary">Remaining: <b>{liveProgress.progress?.urlsRemaining || 0}</b></Text>
+                {(liveProgress.progress?.failedUrls > 0 || liveProgress.progress?.timedOutUrls > 0) && (
+                  <>
+                    <Text type="danger">Failed: <b>{liveProgress.progress?.failedUrls || 0}</b></Text>
+                    <Text type="warning">Timed Out: <b>{liveProgress.progress?.timedOutUrls || 0}</b></Text>
+                  </>
+                )}
                 <Text style={{ color: '#52c41a' }}>Speed: <b>{liveProgress.progress?.pagesPerSecond || 0} pgs/sec</b></Text>
               </Space>
               <div style={{ marginTop: 8 }}>
@@ -309,34 +321,49 @@ const AuditTab = () => {
                 
                 <Row gutter={[16, 16]}>
                   <Col xs={24} md={8}>
-                     <Card size="small" style={{ borderRadius: 8 }}>
+                     <Card size="small" style={{ borderRadius: 8, height: '100%' }}>
                        <Statistic 
-                         title="Overall SEO Score" 
-                         value={selectedAudit.metrics?.overall ?? 82} 
-                         valueStyle={{ color: scoreColor(selectedAudit.metrics?.overall ?? 82), fontSize: 32, fontWeight: 800 }} 
+                         title={<Space>SEO Health Score</Space>} 
+                         value={selectedAudit.metrics?.overall} 
+                         valueStyle={{ color: scoreColor(selectedAudit.metrics?.overall ?? 82), fontSize: 36, fontWeight: 800 }} 
                          suffix="/ 100" 
                        />
-                       <Text type="secondary">Generated on {new Date(selectedAudit.createdAt).toLocaleDateString()}</Text>
+                       <div style={{ marginTop: 12 }}>
+                          <Space direction="vertical" size={2}>
+                            <Text type="secondary">Generated on {new Date(selectedAudit.createdAt).toLocaleDateString()}</Text>
+                            <Text strong>Confidence: <Tag color={
+                              selectedAudit.metrics?.scoreConfidence === 'High' ? 'success' : 
+                              selectedAudit.metrics?.scoreConfidence === 'Medium' ? 'processing' : 
+                              selectedAudit.metrics?.scoreConfidence === 'Partial' ? 'warning' : 'error'
+                            }>{selectedAudit.metrics?.scoreConfidence || 'High'}</Tag></Text>
+                          </Space>
+                       </div>
                      </Card>
                   </Col>
-                  <Col xs={24} md={16}>
-                     <Card size="small" title="Category Health Breakdown" style={{ borderRadius: 8 }}>
+                   <Col xs={24} md={16}>
+                     <Card size="small" title="Category Health Breakdown" style={{ borderRadius: 8, height: '100%' }}>
                         <Row gutter={[16, 12]}>
                           {(selectedAudit.metrics?.scoreBreakdown?.length ? selectedAudit.metrics.scoreBreakdown : [
-                            { category: 'Technical', earned: 85 },
-                            { category: 'Content', earned: 80 },
-                            { category: 'Performance', earned: 90 },
-                            { category: 'Security', earned: 95 },
-                            { category: 'Schema', earned: 75 },
-                            { category: 'Mobile', earned: 88 }
+                            { category: 'Technical', earned: 85, weight: 20 },
+                            { category: 'Content', earned: 80, weight: 15 },
+                            { category: 'Performance', earned: 90, weight: 10 },
+                            { category: 'Security', earned: 95, weight: 10 },
+                            { category: 'Schema', earned: 75, weight: 5 },
+                            { category: 'Mobile', earned: 88, weight: 10 }
                           ]).map(b => (
-                            <Col span={8} key={b.category}>
+                            <Col xs={12} sm={8} md={8} lg={8} key={b.category}>
                                <Tooltip title={b.reason || `${b.category} health score`}>
                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                                   <Text style={{ fontSize: 12 }}>{b.category}</Text>
-                                   <Text strong style={{ color: scoreColor(b.earned), fontSize: 12 }}>{b.earned}%</Text>
+                                   <Text style={{ fontSize: 12, marginRight: 4 }} ellipsis>{b.category}</Text>
+                                   <Text strong style={{ color: b.earned == null ? '#bfbfbf' : scoreColor(b.earned), fontSize: 12, whiteSpace: 'nowrap' }}>
+                                     {b.earned == null ? 'N/A' : `${b.earned}%`}
+                                   </Text>
                                  </div>
-                                 <Progress percent={b.earned} showInfo={false} size="small" strokeColor={scoreColor(b.earned)} />
+                                 {b.earned == null ? (
+                                   <div style={{ width: '100%', height: 6, backgroundColor: '#f0f0f0', borderRadius: 100 }} />
+                                 ) : (
+                                   <Progress percent={b.earned} showInfo={false} size="small" strokeColor={scoreColor(b.earned)} />
+                                 )}
                                </Tooltip>
                             </Col>
                           ))}
@@ -344,6 +371,40 @@ const AuditTab = () => {
                      </Card>
                   </Col>
                 </Row>
+
+                {/* Diagnostics Section */}
+                <Card size="small" title={<Space><Activity size={16} /> Audit Diagnostics</Space>} style={{ borderRadius: 8 }}>
+                  <Row gutter={[16, 16]}>
+                    <Col xs={24} md={12}>
+                      <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                        <Text strong>Crawl Execution</Text>
+                        <Space split={<Divider type="vertical" />} wrap>
+                          <Text type="secondary">Discovered: <Text strong style={{ color: '#000' }}>{selectedAudit.metrics?.discoveredUrls || 0}</Text></Text>
+                          <Text type="secondary">Crawled: <Text strong style={{ color: '#1890ff' }}>{selectedAudit.metrics?.pagesCrawled || 0}</Text></Text>
+                        </Space>
+                        <Space split={<Divider type="vertical" />} wrap>
+                          <Text type="secondary">Failed: <Text strong type={selectedAudit.metrics?.failedUrls > 0 ? "danger" : "secondary"}>{selectedAudit.metrics?.failedUrls || 0}</Text></Text>
+                          <Text type="secondary">Timed Out: <Text strong type={selectedAudit.metrics?.timedOutUrls > 0 ? "warning" : "secondary"}>{selectedAudit.metrics?.timedOutUrls || 0}</Text></Text>
+                          <Text type="secondary">Skipped: <Text strong>{selectedAudit.metrics?.urlsSkipped || 0}</Text></Text>
+                        </Space>
+                      </Space>
+                    </Col>
+                    <Col xs={24} md={12}>
+                      <Space direction="vertical" size={2}>
+                        <Text strong>Coverage & Confidence</Text>
+                        <Space split={<Divider type="vertical" />} wrap>
+                          <Text type="secondary">Measurement Coverage: <Text strong>{selectedAudit.metrics?.measurementCoverage || 100}%</Text></Text>
+                          <Text type="secondary">Status: <Text strong type={(selectedAudit.metrics?.failedUrls > 0 || selectedAudit.metrics?.timedOutUrls > 0) ? 'warning' : 'success'}>
+                            {(selectedAudit.metrics?.failedUrls > 0 || selectedAudit.metrics?.timedOutUrls > 0) ? 'Completed with Warnings' : 'Healthy'}
+                          </Text></Text>
+                        </Space>
+                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+                          {selectedAudit.metrics?.confidenceReason || 'Score calculated successfully based on verified findings.'}
+                        </Text>
+                      </Space>
+                    </Col>
+                  </Row>
+                </Card>
 
                 <Card 
                   size="small" 
@@ -405,12 +466,22 @@ const AuditTab = () => {
               <Paragraph>{selectedFinding.rootCause || 'Detected during automated DOM and HTTP response inspection.'}</Paragraph>
             </Card>
 
+            {selectedFinding.affectedUrls && selectedFinding.affectedUrls.length > 0 && (
+               <Card size="small" title="Affected URLs" bordered={false}>
+                 <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+                   {selectedFinding.affectedUrls.map((url, i) => (
+                     <div key={i}><Text copyable={{text: url}}>{new URL(url).pathname}</Text></div>
+                   ))}
+                 </div>
+               </Card>
+            )}
+
             <Card size="small" title="Recommended Technical Fix" bordered={false} style={{ background: isDark ? 'rgba(82, 196, 26, 0.12)' : '#f6ffed', border: isDark ? '1px solid rgba(82, 196, 26, 0.3)' : undefined, borderRadius: 6 }}>
               <Paragraph>{selectedFinding.suggestedTechnicalFix || selectedFinding.recommendation || 'Implement required HTML and header tags according to Google Search Central guidelines.'}</Paragraph>
             </Card>
 
             <Card size="small" title={<Space><Sparkles size={14} color="#1890ff"/> AI Diagnostic Summary</Space>} bordered={false} style={{ background: isDark ? 'rgba(24, 144, 255, 0.12)' : '#e6f7ff', border: isDark ? '1px solid rgba(24, 144, 255, 0.3)' : undefined, borderRadius: 6 }}>
-              <Paragraph>{selectedFinding.aiExplanation || 'Resolving this finding will improve search engine crawl efficiency and indexing status.'}</Paragraph>
+              <Paragraph>{selectedFinding.aiExplanation || selectedFinding.description || 'Resolving this finding will improve search engine crawl efficiency and indexing status.'}</Paragraph>
               {selectedFinding.recommendation && (
                  <Paragraph strong>Action Item: {selectedFinding.recommendation}</Paragraph>
               )}

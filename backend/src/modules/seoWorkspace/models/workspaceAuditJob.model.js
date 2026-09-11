@@ -27,7 +27,7 @@ const CRAWL_PROFILES = {
 const workspaceAuditJobSchema = new mongoose.Schema({
   projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'WorkspaceProject', required: true, index: true },
   agencyId: { type: String, required: true },
-  status: { type: String, enum: ['queued', 'running', 'paused', 'synthesizing', 'completed', 'budget_reached', 'failed'], default: 'queued' },
+  status: { type: String, enum: ['queued', 'running', 'paused', 'synthesizing', 'completed', 'completed_with_warnings', 'budget_reached', 'failed'], default: 'queued' },
   profile: { type: String, enum: ['quick', 'standard', 'deep', 'custom'], default: 'standard' },
   budgets: {
     maxPages: { type: Number },
@@ -42,6 +42,7 @@ const workspaceAuditJobSchema = new mongoose.Schema({
     urlsRemaining: { type: Number, default: 0 },
     urlsSkipped: { type: Number, default: 0 },
     failedUrls: { type: Number, default: 0 },
+    timedOutUrls: { type: Number, default: 0 },
     currentUrl: { type: String, default: '' },
     currentStage: { type: String, default: 'Initializing' },
     currentAnalyzer: { type: String, default: 'None' },

@@ -723,5 +723,59 @@ export const seoWorkspaceApi = {
   getMonitoringMonitors: async (projectId) => {
     const res = await axios.get(`${API_URL}/seo-workspace/projects/${projectId}/monitoring/monitors`, getAuthHeaders());
     return res.data;
+  },
+
+  // --- Comments (polymorphic: targetType = 'Strategy' | 'Task' | 'Report') ---
+  getComments: async (targetType, targetId) => {
+    const res = await axios.get(`${API_URL}/seo-workspace/${targetType}/${targetId}/comments`, getAuthHeaders());
+    return res.data;
+  },
+  createComment: async (targetType, targetId, content) => {
+    const res = await axios.post(`${API_URL}/seo-workspace/${targetType}/${targetId}/comments`, { content }, getAuthHeaders());
+    return res.data;
+  },
+  deleteComment: async (commentId) => {
+    const res = await axios.delete(`${API_URL}/seo-workspace/comments/${commentId}`, getAuthHeaders());
+    return res.data;
+  },
+
+  // --- Attachments (multipart/form-data upload — do NOT use JSON) ---
+  getAttachments: async (targetType, targetId) => {
+    const res = await axios.get(`${API_URL}/seo-workspace/${targetType}/${targetId}/attachments`, getAuthHeaders());
+    return res.data;
+  },
+  /**
+   * Upload a file attachment.
+   * @param {string} targetType - 'Strategy' | 'Task' | 'Report'
+   * @param {string} targetId   - MongoDB ObjectId of the target document
+   * @param {File}   file       - browser File object
+   * @param {string} [projectId] - optional, for db association
+   * @param {Function} [onProgress] - optional progress callback (percent: number) => void
+   */
+  uploadAttachment: async (targetType, targetId, file, projectId, onProgress) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (projectId) formData.append('projectId', projectId);
+
+    const authHeaders = getAuthHeaders();
+    // Do NOT set Content-Type manually — axios sets it automatically with the correct boundary for multipart
+    const res = await axios.post(
+      `${API_URL}/seo-workspace/${targetType}/${targetId}/attachments`,
+      formData,
+      {
+        headers: { ...authHeaders.headers },
+        onUploadProgress: onProgress
+          ? (progressEvent) => {
+              const percent = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
+              onProgress(percent);
+            }
+          : undefined
+      }
+    );
+    return res.data;
+  },
+  deleteAttachment: async (attachmentId) => {
+    const res = await axios.delete(`${API_URL}/seo-workspace/attachments/${attachmentId}`, getAuthHeaders());
+    return res.data;
   }
-};
+};

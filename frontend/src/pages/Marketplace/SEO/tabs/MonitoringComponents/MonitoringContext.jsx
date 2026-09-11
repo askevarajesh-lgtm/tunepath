@@ -11,7 +11,7 @@ export const MonitoringProvider = ({ children, project }) => {
   const { activeProjectId: globalProjectId, selectProject, projects: globalProjects } = useSEO();
 
   const [selectedProjectId, setSelectedProjectId] = useState(
-    project?._id || globalProjectId || localStorage.getItem('seo_active_project_id') || null
+    project?._id || globalProjectId || null
   );
   
   const [snapshot, setSnapshot] = useState(null);

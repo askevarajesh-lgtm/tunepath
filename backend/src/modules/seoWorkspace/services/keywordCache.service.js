@@ -12,7 +12,7 @@ const DEFAULT_TTL_SECONDS = {
   trend: 60 * 60 * 24 * 14,                // 14 days — same monthly_searches series as volume
   related_keywords: 60 * 60 * 24 * 7,      // 7 days
   question_keywords: 60 * 60 * 24 * 7,     // 7 days
-  keyword_gap: 60 * 60 * 24,               // 24h — matches SemrushCache's existing 24h expiry
+  keyword_gap: 60 * 60 * 24,               // 24h expiry
   content_gap: 60 * 60 * 24,               // 24h
   backlink_gap: 60 * 60 * 24 * 2,          // 48h — referring domains churn slower than SERPs
   page_gap: 60 * 60 * 24,                  // 24h

@@ -62,8 +62,28 @@ function newComparisonId() {
  */
 async function compare(params) {
   const { projectId, agencyId, yourDomain, competitorDomains, type, opts = {} } = params;
+  
+  if (!competitorDomains || competitorDomains.length === 0) {
+    throw new Error('At least one competitor domain must be provided');
+  }
+
+  const WorkspaceCompetitor = require('../../seoWorkspace/models/workspaceCompetitor.model');
+  const normalizedTargets = competitorDomains.map(normalizeDomain);
+  
+  // Security Check: the competitor domains MUST exist and be Approved for this specific project.
+  const approvedCompetitors = await WorkspaceCompetitor.find({
+    projectId,
+    domain: { $in: normalizedTargets },
+    status: 'Approved',
+    isDeleted: false
+  }).lean();
+
+  if (approvedCompetitors.length !== normalizedTargets.length) {
+    throw new Error('Unauthorized or invalid competitor domain. All competitors must be Approved in this project.');
+  }
+
   const comparisonId = opts.comparisonId || newComparisonId();
-  const domains = [normalizeDomain(yourDomain), ...competitorDomains.map(normalizeDomain)];
+  const domains = [normalizeDomain(yourDomain), ...normalizedTargets];
 
   const log = await ComparisonExecutionLog.create({
     comparisonId, projectId, agencyId, domains, type, status: 'running'
