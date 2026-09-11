@@ -31,15 +31,15 @@ const DEFAULT_LANGUAGE_CODE = 'en';
  */
 async function collectKeywordCandidates(project, agencyId, seedKeyword) {
   const seed = (seedKeyword || project.name || project.domain || '').trim();
-  
+
   // 1. First, try to fetch existing keywords discovered by the background crawler in the database
-  const dbKeywords = await WorkspaceKeyword.find({ 
-    projectId: project._id, 
-    source: 'discovery_crawler' 
+  const dbKeywords = await WorkspaceKeyword.find({
+    projectId: project._id,
+    source: 'discovery_crawler'
   })
-  .sort({ 'agent.opportunityScore': -1 })
-  .limit(MAX_CANDIDATES)
-  .lean();
+    .sort({ 'agent.opportunityScore': -1 })
+    .limit(MAX_CANDIDATES)
+    .lean();
 
   if (dbKeywords && dbKeywords.length > 0) {
     logger.info(TAG, `Found ${dbKeywords.length} deterministic crawler keywords in DB for "${seed}"`);
@@ -85,7 +85,7 @@ async function collectKeywordCandidates(project, agencyId, seedKeyword) {
     const response = await axios.get(siteUrl, { timeout: 10000, maxRedirects: 3 });
     const rawHtmlKeywords = hybridKeywordExtractor.extractFromHtml(response.data, siteUrl);
     const keywordQuality = require('./keywordQuality.service');
-    
+
     // Get top 3 high-quality multi-word phrases to use as DataForSEO seeds
     htmlThemes = rawHtmlKeywords
       .filter((k) => {
@@ -262,17 +262,17 @@ async function run(projectId, workspaceId, options = {}) {
     logger.error(TAG, `Failed to launch crawl worker: ${e.message}`);
   }
 
-  logger.logExecution({ 
-    executionId: `keywordResearchAgent:${projectId}:${Date.now()}`, 
-    source: 'keywordResearchAgent', 
-    agentKey: AGENT_KEY, 
-    projectId, 
+  logger.logExecution({
+    executionId: `keywordResearchAgent:${projectId}:${Date.now()}`,
+    source: 'keywordResearchAgent',
+    agentKey: AGENT_KEY,
+    projectId,
     status: 'started'
   });
 
   // 2. Synchronously fetch initial candidates so the UI can display them immediately
   const candidates = await collectKeywordCandidates(project, agencyId, options.seedKeyword);
-  
+
   if (candidates.length > 0) {
     let suggestedKeywords = [];
     let summaryText = `Found ${candidates.length} keyword candidates immediately. A deeper crawl is also running in the background.`;
@@ -289,23 +289,25 @@ async function run(projectId, workspaceId, options = {}) {
     } catch (err) {
       logger.warn(TAG, `AI analysis failed or unavailable, falling back to deterministic values: ${err.message}`);
       suggestedKeywords = candidates.slice(0, MAX_SUGGESTIONS).map(c => ({
-         keyword: c.keyword,
-         opportunityScore: c.opportunityScore || (c.keywordDifficulty ? Math.max(0, 100 - c.keywordDifficulty) : 50),
-         rationale: 'Discovered instantly via deterministic metrics',
-         theme: 'General',
-         ...c
+        keyword: c.keyword,
+        opportunityScore: c.opportunityScore || (c.keywordDifficulty ? Math.max(0, 100 - c.keywordDifficulty) : 50),
+        rationale: 'Discovered instantly via deterministic metrics',
+        theme: 'General',
+        ...c
       }));
     }
-    
+
     // Save them to DB immediately so they appear in the UI table
     const bulkOps = suggestedKeywords.map(k => {
+      const isVerified = k.rank != null;
       const op = {
         updateOne: {
           filter: { projectId, keyword: k.keyword },
           update: {
-            $set: { 
-              agencyId, 
-              source: 'discovery',
+            $set: {
+              agencyId,
+              source: isVerified ? 'SERP' : 'NLP_CANDIDATE',
+              verificationStatus: isVerified ? 'VERIFIED_RANKING' : 'CANDIDATE',
               'agent.rationale': k.rationale,
               'agent.theme': k.theme
             },
@@ -324,23 +326,23 @@ async function run(projectId, workspaceId, options = {}) {
           upsert: true
         }
       };
-      
+
       if (k.rank) {
         op.updateOne.update.$set['ranking.currentRank'] = k.rank;
-        op.updateOne.update.$set['ranking.rankingSource'] = 'DataForSEO';
+        op.updateOne.update.$set['ranking.rankingSource'] = 'SERP';
         op.updateOne.update.$set['ranking.status'] = 'FOUND';
       }
-      
+
       return op;
     });
 
     if (bulkOps.length > 0) {
       await WorkspaceKeyword.bulkWrite(bulkOps);
     }
-    
-    return { 
-      candidateCount: candidates.length, 
-      suggestedKeywords, 
+
+    return {
+      candidateCount: candidates.length,
+      suggestedKeywords,
       summary: summaryText
     };
   }
@@ -447,6 +449,23 @@ async function getExecutionHistory(projectId, limit = 20) {
     .sort({ createdAt: -1 })
     .limit(limit)
     .lean();
+}
+
+module.exports = {
+  AGENT_KEY,
+  run,
+  collectKeywordCandidates,
+  analyzeAndSuggest,
+  approveKeywords,
+  rejectKeywords,
+  getExecutionHistory
+}; return ExecutionLog.find({
+  projectId,
+  $or: [{ agentKey: AGENT_KEY }, { source: 'keywordResearchAgent' }]
+})
+  .sort({ createdAt: -1 })
+  .limit(limit)
+  .lean();
 }
 
 module.exports = {

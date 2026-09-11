@@ -5,8 +5,16 @@ const WorkspaceKeywordSchema = new mongoose.Schema({
   agencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   
   keyword: { type: String, required: true, trim: true },
+  normalizedKeyword: { type: String, trim: true, default: null },
   locationCode: { type: Number, default: 2840 }, // Default US
   languageCode: { type: String, default: 'en' },
+  
+  // Real Search Data Validation Status
+  verificationStatus: { 
+    type: String, 
+    enum: ['VERIFIED_RANKING', 'CANDIDATE', 'NOT_RANKING', 'UNVERIFIED'], 
+    default: 'UNVERIFIED' 
+  },
   
   // DataForSEO specific identifiers (to avoid duplicate tracking tasks)
   taskId: { type: String, default: null },
@@ -50,7 +58,7 @@ const WorkspaceKeywordSchema = new mongoose.Schema({
     currentRank: { type: Number, default: null },
     previousRank: { type: Number, default: null },
     bestRank: { type: Number, default: null },
-    rankingSource: { type: String, enum: ['GSC', 'DataForSEO', 'UNAVAILABLE'], default: 'UNAVAILABLE' },
+    rankingSource: { type: String, enum: ['GSC', 'SERP', 'GSC_AND_SERP', 'UNAVAILABLE'], default: 'UNAVAILABLE' },
     searchEngine: { type: String, default: 'Google' }, // e.g., 'Google', 'Bing', 'YouTube'
     device: { type: String, enum: ['Desktop', 'Mobile', 'Tablet', 'Unknown'], default: 'Unknown' },
     country: { type: String, default: null },
@@ -79,6 +87,21 @@ const WorkspaceKeywordSchema = new mongoose.Schema({
       serpFeatures: [{ type: String }],
       source: { type: String }
     }]
+  },
+
+  // Google Search Console (GSC) Data
+  gsc: {
+    averagePosition: { type: Number, default: null },
+    clicks: { type: Number, default: null },
+    impressions: { type: Number, default: null },
+    ctr: { type: Number, default: null },
+    checkedAt: { type: Date, default: null }
+  },
+
+  // Live SERP Verification Data
+  serp: {
+    checkedAt: { type: Date, default: null },
+    provider: { type: String, default: null }
   },
 
   // Cannibalization Detection

@@ -35,7 +35,9 @@ const workspaceAuditPageSchema = new mongoose.Schema({
   // Extended Assets
   images: [{
     src: String,
-    alt: String
+    alt: String,
+    isLazyLoaded: { type: Boolean, default: false },
+    isLcpCandidate: { type: Boolean, default: false }
   }],
   links: [{
     href: String,
@@ -46,12 +48,33 @@ const workspaceAuditPageSchema = new mongoose.Schema({
   openGraph: mongoose.Schema.Types.Mixed,
   twitterCard: mongoose.Schema.Types.Mixed,
 
+  // Performance (Core Web Vitals) - measured if possible
+  performance: {
+    lcp: { type: Number, default: null }, // in ms
+    lcpBreakdown: {
+      ttfb: { type: Number, default: null },
+      resourceLoadDelay: { type: Number, default: null },
+      resourceLoadTime: { type: Number, default: null },
+      renderDelay: { type: Number, default: null }
+    },
+    inp: { type: Number, default: null },
+    cls: { type: Number, default: null },
+    ttfb: { type: Number, default: null },
+    fcp: { type: Number, default: null },
+    isMeasured: { type: Boolean, default: false }
+  },
+
   // SEO Analysis Checks (populated natively during crawl)
   checks: {
     isIndexable: { type: Boolean, default: true },
+    isNoindex: { type: Boolean, default: false },
+    isRobotsBlocked: { type: Boolean, default: false },
+    canonicalMismatch: { type: Boolean, default: false },
+    isStagingOrDev: { type: Boolean, default: false },
     missingTitle: { type: Boolean, default: false },
     missingDescription: { type: Boolean, default: false },
     missingH1: { type: Boolean, default: false },
+    multipleH1: { type: Boolean, default: false },
     thinContent: { type: Boolean, default: false },
     brokenLinksCount: { type: Number, default: 0 },
     missingAltCount: { type: Number, default: 0 }

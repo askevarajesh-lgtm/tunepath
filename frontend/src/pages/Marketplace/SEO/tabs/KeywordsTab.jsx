@@ -64,7 +64,7 @@ const KeywordsTab = () => {
   const [competitorUrl, setCompetitorUrl] = useState('');
   const [gapData, setGapData] = useState(null);
   const [loadingGap, setLoadingGap] = useState(false);
-  
+
   // Evidence Drawer State
   const [evidenceDrawerOpen, setEvidenceDrawerOpen] = useState(false);
   const [selectedKeywordEvidence, setSelectedKeywordEvidence] = useState(null);
@@ -101,7 +101,7 @@ const KeywordsTab = () => {
     }
   };
 
-  useEffect(() => { 
+  useEffect(() => {
     if (projectId) {
       if (activeTab === 'tracked') load();
       if (activeTab === 'clusters') loadClusters();
@@ -181,17 +181,21 @@ const KeywordsTab = () => {
   };
 
   const filteredKeywords = useMemo(() => {
-    return keywords.filter(k => {
+    const baseList = activeTab === 'opportunities'
+      ? keywords.filter(k => k.verificationStatus === 'CANDIDATE')
+      : keywords.filter(k => k.verificationStatus !== 'CANDIDATE');
+
+    return baseList.filter(k => {
       const matchesSearch = k.keyword.toLowerCase().includes(searchText.toLowerCase());
       const matchesIntent = intentFilter === 'All' || k.metrics?.intent === intentFilter;
       return matchesSearch && matchesIntent;
     });
-  }, [keywords, searchText, intentFilter]);
+  }, [keywords, searchText, intentFilter, activeTab]);
 
   const handleExport = () => {
     if (!filteredKeywords.length) return message.warning('No data to export');
     const csvHeader = 'Keyword,Status,Volume,CPC,KD,Intent,Current Rank,Best Rank,Cluster\n';
-    const csvData = filteredKeywords.map(k => 
+    const csvData = filteredKeywords.map(k =>
       `"${k.keyword}","${k.status}","${k.metrics?.searchVolume || 0}","${k.metrics?.cpc || 0}","${k.metrics?.keywordDifficulty || 0}","${k.metrics?.intent || 'unknown'}","${k.ranking?.currentRank || ''}","${k.ranking?.bestRank || ''}","${k.cluster || k.parentKeyword || ''}"`
     ).join('\n');
     const blob = new Blob([csvHeader + csvData], { type: 'text/csv' });
@@ -204,124 +208,136 @@ const KeywordsTab = () => {
   };
 
   const columns = [
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>Keyword</span>, 
-      dataIndex: 'keyword', 
-      key: 'keyword', 
-      width: 320, 
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Keyword</span>,
+      dataIndex: 'keyword',
+      key: 'keyword',
+      width: 320,
       align: 'left',
       ellipsis: true,
       render: (k, r) => (
         <Space direction="vertical" size={0}>
           <a onClick={(e) => { e.preventDefault(); openEvidenceDrawer(r); }} style={{ fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%' }}>{k}</a>
-          {r.cluster && <Text type="secondary" style={{fontSize: 11}}>Cluster: {r.cluster}</Text>}
+          {r.cluster && <Text type="secondary" style={{ fontSize: 11 }}>Cluster: {r.cluster}</Text>}
         </Space>
       )
     },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>Intent</span>, 
-      dataIndex: ['metrics', 'intent'], 
-      key: 'intent', 
-      width: 100, 
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Intent</span>,
+      dataIndex: ['metrics', 'intent'],
+      key: 'intent',
+      width: 100,
       align: 'center',
-      render: (i) => <Tag color={INTENT_COLORS[i] || 'default'} style={{ margin: 0 }}>{i || 'unknown'}</Tag> 
-    },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>Volume</span>, 
-      dataIndex: ['metrics', 'searchVolume'], 
-      key: 'volume', 
-      width: 100, 
-      align: 'right',
-      sorter: (a, b) => (a.metrics?.searchVolume || 0) - (b.metrics?.searchVolume || 0), 
-      render: v => v ? <Text>{v.toLocaleString()}</Text> : <Text type="secondary">-</Text> 
-    },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>KD %</span>, 
-      dataIndex: ['metrics', 'keywordDifficulty'], 
-      key: 'kd', 
-      width: 80, 
-      align: 'right',
-      render: v => v ? <Text style={{ color: KD_COLOR(v), fontWeight: 500 }}>{v}</Text> : <Text type="secondary">-</Text> 
-    },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>CPC</span>, 
-      dataIndex: ['metrics', 'cpc'], 
-      key: 'cpc', 
-      width: 90, 
-      align: 'right',
-      render: v => v ? <Text>${v.toFixed(2)}</Text> : <Text type="secondary">-</Text> 
-    },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>Traffic</span>, 
-      dataIndex: ['metrics', 'estimatedTraffic'], 
-      key: 'traffic', 
-      width: 120, 
-      align: 'right',
-      render: v => v ? <Text>{v.toLocaleString()}</Text> : <Text type="secondary">-</Text> 
-    },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>Opportunity</span>, 
-      dataIndex: ['agent', 'opportunityScore'], 
-      key: 'opportunity', 
-      width: 120, 
-      align: 'center',
-      sorter: (a, b) => (a.agent?.opportunityScore || 0) - (b.agent?.opportunityScore || 0), 
-      render: v => v ? <Badge count={v} style={{ backgroundColor: v > 70 ? '#52c41a' : v > 40 ? '#faad14' : '#d9d9d9', minWidth: 32 }} /> : <Text type="secondary">-</Text> 
+      render: (i) => <Tag color={INTENT_COLORS[i] || 'default'} style={{ margin: 0 }}>{i || 'unknown'}</Tag>
     },
     {
-      title: <span style={{whiteSpace:'nowrap'}}>Rank</span>,
-      dataIndex: ['ranking', 'currentRank'],
-      key: 'rank',
+      title: <span style={{ whiteSpace: 'nowrap' }}>Volume</span>,
+      dataIndex: ['metrics', 'searchVolume'],
+      key: 'volume',
+      width: 100,
+      align: 'right',
+      sorter: (a, b) => (a.metrics?.searchVolume || 0) - (b.metrics?.searchVolume || 0),
+      render: v => v ? <Text>{v.toLocaleString()}</Text> : <Text type="secondary">-</Text>
+    },
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>KD %</span>,
+      dataIndex: ['metrics', 'keywordDifficulty'],
+      key: 'kd',
       width: 80,
       align: 'right',
-      render: (r, rec) => {
-        if (r === null || r === undefined) return <Text type="secondary">-</Text>;
-        const prev = rec.ranking?.previousRank;
-        const diff = prev ? prev - r : 0;
-        return (
-          <Space size={4}>
-            <Text strong>{r}</Text>
-            {diff > 0 && <Text type="success" style={{ fontSize: 11 }}>+{diff}</Text>}
-            {diff < 0 && <Text type="danger" style={{ fontSize: 11 }}>{diff}</Text>}
-          </Space>
-        );
-      }
-    },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>Trend</span>, 
-      dataIndex: ['metrics', 'trends'], 
-      key: 'trend', 
-      width: 120, 
-      align: 'center',
-      render: (t) => <TrendSparkline data={t} /> 
-    },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>Confidence</span>, 
-      dataIndex: ['evidence', 'confidenceScore'], 
-      key: 'confidence', 
-      width: 110, 
-      align: 'center',
-      render: (c) => c ? <Badge status={c >= 90 ? 'success' : c >= 70 ? 'warning' : 'error'} text={<span style={{fontSize: 12}}>{c}%</span>} /> : <Text type="secondary">-</Text> 
-    },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>Status</span>, 
-      dataIndex: 'status', 
-      key: 'status', 
-      width: 120, 
-      align: 'center',
-      render: (s) => <Tag color={STATUS_COLORS[s] || 'default'} style={{ margin: 0 }}>{s}</Tag> 
-    },
-    { 
-      title: <span style={{whiteSpace:'nowrap'}}>Discovery Source</span>, 
-      dataIndex: ['evidence', 'discoverySource'], 
-      key: 'discovery', 
-      width: 130, 
-      align: 'center',
-      responsive: ['xl', 'xxl', 'lg'],
-      render: (d) => <Text style={{fontSize: 12}} type="secondary" ellipsis>{d || 'Crawler'}</Text> 
+      render: v => v ? <Text style={{ color: KD_COLOR(v), fontWeight: 500 }}>{v}</Text> : <Text type="secondary">-</Text>
     },
     {
-      title: <span style={{whiteSpace:'nowrap'}}>Actions</span>,
+      title: <span style={{ whiteSpace: 'nowrap' }}>CPC</span>,
+      dataIndex: ['metrics', 'cpc'],
+      key: 'cpc',
+      width: 90,
+      align: 'right',
+      render: v => v ? <Text>${v.toFixed(2)}</Text> : <Text type="secondary">-</Text>
+    },
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Traffic</span>,
+      dataIndex: ['metrics', 'estimatedTraffic'],
+      key: 'traffic',
+      width: 120,
+      align: 'right',
+      render: v => v ? <Text>{v.toLocaleString()}</Text> : <Text type="secondary">-</Text>
+    },
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Opportunity</span>,
+      dataIndex: ['agent', 'opportunityScore'],
+      key: 'opportunity',
+      width: 120,
+      align: 'center',
+      sorter: (a, b) => (a.agent?.opportunityScore || 0) - (b.agent?.opportunityScore || 0),
+      render: v => v ? <Badge count={v} style={{ backgroundColor: v > 70 ? '#52c41a' : v > 40 ? '#faad14' : '#d9d9d9', minWidth: 32 }} /> : <Text type="secondary">-</Text>
+    },
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Ranking Evidence</span>,
+      key: 'rank',
+      width: 180,
+      align: 'left',
+      render: (r, rec) => {
+        if (rec.verificationStatus === 'CANDIDATE') return <Text type="secondary">Opportunity</Text>;
+        if (rec.verificationStatus === 'NOT_RANKING') return <Text type="danger">Not Ranked</Text>;
+        if (rec.verificationStatus === 'UNVERIFIED') return <Text type="secondary">Tracked — Not Yet Verified</Text>;
+
+        if (rec.verificationStatus === 'VERIFIED_RANKING') {
+          const hasSerp = rec.ranking?.rankingSource === 'SERP' || rec.ranking?.rankingSource === 'GSC_AND_SERP';
+          const hasGsc = rec.ranking?.rankingSource === 'GSC' || rec.ranking?.rankingSource === 'GSC_AND_SERP';
+
+          return (
+            <Space direction="vertical" size={0}>
+              {hasSerp && (
+                <Text strong>SERP Rank: {rec.ranking?.currentRank || 'N/A'}</Text>
+              )}
+              {hasGsc && (
+                <Text type="secondary" style={{ fontSize: 12 }}>GSC Avg Pos: {rec.gsc?.averagePosition?.toFixed(1) || 'N/A'}</Text>
+              )}
+              {hasSerp && rec.ranking?.url && (
+                <Text type="secondary" style={{ fontSize: 11, maxWidth: 160 }} ellipsis title={rec.ranking.url}>URL: {rec.ranking.url.replace(/^https?:\/\//, '')}</Text>
+              )}
+            </Space>
+          );
+        }
+        return <Text type="secondary">N/A</Text>;
+      }
+    },
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Trend</span>,
+      dataIndex: ['metrics', 'trends'],
+      key: 'trend',
+      width: 120,
+      align: 'center',
+      render: (t) => <TrendSparkline data={t} />
+    },
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Confidence</span>,
+      dataIndex: ['evidence', 'confidenceScore'],
+      key: 'confidence',
+      width: 110,
+      align: 'center',
+      render: (c) => c ? <Badge status={c >= 90 ? 'success' : c >= 70 ? 'warning' : 'error'} text={<span style={{ fontSize: 12 }}>{c}%</span>} /> : <Text type="secondary">-</Text>
+    },
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Status</span>,
+      dataIndex: 'status',
+      key: 'status',
+      width: 120,
+      align: 'center',
+      render: (s) => <Tag color={STATUS_COLORS[s] || 'default'} style={{ margin: 0 }}>{s}</Tag>
+    },
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Discovery Source</span>,
+      dataIndex: ['evidence', 'discoverySource'],
+      key: 'discovery',
+      width: 130,
+      align: 'center',
+      responsive: ['xl', 'xxl', 'lg'],
+      render: (d) => <Text style={{ fontSize: 12 }} type="secondary" ellipsis>{d || 'Crawler'}</Text>
+    },
+    {
+      title: <span style={{ whiteSpace: 'nowrap' }}>Actions</span>,
       key: 'actions',
       width: 80,
       align: 'center',
@@ -362,10 +378,10 @@ const KeywordsTab = () => {
         <Empty description="Select or create a Workspace Project to begin keyword intelligence" />
       ) : (
         <Tabs activeKey={activeTab} onChange={setActiveTab} type="card" style={{ background: isDark ? '#111c31' : '#fff', padding: 16, borderRadius: 8, border: isDark ? '1px solid #1e293b' : 'none' }}>
-          <TabPane tab={<Space><Target size={16}/> Tracked Keywords</Space>} key="tracked">
+          <TabPane tab={<Space><Target size={16} /> Tracked Keywords</Space>} key="tracked">
             <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Space>
-                <Input prefix={<Search size={14}/>} placeholder="Search keyword..." value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: 200 }} />
+                <Input prefix={<Search size={14} />} placeholder="Search keyword..." value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: 200 }} />
                 <Select value={statusFilter} onChange={setStatusFilter} style={{ width: 120 }}>
                   <Option value="All">All Statuses</Option>
                   <Option value="Approved">Approved</Option>
@@ -389,9 +405,9 @@ const KeywordsTab = () => {
                     <Button size="small" danger onClick={() => act(() => seoWorkspaceApi.rejectKeywordSuggestions(projectId, selectedRowKeys), 'Rejected')}>Reject</Button>
                   </>
                 )}
-                <Button icon={<Sparkles size={14}/>} onClick={runResearch} loading={running} type="primary">Extract Keywords</Button>
-                <Button icon={<RefreshCcw size={14}/>} onClick={handleRefreshKeywords}>Manual Refresh</Button>
-                <Button icon={<Download size={14}/>} onClick={handleExport}>Export CSV</Button>
+                <Button icon={<Sparkles size={14} />} onClick={runResearch} loading={running} type="primary">Extract Keywords</Button>
+                <Button icon={<RefreshCcw size={14} />} onClick={handleRefreshKeywords}>Manual Refresh</Button>
+                <Button icon={<Download size={14} />} onClick={handleExport}>Export CSV</Button>
               </Space>
             </div>
 
@@ -424,7 +440,7 @@ const KeywordsTab = () => {
                 background-color: ${isDark ? '#1a2b47' : '#f0f7ff'} !important;
               }
             `}</style>
-            
+
             <div style={{ background: isDark ? '#111c31' : '#fff', borderRadius: 8, overflow: 'hidden', border: isDark ? '1px solid #1e293b' : '1px solid #f0f0f0' }}>
               <Table
                 rowKey="_id"
@@ -453,14 +469,45 @@ const KeywordsTab = () => {
             </div>
           </TabPane>
 
-          <TabPane tab={<Space><Sparkles size={16}/> Discovery & Opportunities</Space>} key="discovery">
+          <TabPane tab={<Space><Sparkles size={16} /> Keyword Opportunities</Space>} key="opportunities">
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Space>
+                <Input prefix={<Search size={14} />} placeholder="Search opportunities..." value={searchText} onChange={e => setSearchText(e.target.value)} style={{ width: 200 }} />
+              </Space>
+              <Space>
+                {selectedRowKeys.length > 0 && (
+                  <Button size="small" type="primary" onClick={() => act(() => seoWorkspaceApi.approveKeywordSuggestions(projectId, selectedRowKeys), 'Added to Tracked')}>Track Selected</Button>
+                )}
+                <Button icon={<Sparkles size={14} />} onClick={runResearch} loading={running} type="primary">Extract Opportunities</Button>
+              </Space>
+            </div>
+
+            <div style={{ background: isDark ? '#111c31' : '#fff', borderRadius: 8, overflow: 'hidden', border: isDark ? '1px solid #1e293b' : '1px solid #f0f0f0' }}>
+              <Table
+                rowKey="_id"
+                className="enterprise-table"
+                size="middle"
+                tableLayout="fixed"
+                loading={loading}
+                dataSource={filteredKeywords}
+                columns={columns}
+                sticky={true}
+                scroll={{ x: 'max-content' }}
+                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '500'] }}
+                rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+                locale={{ emptyText: <Empty description="No keyword candidates found." /> }}
+              />
+            </div>
+          </TabPane>
+
+          <TabPane tab={<Space><Search size={16} /> Discovery Tools</Space>} key="discovery">
             <Row gutter={[16, 16]}>
               <Col xs={24} lg={12}>
                 <Card size="small" title="AI Keyword Research Agent" bordered={false} style={{ background: isDark ? '#162238' : '#f9f9f9', border: isDark ? '1px solid #1e293b' : undefined, height: '100%' }}>
                   <Space direction="vertical" style={{ width: '100%' }}>
                     <Text>Generate new keyword clusters, related questions, and long-tail opportunities based on the project's domain and target audience.</Text>
                     <Input placeholder="Optional seed keyword (e.g. 'marathon training')" value={seedKeyword} onChange={(e) => setSeedKeyword(e.target.value)} />
-                    <Button type="primary" loading={running} onClick={runResearch} icon={<Sparkles size={14}/>}>Run Deep Research</Button>
+                    <Button type="primary" loading={running} onClick={runResearch} icon={<Sparkles size={14} />}>Run Deep Research</Button>
                     {runResult && (
                       <>
                         <Alert type="success" showIcon style={{ marginBottom: 16 }} message={`${runResult.suggestedKeywords?.length || 0} suggestion(s) from ${runResult.candidateCount || 0} candidate(s). They have been automatically added to your Tracked Keywords.`} />
@@ -488,7 +535,7 @@ const KeywordsTab = () => {
                 <Card size="small" title="Quick Related Keyword Lookup" bordered={false} style={{ background: isDark ? '#162238' : '#f9f9f9', border: isDark ? '1px solid #1e293b' : undefined, height: '100%' }}>
                   <Space.Compact style={{ width: '100%', marginBottom: 12 }}>
                     <Input placeholder="Search term (e.g. 'running shoes')" value={relatedInput} onChange={(e) => setRelatedInput(e.target.value)} onPressEnter={fetchRelated} />
-                    <Button type="primary" loading={relatedLoading} onClick={fetchRelated} icon={<Search size={14}/>}>Lookup</Button>
+                    <Button type="primary" loading={relatedLoading} onClick={fetchRelated} icon={<Search size={14} />}>Lookup</Button>
                   </Space.Compact>
                   {related && (
                     <Table
@@ -509,7 +556,7 @@ const KeywordsTab = () => {
             </Row>
           </TabPane>
 
-          <TabPane tab={<Space><Network size={16}/> Clusters</Space>} key="clusters">
+          <TabPane tab={<Space><Network size={16} /> Clusters</Space>} key="clusters">
             {loadingClusters ? <Empty description="Loading clusters..." /> : clusters.length === 0 ? (
               <Empty description="No clusters generated yet. Ensure your tracked keywords have 'parentKeyword' or 'cluster' defined." />
             ) : (
@@ -517,7 +564,7 @@ const KeywordsTab = () => {
                 {clusters.map(cluster => (
                   <Col xs={24} md={12} lg={8} key={cluster.parentKeyword}>
                     <Card size="small" title={<Space><Tag color="blue">{cluster.parentKeyword}</Tag></Space>} bordered>
-                      <Statistic title="Total Search Volume" value={cluster.searchVolume.toLocaleString()} prefix={<TrendingUp size={14}/>} valueStyle={{ fontSize: 18 }} />
+                      <Statistic title="Total Search Volume" value={cluster.searchVolume.toLocaleString()} prefix={<TrendingUp size={14} />} valueStyle={{ fontSize: 18 }} />
                       <Divider style={{ margin: '12px 0' }} />
                       <Text type="secondary" strong>{cluster.keywords.length} Keywords in Cluster</Text>
                       <div style={{ maxHeight: 150, overflowY: 'auto', marginTop: 8 }}>
@@ -535,7 +582,7 @@ const KeywordsTab = () => {
             )}
           </TabPane>
 
-          <TabPane tab={<Space><TrendingUp size={16}/> Keyword Gap</Space>} key="gap">
+          <TabPane tab={<Space><TrendingUp size={16} /> Keyword Gap</Space>} key="gap">
             <Card size="small" bordered={false} style={{ background: isDark ? '#162238' : '#f9f9f9', border: isDark ? '1px solid #1e293b' : undefined, marginBottom: 16 }}>
               <Space direction="vertical" style={{ width: '100%' }}>
                 <Text>Identify high-value keywords that your competitors rank for, but you are missing.</Text>
@@ -548,13 +595,13 @@ const KeywordsTab = () => {
 
           </TabPane>
 
-          <TabPane tab={<Space><Alert size={16}/> Cannibalization Report</Space>} key="cannibalization">
+          <TabPane tab={<Space><Alert size={16} /> Cannibalization Report</Space>} key="cannibalization">
             <Card size="small" bordered={false} style={{ background: isDark ? '#162238' : '#f9f9f9', border: isDark ? '1px solid #1e293b' : undefined, marginBottom: 16 }}>
               <Space direction="vertical" style={{ width: '100%' }}>
                 <Text>Identify keywords where multiple pages on your site are competing against each other in search results.</Text>
               </Space>
             </Card>
-            
+
             <Table
               rowKey="_id"
               size="small"
@@ -564,16 +611,18 @@ const KeywordsTab = () => {
                 { title: 'Keyword', dataIndex: 'keyword', key: 'keyword', render: k => <Text strong>{k}</Text> },
                 { title: 'Current Rank', dataIndex: ['ranking', 'currentRank'], key: 'rank' },
                 { title: 'Severity', dataIndex: ['cannibalization', 'severity'], key: 'severity', render: s => <Tag color={s === 'high' ? 'red' : 'orange'}>{s.toUpperCase()}</Tag> },
-                { title: 'Conflicting URLs', dataIndex: ['cannibalization', 'conflictUrls'], key: 'urls', render: urls => (
-                  <Space direction="vertical" size={2}>
-                    {urls?.map(url => <Text key={url} style={{ fontSize: 12 }}>{url}</Text>)}
-                  </Space>
-                )}
+                {
+                  title: 'Conflicting URLs', dataIndex: ['cannibalization', 'conflictUrls'], key: 'urls', render: urls => (
+                    <Space direction="vertical" size={2}>
+                      {urls?.map(url => <Text key={url} style={{ fontSize: 12 }}>{url}</Text>)}
+                    </Space>
+                  )
+                }
               ]}
             />
           </TabPane>
 
-          <TabPane tab={<Space><Target size={16}/> Topical Authority</Space>} key="authority">
+          <TabPane tab={<Space><Target size={16} /> Topical Authority</Space>} key="authority">
             <Card size="small" bordered={false} style={{ background: isDark ? '#162238' : '#f9f9f9', border: isDark ? '1px solid #1e293b' : undefined, marginBottom: 16 }}>
               <Space direction="vertical" style={{ width: '100%' }}>
                 <Text>Topic Authority is calculated by comparing your search volume coverage across keyword clusters.</Text>

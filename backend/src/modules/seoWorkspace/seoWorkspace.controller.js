@@ -1404,6 +1404,9 @@ exports.getKeywords = async (req, res) => {
     if (req.query.status) {
       query.status = req.query.status;
     }
+    if (req.query.verificationStatus) {
+      query.verificationStatus = req.query.verificationStatus;
+    }
 
     let keywordsQuery = WorkspaceKeyword.find(query).populate('projectId', 'name').sort({ 'metrics.searchVolume': -1 });
     let keywords = await keywordsQuery;
@@ -1474,13 +1477,14 @@ exports.getRankDistribution = async (req, res) => {
 
     keywords.forEach(kw => {
       const r = kw.ranking?.currentRank;
-      if (r) {
+      
+      if (kw.verificationStatus === 'VERIFIED_RANKING' && r) {
         if (r <= 3) distribution.top3++;
         if (r <= 10) distribution.top10++;
         if (r <= 20) distribution.top20++;
         if (r <= 50) distribution.top50++;
         if (r <= 100) distribution.top100++;
-      } else {
+      } else if (kw.verificationStatus === 'NOT_RANKING') {
         distribution.notRanked++;
       }
 
