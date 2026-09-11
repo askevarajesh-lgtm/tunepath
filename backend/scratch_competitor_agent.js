@@ -29,194 +29,121 @@ const GENERIC_DOMAINS = new Set([
   'play.google.com', 'apps.apple.com'
 ]);
 
-function calculateCompetitiveScore(c, totalTargetKeywords) {
-  if (totalTargetKeywords === 0) return 0;
+function calculateCompetitiveScore(c) {
+  // 1. Keyword overlap is the strongest signal.
+  const baseScore = Math.min(60, c.commonKeywords * 2);
   
-  // 1. Keyword Overlap (Adaptive)
-  const overlapPct = c.commonKeywords / totalTargetKeywords;
-  const overlapScore = Math.min(40, (overlapPct * 100) * 1.5); // e.g. 20% overlap -> 30 points
-
-  // 2. Search Volume Overlap
-  const svScore = Math.min(30, Math.log10(c.searchVolumeOverlap + 1) * 6);
-
-  // 3. Outranking Signal
-  let outrankScore = 0;
-  if (c.commonKeywords > 0) {
-    const outrankPct = c.competitorBetterRankCount / c.commonKeywords;
-    outrankScore = Math.min(20, (outrankPct * 100) * 0.5); 
+  // 2. Overlap Percentage (how much of THEIR site is competing with US).
+  let overlapPctScore = 0;
+  if (c.organicKeywords > 0) {
+    const pct = (c.commonKeywords / c.organicKeywords);
+    overlapPctScore = Math.min(20, pct * 200); // 10% overlap = max 20 points
   }
+  
+  // 3. Traffic relevance.
+  const trafficBonus = Math.min(10, Math.log10(c.organicTraffic + 1) * 2);
 
-  // 4. Ranking Proximity / Avg Rank
+  // 4. Ranking strength.
   let rankBonus = 0;
-  if (c.averageCompetitorPosition > 0 && c.averageCompetitorPosition <= 10) rankBonus = 10;
-  else if (c.averageCompetitorPosition > 10 && c.averageCompetitorPosition <= 30) rankBonus = 5;
+  if (c.domainRank > 0 && c.domainRank <= 10) rankBonus = 10;
+  else if (c.domainRank > 10 && c.domainRank <= 30) rankBonus = 5;
 
-  const score = Math.round(overlapScore + svScore + outrankScore + rankBonus);
+  const score = Math.round(baseScore + overlapPctScore + trafficBonus + rankBonus);
   return Math.min(100, Math.max(0, score));
 }
 
 /**
  * @param {Object} project - a WorkspaceProject document
  * @param {string} agencyId
- * @returns {Promise<Array>} candidate objects
+ * @returns {Promise<Array>} candidate objects: { domain, commonKeywords, organicKeywords, organicTraffic, organicCost, referringDomains, backlinks, domainRank, dataSource }
  */
 async function collectCompetitorCandidates(project, agencyId) {
   const domain = domainNormalizationEngine.normalizeDomain(project.domain);
   const locationCode = project.targetLocations?.[0]?.location_code || 2840;
   const languageCode = project.languages?.[0] || 'en';
-  let candidatesMap = new Map();
+  let candidates = [];
 
   if (dataForSeoService.isConfigured) {
     try {
-      // Step 1: Get Target Keywords
-      const rankedKws = await retry.withRetry(
-        () => dataForSeoService.getRankedKeywords(domain, 50, locationCode, languageCode),
-        { retries: 2, onRetry: (err, attempt) => logger.warn(TAG, `getRankedKeywords retry ${attempt + 1}: ${err.message}`) }
+      const items = await retry.withRetry(
+        () => dataForSeoService.getCompetitors(domain, locationCode, languageCode, MAX_CANDIDATES),
+        {
+          retries: 2,
+          retryIf: (error) => !/invalid|not found/i.test(error.message || ''),
+          onRetry: (error, attempt) => logger.warn(TAG, `getCompetitors retry ${attempt + 1} for ${domain}: ${error.message}`)
+        }
       );
 
-      const targetKeywords = [];
-      for (const item of (rankedKws || [])) {
-        const kw = item.keyword_data?.keyword;
-        const rank = item.ranked_serp_element?.serp_item?.rank_absolute || item.ranked_serp_element?.serp_item?.rank_group || null;
-        const sv = item.keyword_data?.keyword_info?.search_volume || 0;
-        const url = item.ranked_serp_element?.serp_item?.url || null;
-        if (kw) {
-          targetKeywords.push({ keyword: kw, searchVolume: sv, rank, url, location_code: locationCode, language_code: languageCode });
-        }
-      }
-
-      if (targetKeywords.length === 0) {
-        logger.info(TAG, `No ranked keywords found for ${domain}. Cannot perform SERP-based competitor discovery.`);
-        return [];
-      }
-
-      // Step 2: Fetch SERP Data for those keywords
-      const serpResults = await dataForSeoService.getSerpResults(targetKeywords);
-      
-      // Step 3: Aggregate Competitors
-      for (const serpTask of serpResults) {
-        const kw = serpTask.data?.keyword;
-        const targetKwData = targetKeywords.find(k => k.keyword === kw);
-        if (!targetKwData) continue;
-
-        const items = serpTask.result?.[0]?.items || [];
-        for (const item of items) {
-          if (item.type !== 'organic') continue;
-          
-          const cDomainRaw = item.domain;
-          if (!cDomainRaw) continue;
-          
-          const cDomain = domainNormalizationEngine.normalizeDomain(cDomainRaw);
-          if (!cDomain || cDomain === domain) continue;
-
-          const cRank = item.rank_absolute || item.rank_group || null;
-          if (!cRank) continue;
-
-          if (!candidatesMap.has(cDomain)) {
-            candidatesMap.set(cDomain, {
-              domain: cDomain,
-              commonKeywords: 0,
-              searchVolumeOverlap: 0,
-              competitorBetterRankCount: 0,
-              targetBetterRankCount: 0,
-              sumCompetitorPosition: 0,
-              rankingEvidence: [],
-              organicKeywords: 0,
-              organicTraffic: 0,
-              organicCost: 0,
-              referringDomains: 0,
-              backlinks: 0,
-              domainRank: 0,
-              dataSource: 'dataforseo'
-            });
-          }
-
-          const c = candidatesMap.get(cDomain);
-          c.commonKeywords++;
-          c.searchVolumeOverlap += targetKwData.searchVolume;
-          c.sumCompetitorPosition += cRank;
-
-          if (targetKwData.rank) {
-            if (cRank < targetKwData.rank) c.competitorBetterRankCount++;
-            else if (cRank > targetKwData.rank) c.targetBetterRankCount++;
-          }
-
-          if (c.rankingEvidence.length < 5) {
-            c.rankingEvidence.push({
-              keyword: kw,
-              searchVolume: targetKwData.searchVolume,
-              targetPosition: targetKwData.rank,
-              competitorPosition: cRank,
-              targetUrl: targetKwData.url,
-              competitorUrl: item.url
-            });
-          }
-        }
-      }
-
-      let candidates = Array.from(candidatesMap.values());
-      const totalTargetKeywords = targetKeywords.length;
-
-      // Calculate averages and score
-      candidates.forEach(c => {
-        c.averageCompetitorPosition = c.sumCompetitorPosition / c.commonKeywords;
-        c.competitiveScore = calculateCompetitiveScore(c, totalTargetKeywords);
-      });
-
-      // Filter
-      candidates = candidates.filter(c => {
+      // Filtering Pipeline
+      candidates = (items || []).map((item) => {
+        const cDomain = domainNormalizationEngine.normalizeDomain(item.domain || item.target);
+        if (!cDomain) return null;
+        return {
+          domain: cDomain,
+          commonKeywords: item.intersections || 0,
+          organicKeywords: item.full_domain_metrics?.organic?.count || item.metrics?.organic?.count || 0,
+          organicTraffic: item.full_domain_metrics?.organic?.etv || item.metrics?.organic?.etv || 0,
+          organicCost: item.full_domain_metrics?.organic?.estimated_paid_traffic_cost || 0,
+          referringDomains: 0,
+          backlinks: 0,
+          domainRank: item.avg_position || item.rank_group || 0,
+          dataSource: 'dataforseo'
+        };
+      }).filter((c) => {
+        if (!c) return false;
+        if (c.domain === domain) return false;
+        
         const parts = c.domain.split('.');
         const baseDomain = parts.length >= 2 ? parts.slice(-2).join('.') : c.domain;
+        if (GENERIC_DOMAINS.has(baseDomain)) return false; 
         
-        // Safety filter for massive platforms
-        if (GENERIC_DOMAINS.has(baseDomain)) {
-           // A generic domain must have VERY high relevance to be included
-           if (c.competitiveScore < 50) return false;
-        }
-
-        // Must have at least SOME overlap
-        if (c.commonKeywords < 2 && totalTargetKeywords >= 5) return false;
-        if (c.competitiveScore < 10) return false; // Reject very low relevance
-
+        if (c.commonKeywords < 2) return false; 
+        
         return true;
+      });
+
+      // Deduplicate
+      const uniqueMap = new Map();
+      for (const c of candidates) {
+        if (!uniqueMap.has(c.domain) || c.commonKeywords > uniqueMap.get(c.domain).commonKeywords) {
+          uniqueMap.set(c.domain, c);
+        }
+      }
+      candidates = Array.from(uniqueMap.values());
+
+      // Score
+      candidates.forEach(c => {
+        c.competitiveScore = calculateCompetitiveScore(c);
       });
 
       // Sort by score
       candidates.sort((a, b) => b.competitiveScore - a.competitiveScore);
       candidates = candidates.slice(0, MAX_SUGGESTIONS);
 
-      // Backlink & Overview Enrichment
       if (candidates.length > 0) {
-        await Promise.all(candidates.map(async (candidate) => {
+        const toEnrich = candidates.slice(0, BACKLINK_ENRICHMENT_LIMIT);
+        await Promise.all(toEnrich.map(async (candidate) => {
           try {
-            const overview = await retry.withRetry(() => dataForSeoService.getDomainOverview(candidate.domain, locationCode, languageCode), { retries: 1 });
-            if (overview) {
-               candidate.organicKeywords = overview.metrics?.organic?.count || 0;
-               candidate.organicTraffic = overview.metrics?.organic?.etv || 0;
-               candidate.organicCost = overview.metrics?.organic?.estimated_paid_traffic_cost || 0;
-               candidate.domainRank = overview.metrics?.organic?.pos_1 ? overview.metrics.organic.pos_1 : (overview.avg_position || 0);
-            }
-
-            const summary = await retry.withRetry(() => dataForSeoService.getBacklinkSummary(candidate.domain), { retries: 1 });
+            const summary = await retry.withRetry(
+              () => dataForSeoService.getBacklinkSummary(candidate.domain),
+              { retries: 1 }
+            );
             if (summary) {
               candidate.referringDomains = summary.referring_domains || 0;
               candidate.backlinks = summary.backlinks || 0;
               if (!candidate.domainRank) candidate.domainRank = summary.rank || 0;
             }
           } catch (enrichError) {
-            logger.warn(TAG, `Enrichment failed for ${candidate.domain}: ${enrichError.message}`);
+            logger.warn(TAG, `getBacklinkSummary failed for ${candidate.domain}, continuing without it: ${enrichError.message}`, { projectId: project._id });
           }
         }));
       }
-      
-      return candidates;
-
     } catch (error) {
-      logger.warn(TAG, `DataForSEO true competitor lookup failed for ${domain}: ${error.message}`, { projectId: project._id });
+      logger.warn(TAG, `DataForSEO competitor lookup failed for ${domain}: ${error.message}`, { projectId: project._id });
     }
   }
 
-  return [];
+  return candidates;
 }
 
 
@@ -359,7 +286,6 @@ async function run(projectId, workspaceId) {
                   'metrics.backlinks': c.backlinks,
                   'metrics.domainRank': c.domainRank,
                   competitiveScore: c.competitiveScore,
-                  rankingEvidence: c.rankingEvidence || [],
                   dataSource: c.dataSource,
                   source: 'competitor-agent',
                   status: status,

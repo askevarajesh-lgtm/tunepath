@@ -272,6 +272,16 @@ const CompetitorsTab = () => {
   // On project change, reload core data
   useEffect(() => {
     if (!projectId) return;
+    setCompetitors([]);
+    setSummary(null);
+    setHistory(null);
+    setGapResult(null);
+    setTopPagesResult(null);
+    setSelectedRowKeys([]);
+    setAgentResult(null);
+    setOpportunities(null);
+    setRecommendations([]);
+    
     loadCompetitors();
     loadSummary();
   }, [projectId, loadCompetitors, loadSummary]);
@@ -612,27 +622,28 @@ const CompetitorsTab = () => {
                 )
               },
               {
-                title: 'Threat', key: 'threat',
+                title: 'Score', key: 'score',
                 render: (_, r) => {
+                  const score = r.competitiveScore || 0;
                   const level = r.agent?.threatLevel || 'medium';
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Tag color={level === 'high' ? 'red' : level === 'medium' ? 'gold' : 'green'}>
+                      <Progress type="dashboard" percent={score} size={28} format={(val) => <span style={{fontSize: 10}}>{val}</span>} strokeColor={scoreColor(score)} />
+                      <Tag color={level === 'critical' ? '#820014' : level === 'high' ? 'red' : level === 'medium' ? 'gold' : level === 'low' ? 'green' : 'default'} style={{ fontSize: 10, padding: '0 4px', lineHeight: '18px' }}>
                         {level.toUpperCase()}
                       </Tag>
-                      {r.threatScore > 0 && (
-                        <Progress percent={r.threatScore} size="small" showInfo={false}
-                          strokeColor={scoreColor(r.threatScore)}
-                          style={{ width: 60 }} />
-                      )}
                     </div>
                   );
                 }
               },
+              { title: 'Source', key: 'source', render: (_, r) => (
+                <Tag color={r.dataSource === 'dataforseo' ? 'blue' : 'default'}>
+                  {r.dataSource === 'legacy-ai-estimate' ? 'Legacy AI' : 'DataForSEO'}
+                </Tag>
+              ) },
+              { title: 'Shared KWs', key: 'ck', render: (_, r) => fmt(r.metrics?.commonKeywords) },
               { title: 'Org. Traffic', key: 'ot', render: (_, r) => fmt(r.metrics?.organicTraffic) },
-              { title: 'Keywords', key: 'kw', render: (_, r) => fmt(r.metrics?.organicKeywords) },
-              { title: 'Backlinks', key: 'bl', render: (_, r) => fmt(r.metrics?.backlinks) },
-              { title: 'Authority', key: 'da', render: (_, r) => r.metrics?.authority ? <Badge count={r.metrics.authority} style={{ background: '#722ed1' }} /> : '—' },
+              { title: 'Total KWs', key: 'kw', render: (_, r) => fmt(r.metrics?.organicKeywords) },
               {
                 title: 'Status', key: 'status',
                 render: (_, r) => <Tag color={STATUS_COLORS[r.status] || 'default'}>{r.status}</Tag>
@@ -1170,16 +1181,21 @@ const CompetitorsTab = () => {
               scroll={{ x: 'max-content' }}
               columns={[
                 { title: 'Domain', dataIndex: 'domain', key: 'domain', fixed: 'left', render: (v) => <Text strong style={{ fontSize: 12 }}>{v}</Text> },
+                { title: 'Score', key: 'score', render: (_, r) => (
+                  <Progress type="dashboard" percent={r.competitiveScore || 0} size={24} format={(val) => <span style={{fontSize: 9}}>{val}</span>} strokeColor={scoreColor(r.competitiveScore || 0)} />
+                ) },
                 { title: 'Traffic', key: 'traffic', render: (_, r) => fmt(r.metrics?.organicTraffic) },
                 { title: 'Keywords', key: 'kw', render: (_, r) => fmt(r.metrics?.organicKeywords) },
-                { title: 'Backlinks', key: 'bl', render: (_, r) => fmt(r.metrics?.backlinks) },
-                { title: 'Authority', key: 'da', render: (_, r) => r.metrics?.authority || '—' },
+                { title: 'Shared', key: 'ck', render: (_, r) => fmt(r.metrics?.commonKeywords) },
                 {
-                  title: 'Threat', key: 'ts', render: (_, r) => (
-                    <Tag color={r.agent?.threatLevel === 'high' ? 'red' : r.agent?.threatLevel === 'medium' ? 'gold' : 'green'}>
-                      {r.agent?.threatLevel?.toUpperCase() || '—'}
-                    </Tag>
-                  )
+                  title: 'Threat', key: 'ts', render: (_, r) => {
+                    const level = r.agent?.threatLevel || 'medium';
+                    return (
+                      <Tag color={level === 'critical' ? '#820014' : level === 'high' ? 'red' : level === 'medium' ? 'gold' : level === 'low' ? 'green' : 'default'}>
+                        {level.toUpperCase()}
+                      </Tag>
+                    );
+                  }
                 },
                 { title: 'Status', key: 'st', render: (_, r) => <Tag color={STATUS_COLORS[r.status]}>{r.status}</Tag> }
               ]}

@@ -38,9 +38,13 @@ const WorkspaceCompetitorSchema = new mongoose.Schema({
 
   lastCrawl: { type: Date, default: null }, // last time this competitor's data was refreshed
 
-  dataSource: { type: String, enum: ['dataforseo', 'ai-estimate'], default: 'dataforseo' },
+  dataSource: { type: String, enum: ['dataforseo', 'ai-estimate', 'legacy-ai-estimate'], default: 'dataforseo' },
   source:     { type: String, enum: ['manual', 'competitor-agent'], default: 'competitor-agent' },
   status:     { type: String, enum: ['Suggested', 'Approved', 'Rejected'], default: 'Suggested' },
+  
+  competitiveScore: { type: Number, default: 0, min: 0, max: 100 }, // deterministic relevance score
+  rankingEvidence: [{ type: Object }], // stores real SERP overlap evidence
+
 
   agent: {
     agentKey:   { type: String, default: null },
