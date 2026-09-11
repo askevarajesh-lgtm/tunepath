@@ -881,19 +881,23 @@ const reconcileProjectTaskCounts = async (
     await SlaRecord.findOneAndUpdate(
       { entityId: project._id, entityType: 'Project' },
       {
-        slaId: existingSla ? existingSla.slaId : `SLA-PRJ-${project._id.toString().substring(0, 8).toUpperCase()}`,
-        clientId: project.clientId,
-        agencyId: project.companyId,
-        clientType: 'Direct User Client',
-        triggerType: triggerType,
-        entityId: project._id,
-        entityType: 'Project',
-        title: `Project: ${project.name}`,
-        description,
-        dueDate: project.endDate || new Date(),
-        priority: status === 'Breached' ? 'High' : 'Medium',
-        status,
-        ...(status === 'Resolved' && { resolvedAt: new Date() })
+        $set: {
+          clientId: project.clientId,
+          agencyId: project.companyId,
+          clientType: 'Direct User Client',
+          triggerType: triggerType,
+          entityId: project._id,
+          entityType: 'Project',
+          title: `Project: ${project.name}`,
+          description,
+          dueDate: project.endDate || new Date(),
+          priority: status === 'Breached' ? 'High' : 'Medium',
+          status,
+          ...(status === 'Resolved' && { resolvedAt: new Date() })
+        },
+        $setOnInsert: {
+          slaId: existingSla ? existingSla.slaId : `SLA-PRJ-${project._id.toString().slice(-8).toUpperCase()}`
+        }
       },
       { upsert: true, returnDocument: 'after' }
     );

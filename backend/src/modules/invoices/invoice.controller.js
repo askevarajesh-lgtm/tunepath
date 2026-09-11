@@ -163,17 +163,34 @@ exports.getInvoices = async (req, res, next) => {
     if (req.query.search) {
       queryFilter.invoiceNumber = { $regex: req.query.search, $options: 'i' };
     }
-    if (req.query.paymentStatus) {
+    if (req.query.invoiceStatus && req.query.invoiceStatus !== 'all') {
+      queryFilter.invoiceStatus = req.query.invoiceStatus;
+    } else if (req.query.status && req.query.status !== 'all') {
+      queryFilter.invoiceStatus = req.query.status;
+    }
+    if (req.query.paymentStatus && req.query.paymentStatus !== 'all') {
       queryFilter.paymentStatus = req.query.paymentStatus;
     }
-    if (req.query.invoiceStatus) {
-      queryFilter.invoiceStatus = req.query.invoiceStatus;
-    }
-    if (req.query.clientId) {
+    if (req.query.clientId && req.query.clientId !== 'all') {
       queryFilter.clientId = req.query.clientId;
-    }
-    if (req.query.companyId) {
+    } else if (req.query.companyId && req.query.companyId !== 'all') {
       queryFilter.clientId = req.query.companyId;
+    }
+    if (req.query.month) {
+      const [yearStr, monthStr] = req.query.month.split('-');
+      if (yearStr && monthStr) {
+        const year = parseInt(yearStr, 10);
+        const month = parseInt(monthStr, 10);
+        const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0);
+        const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+        queryFilter.createdAt = { $gte: startOfMonth, $lte: endOfMonth };
+      }
+    } else if (req.query.startDate && req.query.endDate) {
+      const start = new Date(req.query.startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(req.query.endDate);
+      end.setHours(23, 59, 59, 999);
+      queryFilter.createdAt = { $gte: start, $lte: end };
     }
 
     const isClient = ['client', 'agency_client', 'brand_team_user', 'client_user', 'brand_manager', 'brand_super_admin'].includes(req.user.role);
@@ -182,7 +199,9 @@ exports.getInvoices = async (req, res, next) => {
       queryFilter.adminId = req.user._id;
     } else if (isClient) {
       queryFilter.clientId = req.user.brandId || req.user._id;
-      queryFilter.invoiceStatus = { $ne: 'Draft' };
+      if (!req.query.invoiceStatus && !req.query.status) {
+        queryFilter.invoiceStatus = { $ne: 'Draft' };
+      }
     } else {
       queryFilter.agencyId = req.companyId || req.user.agencyId || req.user._id;
     }

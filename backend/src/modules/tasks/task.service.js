@@ -1333,7 +1333,20 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
         isProjectsDeptTask = true;
       } else {
         const Department = require("./shimDepartmentModel");
-        const deptDoc = await Department.findById(taskData.department).select("slug name");
+        let deptDoc = null;
+        if (mongoose.Types.ObjectId.isValid(taskData.department)) {
+          deptDoc = await Department.findById(taskData.department).select("slug name");
+        }
+        if (!deptDoc && typeof taskData.department === "string") {
+          deptDoc = await Department.findOne({
+            $or: [
+              { slug: taskData.department },
+              { name: taskData.department },
+              { slug: rawDept },
+              { name: rawDept }
+            ]
+          }).select("slug name");
+        }
         if (deptDoc) {
           const dSlug = (deptDoc.slug || "").toLowerCase();
           const dName = (deptDoc.name || "").toLowerCase();
@@ -2175,7 +2188,7 @@ const updateTask = async (
       } else {
         // If no SLA existed (e.g., completed same day), create a Success record
         await SlaRecord.create({
-          slaId: `SLA-TSK-${task._id.toString().substring(0, 8).toUpperCase()}`,
+          slaId: `SLA-TSK-${task._id.toString().slice(-8).toUpperCase()}`,
           clientId: task.companyId,
           agencyId: task.tenantCompanyId,
           clientType: task.taskType === 'own_brand' ? 'Agency' : 'Direct User Client',

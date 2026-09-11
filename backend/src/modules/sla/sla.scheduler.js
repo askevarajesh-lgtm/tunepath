@@ -52,19 +52,23 @@ const runSlaCheck = async () => {
       const updatedSla = await SlaRecord.findOneAndUpdate(
         { entityId: task._id, entityType: 'Task' },
         {
-          slaId: existingSla ? existingSla.slaId : `SLA-TSK-${task._id.toString().substring(0, 8).toUpperCase()}`,
-          clientId: task.companyId,
-          agencyId: task.tenantCompanyId,
-          clientType: task.taskType === 'own_brand' ? 'Agency' : 'Direct User Client',
-          triggerType: 'Due Date',
-          entityId: task._id,
-          entityType: 'Task',
-          title: `Task: ${task.title}`,
-          description: `Overdue Task: ${task.title}${assignedInfo} was not completed by 11:59 PM on ${new Date(task.dueDate).toLocaleDateString()}.`,
-          dueDate: task.dueDate,
-          priority: task.priority === 'high' || task.priority === 'critical' ? task.priority : 'High',
-          status: 'Breached',
-          assignedTo: task.assignedTo?._id || task.assignedTo
+          $set: {
+            clientId: task.companyId,
+            agencyId: task.tenantCompanyId,
+            clientType: task.taskType === 'own_brand' ? 'Agency' : 'Direct User Client',
+            triggerType: 'Due Date',
+            entityId: task._id,
+            entityType: 'Task',
+            title: `Task: ${task.title}`,
+            description: `Overdue Task: ${task.title}${assignedInfo} was not completed by 11:59 PM on ${new Date(task.dueDate).toLocaleDateString()}.`,
+            dueDate: task.dueDate,
+            priority: task.priority === 'high' || task.priority === 'critical' ? task.priority : 'High',
+            status: 'Breached',
+            assignedTo: task.assignedTo?._id || task.assignedTo
+          },
+          $setOnInsert: {
+            slaId: existingSla ? existingSla.slaId : `SLA-TSK-${task._id.toString().slice(-8).toUpperCase()}`
+          }
         },
         { upsert: true, returnDocument: 'after' }
       );
@@ -154,18 +158,22 @@ const runSlaCheck = async () => {
       const updatedSla = await SlaRecord.findOneAndUpdate(
         { entityId: project._id, entityType: 'Project' },
         {
-          slaId: existingSla ? existingSla.slaId : `SLA-PRJ-${project._id.toString().substring(0, 8).toUpperCase()}`,
-          clientId: project.clientId,
-          agencyId: project.companyId,
-          clientType: 'Direct User Client',
-          triggerType: triggerType,
-          entityId: project._id,
-          entityType: 'Project',
-          title: `Project: ${project.name}`,
-          description,
-          dueDate: project.endDate,
-          priority: status === 'Breached' ? 'High' : 'Medium',
-          status
+          $set: {
+            clientId: project.clientId,
+            agencyId: project.companyId,
+            clientType: 'Direct User Client',
+            triggerType: triggerType,
+            entityId: project._id,
+            entityType: 'Project',
+            title: `Project: ${project.name}`,
+            description,
+            dueDate: project.endDate,
+            priority: status === 'Breached' ? 'High' : 'Medium',
+            status
+          },
+          $setOnInsert: {
+            slaId: existingSla ? existingSla.slaId : `SLA-PRJ-${project._id.toString().slice(-8).toUpperCase()}`
+          }
         },
         { upsert: true, returnDocument: 'after' }
       );
@@ -208,19 +216,23 @@ const runSlaCheck = async () => {
       await SlaRecord.findOneAndUpdate(
         { entityId: invoice._id, entityType: 'Invoice' },
         {
-          slaId: `SLA-INV-${invoice._id.toString().substring(0, 8).toUpperCase()}`,
-          clientId: invoice.companyId,
-          agencyId: invoice.tenantCompanyId,
-          clientType: 'Direct User Client',
-          triggerType: 'Payment',
-          entityId: invoice._id,
-          entityType: 'Invoice',
-          title: `Invoice: ${invoice.invoiceNumber || invoice._id}`,
-          description: `Payment Monitoring for Invoice`,
-          dueDate: invoice.dueDate,
-          paymentStatus: invoice.status,
-          priority: status === 'Breached' ? 'Critical' : 'Medium',
-          status
+          $set: {
+            clientId: invoice.companyId,
+            agencyId: invoice.tenantCompanyId,
+            clientType: 'Direct User Client',
+            triggerType: 'Payment',
+            entityId: invoice._id,
+            entityType: 'Invoice',
+            title: `Invoice: ${invoice.invoiceNumber || invoice._id}`,
+            description: `Payment Monitoring for Invoice`,
+            dueDate: invoice.dueDate,
+            paymentStatus: invoice.status,
+            priority: status === 'Breached' ? 'Critical' : 'Medium',
+            status
+          },
+          $setOnInsert: {
+            slaId: `SLA-INV-${invoice._id.toString().slice(-8).toUpperCase()}`
+          }
         },
         { upsert: true, returnDocument: 'after' }
       );

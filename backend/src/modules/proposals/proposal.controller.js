@@ -59,8 +59,24 @@ exports.getProposals = async (req, res, next) => {
         { proposalNumber: { $regex: req.query.search, $options: 'i' } }
       ];
     }
-    if (req.query.status) {
+    if (req.query.status && req.query.status !== 'all') {
       queryFilter.status = req.query.status;
+    }
+    if (req.query.month) {
+      const [yearStr, monthStr] = req.query.month.split('-');
+      if (yearStr && monthStr) {
+        const year = parseInt(yearStr, 10);
+        const month = parseInt(monthStr, 10);
+        const startOfMonth = new Date(year, month - 1, 1, 0, 0, 0, 0);
+        const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+        queryFilter.createdAt = { $gte: startOfMonth, $lte: endOfMonth };
+      }
+    } else if (req.query.startDate && req.query.endDate) {
+      const start = new Date(req.query.startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(req.query.endDate);
+      end.setHours(23, 59, 59, 999);
+      queryFilter.createdAt = { $gte: start, $lte: end };
     }
 
     const isClient = ['client', 'agency_client', 'brand_team_user', 'client_user', 'brand_manager', 'brand_super_admin'].includes(req.user.role);
@@ -71,7 +87,7 @@ exports.getProposals = async (req, res, next) => {
       queryFilter.clientId = req.user.brandId || req.user._id;
     } else {
       queryFilter.agencyId = req.companyId || req.user.agencyId || req.user._id;
-      if (req.query.clientId) {
+      if (req.query.clientId && req.query.clientId !== 'all') {
         queryFilter.clientId = req.query.clientId;
       }
     }
@@ -103,7 +119,7 @@ exports.getProposal = async (req, res, next) => {
   try {
     const proposal = await Proposal.findOne({ _id: req.params.id, isDeleted: false })
       .populate('clientId', 'name companyName email address phone')
-      .populate('masterItems', 'name itemCode category categories price duration description handlingDuration applicableAccess isCampaign campaignDetails department departmentId')
+      .populate('masterItems', 'name itemCode category categories price duration description handlingDuration applicableAccess isCampaign campaignDetails department departmentId isCustom')
       .populate('agencyId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
       .populate('adminId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
       .populate('createdBy', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature');
@@ -143,7 +159,13 @@ exports.updateProposal = async (req, res, next) => {
       delete req.body.customMasterItem;
     }
 
-    const updatedProposal = await Proposal.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after', runValidators: true });
+    await Proposal.findByIdAndUpdate(req.params.id, req.body, { runValidators: true });
+    const updatedProposal = await Proposal.findById(req.params.id)
+      .populate('clientId', 'name companyName email address phone')
+      .populate('masterItems', 'name itemCode category categories price duration description handlingDuration applicableAccess isCampaign campaignDetails department departmentId isCustom')
+      .populate('agencyId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
+      .populate('adminId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
+      .populate('createdBy', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature');
     res.status(200).json({ success: true, data: updatedProposal });
   } catch (error) {
     next(error);

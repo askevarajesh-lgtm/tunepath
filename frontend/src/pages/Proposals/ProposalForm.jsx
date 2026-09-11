@@ -26,54 +26,66 @@ const ProposalForm = () => {
   const selectedMasterItem = masterItems.find(item => item._id === selectedMasterItemId);
 
   useEffect(() => {
-    fetchClients();
-    fetchMasterItems();
-    if (isEditing) {
-      fetchProposal();
-    }
+    const init = async () => {
+      await fetchClients();
+      const loadedItems = await fetchMasterItems();
+      if (isEditing) {
+        await fetchProposal(loadedItems);
+      }
+    };
+    init();
   }, [id, isEditing]);
 
-  const fetchProposal = async () => {
+  const fetchProposal = async (loadedMasterItems = []) => {
     try {
-      setLoading(true);
       setLoading(true);
       const res = await api.get(`/proposals/${id}`);
       if (res.data?.success) {
         const proposal = res.data.data;
+        const proposalMasterItem = proposal.masterItems?.[0];
+
+        // Merge the proposal's master item into the list if not already present
+        // (handles custom items that aren't in the global master items list)
+        if (proposalMasterItem && typeof proposalMasterItem === 'object') {
+          setMasterItems(prev => {
+            const alreadyExists = prev.find(i => i._id === proposalMasterItem._id);
+            if (!alreadyExists) {
+              return [...prev, proposalMasterItem];
+            }
+            return prev;
+          });
+        }
+
+        const masterItemId = proposalMasterItem?._id
+          ? proposalMasterItem._id
+          : (typeof proposalMasterItem === 'string' ? proposalMasterItem : undefined);
+
         form.setFieldsValue({
           name: proposal.name,
           clientId: proposal.clientId?._id || proposal.clientId,
-          masterItems: proposal.masterItems?.[0]?._id || proposal.masterItems?.[0],
+          masterItems: masterItemId,
           grandTotal: proposal.grandTotal,
           notes: proposal.notes
         });
 
-        // Ensure custom master item is in the options list
-        if (proposal.masterItems?.[0] && typeof proposal.masterItems[0] === 'object') {
-          setMasterItems(prev => {
-            if (!prev.find(i => i._id === proposal.masterItems[0]._id)) {
-              return [...prev, proposal.masterItems[0]];
-            }
-            return prev;
+        // If the master item is custom, switch to customizing mode and populate fields
+        if (proposalMasterItem && typeof proposalMasterItem === 'object' && proposalMasterItem.isCustom) {
+          setIsCustomizing(true);
+          const item = proposalMasterItem;
+          const categories = item.categories?.map(c => c.name) || [];
+          const categoryCounts = {};
+          item.categories?.forEach(c => { categoryCounts[c.name] = c.count; });
+          form.setFieldsValue({
+            customName: item.name,
+            customDescription: item.description,
+            customPrice: item.price,
+            customCategories: categories,
+            customCategoryCounts: categoryCounts,
+            customApplicableAccess: item.applicableAccess || [],
+            customHandlingDuration: item.handlingDuration,
+            customIsCampaign: item.isCampaign || false,
+            customCampaignDetails: item.campaignDetails || { numberOfDays: 0, dailyBudget: 0, campaignAmount: 0 }
           });
-          if (proposal.masterItems[0].isCustom) {
-             setIsCustomizing(true);
-             const item = proposal.masterItems[0];
-             const categories = item.categories?.map(c => c.name) || [];
-             const categoryCounts = {};
-             item.categories?.forEach(c => { categoryCounts[c.name] = c.count; });
-             form.setFieldsValue({
-               customName: item.name,
-               customDescription: item.description,
-               customPrice: item.price,
-               customCategories: categories,
-               customCategoryCounts: categoryCounts,
-               customApplicableAccess: item.applicableAccess || [],
-               customHandlingDuration: item.handlingDuration,
-               customIsCampaign: item.isCampaign || false,
-               customCampaignDetails: item.campaignDetails || { numberOfDays: 0, dailyBudget: 0, campaignAmount: 0 }
-             });
-          }
         }
       }
     } catch (error) {
@@ -122,9 +134,12 @@ const ProposalForm = () => {
       const res = await api.get('/master-items');
       if (res.data?.success) {
         setMasterItems(res.data.data);
+        return res.data.data;
       }
+      return [];
     } catch (error) {
       console.error('Failed to fetch master items:', error);
+      return [];
     }
   };
 
