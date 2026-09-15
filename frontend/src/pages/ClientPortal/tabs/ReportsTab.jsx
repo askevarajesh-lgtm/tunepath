@@ -1,12 +1,45 @@
-import React from 'react';
-import { Typography, Row, Col, Card, Table, Tag, Button, Dropdown, Space } from 'antd';
+import React, { useState, useEffect } from 'react';
+import { Typography, Row, Col, Card, Table, Tag, Button, Dropdown, Space, Spin, message } from 'antd';
 import { motion } from 'framer-motion';
 import { Download, FileText, BarChart2, Calendar, MoreVertical, Eye, FileOutput } from 'lucide-react';
 import BubbleCard from '../../../components/BubbleCard';
+import MonthlyHighlightsCard from '../components/MonthlyHighlightsCard';
+import { useAuth } from '../../../contexts/AuthContext';
+import { getClientMonthlyReportsList } from '../../../api/reportApi';
+import { generateMonthlyHighlightsPDF } from '../../../utils/monthlyHighlightsPdfGenerator';
 
 const { Title, Text } = Typography;
 
+const monthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+];
+
 const ReportsTab = () => {
+  const { user } = useAuth();
+  const clientId = user?._id;
+  const clientName = user?.companyName || user?.name || 'Client';
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [realReports, setRealReports] = useState([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+
+  const fetchReportsList = async () => {
+    if (!clientId) return;
+    try {
+      setLoadingReports(true);
+      const res = await getClientMonthlyReportsList(clientId);
+      setRealReports(res || []);
+    } catch (err) {
+      console.error('Failed to load published client reports list:', err);
+    } finally {
+      setLoadingReports(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReportsList();
+  }, [clientId, refreshKey]);
+
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
@@ -17,44 +50,48 @@ const ReportsTab = () => {
     visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
   };
 
-  // Mock Data specifically for the logged-in Brand
-  const reports = [
-    { id: 1, name: 'Q1 Marketing Performance', type: 'Comprehensive', frequency: 'Quarterly', lastGenerated: '2026-04-01', size: '2.4 MB' },
-    { id: 2, name: 'Monthly SEO Overview', type: 'SEO', frequency: 'Monthly', lastGenerated: '2026-06-01', size: '1.1 MB' },
-    { id: 3, name: 'Weekly Ad Spend Analysis', type: 'Paid Ads', frequency: 'Weekly', lastGenerated: '2026-06-20', size: '0.8 MB' },
-    { id: 4, name: 'Social Media Engagement', type: 'Social', frequency: 'Monthly', lastGenerated: '2026-06-01', size: '3.2 MB' },
-    { id: 5, name: 'Website Traffic Insights', type: 'Analytics', frequency: 'Monthly', lastGenerated: '2026-05-01', size: '1.5 MB' },
-  ];
+  const currentMonth = new Date().getMonth() + 1;
+  const currentYear = new Date().getFullYear();
+  const reportsThisMonthCount = realReports.filter(r => r.month === currentMonth && r.year === currentYear).length;
+  const totalPublishedCount = realReports.length;
 
-  const getActionMenu = (record) => [
-    { key: 'view', icon: <Eye size={16} />, label: 'View Online' },
-    { key: 'download', icon: <Download size={16} />, label: 'Download PDF' },
-  ];
+  const handleDownloadSinglePdf = (record) => {
+    try {
+      generateMonthlyHighlightsPDF(record, { companyName: clientName });
+      message.success('PDF report downloaded successfully');
+    } catch (err) {
+      console.error('Error generating PDF:', err);
+      message.error('Failed to generate PDF');
+    }
+  };
 
   const columns = [
     {
       title: 'REPORT NAME',
-      dataIndex: 'name',
+      dataIndex: 'month',
       key: 'name',
-      render: (text, record) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ padding: 8, background: 'var(--bg-tertiary)', borderRadius: 8, color: 'var(--accent-primary)' }}>
-            <FileText size={16} />
+      render: (_, record) => {
+        const title = `Highlights of the Month - ${monthNames[record.month - 1]} ${record.year}`;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ padding: 8, background: 'var(--bg-tertiary)', borderRadius: 8, color: 'var(--accent-primary)' }}>
+              <FileText size={16} />
+            </div>
+            <div>
+              <strong style={{ color: 'var(--text-primary)', display: 'block' }}>{title}</strong>
+              <Text type="secondary" style={{ fontSize: 12 }}>Status: {record.status || 'Published'}</Text>
+            </div>
           </div>
-          <div>
-            <strong style={{ color: 'var(--text-primary)', display: 'block' }}>{text}</strong>
-            <Text type="secondary" style={{ fontSize: 12 }}>{record.size}</Text>
-          </div>
-        </div>
-      )
+        );
+      }
     },
     {
       title: 'CATEGORY',
-      dataIndex: 'type',
-      key: 'type',
-      render: text => (
+      dataIndex: 'category',
+      key: 'category',
+      render: () => (
         <Tag style={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-secondary)' }}>
-          {text}
+          Monthly Summary
         </Tag>
       )
     },
@@ -62,22 +99,27 @@ const ReportsTab = () => {
       title: 'FREQUENCY',
       dataIndex: 'frequency',
       key: 'frequency',
-      render: text => (
+      render: () => (
         <Tag color="blue" style={{ borderRadius: 12, border: 'none', background: 'rgba(59, 130, 246, 0.1)', color: 'rgb(59, 130, 246)' }}>
-          {text}
+          Monthly
         </Tag>
       )
     },
     {
       title: 'GENERATED ON',
-      dataIndex: 'lastGenerated',
-      key: 'lastGenerated',
-      render: text => (
-        <Space>
-          <Calendar size={14} color="var(--text-secondary)" />
-          <Text type="secondary" style={{ fontWeight: 500 }}>{new Date(text).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
-        </Space>
-      )
+      dataIndex: 'publishedAt',
+      key: 'publishedAt',
+      render: (text, record) => {
+        const dateVal = text || record.updatedAt;
+        return (
+          <Space>
+            <Calendar size={14} color="var(--text-secondary)" />
+            <Text type="secondary" style={{ fontWeight: 500 }}>
+              {dateVal ? new Date(dateVal).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Published'}
+            </Text>
+          </Space>
+        );
+      }
     },
     {
       title: 'ACTIONS',
@@ -85,10 +127,15 @@ const ReportsTab = () => {
       align: 'right',
       render: (_, record) => (
         <Space>
-          <Button type="default" size="small" icon={<Download size={14} />} style={{ fontWeight: 600, borderRadius: 6, color: 'var(--text-secondary)' }}>PDF</Button>
-          <Dropdown menu={{ items: getActionMenu(record) }} trigger={['click']} placement="bottomRight">
-            <Button type="text" icon={<MoreVertical size={16} />} />
-          </Dropdown>
+          <Button 
+            type="default" 
+            size="small" 
+            icon={<Download size={14} />} 
+            onClick={() => handleDownloadSinglePdf(record)}
+            style={{ fontWeight: 600, borderRadius: 6, color: 'var(--text-secondary)' }}
+          >
+            PDF
+          </Button>
         </Space>
       )
     }
@@ -99,11 +146,8 @@ const ReportsTab = () => {
       <motion.div variants={itemVariants} style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Workspace Reports</Title>
-          <Text type="secondary" style={{ fontSize: 14, fontWeight: 500 }}>Access, view, and download all automated reports for your brand.</Text>
+          <Text type="secondary" style={{ fontSize: 14, fontWeight: 500 }}>Access, view, and download all published reports for your brand.</Text>
         </div>
-        <Button type="primary" icon={<FileOutput size={16} />} style={{ borderRadius: 8, background: 'var(--accent-primary)', fontWeight: 600 }}>
-          Generate Custom Report
-        </Button>
       </motion.div>
 
       {/* Overview Stats */}
@@ -116,7 +160,9 @@ const ReportsTab = () => {
               </div>
               <div>
                 <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1 }}>REPORTS THIS MONTH</Text>
-                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, marginTop: 4 }}>12</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, marginTop: 4 }}>
+                  {reportsThisMonthCount}
+                </div>
               </div>
             </BubbleCard>
           </Col>
@@ -126,8 +172,10 @@ const ReportsTab = () => {
                 <BarChart2 size={24} />
               </div>
               <div>
-                <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1 }}>ACTIVE DASHBOARDS</Text>
-                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, marginTop: 4 }}>4</div>
+                <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1 }}>TOTAL PUBLISHED REPORTS</Text>
+                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, marginTop: 4 }}>
+                  {totalPublishedCount}
+                </div>
               </div>
             </BubbleCard>
           </Col>
@@ -137,29 +185,45 @@ const ReportsTab = () => {
                 <Download size={24} />
               </div>
               <div>
-                <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1 }}>TOTAL DOWNLOADS</Text>
-                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, marginTop: 4 }}>48</div>
+                <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1 }}>TOTAL REPORTS GENERATED</Text>
+                <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1, marginTop: 4 }}>
+                  {totalPublishedCount}
+                </div>
               </div>
             </BubbleCard>
           </Col>
         </Row>
       </motion.div>
 
+      {/* MONTHLY HIGHLIGHTS (3.1 REPORT) */}
+      <motion.div variants={itemVariants}>
+        <MonthlyHighlightsCard key={refreshKey} clientId={clientId} clientName={clientName} />
+      </motion.div>
+
       {/* Reports Table */}
       <motion.div variants={itemVariants}>
         <Card 
-          title={<span style={{ fontWeight: 800, fontSize: 18 }}>Generated Reports</span>}
+          title={<span style={{ fontWeight: 800, fontSize: 18 }}>Published Reports History</span>}
           className="glassmorphism"
           style={{ borderRadius: 16, border: '1px solid var(--border-color)', overflow: 'hidden' }}
           headStyle={{ borderBottom: '1px solid var(--border-color)', padding: '20px 24px' }}
           bodyStyle={{ padding: 0 }}
         >
           <Table 
+            loading={loadingReports}
             columns={columns} 
-            dataSource={reports} 
-            pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }} 
-             
-            rowKey="id"
+            dataSource={realReports} 
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }} 
+            rowKey="_id"
+            locale={{
+              emptyText: (
+                <div style={{ padding: '30px 0', textAlign: 'center' }}>
+                  <FileText size={28} color="var(--text-tertiary)" style={{ marginBottom: 8 }} />
+                  <div style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No published reports history</div>
+                  <Text type="secondary" style={{ fontSize: 13 }}>Click "Create / Edit Monthly Highlights" above to publish your monthly summary report.</Text>
+                </div>
+              )
+            }}
           />
         </Card>
       </motion.div>
@@ -168,3 +232,5 @@ const ReportsTab = () => {
 };
 
 export default ReportsTab;
+
+

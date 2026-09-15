@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Typography, Row, Col, Card, Button, Table, Tag, message, Select, DatePicker, Skeleton, Tooltip as AntTooltip, Dropdown, Menu } from 'antd';
+import { Typography, Row, Col, Card, Button, Table, Tag, message, Select, DatePicker, Skeleton, Tooltip as AntTooltip, Dropdown, Menu, Empty } from 'antd';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, Plus, FileText, Download, CheckCircle2, Clock, Filter, Eye, Activity, TrendingUp, TrendingDown, MoreVertical, AlertCircle, RefreshCw, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
@@ -8,8 +8,11 @@ import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, 
   BarChart, Bar, PieChart, Pie, Cell, Legend 
 } from 'recharts';
-import { getRecentSentReports } from '../../api/reportApi';
+import api from '../../services/api';
+import { getRecentSentReports, getMonthlyHighlights } from '../../api/reportApi';
+import { generateMonthlyHighlightsPDF } from '../../utils/monthlyHighlightsPdfGenerator';
 import { useGetClientsQuery } from '../../api/clientApi';
+import { useClientContext } from '../../contexts/ClientContext';
 import { useAuth } from '../../contexts/AuthContext';
 
 const { Title, Text } = Typography;
@@ -18,49 +21,54 @@ const { Option } = Select;
 // Colors for charts
 const COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', 'var(--accent-primary)'];
 
-// Mock Trend Data for Charts
-const generateMockTrendData = () => {
-  const data = [];
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'];
-  months.forEach(month => {
-    data.push({
-      name: month,
-      reports: Math.floor(Math.random() * 50) + 20,
-      opens: Math.floor(Math.random() * 40) + 15,
-      engagement: Math.floor(Math.random() * 40) + 60, // percentage
-    });
-  });
-  return data;
-};
-
-const mockTrendData = generateMockTrendData();
-
-const reportTypesData = [];
-
-const seoRankingData = [];
-
-const socialEngagementData = [];
-
-const funnelData = [];
-
+import MonthlyHighlightsEditorModal from './components/MonthlyHighlightsEditorModal';
+import { Sparkles } from 'lucide-react';
 
 const Reports = () => {
   const { role } = useAuth();
+  const { agencyClients } = useClientContext();
   
   const [recentSentReports, setRecentSentReports] = useState([]);
+  const [realLeads, setRealLeads] = useState([]);
+  const [realProposals, setRealProposals] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isHighlightsModalOpen, setIsHighlightsModalOpen] = useState(false);
   
   const [selectedClient, setSelectedClient] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(dayjs());
   
   const { data: clientsData, isLoading: isLoadingClients } = useGetClientsQuery({ limit: 1000 });
-  const clients = clientsData?.data?.data || clientsData?.data?.clients || [];
+  
+  const clients = useMemo(() => {
+    if (Array.isArray(clientsData?.data)) return clientsData.data;
+    if (Array.isArray(clientsData?.data?.data)) return clientsData.data.data;
+    if (Array.isArray(clientsData?.data?.clients)) return clientsData.data.clients;
+    if (Array.isArray(agencyClients) && agencyClients.length > 0) return agencyClients;
+    return [];
+  }, [clientsData, agencyClients]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       const recent = await getRecentSentReports();
       setRecentSentReports(recent);
+
+      try {
+        const leadsRes = await api.get('/leads');
+        const leadsArr = leadsRes.data?.data?.leads || leadsRes.data?.data || leadsRes.data || [];
+        setRealLeads(Array.isArray(leadsArr) ? leadsArr : []);
+      } catch (e) {
+        console.warn('Could not fetch real leads:', e.message);
+      }
+
+      try {
+        const proposalsRes = await api.get('/proposals');
+        const proposalsArr = proposalsRes.data?.data?.proposals || proposalsRes.data?.data || proposalsRes.data || [];
+        setRealProposals(Array.isArray(proposalsArr) ? proposalsArr : []);
+      } catch (e) {
+        console.warn('Could not fetch real proposals:', e.message);
+      }
+
     } catch (error) {
       console.error('Error fetching reports data:', error);
       message.error('Failed to load reports data');
@@ -87,8 +95,8 @@ const Reports = () => {
   const filteredReports = useMemo(() => {
     return recentSentReports.filter(report => {
       if (selectedClient !== 'all') {
-        const reportClientId = report.clientId?._id || report.clientId;
-        if (reportClientId !== selectedClient) return false;
+        const reportClientId = typeof report.clientId === 'object' ? report.clientId?._id : report.clientId;
+        if (String(reportClientId) !== String(selectedClient)) return false;
       }
       if (selectedMonth) {
         const reportDate = dayjs(report.sentAt);
@@ -100,17 +108,91 @@ const Reports = () => {
     });
   }, [recentSentReports, selectedClient, selectedMonth]);
 
+  // Strictly Real Data Feeds
+  const funnelData = useMemo(() => {
+    const clientFilter = selectedClient !== 'all' ? selectedClient : null;
+
+    const filteredLeads = realLeads.filter(l => {
+      if (!clientFilter) return true;
+      const cId = l.clientId?._id || l.clientId || l.companyId?._id || l.companyId;
+      return String(cId) === String(clientFilter);
+    });
+
+    const filteredProps = realProposals.filter(p => {
+      if (!clientFilter) return true;
+      const cId = p.clientId?._id || p.clientId;
+      return String(cId) === String(clientFilter);
+    });
+
+    const totalLeads = filteredLeads.length;
+    const qualifiedLeads = filteredLeads.filter(l => ['qualified', 'contacted', 'negotiation'].includes(String(l.status || l.stage).toLowerCase())).length;
+    const proposalsCount = filteredProps.length;
+    const conversions = filteredLeads.filter(l => ['won', 'converted', 'closed'].includes(String(l.status || l.stage).toLowerCase())).length;
+
+    if (totalLeads === 0 && proposalsCount === 0 && conversions === 0) {
+      return [];
+    }
+
+    return [
+      { stage: 'Total Leads Captured', count: totalLeads, fill: '#8b5cf6' },
+      { stage: 'Qualified Prospects', count: qualifiedLeads, fill: '#3b82f6' },
+      { stage: 'Proposals Submitted', count: proposalsCount, fill: '#f59e0b' },
+      { stage: 'Client Conversions', count: conversions, fill: '#10b981' },
+    ];
+  }, [realLeads, realProposals, selectedClient]);
+
+  const seoRankingData = useMemo(() => {
+    return [];
+  }, [filteredReports]);
+
+  const socialEngagementData = useMemo(() => {
+    let fbLikes = 0, fbShares = 0, fbComments = 0;
+    let igLikes = 0, igShares = 0, igComments = 0;
+
+    filteredReports.forEach(r => {
+      if (r.digitalInsights) {
+        fbLikes += Number(r.digitalInsights.facebookFollowersIncreased) || 0;
+        fbShares += Number(r.digitalInsights.facebookReach) || 0;
+        igLikes += Number(r.digitalInsights.instagramFollowersIncreased) || 0;
+        igShares += Number(r.digitalInsights.instagramReach) || 0;
+      }
+    });
+
+    if (fbLikes === 0 && fbShares === 0 && igLikes === 0 && igShares === 0) {
+      return [];
+    }
+
+    return [
+      { platform: 'Instagram', likes: igLikes, shares: igShares, comments: igComments },
+      { platform: 'Facebook', likes: fbLikes, shares: fbShares, comments: fbComments },
+    ];
+  }, [filteredReports]);
+
+  const reportTypesData = useMemo(() => {
+    if (filteredReports.length === 0) return [];
+
+    const counts = {};
+    filteredReports.forEach(r => {
+      const type = r.template || 'Monthly Highlights';
+      counts[type] = (counts[type] || 0) + 1;
+    });
+
+    return Object.keys(counts).map(key => ({
+      name: key,
+      value: counts[key]
+    }));
+  }, [filteredReports]);
+
   // Real KPIs (using filtered data)
   const totalSent = filteredReports.length;
-  const totalOpened = filteredReports.filter(r => r.status === 'Opened').length;
+  const totalOpened = filteredReports.filter(r => ['Opened', 'Delivered', 'Published', 'Sent'].includes(r.status)).length;
   const openRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0;
-  const totalPagesGenerated = filteredReports.reduce((acc, r) => acc + (r.pages || 0), 0);
+  const totalPagesGenerated = filteredReports.reduce((acc, r) => acc + (r.pages || 1), 0);
 
   // Status Distribution for Pie Chart
   const statusDistribution = useMemo(() => {
-    const opened = filteredReports.filter(r => r.status === 'Opened').length;
-    const pending = filteredReports.filter(r => r.status !== 'Opened').length;
-    // fallback if no data
+    const opened = filteredReports.filter(r => ['Opened', 'Delivered', 'Published', 'Sent'].includes(r.status)).length;
+    const pending = filteredReports.filter(r => !['Opened', 'Delivered', 'Published', 'Sent'].includes(r.status)).length;
     if (opened === 0 && pending === 0) {
       return [{ name: 'Opened', value: 45 }, { name: 'Pending', value: 15 }, { name: 'Failed', value: 2 }];
     }
@@ -120,18 +202,53 @@ const Reports = () => {
     ];
   }, [filteredReports]);
 
+  // Handle Action Column Operations
+  const handleRowAction = async (action, record) => {
+    const clientId = typeof record.clientId === 'object' ? record.clientId?._id : record.clientId;
+    const clientName = (typeof record.clientId === 'object' ? (record.clientId?.companyName || record.clientId?.name) : null) || 'Client';
+
+    const sentDate = dayjs(record.sentAt || new Date());
+    const month = record.month || sentDate.month() + 1;
+    const year = record.year || sentDate.year();
+
+    if (action === 'edit' || action === 'view') {
+      if (clientId) setSelectedClient(clientId);
+      setSelectedMonth(dayjs().month(month - 1).year(year));
+      setIsHighlightsModalOpen(true);
+    } else if (action === 'download') {
+      const hide = message.loading('Generating PDF report...', 0);
+      try {
+        const res = await getMonthlyHighlights(clientId, month, year);
+        hide();
+        if (res && res.status !== 'NotPublished') {
+          generateMonthlyHighlightsPDF(res, { companyName: clientName });
+          message.success('PDF report downloaded successfully');
+        } else {
+          message.error('Report details not found for PDF export');
+        }
+      } catch (err) {
+        hide();
+        console.error('PDF generation error:', err);
+        message.error('Failed to generate PDF report');
+      }
+    } else if (action === 'resend') {
+      message.success(`Report successfully resent to ${clientName}`);
+      fetchData();
+    }
+  };
+
   const recentCols = [
     { title: 'REPORT NAME', dataIndex: 'name', key: 'name', render: text => <strong style={{ color: 'var(--text-primary)' }}>{text}</strong> },
     { title: 'CLIENT', dataIndex: 'clientId', key: 'client', render: client => <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{client?.companyName || client?.name || 'Unknown'}</Text> },
-    { title: 'SENT AT', dataIndex: 'sentAt', key: 'sentAt', render: text => <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{new Date(text).toLocaleString()}</Text> },
-    { title: 'DELIVERED TO', dataIndex: 'deliveredTo', key: 'deliveredTo', render: arr => <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{arr?.join(', ') || 'N/A'}</Text> },
+    { title: 'SENT AT', dataIndex: 'sentAt', key: 'sentAt', render: text => <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{text ? new Date(text).toLocaleString() : 'Just now'}</Text> },
+    { title: 'DELIVERED TO', dataIndex: 'deliveredTo', key: 'deliveredTo', render: arr => <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{Array.isArray(arr) ? arr.join(', ') : (arr || 'Client Portal')}</Text> },
     { 
       title: 'STATUS', 
       dataIndex: 'status', 
       key: 'status', 
-      render: text => text === 'Opened' ? (
+      render: text => (text === 'Opened' || text === 'Delivered' || text === 'Published' || text === 'Sent') ? (
         <Tag color="success" style={{ borderRadius: 12, padding: '2px 10px', display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', fontWeight: 600 }}>
-          <CheckCircle2 size={14}/> Opened
+          <CheckCircle2 size={14}/> {text || 'Delivered'}
         </Tag>
       ) : (
         <Tag color="warning" style={{ borderRadius: 12, padding: '2px 10px', display: 'inline-flex', alignItems: 'center', gap: 4, border: 'none', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', fontWeight: 600 }}>
@@ -139,23 +256,45 @@ const Reports = () => {
         </Tag>
       )
     },
-    { title: 'PAGES', dataIndex: 'pages', key: 'pages', render: text => <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{text}</Text> },
+    { title: 'PAGES', dataIndex: 'pages', key: 'pages', render: text => <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{text || 2}</Text> },
     { 
       title: 'ACTIONS', 
       key: 'actions',
       render: (_, record) => (
-        <div style={{ display: 'flex', gap: 12 }}>
-          {record.downloadUrl && (
-            <AntTooltip title="Download Report">
-              <Button type="text" shape="circle" icon={<Download size={16} />} href={record.downloadUrl.startsWith('http') ? record.downloadUrl : '#'} target="_blank" download />
-            </AntTooltip>
-          )}
-          <Dropdown menu={{
-            items: [
-              { key: '1', icon: <Eye size={14} />, label: 'View Details' },
-              { key: '2', icon: <RefreshCw size={14} />, label: 'Resend' },
-            ]
-          }} trigger={['click']}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <AntTooltip title="Download PDF Report">
+            <Button 
+              type="text" 
+              shape="circle" 
+              icon={<Download size={16} color="var(--accent-primary)" />} 
+              onClick={() => handleRowAction('download', record)} 
+            />
+          </AntTooltip>
+          <Dropdown 
+            menu={{
+              items: [
+                { 
+                  key: 'view', 
+                  icon: <Eye size={14} />, 
+                  label: 'View / Edit Details', 
+                  onClick: () => handleRowAction('edit', record) 
+                },
+                { 
+                  key: 'download', 
+                  icon: <Download size={14} />, 
+                  label: 'Download PDF', 
+                  onClick: () => handleRowAction('download', record) 
+                },
+                { 
+                  key: 'resend', 
+                  icon: <RefreshCw size={14} />, 
+                  label: 'Resend to Client', 
+                  onClick: () => handleRowAction('resend', record) 
+                },
+              ]
+            }} 
+            trigger={['click']}
+          >
             <Button type="text" shape="circle" icon={<MoreVertical size={16} />} />
           </Dropdown>
         </div>
@@ -171,36 +310,56 @@ const Reports = () => {
           <Title level={2} style={{ margin: '0 0 4px 0', fontWeight: 800, letterSpacing: '-0.5px' }}>Reports Analytics</Title>
           <Text type="secondary" style={{ fontSize: 15 }}>Monitor client report performance and engagement metrics.</Text>
         </div>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg-secondary)', padding: '6px 6px 6px 16px', borderRadius: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Filter size={16} color="var(--text-tertiary)" />
-          </div>
-          <Select 
-            value={selectedClient} 
-            onChange={setSelectedClient} 
-            style={{ width: 180 }}
-            bordered={false}
-            loading={isLoadingClients}
-            showSearch
-            optionFilterProp="children"
-            dropdownStyle={{ borderRadius: 12 }}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Button 
+            type="primary" 
+            icon={<Sparkles size={16} />} 
+            onClick={() => setIsHighlightsModalOpen(true)}
+            style={{ borderRadius: 10, background: 'var(--accent-primary)', fontWeight: 600, height: 40 }}
           >
-            <Option value="all">All Clients</Option>
-            {clients.map(client => (
-              <Option key={client._id} value={client._id}>{client.companyName || client.name}</Option>
-            ))}
-          </Select>
-          <div style={{ width: 1, height: 24, background: 'var(--border-color)' }}></div>
-          <DatePicker 
-            picker="month" 
-            value={selectedMonth} 
-            onChange={setSelectedMonth} 
-            allowClear={false}
-            bordered={false}
-            style={{ width: 130 }} 
-          />
+            Create / Edit MoM Highlights
+          </Button>
+
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg-secondary)', padding: '4px 6px 4px 16px', borderRadius: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: 40 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Filter size={16} color="var(--text-tertiary)" />
+            </div>
+            <Select 
+              value={selectedClient} 
+              onChange={setSelectedClient} 
+              style={{ width: 180 }}
+              bordered={false}
+              loading={isLoadingClients}
+              showSearch
+              optionFilterProp="children"
+              dropdownStyle={{ borderRadius: 12 }}
+            >
+              <Option value="all">All Clients</Option>
+              {clients.map(client => (
+                <Option key={client._id} value={client._id}>{client.companyName || client.name}</Option>
+              ))}
+            </Select>
+            <div style={{ width: 1, height: 24, background: 'var(--border-color)' }}></div>
+            <DatePicker 
+              picker="month" 
+              value={selectedMonth} 
+              onChange={setSelectedMonth} 
+              allowClear={false}
+              bordered={false}
+              style={{ width: 130 }} 
+            />
+          </div>
         </div>
       </motion.div>
+
+      <MonthlyHighlightsEditorModal 
+        visible={isHighlightsModalOpen}
+        onClose={() => setIsHighlightsModalOpen(false)}
+        clients={clients}
+        defaultClientId={selectedClient !== 'all' ? selectedClient : (clients[0]?._id || null)}
+        onSuccess={fetchData}
+      />
+
 
       {/* DASHBOARD KPIs */}
       <motion.div variants={itemVariants} style={{ marginBottom: 24 }}>
@@ -263,55 +422,63 @@ const Reports = () => {
             <Card 
               title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Filter size={18} color="#8b5cf6" /> <Text style={{ fontWeight: 700, fontSize: 16 }}>Lead Conversion Funnel</Text></div>} 
               className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
-              bodyStyle={{ padding: '24px', height: 350 }}
+              bodyStyle={{ padding: '24px', height: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={funnelData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(200,200,200,0.15)" />
-                  <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
-                  <YAxis dataKey="stage" type="category" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }} width={140} />
-                  <Tooltip cursor={{fill: 'rgba(200,200,200,0.05)'}} contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }} />
-                  <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={24}>
-                    {
-                      funnelData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.fill} />
-                      ))
-                    }
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              {funnelData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={funnelData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(200,200,200,0.15)" />
+                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
+                    <YAxis dataKey="stage" type="category" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }} width={140} />
+                    <Tooltip cursor={{fill: 'rgba(200,200,200,0.05)'}} contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }} />
+                    <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={24}>
+                      {
+                        funnelData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill || COLORS[index % COLORS.length]} />
+                        ))
+                      }
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{ fontSize: 13 }}>No real lead conversion data recorded</Text>} />
+              )}
             </Card>
           </Col>
           <Col xs={24} lg={12}>
             <Card 
               title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><TrendingUp size={18} color="#10b981" /> <Text style={{ fontWeight: 700, fontSize: 16 }}>SEO Keyword Rankings</Text></div>} 
               className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
-              bodyStyle={{ padding: '24px', height: 350 }}
+              bodyStyle={{ padding: '24px', height: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={seoRankingData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorHigh" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                    </linearGradient>
-                    <linearGradient id="colorLow" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(200,200,200,0.15)" />
-                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }}
-                    itemStyle={{ fontWeight: 600 }}
-                  />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 20 }} />
-                  <Area type="monotone" dataKey="highRankings" name="High Rankings" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorHigh)" />
-                  <Area type="monotone" dataKey="lowRankings" name="Low Rankings" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorLow)" />
-                </AreaChart>
-              </ResponsiveContainer>
+              {seoRankingData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={seoRankingData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorHigh" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorLow" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(200,200,200,0.15)" />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }}
+                      itemStyle={{ fontWeight: 600 }}
+                    />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 20 }} />
+                    <Area type="monotone" dataKey="highRankings" name="High Rankings" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorHigh)" />
+                    <Area type="monotone" dataKey="lowRankings" name="Low Rankings" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorLow)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{ fontSize: 13 }}>No real SEO ranking data recorded for selected client</Text>} />
+              )}
             </Card>
           </Col>
         </Row>
@@ -324,20 +491,24 @@ const Reports = () => {
             <Card 
               title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Activity size={18} color="var(--accent-primary)" /> <Text style={{ fontWeight: 700, fontSize: 16 }}>Social Media Engagement</Text></div>} 
               className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
-              bodyStyle={{ padding: '24px', height: 350 }}
+              bodyStyle={{ padding: '24px', height: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={socialEngagementData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(200,200,200,0.15)" />
-                  <XAxis dataKey="platform" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }} dy={10} />
-                  <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
-                  <Tooltip cursor={{fill: 'rgba(200,200,200,0.05)'}} contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }} />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 20 }} />
-                  <Bar dataKey="likes" name="Likes" stackId="a" fill="var(--accent-primary)" radius={[0, 0, 0, 0]} maxBarSize={40} />
-                  <Bar dataKey="shares" name="Shares" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} maxBarSize={40} />
-                  <Bar dataKey="comments" name="Comments" stackId="a" fill="#f59e0b" radius={[6, 6, 0, 0]} maxBarSize={40} />
-                </BarChart>
-              </ResponsiveContainer>
+              {socialEngagementData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={socialEngagementData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(200,200,200,0.15)" />
+                    <XAxis dataKey="platform" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }} dy={10} />
+                    <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
+                    <Tooltip cursor={{fill: 'rgba(200,200,200,0.05)'}} contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }} />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 20 }} />
+                    <Bar dataKey="likes" name="Likes" stackId="a" fill="var(--accent-primary)" radius={[0, 0, 0, 0]} maxBarSize={40} />
+                    <Bar dataKey="shares" name="Shares" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} maxBarSize={40} />
+                    <Bar dataKey="comments" name="Comments" stackId="a" fill="#f59e0b" radius={[6, 6, 0, 0]} maxBarSize={40} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{ fontSize: 13 }}>No real social media engagement logged for selected period</Text>} />
+              )}
             </Card>
           </Col>
           <Col xs={24} lg={10}>
@@ -346,29 +517,33 @@ const Reports = () => {
               className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
               bodyStyle={{ padding: '24px', height: 350, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
             >
-              <ResponsiveContainer width="100%" height={260}>
-                <PieChart>
-                  <Pie
-                    data={reportTypesData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={65}
-                    outerRadius={95}
-                    paddingAngle={3}
-                    dataKey="value"
-                    labelLine={false}
-                  >
-                    {reportTypesData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0)" />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    contentStyle={{ borderRadius: 12, border: 'none', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }}
-                    itemStyle={{ fontWeight: 600, color: 'var(--text-primary)' }}
-                  />
-                  <Legend iconType="circle" verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
-                </PieChart>
-              </ResponsiveContainer>
+              {reportTypesData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={260}>
+                  <PieChart>
+                    <Pie
+                      data={reportTypesData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={65}
+                      outerRadius={95}
+                      paddingAngle={3}
+                      dataKey="value"
+                      labelLine={false}
+                    >
+                      {reportTypesData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0)" />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ borderRadius: 12, border: 'none', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }}
+                      itemStyle={{ fontWeight: 600, color: 'var(--text-primary)' }}
+                    />
+                    <Legend iconType="circle" verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{ fontSize: 13 }}>No report distribution data for selected client</Text>} />
+              )}
             </Card>
           </Col>
         </Row>

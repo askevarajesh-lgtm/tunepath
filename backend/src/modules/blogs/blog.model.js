@@ -12,6 +12,8 @@ const BlogAsset = mongoose.model('BlogAsset', BlogAssetSchema);
 // Blog Schema
 const Blog = BlogAsset.discriminator('Blog', new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+  agencyId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+  brandId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   name: { type: String, required: true, trim: true },
   slug: { type: String, required: true, trim: true },
   websiteId: { type: mongoose.Schema.Types.ObjectId, default: null }, 
@@ -22,6 +24,7 @@ const Blog = BlogAsset.discriminator('Blog', new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId },
   updatedBy: { type: mongoose.Schema.Types.ObjectId }
 }), 'blog');
+
 // Re-add indices that are unique
 BlogAssetSchema.index({ workspaceId: 1, slug: 1, assetType: 1 }, { unique: true, sparse: true });
 

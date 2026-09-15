@@ -2,7 +2,10 @@ const mongoose = require('mongoose');
 
 const QRLinkSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+  agencyId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+  brandId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   name: { type: String, required: true, trim: true },
+
   slug: { type: String, required: true, trim: true },
   type: { type: String, required: true }, // Website, Call, SMS, WhatsApp, payment etc
   scans: { type: Number, default: 0, required: true },

@@ -92,11 +92,11 @@ const WebsiteBuilder = () => {
     }
   };
 
+  const { role } = useAuth();
+
   const tabs = [
     { id: 'overview', label: 'Overview', icon: <LayoutGrid size={16} /> },
-
     { id: 'websites', label: 'Websites', icon: <Globe size={16} /> },
-
     { id: 'forms', label: 'Forms', icon: <FileText size={16} /> },
     { id: 'blogs', label: 'Blogs', icon: <LayoutTemplate size={16} /> },
     { id: 'qr-links', label: 'QR Links', icon: <QrCode size={16} /> },
@@ -104,17 +104,16 @@ const WebsiteBuilder = () => {
     { id: 'domains', label: 'Domains', icon: <Link2 size={16} /> },
   ];
 
-  const pathParts = location.pathname.split('/').filter(Boolean);
-  const lastPart = pathParts[pathParts.length - 1];
-  const { role } = useAuth();
+  const match = location.pathname.match(/^(.*?\/(?:website|websites))(?=\/|$)/);
+  const basePath = match ? match[0] : (location.pathname.startsWith('/client') ? '/client/website' : '/workspace/website');
 
-  const activeTab = tabs.map(t => t.id).includes(lastPart) ? lastPart : 'overview';
+  const availableTabIds = tabs.map(t => t.id);
+  const activeTab = availableTabIds.find(id => location.pathname.includes(`/${id}`)) || (role === 'agency_client' ? 'websites' : 'overview');
 
   const handleTabClick = (tabId) => {
-    const match = location.pathname.match(/^(.*?\/website)(?=\/|$)/);
-    const basePath = match ? match[0] : '/workspace/website';
     navigate(`${basePath}/${tabId}`);
   };
+
 
   const renderOverviewContent = () => (
     <motion.div variants={itemVariants}>
@@ -317,9 +316,10 @@ const WebsiteBuilder = () => {
           <Route path="qr-links" element={<QRLinksTab itemVariants={itemVariants} />} />
           <Route path="chat-widgets" element={<ChatWidgetsTab itemVariants={itemVariants} />} />
           <Route path="domains" element={<DomainsTab itemVariants={itemVariants} />} />
-          {role !== 'agency_client' && <Route path="overview" element={renderOverviewContent()} />}
-          <Route path="*" element={<Navigate to={role === 'agency_client' ? 'websites' : 'overview'} replace />} />
+          <Route path="overview" element={renderOverviewContent()} />
+          <Route path="*" element={<Navigate to={`${basePath}/${role === 'agency_client' ? 'websites' : 'overview'}`} replace />} />
         </Routes>
+
       </motion.div>
     </motion.div>
   );

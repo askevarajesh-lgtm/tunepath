@@ -6,6 +6,31 @@ const Website = require('../websites/website.model');
 const dns = require('dns').promises;
 const crypto = require('crypto');
 
+function buildAssetAuthQuery(req, baseQuery = {}) {
+  const query = { ...baseQuery, isDeleted: { $ne: true } };
+  const workspaceId = req.workspaceId;
+
+  const isClientRole = req.isClientRole || (req.user && ['client', 'agency_client', 'brand_super_admin', 'brand_manager', 'client_user', 'brand_team_user'].includes(req.user.role));
+
+  if (isClientRole) {
+    const clientUserId = req.clientUserId || req.user?._id;
+    query.$or = [
+      { brandId: clientUserId },
+      { createdBy: clientUserId },
+      { updatedBy: clientUserId }
+    ];
+  } else if (req.user && req.user.role !== 'commander_admin') {
+    if (req.user.agencyId) {
+      query.agencyId = req.user.agencyId;
+    } else if (workspaceId) {
+      query.workspaceId = workspaceId;
+    }
+  } else if (workspaceId) {
+    query.workspaceId = workspaceId;
+  }
+  return query;
+}
+
 // Connect Domain
 exports.connectDomain = async (req, res, next) => {
   try {
@@ -66,6 +91,8 @@ exports.connectDomain = async (req, res, next) => {
 
     const domain = new Domain({
       workspaceId,
+      agencyId: req.user?.agencyId || null,
+      brandId: req.isClientRole ? (req.clientUserId || req.user?._id) : (req.user?.brandId || req.user?._id),
       domain: domainName,
       propertyType,
       propertyId: propertyEntity._id,
@@ -90,14 +117,14 @@ exports.connectDomain = async (req, res, next) => {
 // List Domains
 exports.getDomains = async (req, res, next) => {
   try {
-    const workspaceId = req.workspaceId;
     const { search } = req.query;
 
-    const query = { workspaceId, isDeleted: { $ne: true } };
+    const baseQuery = {};
     if (search) {
-      query.domain = { $regex: search, $options: 'i' };
+      baseQuery.domain = { $regex: search, $options: 'i' };
     }
 
+    const query = buildAssetAuthQuery(req, baseQuery);
     const domains = await Domain.find(query).sort({ createdAt: -1 });
 
     const data = await Promise.all(domains.map(async (d) => {
@@ -125,7 +152,8 @@ exports.getDomains = async (req, res, next) => {
 exports.getDomainDetails = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const domain = await Domain.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: { $ne: true } });
+    const query = buildAssetAuthQuery(req, { _id: id });
+    const domain = await Domain.findOne(query);
     if (!domain) {
       return res.status(404).json({ success: false, error: 'Domain connection not found' });
     }
@@ -139,7 +167,8 @@ exports.getDomainDetails = async (req, res, next) => {
 exports.disconnectDomain = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const domain = await Domain.findOne({ _id: id, workspaceId: req.workspaceId });
+    const query = buildAssetAuthQuery(req, { _id: id });
+    const domain = await Domain.findOne(query);
     if (!domain) {
       return res.status(404).json({ success: false, error: 'Domain connection not found' });
     }

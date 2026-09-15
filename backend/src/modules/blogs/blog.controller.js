@@ -24,6 +24,31 @@ async function getLinkedWebsiteChrome(websiteId) {
   };
 }
 
+function buildAssetAuthQuery(req, baseQuery = {}) {
+  const query = { ...baseQuery, isDeleted: false };
+  const workspaceId = req.workspaceId;
+
+  const isClientRole = req.isClientRole || (req.user && ['client', 'agency_client', 'brand_super_admin', 'brand_manager', 'client_user', 'brand_team_user'].includes(req.user.role));
+
+  if (isClientRole) {
+    const clientUserId = req.clientUserId || req.user?._id;
+    query.$or = [
+      { brandId: clientUserId },
+      { createdBy: clientUserId },
+      { updatedBy: clientUserId }
+    ];
+  } else if (req.user && req.user.role !== 'commander_admin') {
+    if (req.user.agencyId) {
+      query.agencyId = req.user.agencyId;
+    } else if (workspaceId) {
+      query.workspaceId = workspaceId;
+    }
+  } else if (workspaceId) {
+    query.workspaceId = workspaceId;
+  }
+  return query;
+}
+
 // Create Blog
 exports.createBlog = async (req, res, next) => {
   try {
@@ -42,6 +67,8 @@ exports.createBlog = async (req, res, next) => {
 
     const blog = new Blog({
       workspaceId,
+      agencyId: req.user?.agencyId || null,
+      brandId: req.isClientRole ? (req.clientUserId || req.user?._id) : (req.user?.brandId || req.user?._id),
       name,
       slug,
       websiteId: website && website !== '—' ? website : null,
@@ -62,13 +89,13 @@ exports.createBlog = async (req, res, next) => {
 // List Blogs
 exports.getBlogs = async (req, res, next) => {
   try {
-    const workspaceId = req.workspaceId;
     const { websiteId } = req.query;
-
-    const query = { workspaceId, isDeleted: false };
+    const baseQuery = {};
     if (websiteId) {
-      query.websiteId = websiteId;
+      baseQuery.websiteId = websiteId;
     }
+
+    const query = buildAssetAuthQuery(req, baseQuery);
 
     const blogs = await Blog.find(query).sort({ updatedAt: -1 });
 
@@ -93,14 +120,17 @@ exports.getBlogs = async (req, res, next) => {
   }
 };
 
+
 // Get Blog Details + Posts
 exports.getBlogDetails = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const blog = await Blog.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const query = buildAssetAuthQuery(req, { _id: id });
+    const blog = await Blog.findOne(query);
     if (!blog) {
       return res.status(404).json({ success: false, error: 'Blog not found' });
     }
+
 
     const posts = await BlogPost.find({ blogId: id, isDeleted: false }).sort({ createdAt: -1 });
     res.json({

@@ -58,11 +58,24 @@ const DeliverablesPage = () => {
 
       // Aggregate core project specific deliverable fields
       const pTotal = (project.numberOfPosters || 0) + (project.numberOfVideos || 0) + (project.numberOfShoots || 0);
-      const pCompleted = (project.approvedPosters || 0) + (project.approvedVideos || 0) + (project.approvedShoots || 0);
 
-      const pPostersPending = Math.max(0, (project.completedPosters || 0) - (project.approvedPosters || 0));
-      const pVideosPending = Math.max(0, (project.completedVideos || 0) - (project.approvedVideos || 0));
-      const pShootsPending = Math.max(0, (project.completedShoots || 0) - (project.approvedShoots || 0));
+      const pPostersComp = (project.completedPosters !== undefined && project.completedPosters !== null)
+        ? Math.max(project.completedPosters || 0, project.approvedPosters || 0)
+        : (project.approvedPosters || 0);
+
+      const pVideosComp = (project.completedVideos !== undefined && project.completedVideos !== null)
+        ? Math.max(project.completedVideos || 0, project.approvedVideos || 0)
+        : (project.approvedVideos || 0);
+
+      const pShootsComp = (project.completedShoots !== undefined && project.completedShoots !== null)
+        ? Math.max(project.completedShoots || 0, project.approvedShoots || 0)
+        : (project.approvedShoots || 0);
+
+      const pCompleted = pPostersComp + pVideosComp + pShootsComp;
+
+      const pPostersPending = Math.max(0, pPostersComp - (project.approvedPosters || 0));
+      const pVideosPending = Math.max(0, pVideosComp - (project.approvedVideos || 0));
+      const pShootsPending = Math.max(0, pShootsComp - (project.approvedShoots || 0));
 
       let extraTotal = 0;
       let extraCompleted = 0;
@@ -74,9 +87,12 @@ const DeliverablesPage = () => {
           const rawName = cat.name || cat.categoryName || "";
           const isStandard = ["poster", "video", "shoot"].some(k => rawName.toLowerCase().includes(k));
           if (!isStandard) {
+            const catComp = (cat.completed !== undefined && cat.completed !== null)
+              ? Math.max(cat.completed || 0, cat.approved || 0)
+              : (cat.approved || 0);
             extraTotal += (cat.quantity || cat.count || 0);
-            extraCompleted += (cat.approved || 0);
-            extraPending += Math.max(0, (cat.completed || 0) - (cat.approved || 0));
+            extraCompleted += catComp;
+            extraPending += Math.max(0, catComp - (cat.approved || 0));
           }
         });
       }
@@ -87,7 +103,7 @@ const DeliverablesPage = () => {
 
       const totalD = pTotal + extraTotal;
       const compD = pCompleted + extraCompleted;
-      const remD = totalD - compD;
+      const remD = Math.max(0, totalD - compD);
 
       clientsMap[clientId].totalDeliverables += totalD;
       clientsMap[clientId].completedDeliverables += compD;
@@ -412,7 +428,7 @@ const DeliverablesPage = () => {
               dataIndex: 'status',
               key: 'status',
               render: (status, record) => {
-                const isPendingClientApproval = ['complete', 'completed', 'done'].includes(status?.toLowerCase()) && record?.clientReviewStatus !== 'approved';
+                const isPendingClientApproval = ['review', 'in_review', 'workflow_sent', 'sent_for_client_review', 'complete', 'completed', 'done'].includes(status?.toLowerCase()) && record?.clientReviewStatus !== 'approved';
                 let color = 'default';
                 if (isPendingClientApproval) color = 'warning';
                 else if (status === 'completed' || status === 'approved' || status === 'validated' || status === 'done' || record?.clientReviewStatus === 'approved') color = 'success';

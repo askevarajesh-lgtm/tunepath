@@ -173,6 +173,7 @@ const AgencySidebar = ({ collapsed, setCollapsed }) => {
   const intelligenceChildren = [];
   if (role !== 'agency_super_admin') {
     if (feats.includes('analytics')) intelligenceChildren.push({ key: '/agency/analytics', icon: getIcon(TrendingUp), label: 'Google Analytics' });
+    intelligenceChildren.push({ key: '/agency/reports', icon: getIcon(FileText), label: 'Monthly Reports' });
     // ChatGPT: hidden when a specific client is selected
     if (!isClientSelected && feats.includes('chatgpt')) intelligenceChildren.push({ key: '/agency/chatgpt', icon: getIcon(HelpCircle), label: 'ChatGPT' });
     // Canva: hidden when a specific client is selected
@@ -183,6 +184,7 @@ const AgencySidebar = ({ collapsed, setCollapsed }) => {
 
   if (role === 'agency_super_admin') {
     intelligenceChildren.push({ key: '/agency/performance', icon: getIcon(TrendingUp), label: 'Performance' });
+    intelligenceChildren.push({ key: '/agency/reports', icon: getIcon(FileText), label: 'Monthly Reports' });
   }
 
   if (intelligenceChildren.length > 0) {

@@ -2,7 +2,10 @@ const mongoose = require('mongoose');
 
 const FormSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+  agencyId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+  brandId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   name: { type: String, required: true, trim: true },
+
   status: { type: String, enum: ['Draft', 'Published'], default: 'Published', required: true },
   fields: [{
     label: { type: String, required: true },

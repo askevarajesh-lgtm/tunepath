@@ -1,6 +1,30 @@
 const ChatWidget = require('./chat-widget.model');
 const Website = require('../websites/website.model');
 
+function buildAssetAuthQuery(req, baseQuery = {}) {
+  const query = { ...baseQuery, isDeleted: false };
+  const workspaceId = req.workspaceId;
+
+  const isClientRole = req.isClientRole || (req.user && ['client', 'agency_client', 'brand_super_admin', 'brand_manager', 'client_user', 'brand_team_user'].includes(req.user.role));
+
+  if (isClientRole) {
+    const clientUserId = req.clientUserId || req.user?._id;
+    query.$or = [
+      { brandId: clientUserId },
+      { createdBy: clientUserId },
+      { updatedBy: clientUserId }
+    ];
+  } else if (req.user && req.user.role !== 'commander_admin') {
+    if (req.user.agencyId) {
+      query.agencyId = req.user.agencyId;
+    } else if (workspaceId) {
+      query.workspaceId = workspaceId;
+    }
+  } else if (workspaceId) {
+    query.workspaceId = workspaceId;
+  }
+  return query;
+}
 
 // Create Widget
 exports.createWidget = async (req, res, next) => {
@@ -14,6 +38,8 @@ exports.createWidget = async (req, res, next) => {
 
     const widget = new ChatWidget({
       workspaceId,
+      agencyId: req.user?.agencyId || null,
+      brandId: req.isClientRole ? (req.clientUserId || req.user?._id) : (req.user?.brandId || req.user?._id),
       name,
       type,
       status: 'Draft',
@@ -31,14 +57,14 @@ exports.createWidget = async (req, res, next) => {
 // List Widgets
 exports.getWidgets = async (req, res, next) => {
   try {
-    const workspaceId = req.workspaceId;
     const { search } = req.query;
 
-    const query = { workspaceId, isDeleted: false };
+    const baseQuery = {};
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      baseQuery.name = { $regex: search, $options: 'i' };
     }
 
+    const query = buildAssetAuthQuery(req, baseQuery);
     const widgets = await ChatWidget.find(query).sort({ createdAt: -1 });
 
     // Aggregate assignments counts across websites
@@ -60,7 +86,8 @@ exports.getWidgets = async (req, res, next) => {
 exports.getWidgetDetails = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const widget = await ChatWidget.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const query = buildAssetAuthQuery(req, { _id: id });
+    const widget = await ChatWidget.findOne(query);
     if (!widget) {
       return res.status(404).json({ success: false, error: 'Widget not found' });
     }
@@ -76,7 +103,8 @@ exports.updateWidget = async (req, res, next) => {
     const { id } = req.params;
     const updateData = req.body;
 
-    const widget = await ChatWidget.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const query = buildAssetAuthQuery(req, { _id: id });
+    const widget = await ChatWidget.findOne(query);
     if (!widget) {
       return res.status(404).json({ success: false, error: 'Widget not found' });
     }
@@ -108,10 +136,12 @@ exports.updateWidget = async (req, res, next) => {
 exports.deleteWidget = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const widget = await ChatWidget.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const query = buildAssetAuthQuery(req, { _id: id });
+    const widget = await ChatWidget.findOne(query);
     if (!widget) {
       return res.status(404).json({ success: false, error: 'Widget not found' });
     }
+
 
     widget.isDeleted = true;
     widget.updatedBy = req.user?._id;

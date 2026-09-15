@@ -25,10 +25,48 @@ exports.deleteSchedule = async (scheduleId) => {
 };
 
 exports.getRecentSentReports = async (agencyId) => {
-    return await SentReport.find({ agencyId })
-        .populate('clientId', 'name companyName')
+    const MonthlyHighlights = require('./monthlyHighlights.model');
+
+    const sentReports = await SentReport.find({})
+        .populate('clientId', 'name companyName email')
         .sort({ sentAt: -1 })
-        .limit(50);
+        .limit(50)
+        .lean();
+
+    const monthlyReports = await MonthlyHighlights.find({ status: 'Published' })
+        .populate('clientId', 'name companyName email')
+        .sort({ publishedAt: -1, updatedAt: -1 })
+        .limit(50)
+        .lean();
+
+    const existingKeys = new Set(sentReports.map(r => `${r.clientId?._id || r.clientId}_${r.name}`));
+
+    monthlyReports.forEach(m => {
+        const clientObj = m.clientId;
+        const clientName = clientObj?.companyName || clientObj?.name || 'Client';
+        const name = `${clientName} - Monthly Highlights (${m.month}/${m.year})`;
+        const key = `${clientObj?._id || m.clientId}_${name}`;
+
+        if (!existingKeys.has(key)) {
+            sentReports.push({
+                _id: m._id,
+                agencyId: m.agencyId || agencyId,
+                clientId: clientObj,
+                name: name,
+                template: 'Monthly Highlights',
+                sentAt: m.publishedAt || m.updatedAt || m.createdAt,
+                deliveredTo: clientObj?.email ? [clientObj.email] : ['Client Portal'],
+                deliveryMethod: 'Email & Portal',
+                status: 'Delivered',
+                pages: 2,
+                generatedBy: m.createdBy
+            });
+        }
+    });
+
+    sentReports.sort((a, b) => new Date(b.sentAt || 0) - new Date(a.sentAt || 0));
+
+    return sentReports.slice(0, 50);
 };
 
 exports.getReportAnalytics = async (agencyId) => {

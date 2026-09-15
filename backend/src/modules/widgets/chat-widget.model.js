@@ -2,7 +2,10 @@ const mongoose = require('mongoose');
 
 const ChatWidgetSchema = new mongoose.Schema({
   workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+  agencyId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
+  brandId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
   name: { type: String, required: true, trim: true },
+
   type: { type: String, required: true }, // e.g. All-in-one chat, Live chat, Bot etc
   status: { type: String, enum: ['Draft', 'Published'], default: 'Draft', required: true },
   greeting: { type: String, default: "Hi! How can we help you today?" },

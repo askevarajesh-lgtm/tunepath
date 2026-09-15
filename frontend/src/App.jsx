@@ -227,14 +227,29 @@ const AgencySeoRedirect = () => {
   return <Navigate to={`/agency/marketplace/seo/${sub}`} replace />;
 };
 
+const ReportsRedirect = () => {
+  const { role, user } = useAuth();
+  const isClientUser = role === 'user' && user?.brandId;
+
+  if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
+    return <Navigate to="/agency/reports" replace />;
+  }
+  if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'].includes(role) || isClientUser) {
+    return <Navigate to="/client/reports" replace />;
+  }
+  return <Navigate to="/intelligence/reporting" replace />;
+};
+
 const AppRoutes = () => {
   const { role, user } = useAuth();
   
   return (
     <Routes>
-      {/* Top-level universal SEO route */}
+      {/* Top-level universal SEO and Reports routes */}
       <Route path="/seo" element={<SeoRedirect />} />
       <Route path="/seo/*" element={<SeoRedirect />} />
+      <Route path="/workspace/reports" element={<ReportsRedirect />} />
+      <Route path="/reports" element={<ReportsRedirect />} />
 
       <Route path="/signin" element={role ? (
         <Navigate to={
@@ -312,6 +327,7 @@ const AppRoutes = () => {
           <Route path="workspace/website/*" element={<WebsiteBuilder />} />
           <Route path="workspace/website/:websiteId/pages/:pageId/edit" element={<BuilderRouteWrapper />} />
           <Route path="workspace/website/:websiteId/blogs/:blogId/posts/:postId/edit" element={<BlogPostBuilderRouteWrapper />} />
+          <Route path="workspace/reports" element={<Reports />} />
 
           <Route path="intelligence/analytics" element={<Analytics />} />
           <Route path="intelligence/mos" element={<MOSScore />} />
@@ -393,7 +409,9 @@ const AppRoutes = () => {
           <Route path="performance" element={<AgencyPerformanceTab />} />
           <Route path="tasks" element={<AgencyTasksTab />} />
           <Route path="billing" element={<AgencyBillingTab />} />
-          <Route path="reports" element={<AgencyReportsTab />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="workspace/reports" element={<Reports />} />
+          <Route path="intelligence/reporting" element={<Reports />} />
           <Route path="settings" element={role === 'agency_super_admin' ? <ErrorBoundary><AgencySettingsTab /></ErrorBoundary> : <ErrorBoundary><SettingsPage /></ErrorBoundary>} />
           <Route path="users" element={<AgencyUsersTab />} />
           <Route path="support" element={<AgencySupportTab />} />

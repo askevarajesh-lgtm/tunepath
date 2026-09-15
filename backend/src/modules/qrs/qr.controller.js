@@ -1,5 +1,30 @@
 const QRLink = require('./qr-link.model');
 
+function buildAssetAuthQuery(req, baseQuery = {}) {
+  const query = { ...baseQuery, isDeleted: false };
+  const workspaceId = req.workspaceId;
+
+  const isClientRole = req.isClientRole || (req.user && ['client', 'agency_client', 'brand_super_admin', 'brand_manager', 'client_user', 'brand_team_user'].includes(req.user.role));
+
+  if (isClientRole) {
+    const clientUserId = req.clientUserId || req.user?._id;
+    query.$or = [
+      { brandId: clientUserId },
+      { createdBy: clientUserId },
+      { updatedBy: clientUserId }
+    ];
+  } else if (req.user && req.user.role !== 'commander_admin') {
+    if (req.user.agencyId) {
+      query.agencyId = req.user.agencyId;
+    } else if (workspaceId) {
+      query.workspaceId = workspaceId;
+    }
+  } else if (workspaceId) {
+    query.workspaceId = workspaceId;
+  }
+  return query;
+}
+
 // Create QR Link
 exports.createQR = async (req, res, next) => {
   try {
@@ -21,6 +46,8 @@ exports.createQR = async (req, res, next) => {
 
     const qrLink = new QRLink({
       workspaceId,
+      agencyId: req.user?.agencyId || null,
+      brandId: req.isClientRole ? (req.clientUserId || req.user?._id) : (req.user?.brandId || req.user?._id),
       name,
       slug,
       type,
@@ -42,14 +69,14 @@ exports.createQR = async (req, res, next) => {
 // List QR Links
 exports.getQRs = async (req, res, next) => {
   try {
-    const workspaceId = req.workspaceId;
     const { search } = req.query;
 
-    const query = { workspaceId, isDeleted: false };
+    const baseQuery = {};
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      baseQuery.name = { $regex: search, $options: 'i' };
     }
 
+    const query = buildAssetAuthQuery(req, baseQuery);
     const qrs = await QRLink.find(query).sort({ createdAt: -1 });
     res.json({ success: true, data: qrs });
   } catch (error) {
@@ -61,7 +88,8 @@ exports.getQRs = async (req, res, next) => {
 exports.getQRDetails = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const qr = await QRLink.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const query = buildAssetAuthQuery(req, { _id: id });
+    const qr = await QRLink.findOne(query);
     if (!qr) {
       return res.status(404).json({ success: false, error: 'QR code not found' });
     }
@@ -75,7 +103,8 @@ exports.getQRDetails = async (req, res, next) => {
 exports.deleteQR = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const qr = await QRLink.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const query = buildAssetAuthQuery(req, { _id: id });
+    const qr = await QRLink.findOne(query);
     if (!qr) {
       return res.status(404).json({ success: false, error: 'QR code not found' });
     }
@@ -89,6 +118,7 @@ exports.deleteQR = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // Public QR Details
 exports.getPublicQR = async (req, res, next) => {

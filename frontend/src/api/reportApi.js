@@ -32,3 +32,26 @@ export const generateReport = async (reportData) => {
 
 export const generateReportApi = generateReport;
 
+export const getMonthlyHighlights = async (clientId, month, year, refresh = false) => {
+    const params = {};
+    if (clientId) params.clientId = clientId;
+    if (month) params.month = month;
+    if (year) params.year = year;
+    if (refresh) params.refresh = 'true';
+    const response = await api.get('/reports/monthly-highlights', { params });
+    return response.data.data;
+};
+
+export const upsertMonthlyHighlights = async (data) => {
+    const response = await api.post('/reports/monthly-highlights', data);
+    return response.data.data;
+};
+
+export const getClientMonthlyReportsList = async (clientId) => {
+    const params = {};
+    if (clientId) params.clientId = clientId;
+    const response = await api.get('/reports/monthly-highlights/client-list', { params });
+    return response.data.data;
+};
+
+

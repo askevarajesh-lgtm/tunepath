@@ -2,6 +2,31 @@ const Form = require('./form.model');
 const FormSubmission = require('./form-submission.model');
 const mongoose = require('mongoose');
 
+function buildAssetAuthQuery(req, baseQuery = {}) {
+  const query = { ...baseQuery, isDeleted: false };
+  const workspaceId = req.workspaceId;
+
+  const isClientRole = req.isClientRole || (req.user && ['client', 'agency_client', 'brand_super_admin', 'brand_manager', 'client_user', 'brand_team_user'].includes(req.user.role));
+
+  if (isClientRole) {
+    const clientUserId = req.clientUserId || req.user?._id;
+    query.$or = [
+      { brandId: clientUserId },
+      { createdBy: clientUserId },
+      { updatedBy: clientUserId }
+    ];
+  } else if (req.user && req.user.role !== 'commander_admin') {
+    if (req.user.agencyId) {
+      query.agencyId = req.user.agencyId;
+    } else if (workspaceId) {
+      query.workspaceId = workspaceId;
+    }
+  } else if (workspaceId) {
+    query.workspaceId = workspaceId;
+  }
+  return query;
+}
+
 // Create Form
 exports.createForm = async (req, res, next) => {
   try {
@@ -26,6 +51,8 @@ exports.createForm = async (req, res, next) => {
 
     const form = new Form({
       workspaceId,
+      agencyId: req.user?.agencyId || null,
+      brandId: req.isClientRole ? (req.clientUserId || req.user?._id) : (req.user?.brandId || req.user?._id),
       name,
       status: 'Published',
       fields: initialFields,
@@ -44,14 +71,13 @@ exports.createForm = async (req, res, next) => {
 // List Forms
 exports.getForms = async (req, res, next) => {
   try {
-    const workspaceId = req.workspaceId;
     const { search } = req.query;
-
-    const query = { workspaceId, isDeleted: false };
+    const baseQuery = {};
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      baseQuery.name = { $regex: search, $options: 'i' };
     }
 
+    const query = buildAssetAuthQuery(req, baseQuery);
     const forms = await Form.find(query).sort({ updatedAt: -1 });
     res.json({ success: true, data: forms });
   } catch (error) {
@@ -63,7 +89,8 @@ exports.getForms = async (req, res, next) => {
 exports.getFormDetails = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const form = await Form.findOne({ _id: id, workspaceId: req.workspaceId, isDeleted: false });
+    const query = buildAssetAuthQuery(req, { _id: id });
+    const form = await Form.findOne(query);
     if (!form) {
       return res.status(404).json({ success: false, error: 'Form not found' });
     }
@@ -72,6 +99,7 @@ exports.getFormDetails = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // Get Public Form Details (for Embed)
 exports.getPublicForm = async (req, res, next) => {

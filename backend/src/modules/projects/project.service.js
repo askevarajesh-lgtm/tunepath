@@ -450,7 +450,19 @@ const summarizeProjectTasksByDeliverable = (tasks = []) => {
       assignedCounts.set(key, (assignedCounts.get(key) || 0) + 1);
     }
 
-    if (COMPLETED_TASK_STATUSES.has(status)) {
+    if (
+      [
+        "completed",
+        "complete",
+        "done",
+        "approved",
+        "validated",
+        "review",
+        "in_review",
+        "workflow_sent",
+        "sent_for_client_review",
+      ].includes(status)
+    ) {
       completedCounts.set(key, (completedCounts.get(key) || 0) + 1);
     }
 
@@ -723,8 +735,8 @@ const reconcileProjectTaskCounts = async (
       && assigned === 0 
       && completed === 0;
       
-    // Strictly recalculate remaining based on total minus assigned
-    const nextRemaining = maxAllowedRemaining;
+    // Strictly recalculate remaining based on total minus completed
+    const nextRemaining = Math.max(0, total - completed);
 
     syncNumericField(remainingField, nextRemaining);
     syncNumericField(completedField, Math.min(total, completed));
@@ -793,8 +805,8 @@ const reconcileProjectTaskCounts = async (
     const maxAllowedRemaining = Math.max(0, quantity - assigned);
     const currentRemaining = category.remaining;
     
-    // Strictly recalculate remaining based on quantity minus assigned
-    const nextRemaining = maxAllowedRemaining;
+    // Strictly recalculate remaining based on quantity minus completed
+    const nextRemaining = Math.max(0, quantity - completed);
     const nextCompleted = Math.min(quantity, completed);
     const nextApproved = Math.min(quantity, approved);
 
