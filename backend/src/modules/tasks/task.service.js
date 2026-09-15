@@ -2179,30 +2179,9 @@ const updateTask = async (
     if (isNowCompleted && !wasPreviouslyCompleted) {
       await updateProjectCompletedCount(task.projectId, task.serviceType, 1);
       
-      // Mark SLA as Resolved instead of deleting, to trigger Success metrics
+      // Remove SLA record when task moves to review, completed, or validated
       const SlaRecord = require('../sla/sla.model');
-      const existingSla = await SlaRecord.findOne({ entityId: task._id, entityType: 'Task' });
-      if (existingSla) {
-        existingSla.status = 'Resolved';
-        await existingSla.save();
-      } else {
-        // If no SLA existed (e.g., completed same day), create a Success record
-        await SlaRecord.create({
-          slaId: `SLA-TSK-${task._id.toString().slice(-8).toUpperCase()}`,
-          clientId: task.companyId,
-          agencyId: task.tenantCompanyId,
-          clientType: task.taskType === 'own_brand' ? 'Agency' : 'Direct User Client',
-          triggerType: 'Due Date',
-          entityId: task._id,
-          entityType: 'Task',
-          title: `Task: ${task.title}`,
-          description: `Task completed successfully.`,
-          dueDate: task.dueDate || new Date(),
-          priority: task.priority || 'Medium',
-          status: 'Resolved',
-          assignedTo: task.assignedTo
-        });
-      }
+      await SlaRecord.deleteOne({ entityId: task._id, entityType: 'Task' });
     } else if (!isNowCompleted && wasPreviouslyCompleted) {
       await updateProjectCompletedCount(task.projectId, task.serviceType, -1);
     }
@@ -5881,13 +5860,9 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
 async function resolveSlaForTask(task) {
   try {
     const SlaRecord = require('../sla/sla.model');
-    const existingSla = await SlaRecord.findOne({ entityId: task._id, entityType: 'Task' });
-    if (existingSla) {
-      existingSla.status = 'Resolved';
-      await existingSla.save();
-    }
+    await SlaRecord.deleteOne({ entityId: task._id, entityType: 'Task' });
   } catch (slaErr) {
-    console.error("[Task Service] Failed to sync SLA for task completion:", slaErr);
+    console.error("[Task Service] Failed to remove SLA for task completion:", slaErr);
   }
 }
 

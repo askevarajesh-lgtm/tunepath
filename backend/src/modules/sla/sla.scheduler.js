@@ -5,6 +5,15 @@ const Invoice = require('../invoices/invoice.model');
 const Project = require('../projects/project.model');
 const { dispatchSystemNotification } = require('../tasks/notification.service');
 
+const mapPriority = (p) => {
+  if (!p) return 'High';
+  const lower = String(p).toLowerCase();
+  if (lower === 'critical') return 'Critical';
+  if (lower === 'high') return 'High';
+  if (lower === 'low') return 'Low';
+  return 'Medium';
+};
+
 const runSlaCheck = async () => {
   console.log('Running SLA Scheduler...');
   try {
@@ -12,12 +21,21 @@ const runSlaCheck = async () => {
     const twoDaysFromNow = new Date();
     twoDaysFromNow.setDate(twoDaysFromNow.getDate() + 2);
 
-    // 1. Check Due Dates for Tasks
-    const pendingTasks = await Task.find({ 
-      status: { $nin: ['completed', 'complete', 'validated', 'done', 'rejected'] } 
-    }).populate('assignedTo', 'name email');
+    // 1. Check Due Dates for Tasks (ONLY for tasks with active "In Progress" or "To Do" statuses)
+    const activeTaskStatuses = ['in_progress', 'to_do', 'todo', 'open', 'created', 'assigned'];
 
-    for (const task of pendingTasks) {
+    const allTasks = await Task.find({}).populate('assignedTo', 'name email');
+
+    for (const task of allTasks) {
+      const taskStatusLower = (task.status || '').toLowerCase().trim();
+      const isActiveTask = activeTaskStatuses.includes(taskStatusLower);
+
+      if (!isActiveTask) {
+        // Remove SLA entry for tasks that are completed, in review, validated, done, or rejected
+        await SlaRecord.deleteOne({ entityId: task._id, entityType: 'Task' });
+        continue;
+      }
+
       if (!task.dueDate) {
         // If task has no due date, remove any existing SLA record
         await SlaRecord.deleteOne({ entityId: task._id, entityType: 'Task' });
@@ -62,7 +80,7 @@ const runSlaCheck = async () => {
             title: `Task: ${task.title}`,
             description: `Overdue Task: ${task.title}${assignedInfo} was not completed by 11:59 PM on ${new Date(task.dueDate).toLocaleDateString()}.`,
             dueDate: task.dueDate,
-            priority: task.priority === 'high' || task.priority === 'critical' ? task.priority : 'High',
+            priority: mapPriority(task.priority),
             status: 'Breached',
             assignedTo: task.assignedTo?._id || task.assignedTo
           },
@@ -254,3 +272,4 @@ const startSlaScheduler = () => {
 };
 
 module.exports = startSlaScheduler;
+module.exports.runSlaCheck = runSlaCheck;
