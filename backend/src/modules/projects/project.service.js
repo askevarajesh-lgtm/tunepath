@@ -823,6 +823,13 @@ const reconcileProjectTaskCounts = async (
     await project.save();
   }
 
+  // Auto-check project completion status based on actual completed deliverables/tasks
+  try {
+    await checkAndMarkProjectCompleted(project._id, null, tenantCompanyId);
+  } catch (compErr) {
+    console.error("[Project Service] Failed to auto-check project completion:", compErr);
+  }
+
   // NEW: Real-time update of Project SLA whenever task counts are reconciled
   try {
     const SlaRecord = require('../sla/sla.model');
@@ -854,11 +861,11 @@ const reconcileProjectTaskCounts = async (
     }
     
     let completionPercentage = 0;
-    const isCompletedStatus = ["completed", "workflow_approved", "approved", "done", "validated"].includes((project.status || "").toLowerCase());
-    if (isCompletedStatus || remainingServices.length === 0) {
-      completionPercentage = 100;
-    } else if (totalDeliverables > 0) {
+    const isCompletedStatus = ["completed"].includes((project.status || "").toLowerCase());
+    if (totalDeliverables > 0) {
       completionPercentage = Math.min(100, Math.round((completedDeliverables / totalDeliverables) * 100));
+    } else if (isCompletedStatus) {
+      completionPercentage = 100;
     }
     let remainingPercentage = 100 - completionPercentage;
     
@@ -2273,8 +2280,8 @@ const updateProjectMilestones = async (
 };
 
 /**
- * Automatically mark a project as completed if it's based on deliverable counts
- * (Posters, Videos, Shoots) and all items have been assigned (remaining = 0).
+ * Automatically mark a project as completed if all required deliverable counts
+ * (Posters, Videos, Shoots, Dynamic Categories) and all project tasks are actually completed.
  */
 const checkAndMarkProjectCompleted = async (
   projectId,
@@ -2284,47 +2291,61 @@ const checkAndMarkProjectCompleted = async (
   const project = await Project.findById(projectId);
   if (!project) return;
 
-  // Only apply to projects with these specific fields
   const hasDynamicCategories = (project.selectedCategories || []).length > 0;
-  const isAutoCompletable =
-    (project.numberOfPosters || 0) > 0 ||
-    (project.numberOfVideos || 0) > 0 ||
-    (project.numberOfShoots || 0) > 0 ||
-    hasDynamicCategories;
+  const totalPosters = Math.max(0, Number(project.numberOfPosters) || 0);
+  const totalVideos = Math.max(0, Number(project.numberOfVideos) || 0);
+  const totalShoots = Math.max(0, Number(project.numberOfShoots) || 0);
 
-  if (!isAutoCompletable) return;
+  const completedPosters = Math.max(0, Number(project.completedPosters) || 0);
+  const completedVideos = Math.max(0, Number(project.completedVideos) || 0);
+  const completedShoots = Math.max(0, Number(project.completedShoots) || 0);
 
-  // Check if all relevant counts are at 0 or less
-  const allDynamicAssigned = (project.selectedCategories || []).every(
-    (cat) => (cat.remaining || 0) <= 0,
-  );
-  const allItemsAssigned =
-    (project.numberOfPosters > 0
-      ? (project.remainingPosters || 0) <= 0
-      : true) &&
-    (project.numberOfVideos > 0 ? (project.remainingVideos || 0) <= 0 : true) &&
-    (project.numberOfShoots > 0 ? (project.remainingShoots || 0) <= 0 : true) &&
-    allDynamicAssigned;
+  const isDeliverablesCompletable =
+    totalPosters > 0 || totalVideos > 0 || totalShoots > 0 || hasDynamicCategories;
 
-  if (allItemsAssigned && project.status !== "completed") {
+  // Check deliverable completion: completed >= total
+  const postersCompleted = totalPosters > 0 ? completedPosters >= totalPosters : true;
+  const videosCompleted = totalVideos > 0 ? completedVideos >= totalVideos : true;
+  const shootsCompleted = totalShoots > 0 ? completedShoots >= totalShoots : true;
+
+  const dynamicCompleted = (project.selectedCategories || []).every((cat) => {
+    const qty = Math.max(0, Number(cat.quantity || cat.count) || 0);
+    const comp = Math.max(0, Number(cat.completed) || 0);
+    return qty > 0 ? comp >= qty : true;
+  });
+
+  const allDeliverablesDone =
+    postersCompleted && videosCompleted && shootsCompleted && dynamicCompleted;
+
+  // Check project tasks if any exist
+  const tasks = await Task.find({ projectId: project._id }).select("status");
+  const completedStatuses = ["done", "validated", "completed", "complete"];
+  const allTasksDone =
+    tasks.length === 0 ||
+    tasks.every((t) => completedStatuses.includes((t.status || "").toLowerCase()));
+
+  // A project must have at least some deliverables or tasks to be completed
+  const hasContentToComplete = isDeliverablesCompletable || tasks.length > 0;
+  const isFullyCompleted = hasContentToComplete && allDeliverablesDone && allTasksDone;
+
+  if (isFullyCompleted && project.status !== "completed") {
     const previousStatus = project.status;
     project.status = "completed";
     project.completedAt = new Date();
-    project.completedBy = userId;
+    project.completedBy = userId || project.completedBy;
     await project.save();
 
     console.log(
-      `[Project Service] Automated: Project ${project._id} marked as completed due to zero remaining counts.`,
+      `[Project Service] Automated: Project ${project._id} marked as completed as all deliverables and tasks are finished.`,
     );
 
-    // Log timeline event
     try {
       await createTimelineEvent({
         eventType: "project_completed",
         entityType: "Project",
         entityId: project._id,
         performedByUserId: userId,
-        description: `Project "${project.name}" marked as completed automatically as all posters/videos/shoots were assigned`,
+        description: `Project "${project.name}" marked as completed automatically as all deliverables and tasks were completed`,
         metadata: {
           projectId: project._id.toString(),
           projectName: project.name,
@@ -2339,30 +2360,35 @@ const checkAndMarkProjectCompleted = async (
         error,
       );
     }
-  } else if (!allItemsAssigned && project.status === "completed") {
-    // REVERSION: If it was completed but a task was deleted/service changed, move back to in_progress
-    project.status = "in_progress";
+  } else if (!isFullyCompleted && project.status === "completed") {
+    // REVERSION: Revert from completed if deliverables/tasks are not actually completed
+    const nextStatus =
+      tasks.length > 0
+        ? "in_progress"
+        : project.workflowApprovedAt
+        ? "workflow_approved"
+        : "created";
+    project.status = nextStatus;
     project.completedAt = null;
     project.completedBy = null;
     await project.save();
 
     console.log(
-      `[Project Service] Automated: Project ${project._id} reverted to in_progress due to refunded count.`,
+      `[Project Service] Automated: Project ${project._id} reverted from completed to ${nextStatus} because deliverables/tasks are incomplete.`,
     );
 
-    // Log timeline event for reversion
     try {
       await createTimelineEvent({
         eventType: "project_started",
         entityType: "Project",
         entityId: project._id,
         performedByUserId: userId,
-        description: `Project "${project.name}" reverted to In Progress as some items are now unassigned`,
+        description: `Project "${project.name}" status updated to ${nextStatus} as deliverables/tasks are incomplete`,
         metadata: {
           projectId: project._id.toString(),
           projectName: project.name,
           previousStatus: "completed",
-          currentStatus: "in_progress",
+          currentStatus: nextStatus,
         },
         companyId: tenantCompanyId,
       });

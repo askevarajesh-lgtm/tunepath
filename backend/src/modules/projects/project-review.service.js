@@ -1549,9 +1549,8 @@ const deleteCorrection = async (correctionId, userId) => {
   }
 
   const projectId = correction.projectId;
-  const project = await Project.findById(projectId);
-  if (!project) {
-    throw new Error("Project not found");
+  if (projectId) {
+    await Project.findById(projectId);
   }
 
   // If there's an associated task, handle it

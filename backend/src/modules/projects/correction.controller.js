@@ -76,12 +76,12 @@ exports.updateStatus = async (req, res, next) => {
 
 exports.deleteCorrection = async (req, res, next) => {
   try {
-    const correction = await Correction.findByIdAndDelete(req.params.id);
-    if (!correction) {
-      return res.status(404).json({ success: false, message: 'Correction not found' });
-    }
-    res.status(200).json({ success: true, data: {} });
+    const result = await projectReviewService.deleteCorrection(req.params.id, req.user?._id);
+    res.status(200).json({ success: true, data: result });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    if (error.message === "Correction not found") {
+      return res.status(200).json({ success: true, message: "Correction already deleted" });
+    }
+    res.status(400).json({ success: false, message: error.message });
   }
 };

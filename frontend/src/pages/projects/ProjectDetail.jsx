@@ -180,8 +180,10 @@ const ProjectDetail = () => {
         try {
           await deleteCorrection(correctionId).unwrap();
           message.success("Correction deleted successfully");
+          if (refetchCorrections) refetchCorrections();
+          if (refetchProject) refetchProject();
         } catch (error) {
-          message.error(error.data?.message || "Failed to delete correction");
+          message.error(error.data?.message || error.message || "Failed to delete correction");
         }
       },
     });
@@ -285,23 +287,28 @@ const ProjectDetail = () => {
       });
     }
 
-    // 2. Standard fields if not present in selectedCategories
+    // 2. Helper to check if categoryMap already has a category matching keywords
+    const hasCategoryKey = (keyword) => {
+      return Array.from(categoryMap.keys()).some((key) => key.includes(keyword));
+    };
+
+    // 3. Standard fields if not present in selectedCategories
     const stdPosters = Math.max(0, Number(project.numberOfPosters) || 0);
-    if (stdPosters > 0 && !categoryMap.has("poster") && !categoryMap.has("paster")) {
+    if (stdPosters > 0 && !hasCategoryKey("poster") && !hasCategoryKey("paster")) {
       const rem = project.remainingPosters !== undefined ? Math.max(0, Number(project.remainingPosters) || 0) : null;
       const comp = project.completedPosters !== undefined ? Math.max(0, Number(project.completedPosters) || 0) : (rem !== null ? Math.max(0, stdPosters - rem) : 0);
       categoryMap.set("poster", { quantity: stdPosters, remaining: rem !== null ? rem : Math.max(0, stdPosters - comp), completed: comp });
     }
 
     const stdVideos = Math.max(0, Number(project.numberOfVideos) || 0);
-    if (stdVideos > 0 && !categoryMap.has("video")) {
+    if (stdVideos > 0 && !hasCategoryKey("video")) {
       const rem = project.remainingVideos !== undefined ? Math.max(0, Number(project.remainingVideos) || 0) : null;
       const comp = project.completedVideos !== undefined ? Math.max(0, Number(project.completedVideos) || 0) : (rem !== null ? Math.max(0, stdVideos - rem) : 0);
       categoryMap.set("video", { quantity: stdVideos, remaining: rem !== null ? rem : Math.max(0, stdVideos - comp), completed: comp });
     }
 
     const stdShoots = Math.max(0, Number(project.numberOfShoots) || 0);
-    if (stdShoots > 0 && !categoryMap.has("shoot")) {
+    if (stdShoots > 0 && !hasCategoryKey("shoot")) {
       const rem = project.remainingShoots !== undefined ? Math.max(0, Number(project.remainingShoots) || 0) : null;
       const comp = project.completedShoots !== undefined ? Math.max(0, Number(project.completedShoots) || 0) : (rem !== null ? Math.max(0, stdShoots - rem) : 0);
       categoryMap.set("shoot", { quantity: stdShoots, remaining: rem !== null ? rem : Math.max(0, stdShoots - comp), completed: comp });
@@ -317,19 +324,11 @@ const ProjectDetail = () => {
       totalRemaining += item.remaining;
     });
 
-    const isCompletedStatus = ["completed", "workflow_approved", "approved", "done", "validated"].includes(
-      (project.status || "").toLowerCase()
-    );
-
     let percentage = 0;
-    if (isCompletedStatus) {
+    if (totalDeliverables > 0) {
+      percentage = Math.min(100, Math.round((completedDeliverables / totalDeliverables) * 100));
+    } else if ((project.status || "").toLowerCase() === "completed") {
       percentage = 100;
-    } else if (totalDeliverables > 0) {
-      if (totalRemaining === 0) {
-        percentage = 100;
-      } else {
-        percentage = Math.min(99, Math.round((completedDeliverables / totalDeliverables) * 100));
-      }
     }
 
     return {

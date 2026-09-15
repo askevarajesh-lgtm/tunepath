@@ -117,21 +117,25 @@ const extractProjectCategoriesWithCounts = (proj) => {
   }
 
   // Standard deliverables (Poster, Video, Shoot) if not in list
-  if ((proj.numberOfPosters || 0) > 0 && !addedNames.has("poster") && !addedNames.has("posters")) {
+  const addedNamesArray = Array.from(addedNames);
+  const hasPosterAdded = addedNamesArray.some(n => n.includes("poster") || n.includes("paster"));
+  if ((proj.numberOfPosters || 0) > 0 && !hasPosterAdded) {
     const total = Number(proj.numberOfPosters) || 0;
     const remaining = proj.remainingPosters !== undefined ? Number(proj.remainingPosters) : total;
     list.push({ name: "Poster", value: "Poster", remaining, total });
     addedNames.add("poster");
   }
 
-  if ((proj.numberOfVideos || 0) > 0 && !addedNames.has("video") && !addedNames.has("videos")) {
+  const hasVideoAdded = addedNamesArray.some(n => n.includes("video"));
+  if ((proj.numberOfVideos || 0) > 0 && !hasVideoAdded) {
     const total = Number(proj.numberOfVideos) || 0;
     const remaining = proj.remainingVideos !== undefined ? Number(proj.remainingVideos) : total;
     list.push({ name: "Videos", value: "Videos", remaining, total });
     addedNames.add("video");
   }
 
-  if ((proj.numberOfShoots || 0) > 0 && !addedNames.has("shoot") && !addedNames.has("shoots")) {
+  const hasShootAdded = addedNamesArray.some(n => n.includes("shoot"));
+  if ((proj.numberOfShoots || 0) > 0 && !hasShootAdded) {
     const total = Number(proj.numberOfShoots) || 0;
     const remaining = proj.remainingShoots !== undefined ? Number(proj.remainingShoots) : total;
     list.push({ name: "Shoots", value: "Shoots", remaining, total });

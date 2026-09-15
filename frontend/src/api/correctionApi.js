@@ -45,8 +45,13 @@ const createMutationHook = (endpointFn) => {
         return resObj;
       } catch (err) {
         setError(err);
-        const errObj = { error: err };
-        errObj.unwrap = () => { throw err; };
+        const errData = err.response?.data || { message: err.message || 'Request failed' };
+        const errObj = { error: err, data: errData };
+        errObj.unwrap = () => {
+          const customErr = new Error(errData.message || err.message || 'Request failed');
+          customErr.data = errData;
+          throw customErr;
+        };
         return errObj;
       } finally {
         setIsLoading(false);

@@ -365,23 +365,28 @@ const ProjectList = () => {
           });
         }
 
-        // 2. Process standard fields if not already present in categoryMap
+        // 2. Helper to check if categoryMap already has a category matching keywords
+        const hasCategoryKey = (keyword) => {
+          return Array.from(categoryMap.keys()).some((key) => key.includes(keyword));
+        };
+
+        // 3. Process standard fields if not already present in categoryMap
         const stdPosters = Math.max(0, Number(record?.numberOfPosters) || 0);
-        if (stdPosters > 0 && !categoryMap.has("poster")) {
+        if (stdPosters > 0 && !hasCategoryKey("poster") && !hasCategoryKey("paster")) {
           const rem = record?.remainingPosters !== undefined ? Math.max(0, Number(record.remainingPosters) || 0) : null;
           const comp = record?.completedPosters !== undefined ? Math.max(0, Number(record.completedPosters) || 0) : (rem !== null ? Math.max(0, stdPosters - rem) : 0);
           categoryMap.set("poster", { quantity: stdPosters, remaining: rem !== null ? rem : Math.max(0, stdPosters - comp), completed: comp });
         }
 
         const stdVideos = Math.max(0, Number(record?.numberOfVideos) || 0);
-        if (stdVideos > 0 && !categoryMap.has("video")) {
+        if (stdVideos > 0 && !hasCategoryKey("video")) {
           const rem = record?.remainingVideos !== undefined ? Math.max(0, Number(record.remainingVideos) || 0) : null;
           const comp = record?.completedVideos !== undefined ? Math.max(0, Number(record.completedVideos) || 0) : (rem !== null ? Math.max(0, stdVideos - rem) : 0);
           categoryMap.set("video", { quantity: stdVideos, remaining: rem !== null ? rem : Math.max(0, stdVideos - comp), completed: comp });
         }
 
         const stdShoots = Math.max(0, Number(record?.numberOfShoots) || 0);
-        if (stdShoots > 0 && !categoryMap.has("shoot")) {
+        if (stdShoots > 0 && !hasCategoryKey("shoot")) {
           const rem = record?.remainingShoots !== undefined ? Math.max(0, Number(record.remainingShoots) || 0) : null;
           const comp = record?.completedShoots !== undefined ? Math.max(0, Number(record.completedShoots) || 0) : (rem !== null ? Math.max(0, stdShoots - rem) : 0);
           categoryMap.set("shoot", { quantity: stdShoots, remaining: rem !== null ? rem : Math.max(0, stdShoots - comp), completed: comp });
@@ -400,17 +405,11 @@ const ProjectList = () => {
         let completionPercentage = 0;
         let showPercentage = false;
 
-        const isCompletedStatus = ["completed", "workflow_approved", "approved", "done", "validated"].includes((status || "").toLowerCase());
-
-        if (isCompletedStatus) {
-          completionPercentage = 100;
+        if (totalDeliverables > 0) {
+          completionPercentage = Math.min(100, Math.round((completedDeliverables / totalDeliverables) * 100));
           showPercentage = true;
-        } else if (totalDeliverables > 0) {
-          if (totalRemaining === 0) {
-            completionPercentage = 100;
-          } else {
-            completionPercentage = Math.min(99, Math.round((completedDeliverables / totalDeliverables) * 100));
-          }
+        } else if ((status || "").toLowerCase() === "completed") {
+          completionPercentage = 100;
           showPercentage = true;
         }
 
