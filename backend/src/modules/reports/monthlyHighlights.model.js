@@ -64,6 +64,43 @@ const monthlyHighlightsSchema = new mongoose.Schema({
         type: String,
         default: ''
     },
+    keywordRankingOverview: [
+        {
+            month: { type: String, required: true },
+            top10: { type: Number, default: 0 },
+            top20: { type: Number, default: 0 },
+            top30Above: { type: Number, default: 0 }
+        }
+    ],
+    keywordRankingDetails: [
+        {
+            keyword: { type: String, required: true },
+            volume: { type: Number, default: 0 },
+            category: { type: String, default: 'General' },
+            monthRanks: [
+                {
+                    month: { type: String, required: true },
+                    rank: { type: mongoose.Schema.Types.Mixed, default: '-' }
+                }
+            ]
+        }
+    ],
+    metaInsightsFacebook: [
+        {
+            month: { type: String, required: true },
+            views: { type: Number, default: 0 },
+            reach: { type: Number, default: 0 },
+            followers: { type: Number, default: 0 }
+        }
+    ],
+    metaInsightsInstagram: [
+        {
+            month: { type: String, required: true },
+            views: { type: Number, default: 0 },
+            reach: { type: Number, default: 0 },
+            followers: { type: Number, default: 0 }
+        }
+    ],
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User'

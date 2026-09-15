@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Typography, Input, Button, Tag, Row, Col, Drawer, Tabs, Progress, Switch, Select, message, Modal, Form, Checkbox, Table, Dropdown, Menu, Popconfirm, Tooltip, Card } from 'antd';
+import { Typography, Input, Button, Tag, Row, Col, Drawer, Tabs, Progress, Switch, Select, message, Modal, Form, Checkbox, Table, Dropdown, Menu, Popconfirm, Tooltip, Card, Radio } from 'antd';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useGetIntegrationsQuery } from '../../../api/integrationApi';
 import { Search, AlertTriangle, CheckCircle, ExternalLink, MoreHorizontal, Circle, ArrowUpRight, Shield, Zap, Globe, Users, Plus } from 'lucide-react';
@@ -262,6 +262,8 @@ const ClientsTab = () => {
         },
         body: JSON.stringify({
           name: values.name,
+          contactPersonName: values.contactPersonName,
+          groupCreated: values.groupCreated,
           email: values.email,
           phone: values.phone,
           countryCode: clientEditCountryCode,
@@ -422,7 +424,8 @@ const ClientsTab = () => {
     return clientsToFilter.filter(c => {
       const name = (c.name || '').toLowerCase();
       const email = (c.adminEmail || c.email || '').toLowerCase();
-      return name.includes(q) || email.includes(q);
+      const contactPerson = (c.contactPersonName || '').toLowerCase();
+      return name.includes(q) || email.includes(q) || contactPerson.includes(q);
     });
   }, [dbClients, searchQuery]);
 
@@ -523,6 +526,16 @@ const ClientsTab = () => {
               <Row gutter={[16, 16]}>
                 <Col span={24}>
                   <Form.Item
+                    name="contactPersonName"
+                    label={<span style={{ fontWeight: 600 }}>Contact Person Name</span>}
+                    rules={[{ required: true, message: 'Please enter Contact Person Name' }]}
+                    style={{ marginBottom: 0 }}
+                  >
+                    <Input placeholder="e.g. John Doe" size="large" style={{ borderRadius: 8 }} />
+                  </Form.Item>
+                </Col>
+                <Col span={24}>
+                  <Form.Item
                     name="email"
                     label={<span style={{ fontWeight: 600 }}>Admin Email</span>}
                     rules={[
@@ -600,6 +613,23 @@ const ClientsTab = () => {
                     <Select.Option key={pkg.name} value={pkg.name}>{pkg.name}</Select.Option>
                   ))}
                 </Select>
+              </Form.Item>
+            </div>
+
+            <div>
+              <Text style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12, display: 'block' }}>
+                Group Status
+              </Text>
+              <Form.Item
+                name="groupCreated"
+                label={<span style={{ fontWeight: 600 }}>Group Created</span>}
+                rules={[{ required: true, message: 'Please select Group Created status' }]}
+                style={{ marginBottom: 0 }}
+              >
+                <Radio.Group buttonStyle="solid" size="large" style={{ width: '100%', display: 'flex' }}>
+                  <Radio.Button value="Not Created" style={{ flex: 1, textAlign: 'center' }}>Not Created</Radio.Button>
+                  <Radio.Button value="Created" style={{ flex: 1, textAlign: 'center' }}>Created</Radio.Button>
+                </Radio.Group>
               </Form.Item>
             </div>
           </div>
@@ -682,6 +712,22 @@ const ClientsTab = () => {
                     <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{record.adminEmail || record.email}</div>
                   </div>
                 </div>
+              )
+            },
+            {
+              title: 'Contact Person',
+              dataIndex: 'contactPersonName',
+              key: 'contactPersonName',
+              render: (text) => <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{text || '-'}</span>
+            },
+            {
+              title: 'Group Status',
+              dataIndex: 'groupCreated',
+              key: 'groupCreated',
+              render: (status) => (
+                <Tag color={status === 'Created' ? 'success' : 'warning'} style={{ borderRadius: 12, padding: '2px 10px', fontWeight: 600 }}>
+                  {status || 'Not Created'}
+                </Tag>
               )
             },
             {
@@ -774,6 +820,8 @@ const ClientsTab = () => {
                           setClientEditCountryIso(record.countryIso || '');
                           editForm.setFieldsValue({
                             name: record.companyName || record.name,
+                            contactPersonName: record.contactPersonName || '',
+                            groupCreated: record.groupCreated || 'Not Created',
                             email: record.adminEmail || record.email,
                             phone: record.phone || '',
                             address: record.address || '',
@@ -918,9 +966,16 @@ const ClientsTab = () => {
                 name="name"
                 label={<span style={{ fontWeight: 600 }}>Client Company Name</span>}
                 rules={[{ required: true, message: 'Please enter client name' }]}
-                style={{ marginBottom: 0 }}
               >
                 <Input placeholder="e.g. Acme Corp" size="large" style={{ borderRadius: 8 }} />
+              </Form.Item>
+              <Form.Item
+                name="contactPersonName"
+                label={<span style={{ fontWeight: 600 }}>Contact Person Name</span>}
+                rules={[{ required: true, message: 'Please enter Contact Person Name' }]}
+                style={{ marginBottom: 0 }}
+              >
+                <Input placeholder="e.g. John Doe" size="large" style={{ borderRadius: 8 }} />
               </Form.Item>
             </div>
 
@@ -1056,6 +1111,24 @@ const ClientsTab = () => {
                   )}
                 </div>
               )}
+            </div>
+
+            <div>
+              <Text style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12, display: 'block' }}>
+                Group Status
+              </Text>
+              <Form.Item
+                name="groupCreated"
+                label={<span style={{ fontWeight: 600 }}>Group Created</span>}
+                rules={[{ required: true, message: 'Please select Group Created status' }]}
+                initialValue="Not Created"
+                style={{ marginBottom: 0 }}
+              >
+                <Radio.Group buttonStyle="solid" size="large" style={{ width: '100%', display: 'flex' }}>
+                  <Radio.Button value="Not Created" style={{ flex: 1, textAlign: 'center' }}>Not Created</Radio.Button>
+                  <Radio.Button value="Created" style={{ flex: 1, textAlign: 'center' }}>Created</Radio.Button>
+                </Radio.Group>
+              </Form.Item>
             </div>
           </div>
 

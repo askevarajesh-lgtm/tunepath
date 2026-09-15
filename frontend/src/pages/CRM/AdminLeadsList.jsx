@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Table, Tag, Space, Button, Typography, Input, Card, Modal, Select, Form, message, Upload, Row, Col, Tabs, Descriptions, Empty, DatePicker } from 'antd';
+import { Table, Tag, Space, Button, Typography, Input, Card, Modal, Select, Form, message, Upload, Row, Col, Tabs, Descriptions, Empty, DatePicker, Radio } from 'antd';
 import { EyeOutlined, EditOutlined, DeleteOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, FileTextOutlined, AudioOutlined, PictureOutlined, VideoCameraOutlined, FileOutlined, WhatsAppOutlined, FacebookOutlined, CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, UserAddOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { 
@@ -80,6 +80,8 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
 
     convertForm.setFieldsValue({
       name: lead.fullName || '',
+      contactPersonName: lead.fullName || lead.contactPerson || '',
+      groupCreated: 'Not Created',
       email: lead.email || '',
       phone: lead.phoneNumber || '',
       password: '',
@@ -94,6 +96,8 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
       setIsConvertingLoading(true);
       const payload = {
         name: values.name,
+        contactPersonName: values.contactPersonName,
+        groupCreated: values.groupCreated,
         email: values.email,
         password: values.password,
         phone: values.phone,
@@ -977,9 +981,16 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                 name="name"
                 label={<span style={{ fontWeight: 600 }}>Client Company Name</span>}
                 rules={[{ required: true, message: 'Please enter client name' }]}
-                style={{ marginBottom: 0 }}
               >
                 <Input placeholder="e.g. Acme Corp" size="large" style={{ borderRadius: 8 }} />
+              </Form.Item>
+              <Form.Item
+                name="contactPersonName"
+                label={<span style={{ fontWeight: 600 }}>Contact Person Name</span>}
+                rules={[{ required: true, message: 'Please enter Contact Person Name' }]}
+                style={{ marginBottom: 0 }}
+              >
+                <Input placeholder="e.g. John Doe" size="large" style={{ borderRadius: 8 }} />
               </Form.Item>
             </div>
 
@@ -1041,6 +1052,24 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                   </Form.Item>
                 </Col>
               </Row>
+            </div>
+
+            <div>
+              <Text style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, display: 'block' }}>
+                GROUP STATUS
+              </Text>
+              <Form.Item
+                name="groupCreated"
+                label={<span style={{ fontWeight: 600 }}>Group Created</span>}
+                rules={[{ required: true, message: 'Please select Group Created status' }]}
+                initialValue="Not Created"
+                style={{ marginBottom: 0 }}
+              >
+                <Radio.Group buttonStyle="solid" size="large" style={{ width: '100%', display: 'flex' }}>
+                  <Radio.Button value="Not Created" style={{ flex: 1, textAlign: 'center' }}>Not Created</Radio.Button>
+                  <Radio.Button value="Created" style={{ flex: 1, textAlign: 'center' }}>Created</Radio.Button>
+                </Radio.Group>
+              </Form.Item>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>

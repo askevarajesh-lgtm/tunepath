@@ -10,6 +10,7 @@ import SnapshotSelector from './SnapshotSelector';
 import './DashboardTab.css'; // Reuse styles
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { exportToCSV } from '../../../utils/exportUtils';
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 const { Option } = Select;
@@ -714,6 +715,158 @@ const PositionTrackingTab = () => {
               </Card>
             </Col>
           </Row>
+
+          {/* 3.2 KEYWORD RANKING OVERVIEW CARD */}
+          <Card 
+            style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', marginTop: 24 }}
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <Title level={4} style={{ margin: 0 }}>Keyword Ranking Overview</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Purpose: Show overall organic keyword-ranking performance for the selected month and compare it with previous months.
+                  </Text>
+                </div>
+                <Button 
+                  icon={<DownloadOutlined />} 
+                  onClick={() => {
+                    const rows = data?.keywordRankingOverview || [];
+                    if (rows.length === 0) {
+                      message.warning('No keyword ranking overview data available to download.');
+                      return;
+                    }
+                    const cols = [
+                      { title: 'Month', dataIndex: 'month' },
+                      { title: 'Keywords Ranking Top 10', dataIndex: 'top10' },
+                      { title: 'Keywords Ranking Top 20', dataIndex: 'top20' },
+                      { title: 'Keywords Ranking Top 30 Above', dataIndex: 'top30Above' }
+                    ];
+                    exportToCSV(rows, cols, `Keyword_Ranking_Overview_${domain || 'domain'}.csv`);
+                    message.success('Downloaded Keyword Ranking Overview format (CSV)');
+                  }}
+                  style={{ borderRadius: 8, fontWeight: 600 }}
+                >
+                  Download CSV Format
+                </Button>
+              </div>
+            }
+          >
+            <Table
+              dataSource={data?.keywordRankingOverview || []}
+              rowKey="month"
+              pagination={false}
+              bordered
+              columns={[
+                { title: 'Month', dataIndex: 'month', key: 'month', render: (val) => <strong style={{ color: 'var(--text-primary)' }}>{val}</strong> },
+                { title: 'Keywords Ranking Top 10', dataIndex: 'top10', key: 'top10', align: 'center', render: (val) => <Tag color="blue" style={{ fontSize: 13, padding: '2px 10px', fontWeight: 700 }}>{val || 0}</Tag> },
+                { title: 'Keywords Ranking Top 20', dataIndex: 'top20', key: 'top20', align: 'center', render: (val) => <Tag color="purple" style={{ fontSize: 13, padding: '2px 10px', fontWeight: 700 }}>{val || 0}</Tag> },
+                { title: 'Keywords Ranking Top 30 Above', dataIndex: 'top30Above', key: 'top30Above', align: 'center', render: (val) => <Tag color="cyan" style={{ fontSize: 13, padding: '2px 10px', fontWeight: 700 }}>{val || 0}</Tag> }
+              ]}
+            />
+          </Card>
+
+          {/* 3.3 KEYWORD RANKING DETAILS CARD */}
+          <Card 
+            style={{ borderRadius: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', marginTop: 24 }}
+            title={
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <div>
+                  <Title level={4} style={{ margin: 0 }}>3.3 Keyword Ranking Details</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Purpose: Granular organic keyword rankings, search volume, categories (e.g. Geriatric Care, Elder Care, Home Nursing Services), and month-wise rank progression.
+                  </Text>
+                </div>
+                <Button 
+                  icon={<DownloadOutlined />} 
+                  onClick={() => {
+                    const detailRows = (data?.keywordRankingDetails && data.keywordRankingDetails.length > 0)
+                      ? data.keywordRankingDetails
+                      : (rankings && rankings.length > 0 ? rankings.map(r => ({
+                          keyword: r.keyword || r.Keyword || '',
+                          volume: r.searchVolume || r.volume || 0,
+                          category: r.category || (r.tags && r.tags[0]) || 'General',
+                          monthRanks: [{ month: 'Sep 2026', rank: r.position || '-' }]
+                        })) : []);
+                    if (detailRows.length === 0) {
+                      message.warning('No tracked keywords available to download.');
+                      return;
+                    }
+                    const exportRows = detailRows.map(kd => {
+                      const row = {
+                        Keyword: kd.keyword,
+                        Category: kd.category,
+                        Volume: kd.volume
+                      };
+                      if (kd.monthRanks && Array.isArray(kd.monthRanks)) {
+                        kd.monthRanks.forEach(mr => {
+                          row[mr.month] = mr.rank;
+                        });
+                      }
+                      return row;
+                    });
+                    const cols = [
+                      { title: 'Keyword', dataIndex: 'Keyword' },
+                      { title: 'Keyword Category', dataIndex: 'Category' },
+                      { title: 'Volume', dataIndex: 'Volume' },
+                      ...(detailRows[0]?.monthRanks || []).map(mr => ({ title: mr.month, dataIndex: mr.month }))
+                    ];
+                    exportToCSV(exportRows, cols, `Keyword_Ranking_Details_${domain || 'domain'}.csv`);
+                    message.success('Downloaded Keyword Ranking Details format (CSV)');
+                  }}
+                  style={{ borderRadius: 8, fontWeight: 600 }}
+                >
+                  Download CSV Format
+                </Button>
+              </div>
+            }
+          >
+            <Table
+              dataSource={(data?.keywordRankingDetails && data.keywordRankingDetails.length > 0)
+                ? data.keywordRankingDetails
+                : (rankings && rankings.length > 0 ? rankings.map(r => ({
+                    keyword: r.keyword || r.Keyword || '',
+                    volume: r.searchVolume || r.volume || 0,
+                    category: r.category || (r.tags && r.tags[0]) || 'General',
+                    monthRanks: [{ month: 'Sep 2026', rank: r.position || '-' }]
+                  })) : [])}
+              rowKey="keyword"
+              pagination={{ pageSize: 10 }}
+              bordered
+              columns={[
+                { title: 'Keyword', dataIndex: 'keyword', key: 'keyword', render: (val) => <strong style={{ color: 'var(--accent-primary)' }}>{val}</strong> },
+                { 
+                  title: 'Keyword Category', 
+                  dataIndex: 'category', 
+                  key: 'category', 
+                  render: (val) => {
+                    const lower = (val || '').toLowerCase();
+                    const color = lower.includes('geriatric') ? 'blue' : (lower.includes('elder') ? 'purple' : (lower.includes('nursing') || lower.includes('home') ? 'green' : 'orange'));
+                    return <Tag color={color} style={{ borderRadius: 12, fontWeight: 600 }}>{val || 'General'}</Tag>;
+                  }
+                },
+                { title: 'Volume', dataIndex: 'volume', key: 'volume', align: 'right', render: (val) => Number(val || 0).toLocaleString() },
+                { 
+                  title: 'Month-wise Rank Progression', 
+                  dataIndex: 'monthRanks', 
+                  key: 'monthRanks',
+                  render: (ranks = []) => (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {ranks.map((mr, idx) => {
+                        const num = Number(mr.rank);
+                        const isTop10 = num > 0 && num <= 10;
+                        return (
+                          <Tag key={idx} color={isTop10 ? 'success' : 'default'} style={{ fontSize: 11, fontWeight: 600, margin: 0 }}>
+                            <span style={{ opacity: 0.75, marginRight: 4 }}>{mr.month.split(' ')[0]}:</span>
+                            <strong style={{ color: isTop10 ? '#10b981' : 'inherit' }}>{mr.rank}</strong>
+                          </Tag>
+                        );
+                      })}
+                    </div>
+                  )
+                }
+              ]}
+            />
+          </Card>
             </>
           )}
 

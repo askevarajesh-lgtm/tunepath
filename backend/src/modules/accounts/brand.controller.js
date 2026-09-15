@@ -111,7 +111,14 @@ exports.getBrands = async (req, res, next) => {
 // Create a new brand/company and its agency manager user
 exports.createBrand = async (req, res, next) => {
   try {
-    const { name, email, password, packageName, features, mrr, phone, countryCode, address, dealId } = req.body;
+    const { name, contactPersonName, groupCreated, email, password, packageName, features, mrr, phone, countryCode, address, dealId } = req.body;
+
+    if (!contactPersonName || !contactPersonName.trim()) {
+      return res.status(400).json({ success: false, message: 'Contact Person Name is required' });
+    }
+    if (!groupCreated || !['Created', 'Not Created'].includes(groupCreated)) {
+      return res.status(400).json({ success: false, message: 'Group Created status is required' });
+    }
 
     // Validate Phone Number
     if (phone) {
@@ -245,6 +252,8 @@ exports.createBrand = async (req, res, next) => {
       role: (isAgency || isEmployee) ? 'agency_client' : (isAdmin ? 'brand_super_admin' : 'brand_manager'),
       agencyId, // Null for direct brands
       companyName: name,
+      contactPersonName: contactPersonName.trim(),
+      groupCreated,
       isDirect,
       packageName: packageName || null,
       features: features || [],
@@ -424,7 +433,7 @@ exports.updateBrand = async (req, res, next) => {
       filter.isDirect = true;
     }
 
-    const { name, email, phone, address, packageName, features, integrations, additionalIntegrations, disabledPackageIntegrations, mrr, extraUsers } = req.body;
+    const { name, contactPersonName, groupCreated, email, phone, address, packageName, features, integrations, additionalIntegrations, disabledPackageIntegrations, mrr, extraUsers } = req.body;
     let updates = {};
 
     // Validate Phone Number
@@ -445,6 +454,18 @@ exports.updateBrand = async (req, res, next) => {
     if (name) {
       updates.companyName = name;
       updates.name = name;
+    }
+    if (contactPersonName !== undefined) {
+      if (!contactPersonName || !contactPersonName.trim()) {
+        return res.status(400).json({ success: false, message: 'Contact Person Name cannot be empty' });
+      }
+      updates.contactPersonName = contactPersonName.trim();
+    }
+    if (groupCreated !== undefined) {
+      if (!['Created', 'Not Created'].includes(groupCreated)) {
+        return res.status(400).json({ success: false, message: 'Group Created status must be Created or Not Created' });
+      }
+      updates.groupCreated = groupCreated;
     }
     if (email) updates.email = email;
     if (address) updates.address = address;

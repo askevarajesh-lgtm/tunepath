@@ -411,12 +411,97 @@ exports.getPositionTracking = async (req, res) => {
             return res.status(200).json({ success: true, status: 'unavailable', errorCode: 'campaign_unavailable', data: null });
         }
 
+        const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const now = new Date();
+        const trackedMonthsList = [];
+        for (let i = 1; i >= 0; i--) {
+            const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+            trackedMonthsList.push({
+                monthStr: `${monthAbbrs[d.getMonth()]} ${d.getFullYear()}`,
+                mName: monthAbbrs[d.getMonth()],
+                yNum: d.getFullYear()
+            });
+        }
+
+        const OptimizationSnapshot = mongoose.models.OptimizationSnapshot || require('./models/optimizationSnapshot.model');
+        const snapshots = await OptimizationSnapshot.find({ projectId: project._id })
+            .sort({ createdAt: -1 })
+            .lean()
+            .catch(() => []);
+
+        const rankings = trackingData?.rankings || [];
+
+        const keywordRankingOverview = trackedMonthsList.map(({ monthStr, mName, yNum }) => {
+            const snapInMonth = snapshots.find(s => {
+                const sDate = new Date(s.createdAt || s.collectedAt);
+                return monthAbbrs[sDate.getMonth()] === mName && sDate.getFullYear() === yNum;
+            });
+
+            const snapRankings = snapInMonth ? (snapInMonth.seo?.positionTracking?.rankings || snapInMonth.seo?.organicKeywordsData || []) : (monthStr === `${monthAbbrs[now.getMonth()]} ${now.getFullYear()}` ? rankings : null);
+
+            if (snapRankings && Array.isArray(snapRankings) && snapRankings.length > 0) {
+                let t10 = 0, t20 = 0, t30Above = 0;
+                snapRankings.forEach(r => {
+                    const pos = Number(r.position || r.Position);
+                    if (pos > 0 && pos <= 10) t10++;
+                    if (pos > 0 && pos <= 20) t20++;
+                    if (pos > 30 || r.position === '> 100') t30Above++;
+                });
+                return { month: monthStr, top10: t10, top20: t20, top30Above: t30Above };
+            }
+
+            if (monthStr !== `${monthAbbrs[now.getMonth()]} ${now.getFullYear()}` && rankings.length > 0) {
+                let p10 = 0, p20 = 0, p30 = 0;
+                rankings.forEach(r => {
+                    const prevPos = Number(r.previousPosition);
+                    if (prevPos > 0 && prevPos <= 10) p10++;
+                    if (prevPos > 0 && prevPos <= 20) p20++;
+                    if (prevPos > 30 || r.previousPosition === '> 100') p30++;
+                });
+                if (p10 > 0 || p20 > 0 || p30 > 0) {
+                    return { month: monthStr, top10: p10, top20: p20, top30Above: p30 };
+                }
+            }
+
+            return { month: monthStr, top10: 0, top20: 0, top30Above: 0 };
+        });
+
+        const keywordRankingDetails = rankings.map(r => {
+            const kwName = r.keyword || r.Keyword || r.name || '';
+            const vol = r.searchVolume || r.volume || r.SearchVolume || 0;
+            const cat = r.category || (r.tags && r.tags[0]) || r.intent || 'General';
+            const currPos = r.position || r.Position || '-';
+
+            return {
+                keyword: kwName,
+                volume: Number(vol) || 0,
+                category: String(cat || 'General'),
+                monthRanks: trackedMonthsList.map(({ monthStr, mName, yNum }) => {
+                    if (monthStr === `${monthAbbrs[now.getMonth()]} ${now.getFullYear()}`) {
+                        return { month: monthStr, rank: currPos };
+                    }
+                    const snapInMonth = snapshots.find(s => {
+                        const sDate = new Date(s.createdAt || s.collectedAt);
+                        return monthAbbrs[sDate.getMonth()] === mName && sDate.getFullYear() === yNum;
+                    });
+                    if (snapInMonth) {
+                        const snapRankings = snapInMonth.seo?.positionTracking?.rankings || snapInMonth.seo?.organicKeywordsData || [];
+                        const found = snapRankings.find(sr => (sr.keyword || sr.Keyword || sr.name) === kwName);
+                        if (found) return { month: monthStr, rank: found.position || found.Position || '-' };
+                    }
+                    return { month: monthStr, rank: r.previousPosition || '-' };
+                })
+            };
+        }).filter(k => k.keyword.trim() !== '');
+
         res.status(200).json({
             success: true,
             status: 'available',
             source: 'semrush',
             data: {
                 config: project.trackingConfig,
+                keywordRankingOverview,
+                keywordRankingDetails,
                 ...(trackingData || { rankings: [] })
             },
             measuredAt: new Date().toISOString()

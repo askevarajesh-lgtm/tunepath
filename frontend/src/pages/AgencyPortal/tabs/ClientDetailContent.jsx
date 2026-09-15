@@ -309,6 +309,16 @@ const ClientDetailContent = ({
                   <Text style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', letterSpacing: 1, textTransform: 'uppercase', display: 'block', marginBottom: 14 }}>Client Info</Text>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 24px' }}>
                     {[
+                      { label: 'Contact Person Name', value: selectedClient.contactPersonName || 'N/A' },
+                      {
+                        label: 'Group Created Status',
+                        value: selectedClient.groupCreated || 'Not Created',
+                        render: (val) => (
+                          <Tag color={val === 'Created' ? 'success' : 'warning'} style={{ borderRadius: 8, fontWeight: 700, margin: 0 }}>
+                            {val}
+                          </Tag>
+                        )
+                      },
                       { label: 'Email', value: selectedClient.adminEmail || selectedClient.email },
                       { label: 'Phone', value: selectedClient.phone },
                       { label: 'Package', value: selectedClient.packageName || 'Custom' },
@@ -318,9 +328,13 @@ const ClientDetailContent = ({
                     ].map(item => item.value ? (
                       <div key={item.label}>
                         <Text style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-tertiary)', display: 'block' }}>{item.label}</Text>
-                        <Text style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
-                          {typeof item.value === 'object' ? JSON.stringify(item.value) : item.value}
-                        </Text>
+                        {item.render ? (
+                          item.render(item.value)
+                        ) : (
+                          <Text style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {typeof item.value === 'object' ? JSON.stringify(item.value) : item.value}
+                          </Text>
+                        )}
                       </div>
                     ) : null)}
                   </div>

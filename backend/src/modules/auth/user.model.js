@@ -88,6 +88,8 @@ const UserSchema = new mongoose.Schema({
 
   // Brand Specific Fields
   isDirect: { type: Boolean, default: false },
+  contactPersonName: { type: String, trim: true, default: null },
+  groupCreated: { type: String, enum: ['Created', 'Not Created'], default: 'Not Created' },
   packageName: { type: String, default: null },
   features: [{ type: String }],
 

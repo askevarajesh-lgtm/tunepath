@@ -5,6 +5,7 @@ import { useOutletContext } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import PDFReportTemplate from './PDFReportTemplate';
+import { exportToCSV } from '../../../utils/exportUtils';
 
 const { Title, Text } = Typography;
 
@@ -616,7 +617,68 @@ const ReportsTab = () => {
     }
   };
 
+  const handleExportKeywordOverviewCSV = () => {
+    const rows = projectData?.positionTracking?.data?.keywordRankingOverview || [];
+    if (rows.length === 0) {
+      message.warning('No keyword ranking overview data available to download.');
+      return;
+    }
+
+    const cols = [
+      { title: 'Month', dataIndex: 'month' },
+      { title: 'Keywords Ranking Top 10', dataIndex: 'top10' },
+      { title: 'Keywords Ranking Top 20', dataIndex: 'top20' },
+      { title: 'Keywords Ranking Top 30 Above', dataIndex: 'top30Above' }
+    ];
+
+    exportToCSV(rows, cols, `Keyword_Ranking_Overview_${project?.domain || 'domain'}.csv`);
+    message.success('Downloaded Keyword Ranking Overview format (CSV)');
+  };
+
+  const handleExportKeywordDetailsCSV = () => {
+    const trackingRankings = projectData?.positionTracking?.data?.rankings || [];
+    const detailRows = (projectData?.positionTracking?.data?.keywordRankingDetails && projectData.positionTracking.data.keywordRankingDetails.length > 0)
+      ? projectData.positionTracking.data.keywordRankingDetails
+      : (trackingRankings && trackingRankings.length > 0 ? trackingRankings.map(r => ({
+          keyword: r.keyword || r.Keyword || '',
+          volume: r.searchVolume || r.volume || 0,
+          category: r.category || (r.tags && r.tags[0]) || 'General',
+          monthRanks: [{ month: 'Sep 2026', rank: r.position || '-' }]
+        })) : []);
+
+    if (detailRows.length === 0) {
+      message.warning('No tracked keywords available to download.');
+      return;
+    }
+
+    const exportRows = detailRows.map(kd => {
+      const row = {
+        Keyword: kd.keyword,
+        Category: kd.category,
+        Volume: kd.volume
+      };
+      if (kd.monthRanks && Array.isArray(kd.monthRanks)) {
+        kd.monthRanks.forEach(mr => {
+          row[mr.month] = mr.rank;
+        });
+      }
+      return row;
+    });
+
+    const cols = [
+      { title: 'Keyword', dataIndex: 'Keyword' },
+      { title: 'Keyword Category', dataIndex: 'Category' },
+      { title: 'Volume', dataIndex: 'Volume' },
+      ...(detailRows[0]?.monthRanks || []).map(mr => ({ title: mr.month, dataIndex: mr.month }))
+    ];
+
+    exportToCSV(exportRows, cols, `Keyword_Ranking_Details_${project?.domain || 'domain'}.csv`);
+    message.success('Downloaded Keyword Ranking Details format (CSV)');
+  };
+
   const reports = [
+    { id: 'keyword-details', title: 'Keyword Ranking Details', type: 'keyword_details_csv', desc: 'Granular organic keyword rankings with Search Volume, Categories (Geriatric Care, Elder Care, etc.), and Month-wise Ranks.', icon: <FileExcelOutlined style={{ color: '#52c41a' }} /> },
+    { id: 'keyword-ranking', title: 'Keyword Ranking Overview', type: 'keyword_csv', desc: 'Month-on-Month organic keyword-ranking performance comparison (Top 10, Top 20, Top 30 Above).', icon: <FileExcelOutlined style={{ color: '#1890ff' }} /> },
     { id: 'full-seo', title: 'Full SEO Report', type: 'pdf', desc: 'Comprehensive domain overview, organic keywords, and backlinks.', icon: <FilePdfOutlined style={{ color: '#f5222d' }} /> },
     { id: 'health', title: 'Site Health Report', type: 'pdf_health', desc: 'Technical SEO issues, errors, warnings, and crawlability.', icon: <FilePdfOutlined style={{ color: '#f5222d' }} /> },
   ];
@@ -642,7 +704,7 @@ const ReportsTab = () => {
       <Row gutter={[24, 24]}>
         {reports.map((report, idx) => (
           <Col span={12} key={idx}>
-            <Card hoverable>
+            <Card hoverable style={{ height: '100%' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
                 <div style={{ fontSize: 32 }}>{report.icon}</div>
                 <div style={{ flex: 1 }}>
@@ -653,7 +715,9 @@ const ReportsTab = () => {
                         type="primary" 
                         icon={<DownloadOutlined />} 
                         onClick={() => {
-                          if (report.type === 'csv') handleExportCSV(report.id);
+                          if (report.type === 'keyword_details_csv') handleExportKeywordDetailsCSV();
+                          else if (report.type === 'keyword_csv') handleExportKeywordOverviewCSV();
+                          else if (report.type === 'csv') handleExportCSV(report.id);
                           else if (report.type === 'pdf_backlink') handleExportBacklinkPDF();
                           else if (report.type === 'pdf_health') handleExportHealthPDF();
                           else handleExportPDF();

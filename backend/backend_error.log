@@ -1333,4 +1333,20 @@ Require stack:
     at async FindCursor.toArray (E:\Office Projects\M1\tunepath\backend\node_modules\mongodb\lib\cursor\abstract_cursor.js:406:26)
     at async model.Query._find (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:2475:14)
     at async maybeTracedQueryExec (E:\Office Projects\M1\tunepath\backend\node_modules\mongoose\lib\query.js:4801:65)
-    at async exports.getBrands (E:\Office Projects\M1\tunepath\backend\src\modules\accounts\brand.controller.js:65:20)\n\n
+    at async exports.getBrands (E:\Office Projects\M1\tunepath\backend\src\modules\accounts\brand.controller.js:65:20)\n\n2026-09-15T13:35:01.459Z\nReferenceError: monthName is not defined
+    at autoAggregateMetrics (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:300:64)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:335:24)
+    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.controller.js:12:22)\n\n2026-09-15T13:35:08.782Z\nReferenceError: monthName is not defined
+    at autoAggregateMetrics (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:300:64)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:335:24)
+    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.controller.js:12:22)\n\n2026-09-15T13:35:15.922Z\nReferenceError: monthName is not defined
+    at autoAggregateMetrics (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:300:64)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:335:24)
+    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.controller.js:12:22)\n\n2026-09-15T13:35:22.261Z\nReferenceError: monthName is not defined
+    at autoAggregateMetrics (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:300:64)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:335:24)
+    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.controller.js:12:22)\n\n
