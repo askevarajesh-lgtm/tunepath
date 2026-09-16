@@ -1391,6 +1391,126 @@ async function getValidAccessToken(account) {
   }
 }
 
+async function fetchYoutubeChannelLiveStats(account) {
+  if (!account) return { subscribers: 0, liveLikes: 0, liveComments: 0, liveViews: 0 };
+
+  let subscribers = Number(account.followers || account.subscriberCount || account.subscribers || 0);
+  let liveLikes = 0;
+  let liveComments = 0;
+  let liveViews = 0;
+
+  let accessToken = null;
+  try {
+    accessToken = await getValidAccessToken(account);
+  } catch (e) {}
+
+  const apiKey = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || "";
+  let channelItems = [];
+
+  // Attempt 1: Using OAuth access token with mine=true
+  if (accessToken) {
+    try {
+      const chRes = await axios.get("https://www.googleapis.com/youtube/v3/channels", {
+        params: { part: "snippet,statistics,contentDetails", mine: true },
+        headers: { Authorization: `Bearer ${accessToken}` },
+        timeout: 1500,
+      });
+      if (chRes.data?.items?.length > 0) {
+        channelItems = chRes.data.items;
+      }
+    } catch (e) {}
+  }
+
+  // Attempt 2: Using page_id if set
+  if (channelItems.length === 0 && account.page_id) {
+    try {
+      const params = { part: "snippet,statistics,contentDetails", id: account.page_id };
+      if (apiKey) params.key = apiKey;
+      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+      const chRes = await axios.get("https://www.googleapis.com/youtube/v3/channels", { params, headers, timeout: 1500 });
+      if (chRes.data?.items?.length > 0) {
+        channelItems = chRes.data.items;
+      }
+    } catch (e) {}
+  }
+
+  // Attempt 3: Using username / handle name
+  if (channelItems.length === 0 && (account.username || account.page_name)) {
+    try {
+      let handle = (account.username || account.page_name).trim();
+      if (!handle.startsWith("@")) handle = `@${handle}`;
+      const params = { part: "snippet,statistics,contentDetails", forHandle: handle };
+      if (apiKey) params.key = apiKey;
+      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+      const chRes = await axios.get("https://www.googleapis.com/youtube/v3/channels", { params, headers, timeout: 1500 });
+      if (chRes.data?.items?.length > 0) {
+        channelItems = chRes.data.items;
+      }
+    } catch (e) {}
+  }
+
+  let uploadsPlaylistId = null;
+  if (channelItems.length > 0) {
+    const item = channelItems[0];
+    const subCount = Number(item.statistics?.subscriberCount);
+    if (!isNaN(subCount) && subCount >= 0) {
+      subscribers = subCount;
+    }
+    uploadsPlaylistId = item.contentDetails?.relatedPlaylists?.uploads || null;
+  }
+
+  // Fetch video metrics for channel
+  let videoIds = [];
+  if (uploadsPlaylistId) {
+    try {
+      const params = { part: "contentDetails", playlistId: uploadsPlaylistId, maxResults: 25 };
+      if (apiKey) params.key = apiKey;
+      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+      const plRes = await axios.get("https://www.googleapis.com/youtube/v3/playlistItems", { params, headers, timeout: 1500 });
+      if (plRes.data?.items) {
+        videoIds = plRes.data.items.map((it) => it.contentDetails?.videoId).filter(Boolean);
+      }
+    } catch (e) {}
+  }
+
+  if (videoIds.length === 0 && account.page_id) {
+    try {
+      const params = { part: "id", channelId: account.page_id, maxResults: 25, type: "video", order: "date" };
+      if (apiKey) params.key = apiKey;
+      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+      const srRes = await axios.get("https://www.googleapis.com/youtube/v3/search", { params, headers, timeout: 1500 });
+      if (srRes.data?.items) {
+        videoIds = srRes.data.items.map((it) => it.id?.videoId).filter(Boolean);
+      }
+    } catch (e) {}
+  }
+
+  if (videoIds.length > 0) {
+    try {
+      const params = { part: "statistics", id: videoIds.join(",") };
+      if (apiKey) params.key = apiKey;
+      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+      const vRes = await axios.get("https://www.googleapis.com/youtube/v3/videos", { params, headers, timeout: 1500 });
+      const vItems = vRes.data?.items || [];
+      vItems.forEach((v) => {
+        liveLikes += Number(v.statistics?.likeCount || 0);
+        liveComments += Number(v.statistics?.commentCount || 0);
+        liveViews += Number(v.statistics?.viewCount || 0);
+      });
+    } catch (e) {}
+  }
+
+  // Persist updated subscriber count to account in DB if changed
+  if (subscribers > 0 && subscribers !== account.followers) {
+    await Account.updateOne(
+      { id: account.id },
+      { $set: { followers: subscribers, subscriberCount: subscribers, updated_at: new Date() } }
+    ).catch(() => {});
+  }
+
+  return { subscribers, liveLikes, liveComments, liveViews };
+}
+
 async function createYoutubeClientForAccount(account) {
   const creds = await getYoutubeCredentialsForScope(
     account.companyId,
@@ -1648,45 +1768,64 @@ async function getFacebookPostMetrics(account, externalId) {
   if (!account || !externalId) return { likes: 0, comments: 0, shares: 0 };
 
   try {
-    const postRes = await axios.get(`${META_GRAPH}/${externalId}`, {
-      params: {
-        fields: "message,created_time",
-        access_token: account.access_token,
-      },
-    });
-
-    const likesRes = await axios.get(`${META_GRAPH}/${externalId}/likes`, {
-      params: {
-        summary: "true",
-        access_token: account.access_token,
-      },
-    });
-
-    const commentsRes = await axios.get(
-      `${META_GRAPH}/${externalId}/comments`,
-      {
+    let postRes = { data: {} };
+    try {
+      postRes = await axios.get(`${META_GRAPH}/${externalId}`, {
         params: {
-          fields:
-            "message,from,created_time,comments.limit(50){message,from,created_time}",
+          fields: "message,created_time,shares",
           access_token: account.access_token,
         },
-      },
-    );
-
-    let totalComments = 0;
-    if (commentsRes.data?.data && commentsRes.data.data.length > 0) {
-      commentsRes.data.data.forEach((comment) => {
-        totalComments++;
-        if (comment.comments && comment.comments.data) {
-          totalComments += comment.comments.data.length;
-        }
       });
+    } catch (e0) {}
+
+    let likesCount = 0;
+    try {
+      const rxRes = await axios.get(`${META_GRAPH}/${externalId}/reactions`, {
+        params: {
+          summary: "true",
+          access_token: account.access_token,
+        },
+      });
+      likesCount = rxRes.data?.summary?.total_count || 0;
+    } catch (e1) {
+      try {
+        const likesRes = await axios.get(`${META_GRAPH}/${externalId}/likes`, {
+          params: {
+            summary: "true",
+            access_token: account.access_token,
+          },
+        });
+        likesCount = likesRes.data?.summary?.total_count || 0;
+      } catch (e2) {}
     }
 
+    let totalComments = 0;
+    try {
+      const commentsRes = await axios.get(
+        `${META_GRAPH}/${externalId}/comments`,
+        {
+          params: {
+            fields:
+              "message,from,created_time,comments.limit(50){message,from,created_time}",
+            access_token: account.access_token,
+          },
+        },
+      );
+
+      if (commentsRes.data?.data && commentsRes.data.data.length > 0) {
+        commentsRes.data.data.forEach((comment) => {
+          totalComments++;
+          if (comment.comments && comment.comments.data) {
+            totalComments += comment.comments.data.length;
+          }
+        });
+      }
+    } catch (cErr) {}
+
     return {
-      likes: likesRes.data?.summary?.total_count || 0,
+      likes: likesCount,
       comments: totalComments,
-      shares: 0,
+      shares: postRes.data?.shares?.count || 0,
       url: `https://www.facebook.com/${externalId}`,
     };
   } catch (err) {
@@ -2651,5 +2790,6 @@ module.exports = {
   startCampaignScheduler,
   getValidAccessToken,
   refreshYoutubeAccessToken,
+  fetchYoutubeChannelLiveStats,
   migrateLegacyPosts,
 };

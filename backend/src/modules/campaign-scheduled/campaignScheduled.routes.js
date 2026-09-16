@@ -76,6 +76,7 @@ const {
     migrateLinkedInPublishedPostMetrics,
     migrateLegacyPosts,
     processDuePosts,
+    fetchYoutubeChannelLiveStats,
 } = require("./campaignScheduled.service");
 
 const router = express.Router();
@@ -1275,7 +1276,7 @@ router.get("/auth/youtube/callback", async (req, res) => {
         const channelRes = await axios.get(
             "https://www.googleapis.com/youtube/v3/channels",
             {
-                params: { part: "id,snippet", mine: "true" },
+                params: { part: "id,snippet,statistics", mine: "true" },
                 headers: { Authorization: `Bearer ${accessToken}` },
             },
         );
@@ -1284,6 +1285,7 @@ router.get("/auth/youtube/callback", async (req, res) => {
             title: item.snippet?.title || "YouTube Channel",
             thumbnail: item.snippet?.thumbnails?.default?.url || null,
             customUrl: item.snippet?.customUrl || null,
+            subscriberCount: Number(item.statistics?.subscriberCount || 0),
         }));
 
         if (channels.length === 0)
@@ -2003,16 +2005,116 @@ router.post("/posts/refresh-metrics", async (req, res) => {
     res.json({ success: true, posts, total: posts.length });
 });
 
+const LIVE_ACCOUNT_STATS_CACHE = new Map();
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minute TTL cache
+
+async function getOrFetchAccountLiveStats(acc, forceRefresh = false) {
+    const cacheKey = String(acc.id);
+    const cached = LIVE_ACCOUNT_STATS_CACHE.get(cacheKey);
+    const now = Date.now();
+
+    if (!forceRefresh && cached && (now - cached.timestamp < CACHE_TTL_MS)) {
+        return cached.stats;
+    }
+
+    let followers = Number(acc.followers || acc.fan_count || acc.followers_count || acc.subscriberCount || acc.subscribers || 0);
+    let likes = 0;
+    let comments = 0;
+    let shares = 0;
+
+    if (acc.platform === "youtube") {
+        try {
+            const ytStats = await fetchYoutubeChannelLiveStats(acc);
+            if (ytStats.subscribers > 0) followers = ytStats.subscribers;
+            if (ytStats.liveLikes > 0 || ytStats.liveComments > 0) {
+                likes = ytStats.liveLikes;
+                comments = ytStats.liveComments;
+            }
+        } catch (ytErr) {
+            console.warn(`[Live Cache] YouTube live stats warning:`, ytErr.message);
+        }
+    } else if (acc.access_token && (acc.platform === "facebook" || acc.platform === "instagram")) {
+        try {
+            const targetId = acc.ig_user_id || acc.page_id || "me";
+            const fields = acc.platform === "instagram" ? "id,name,username,followers_count" : "id,name,fan_count,followers_count";
+            const graphRes = await axios.get(`${META_GRAPH}/${targetId}`, {
+                params: { access_token: acc.access_token, fields },
+                timeout: 1500
+            }).catch(() => null);
+
+            if (graphRes?.data) {
+                followers = graphRes.data.followers_count ?? graphRes.data.fan_count ?? followers;
+            }
+
+            if (acc.platform === "instagram" && acc.ig_user_id) {
+                const mediaRes = await axios.get(`${META_GRAPH}/${acc.ig_user_id}/media`, {
+                    params: { access_token: acc.access_token, fields: "id,like_count,comments_count", limit: 25 },
+                    timeout: 1500
+                }).catch(() => null);
+                const mediaList = mediaRes?.data?.data || [];
+                if (mediaList.length > 0) {
+                    likes = mediaList.reduce((sum, m) => sum + (m.like_count || 0), 0);
+                    comments = mediaList.reduce((sum, m) => sum + (m.comments_count || 0), 0);
+                }
+            } else if (acc.platform === "facebook" && acc.page_id) {
+                let fbPostList = [];
+                const fieldsOptions = [
+                    "id,reactions.summary(true),comments.summary(true),shares",
+                    "id,likes.summary(true),comments.summary(true),shares",
+                    "id,comments.summary(true),shares"
+                ];
+                for (const fld of fieldsOptions) {
+                    try {
+                        const fbPostsRes = await axios.get(`${META_GRAPH}/${acc.page_id}/published_posts`, {
+                            params: { access_token: acc.access_token, fields: fld, limit: 25 },
+                            timeout: 1500
+                        });
+                        if (fbPostsRes.data?.data) {
+                            fbPostList = fbPostsRes.data.data;
+                            break;
+                        }
+                    } catch (fbErr) {}
+                }
+                if (fbPostList.length > 0) {
+                    likes = fbPostList.reduce((sum, m) => {
+                        const rxCount = m.reactions?.summary?.total_count;
+                        const likeCount = m.likes?.summary?.total_count;
+                        return sum + (typeof rxCount === 'number' ? rxCount : (typeof likeCount === 'number' ? likeCount : 0));
+                    }, 0);
+                    comments = fbPostList.reduce((sum, m) => sum + (m.comments?.summary?.total_count || 0), 0);
+                    shares = fbPostList.reduce((sum, m) => sum + (m.shares?.count || 0), 0);
+                }
+            }
+        } catch (e) {
+            console.warn(`[Live Cache] Live API fetch warning for ${acc.platform}:`, e.message);
+        }
+    }
+
+    const stats = { followers, likes, comments, shares };
+    LIVE_ACCOUNT_STATS_CACHE.set(cacheKey, { timestamp: now, stats });
+
+    if (followers > 0 && followers !== acc.followers) {
+        Account.updateOne({ id: acc.id }, { $set: { followers, subscriberCount: followers } }).catch(() => {});
+    }
+
+    return stats;
+}
+
 router.get("/analytics", async (req, res) => {
-    try {
-        await refreshPublishedPostMetrics(req.companyId, req.clientCompanyId);
-    } catch (err) {
-        console.warn("[Analytics] Auto metric refresh warning:", err.message);
+    const forceRefresh = req.query.forceRefresh === "true";
+    if (forceRefresh) {
+        try {
+            await refreshPublishedPostMetrics(req.companyId, req.clientCompanyId);
+        } catch (err) {
+            console.warn("[Analytics] Auto metric refresh warning:", err.message);
+        }
+    } else {
+        // Non-blocking background sync so initial response is instant
+        refreshPublishedPostMetrics(req.companyId, req.clientCompanyId).catch(() => {});
     }
 
     const posts = await getAllPosts(req.companyId, req.clientCompanyId);
     const accounts = await getAllAccounts(req.companyId, req.clientCompanyId);
-
     const publishedPosts = posts.filter((p) => p.status === "Published");
 
     const stats = {
@@ -2020,10 +2122,7 @@ router.get("/analytics", async (req, res) => {
         publishedPosts: publishedPosts.length,
         scheduledPosts: posts.filter((p) => p.status === "Scheduled").length,
         totalLikes: publishedPosts.reduce((sum, p) => sum + (p.likes || 0), 0),
-        totalComments: publishedPosts.reduce(
-            (sum, p) => sum + (p.comments || 0),
-            0,
-        ),
+        totalComments: publishedPosts.reduce((sum, p) => sum + (p.comments || 0), 0),
         totalShares: publishedPosts.reduce((sum, p) => sum + (p.shares || 0), 0),
     };
 
@@ -2039,12 +2138,7 @@ router.get("/analytics", async (req, res) => {
             const platformName = account ? account.platform : "unknown";
 
             if (!platformStats[platformName]) {
-                platformStats[platformName] = {
-                    likes: 0,
-                    comments: 0,
-                    shares: 0,
-                    count: 0,
-                };
+                platformStats[platformName] = { likes: 0, comments: 0, shares: 0, count: 0 };
             }
 
             platformStats[platformName].likes += post.likes || 0;
@@ -2054,7 +2148,6 @@ router.get("/analytics", async (req, res) => {
         });
     });
 
-    // Insights Matrix across accounts with real live data from Graph API
     const activeScopes = ["instagram_manage_insights", "read_insights", "instagram_basic", "instagram_content_publish", "pages_read_engagement"];
 
     const insightsMatrix = await Promise.all(
@@ -2062,56 +2155,25 @@ router.get("/analytics", async (req, res) => {
             const accPosts = publishedPosts.filter((p) =>
                 (p.platforms || []).includes(acc.id) || p.platform_publications?.[acc.id]
             );
-            let likes = accPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
-            let comments = accPosts.reduce((sum, p) => sum + (p.comments || 0), 0);
-            let shares = accPosts.reduce((sum, p) => sum + (p.shares || 0), 0);
+            let likes = accPosts.reduce((sum, p) => {
+                const pub = p.platform_publications?.[acc.id];
+                return sum + (typeof pub?.likes === 'number' ? pub.likes : (p.likes || 0));
+            }, 0);
+            let comments = accPosts.reduce((sum, p) => {
+                const pub = p.platform_publications?.[acc.id];
+                return sum + (typeof pub?.comments === 'number' ? pub.comments : (p.comments || 0));
+            }, 0);
+            let shares = accPosts.reduce((sum, p) => {
+                const pub = p.platform_publications?.[acc.id];
+                return sum + (typeof pub?.shares === 'number' ? pub.shares : (p.shares || 0));
+            }, 0);
 
-            let followers = Number(acc.followers || acc.fan_count || acc.followers_count || 0);
-
-            if (acc.access_token && (acc.platform === "facebook" || acc.platform === "instagram")) {
-                try {
-                    const targetId = acc.ig_user_id || acc.page_id || "me";
-                    const fields = acc.platform === "instagram" ? "id,name,username,followers_count" : "id,name,fan_count,followers_count";
-                    const graphRes = await axios.get(`${META_GRAPH}/${targetId}`, {
-                        params: { access_token: acc.access_token, fields }
-                    });
-                    if (graphRes.data) {
-                        followers = graphRes.data.followers_count ?? graphRes.data.fan_count ?? followers;
-                    }
-
-                    // Fetch media stats directly if available
-                    if (acc.platform === "instagram" && acc.ig_user_id) {
-                        const mediaRes = await axios.get(`${META_GRAPH}/${acc.ig_user_id}/media`, {
-                            params: { access_token: acc.access_token, fields: "id,like_count,comments_count", limit: 25 }
-                        });
-                        const mediaList = mediaRes.data?.data || [];
-                        if (mediaList.length > 0) {
-                            const liveLikes = mediaList.reduce((sum, m) => sum + (m.like_count || 0), 0);
-                            const liveComments = mediaList.reduce((sum, m) => sum + (m.comments_count || 0), 0);
-                            if (liveLikes > 0 || liveComments > 0) {
-                                likes = Math.max(likes, liveLikes);
-                                comments = Math.max(comments, liveComments);
-                            }
-                        }
-                    } else if (acc.platform === "facebook" && acc.page_id) {
-                        const fbPostsRes = await axios.get(`${META_GRAPH}/${acc.page_id}/published_posts`, {
-                            params: { access_token: acc.access_token, fields: "id,likes.summary(true),comments.summary(true),shares", limit: 25 }
-                        });
-                        const fbPostList = fbPostsRes.data?.data || [];
-                        if (fbPostList.length > 0) {
-                            const liveLikes = fbPostList.reduce((sum, m) => sum + (m.likes?.summary?.total_count || 0), 0);
-                            const liveComments = fbPostList.reduce((sum, m) => sum + (m.comments?.summary?.total_count || 0), 0);
-                            const liveShares = fbPostList.reduce((sum, m) => sum + (m.shares?.count || 0), 0);
-                            if (liveLikes > 0 || liveComments > 0 || liveShares > 0) {
-                                likes = Math.max(likes, liveLikes);
-                                comments = Math.max(comments, liveComments);
-                                shares = Math.max(shares, liveShares);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.warn(`[Insights Matrix] Live API fetch warning for ${acc.platform}:`, e.message);
-                }
+            const liveStats = await getOrFetchAccountLiveStats(acc, forceRefresh);
+            let followers = liveStats.followers;
+            if (liveStats.likes > 0 || liveStats.comments > 0 || liveStats.shares > 0) {
+                likes = Math.max(likes, liveStats.likes);
+                comments = Math.max(comments, liveStats.comments);
+                shares = Math.max(shares, liveStats.shares);
             }
 
             const totalEngagement = likes + comments + shares;
@@ -2176,12 +2238,7 @@ router.get("/analytics", async (req, res) => {
                     const platformName = account ? account.platform : "unknown";
 
                     if (!day.platforms[platformName]) {
-                        day.platforms[platformName] = {
-                            likes: 0,
-                            comments: 0,
-                            shares: 0,
-                            count: 0,
-                        };
+                        day.platforms[platformName] = { likes: 0, comments: 0, shares: 0, count: 0 };
                     }
                     day.platforms[platformName].likes += post.likes || 0;
                     day.platforms[platformName].comments += post.comments || 0;
@@ -2192,6 +2249,38 @@ router.get("/analytics", async (req, res) => {
         }
     });
 
+    const expandedTopPosts = [];
+    publishedPosts.forEach((post) => {
+        const postObj = post.toObject ? post.toObject() : post;
+        const publications = postObj.platform_publications || {};
+        const pubKeys = Object.keys(publications);
+
+        if (pubKeys.length > 0) {
+            pubKeys.forEach((platformId) => {
+                const pub = publications[platformId];
+                if (pub && (pub.status === "Published" || !pub.status)) {
+                    const account = accounts.find((a) => a.id === platformId);
+                    expandedTopPosts.push({
+                        ...postObj,
+                        id: `${postObj.id || postObj._id}_${platformId}`,
+                        parentPostId: postObj.id || postObj._id,
+                        platformId: platformId,
+                        platform: pub.platform || account?.platform || platformId.split("-")[0],
+                        accountName: account?.page_name || account?.username || account?.business_name || null,
+                        url: pub.url || postObj.url,
+                        likes: typeof pub.likes === 'number' ? pub.likes : (postObj.likes || 0),
+                        comments: typeof pub.comments === 'number' ? pub.comments : (postObj.comments || 0),
+                        shares: typeof pub.shares === 'number' ? pub.shares : (postObj.shares || 0),
+                        published_at: pub.published_at || postObj.published_at || postObj.scheduled_iso,
+                        platform_publications: { [platformId]: pub }
+                    });
+                }
+            });
+        } else {
+            expandedTopPosts.push(postObj);
+        }
+    });
+
     res.json({
         success: true,
         stats,
@@ -2199,20 +2288,25 @@ router.get("/analytics", async (req, res) => {
         insightsMatrix,
         activeScopes,
         engagementOverTime: last30Days,
-        topPosts: publishedPosts
+        topPosts: expandedTopPosts
             .sort(
                 (a, b) =>
-                    b.likes + b.comments + b.shares - (a.likes + a.comments + a.shares),
+                    (b.likes || 0) + (b.comments || 0) + (b.shares || 0) - ((a.likes || 0) + (a.comments || 0) + (a.shares || 0)),
             )
-            .slice(0, 10),
+            .slice(0, 20),
     });
 });
 
 router.get("/insights-matrix", async (req, res) => {
-    try {
-        await refreshPublishedPostMetrics(req.companyId, req.clientCompanyId);
-    } catch (err) {
-        console.warn("[Insights Matrix] Auto metric refresh warning:", err.message);
+    const forceRefresh = req.query.forceRefresh === "true";
+    if (forceRefresh) {
+        try {
+            await refreshPublishedPostMetrics(req.companyId, req.clientCompanyId);
+        } catch (err) {
+            console.warn("[Insights Matrix] Metric refresh warning:", err.message);
+        }
+    } else {
+        refreshPublishedPostMetrics(req.companyId, req.clientCompanyId).catch(() => {});
     }
 
     const posts = await getAllPosts(req.companyId, req.clientCompanyId);
@@ -2226,55 +2320,25 @@ router.get("/insights-matrix", async (req, res) => {
             const accPosts = publishedPosts.filter((p) =>
                 (p.platforms || []).includes(acc.id) || p.platform_publications?.[acc.id]
             );
-            let likes = accPosts.reduce((sum, p) => sum + (p.likes || 0), 0);
-            let comments = accPosts.reduce((sum, p) => sum + (p.comments || 0), 0);
-            let shares = accPosts.reduce((sum, p) => sum + (p.shares || 0), 0);
+            let likes = accPosts.reduce((sum, p) => {
+                const pub = p.platform_publications?.[acc.id];
+                return sum + (typeof pub?.likes === 'number' ? pub.likes : (p.likes || 0));
+            }, 0);
+            let comments = accPosts.reduce((sum, p) => {
+                const pub = p.platform_publications?.[acc.id];
+                return sum + (typeof pub?.comments === 'number' ? pub.comments : (p.comments || 0));
+            }, 0);
+            let shares = accPosts.reduce((sum, p) => {
+                const pub = p.platform_publications?.[acc.id];
+                return sum + (typeof pub?.shares === 'number' ? pub.shares : (p.shares || 0));
+            }, 0);
 
-            let followers = Number(acc.followers || acc.fan_count || acc.followers_count || 0);
-
-            if (acc.access_token && (acc.platform === "facebook" || acc.platform === "instagram")) {
-                try {
-                    const targetId = acc.ig_user_id || acc.page_id || "me";
-                    const fields = acc.platform === "instagram" ? "id,name,username,followers_count" : "id,name,fan_count,followers_count";
-                    const graphRes = await axios.get(`${META_GRAPH}/${targetId}`, {
-                        params: { access_token: acc.access_token, fields }
-                    });
-                    if (graphRes.data) {
-                        followers = graphRes.data.followers_count ?? graphRes.data.fan_count ?? followers;
-                    }
-
-                    if (acc.platform === "instagram" && acc.ig_user_id) {
-                        const mediaRes = await axios.get(`${META_GRAPH}/${acc.ig_user_id}/media`, {
-                            params: { access_token: acc.access_token, fields: "id,like_count,comments_count", limit: 25 }
-                        });
-                        const mediaList = mediaRes.data?.data || [];
-                        if (mediaList.length > 0) {
-                            const liveLikes = mediaList.reduce((sum, m) => sum + (m.like_count || 0), 0);
-                            const liveComments = mediaList.reduce((sum, m) => sum + (m.comments_count || 0), 0);
-                            if (liveLikes > 0 || liveComments > 0) {
-                                likes = Math.max(likes, liveLikes);
-                                comments = Math.max(comments, liveComments);
-                            }
-                        }
-                    } else if (acc.platform === "facebook" && acc.page_id) {
-                        const fbPostsRes = await axios.get(`${META_GRAPH}/${acc.page_id}/published_posts`, {
-                            params: { access_token: acc.access_token, fields: "id,likes.summary(true),comments.summary(true),shares", limit: 25 }
-                        });
-                        const fbPostList = fbPostsRes.data?.data || [];
-                        if (fbPostList.length > 0) {
-                            const liveLikes = fbPostList.reduce((sum, m) => sum + (m.likes?.summary?.total_count || 0), 0);
-                            const liveComments = fbPostList.reduce((sum, m) => sum + (m.comments?.summary?.total_count || 0), 0);
-                            const liveShares = fbPostList.reduce((sum, m) => sum + (m.shares?.count || 0), 0);
-                            if (liveLikes > 0 || liveComments > 0 || liveShares > 0) {
-                                likes = Math.max(likes, liveLikes);
-                                comments = Math.max(comments, liveComments);
-                                shares = Math.max(shares, liveShares);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    console.warn(`[Insights Matrix] Live API fetch warning for ${acc.platform}:`, e.message);
-                }
+            const liveStats = await getOrFetchAccountLiveStats(acc, forceRefresh);
+            let followers = liveStats.followers;
+            if (liveStats.likes > 0 || liveStats.comments > 0 || liveStats.shares > 0) {
+                likes = Math.max(likes, liveStats.likes);
+                comments = Math.max(comments, liveStats.comments);
+                shares = Math.max(shares, liveStats.shares);
             }
 
             const totalEngagement = likes + comments + shares;
@@ -2715,14 +2779,24 @@ router.post("/posts", mediaUpload.any(), async (req, res, next) => {
         }
 
         let platform_media_urls = {};
+        let thumbnail_url = req.body.thumbnail_url || null;
+        let platform_thumbnails = {};
+        try {
+            if (req.body.platform_thumbnails) {
+                platform_thumbnails = typeof req.body.platform_thumbnails === "string"
+                    ? JSON.parse(req.body.platform_thumbnails)
+                    : req.body.platform_thumbnails || {};
+            }
+        } catch (e) {}
 
         // If files are uploaded via multer, upload them to Cloudinary
         if (req.files && req.files.length > 0) {
             try {
                 for (const file of req.files) {
+                    const isThumbnail = file.fieldname.startsWith("thumbnail");
                     const uploadRes = await uploadAnyFileToCloudinary(
                         file.path,
-                        "campaign-posts",
+                        isThumbnail ? "campaign-thumbnails" : "campaign-posts",
                         null,
                         { mimetype: file.mimetype },
                     );
@@ -2746,6 +2820,11 @@ router.post("/posts", mediaUpload.any(), async (req, res, next) => {
                             platform_media_urls[accountId] = platform_media_urls[accountId].filter(url => !url.startsWith("blob:") && !url.includes("localhost"));
                             platform_media_urls[accountId].push(uploadRes.secure_url);
                         }
+                    } else if (file.fieldname === "thumbnail") {
+                        thumbnail_url = uploadRes.secure_url;
+                    } else if (file.fieldname.startsWith("thumbnail_")) {
+                        const accountId = file.fieldname.replace("thumbnail_", "");
+                        platform_thumbnails[accountId] = uploadRes.secure_url;
                     }
                 }
             } catch (err) {
@@ -2786,6 +2865,8 @@ router.post("/posts", mediaUpload.any(), async (req, res, next) => {
             campaign: campaign || "General",
             media_url: finalMediaUrl,
             platform_media_urls,
+            thumbnail_url,
+            platform_thumbnails,
             status: status || "Scheduled",
             type: type || "Post Composer",
             scheduled_date: dateStr,
@@ -2878,14 +2959,16 @@ router.put("/posts/:id", mediaUpload.any(), async (req, res) => {
     }
 
     updates.platform_media_urls = post.platform_media_urls || {};
+    if (!updates.platform_thumbnails) updates.platform_thumbnails = post.platform_thumbnails || {};
 
     // If files are uploaded via multer, upload them to Cloudinary
     if (req.files && req.files.length > 0) {
         try {
             for (const file of req.files) {
+                const isThumbnail = file.fieldname.startsWith("thumbnail");
                 const uploadRes = await uploadAnyFileToCloudinary(
                     file.path,
-                    "campaign-posts",
+                    isThumbnail ? "campaign-thumbnails" : "campaign-posts",
                     null,
                     { mimetype: file.mimetype },
                 );
@@ -2910,6 +2993,11 @@ router.put("/posts/:id", mediaUpload.any(), async (req, res) => {
                         updates.platform_media_urls[accountId] = updates.platform_media_urls[accountId].filter(url => !url.startsWith("blob:") && !url.includes("localhost"));
                         updates.platform_media_urls[accountId].push(uploadRes.secure_url);
                     }
+                } else if (file.fieldname === "thumbnail") {
+                    updates.thumbnail_url = uploadRes.secure_url;
+                } else if (file.fieldname.startsWith("thumbnail_")) {
+                    const accountId = file.fieldname.replace("thumbnail_", "");
+                    updates.platform_thumbnails[accountId] = uploadRes.secure_url;
                 }
             }
         } catch (err) {

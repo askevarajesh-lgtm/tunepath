@@ -90,8 +90,10 @@ export default function ListView({
 
   const getPostTypeLabel = (row) => {
     if (row?.type === "Text Post") return "Text";
-    if (row?.mediaUrl) {
-      if (/\.(mp4|mov|avi|webm|mkv)$/i.test(row.mediaUrl)) return "Video";
+    const rawMedia = row?.media_url || row?.mediaUrl || (Array.isArray(row?.media) ? row?.media[0] : row?.media);
+    const firstUrl = Array.isArray(rawMedia) ? rawMedia[0] : rawMedia;
+    if (firstUrl) {
+      if (typeof firstUrl === "string" && (/\.(mp4|mov|avi|webm|mkv)$/i.test(firstUrl) || firstUrl.includes("/video/upload/"))) return "Video";
       return "Image";
     }
     return "Text";
@@ -440,21 +442,21 @@ export default function ListView({
               title: "Media",
               key: "media",
               render: (_, row) => {
+                const rawMedia = row.media_url || row.mediaUrl || (Array.isArray(row.media) ? row.media[0] : row.media);
+                const mediaUrls = Array.isArray(rawMedia) ? rawMedia : (rawMedia ? [rawMedia] : []);
                 const postType = getPostTypeLabel(row);
-                if (postType === "Text")
+
+                if (postType === "Text" || mediaUrls.length === 0)
                   return <Text type="secondary">Text-only</Text>;
+
                 const icon =
                   postType === "Video" ? (
                     <VideoCameraOutlined />
                   ) : (
                     <FileImageOutlined />
                   );
-                if (!row.mediaUrl || (Array.isArray(row.mediaUrl) && row.mediaUrl.length === 0))
-                  return <Text type="secondary">No media</Text>;
-                
-                const isBlob = Array.isArray(row.mediaUrl)
-                  ? row.mediaUrl.some(url => url?.startsWith("blob:"))
-                  : row.mediaUrl?.startsWith("blob:");
+
+                const isBlob = mediaUrls.some(url => typeof url === "string" && url.startsWith("blob:"));
 
                 if (isBlob) {
                   return (
@@ -466,15 +468,15 @@ export default function ListView({
                   );
                 }
                 
-                const firstMediaUrl = Array.isArray(row.mediaUrl) ? row.mediaUrl[0] : row.mediaUrl;
-                const isCarousel = Array.isArray(row.mediaUrl) && row.mediaUrl.length > 1;
+                const firstMediaUrl = mediaUrls[0];
+                const isCarousel = mediaUrls.length > 1;
 
                 return (
                   <a href={firstMediaUrl} target="_blank" rel="noreferrer">
                     <Space size={4}>
                       {icon}
                       <LinkOutlined />
-                      <span>{isCarousel ? `View ${row.mediaUrl.length} files` : 'View file'}</span>
+                      <span>{isCarousel ? `View ${mediaUrls.length} files` : 'View file'}</span>
                     </Space>
                   </a>
                 );

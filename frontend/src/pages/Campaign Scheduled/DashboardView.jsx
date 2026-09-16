@@ -37,6 +37,8 @@ import {
   UserOutlined,
   SendOutlined,
   HeartFilled,
+  PlayCircleOutlined,
+  FileImageOutlined,
 } from "@ant-design/icons";
 import {
   XAxis,
@@ -167,6 +169,46 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
       value: stats.count,
     }));
   }, [analytics]);
+
+  const displayTopPosts = useMemo(() => {
+    const rawPosts = analytics?.topPosts || [];
+    if (!Array.isArray(rawPosts) || rawPosts.length === 0) return [];
+
+    const expanded = [];
+    rawPosts.forEach((post) => {
+      const publications = post.platform_publications || {};
+      const pubKeys = Object.keys(publications);
+
+      if (pubKeys.length > 0) {
+        pubKeys.forEach((platformId) => {
+          const pub = publications[platformId];
+          if (pub && (pub.status === "Published" || !pub.status)) {
+            const account = (accounts || []).find((a) => a.id === platformId || a.platform === pub.platform);
+            const platformName = pub.platform || account?.platform || (typeof platformId === 'string' ? platformId.split('-')[0] : 'unknown');
+            
+            expanded.push({
+              ...post,
+              id: `${post.id || post._id}_${platformId}`,
+              parentPostId: post.id || post._id,
+              platformId: platformId,
+              platform: platformName,
+              accountName: account?.page_name || account?.username || account?.business_name || post.accountName || null,
+              url: pub.url || post.url,
+              likes: typeof pub.likes === 'number' ? pub.likes : (post.likes || 0),
+              comments: typeof pub.comments === 'number' ? pub.comments : (post.comments || 0),
+              shares: typeof pub.shares === 'number' ? pub.shares : (post.shares || 0),
+              published_at: pub.published_at || post.published_at || post.scheduled_iso,
+              platform_publications: { [platformId]: pub }
+            });
+          }
+        });
+      } else {
+        expanded.push(post);
+      }
+    });
+
+    return expanded.sort((a, b) => (b.likes || 0) + (b.comments || 0) - ((a.likes || 0) + (a.comments || 0)));
+  }, [analytics?.topPosts, accounts]);
 
   const currentStats = useMemo(() => {
     const baseStats = analytics?.stats || {
@@ -562,7 +604,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
       </Card>
 
       {/* TOP PERFORMING CONTENT SECTION */}
-      {analytics?.topPosts && analytics.topPosts.length > 0 && (
+      {displayTopPosts && displayTopPosts.length > 0 && (
         <Card
           className="glass-card"
           title={
@@ -576,7 +618,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
           style={{ marginBottom: 32, borderRadius: 20 }}
         >
           <Table
-            dataSource={analytics.topPosts}
+            dataSource={displayTopPosts}
             rowKey="id"
             pagination={false}
             columns={[
@@ -585,19 +627,56 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                 dataIndex: 'caption',
                 key: 'caption',
                 render: (text, record) => {
-                  const thumb = record.media_url || record.mediaUrl || (Array.isArray(record.media) ? record.media[0] : null);
+                  const rawMedia = record.media_url || record.mediaUrl || (Array.isArray(record.media) ? record.media[0] : record.media);
+                  const thumb = Array.isArray(rawMedia) ? rawMedia[0] : rawMedia;
+                  const isVideo = typeof thumb === 'string' && (
+                    /\.(mp4|mov|avi|webm|mkv)$/i.test(thumb) || 
+                    thumb.includes('/video/upload/') ||
+                    record.type === 'Video' ||
+                    record.postType === 'video'
+                  );
+
+                  const account = (accounts || []).find((a) => a.id === record.platformId || a.platform === record.platform);
+                  const channelName = account?.page_name || account?.username || account?.business_name || record.accountName;
+                  const platformName = record.platform || account?.platform || 'unknown';
+
                   return (
                     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      {thumb && (
-                        <div style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
-                          <img src={thumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      {thumb ? (
+                        <div style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', flexShrink: 0, position: 'relative', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {isVideo ? (
+                            <>
+                              <video src={thumb} muted preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <PlayCircleOutlined style={{ color: '#fff', fontSize: 16 }} />
+                              </div>
+                            </>
+                          ) : (
+                            <img 
+                              src={thumb} 
+                              alt="" 
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--bg-tertiary, #f1f5f9)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary, #94a3b8)', flexShrink: 0 }}>
+                          <FileImageOutlined style={{ fontSize: 18 }} />
                         </div>
                       )}
                       <div>
                         <Text strong style={{ display: 'block', fontSize: 13, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {text || record.title || "Social Post"}
                         </Text>
-                        <Text type="secondary" style={{ fontSize: 11 }}>{record.campaign || "Social Campaign"}</Text>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                          {platformIcons[platformName] || platformIcons.unknown}
+                          <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>
+                            {channelName ? channelName : (record.campaign || "Social Channel")}
+                          </Text>
+                        </div>
                       </div>
                     </div>
                   );
@@ -629,9 +708,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                 title: 'Live Link',
                 key: 'link',
                 render: (_, record) => {
-                  const pubKeys = Object.keys(record.platform_publications || {});
-                  const firstPub = pubKeys.length > 0 ? record.platform_publications[pubKeys[0]] : null;
-                  const url = firstPub?.url || record.url;
+                  const url = record.url;
                   return url ? (
                     <a href={url} target="_blank" rel="noopener noreferrer">
                       <Tag color="blue" style={{ borderRadius: 10, cursor: 'pointer', fontWeight: 600 }}>
@@ -639,7 +716,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                       </Tag>
                     </a>
                   ) : (
-                    <Tag style={{ borderRadius: 10 }}>Published</Tag>
+                    <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
                   );
                 }
               }

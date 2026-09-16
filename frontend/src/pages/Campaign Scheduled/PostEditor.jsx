@@ -19,6 +19,7 @@ import {
   Carousel,
   Alert,
   Tabs,
+  Tag,
 } from "antd";
 import {
   HeartOutlined,
@@ -119,6 +120,25 @@ const cropImage = (file, cropData, containerRatio) => {
 };
 
 const { Text } = Typography;
+
+const renderPlatformIcon = (platform) => {
+  switch (platform) {
+    case "facebook":
+      return <FacebookFilled style={{ color: "#1877f2" }} />;
+    case "instagram":
+      return <InstagramFilled style={{ color: "#e4405f" }} />;
+    case "linkedin":
+      return <LinkedinFilled style={{ color: "#0a66c2" }} />;
+    case "youtube":
+      return <YoutubeFilled style={{ color: "#ff0000" }} />;
+    case "google_business":
+      return <ShopOutlined style={{ color: "#4285f4" }} />;
+    case "pinterest":
+      return <PinterestFilled style={{ color: "#E60023" }} />;
+    default:
+      return null;
+  }
+};
 
 const PLATFORM_CAPABILITIES = {
   youtube: ["video"],
@@ -341,22 +361,7 @@ const PostPreview = ({
   }, [currentRatio, mediaUrls, measuredRatios]);
 
   const platformIcon = useMemo(() => {
-    switch (platform) {
-      case "facebook":
-        return <FacebookFilled style={{ color: "#1877f2" }} />;
-      case "instagram":
-        return <InstagramFilled style={{ color: "#e4405f" }} />;
-      case "linkedin":
-        return <LinkedinFilled style={{ color: "#0a66c2" }} />;
-      case "youtube":
-        return <YoutubeFilled style={{ color: "#ff0000" }} />;
-      case "google_business":
-        return <ShopOutlined style={{ color: "#4285f4" }} />;
-      case "pinterest":
-        return <PinterestFilled style={{ color: "#E60023" }} />;
-      default:
-        return null;
-    }
+    return renderPlatformIcon(platform);
   }, [platform]);
 
   return (
@@ -621,6 +626,8 @@ export default function PostEditor({
   const media = Form.useWatch("media", form);
   const [mediaFiles, setMediaFiles] = useState([]);
   const [platformMediaFiles, setPlatformMediaFiles] = useState({});
+  const [thumbnailFile, setThumbnailFile] = useState(null);
+  const [platformThumbnailFiles, setPlatformThumbnailFiles] = useState({});
   const selectedPlatformIds = Form.useWatch("platforms", form) || [];
   
   const needsTitle = useMemo(() => {
@@ -651,14 +658,30 @@ export default function PostEditor({
     );
 
     return Object.entries(grouped).map(([platform, platformAccounts]) => ({
-      label: platform.charAt(0).toUpperCase() + platform.slice(1),
-      options: platformAccounts.map((account) => ({
-        label: account.page_name || account.username || account.id,
-        value: account.id,
-        disabled:
-          occupiedPlatforms.has(platform) &&
-          !selectedPlatformIds.includes(account.id),
-      })),
+      label: (
+        <Space size={6}>
+          {renderPlatformIcon(platform)}
+          <span style={{ textTransform: "capitalize", fontWeight: 600 }}>
+            {platform.replace("_", " ")}
+          </span>
+        </Space>
+      ),
+      options: platformAccounts.map((account) => {
+        const accountName = account.page_name || account.username || account.id;
+        return {
+          label: (
+            <Space size={6}>
+              {renderPlatformIcon(account.platform)}
+              <span>{accountName}</span>
+            </Space>
+          ),
+          value: account.id,
+          searchValue: accountName,
+          disabled:
+            occupiedPlatforms.has(platform) &&
+            !selectedPlatformIds.includes(account.id),
+        };
+      }),
     }));
   }, [accounts, selectedPlatformIds]);
 
@@ -781,6 +804,8 @@ export default function PostEditor({
       setCropDataMap({ default: { x: 0, y: 0, zoom: 1 } });
       setMediaFiles([]);
       setPlatformMediaFiles({});
+      setThumbnailFile(null);
+      setPlatformThumbnailFiles({});
       setAspectRatios({ default: "original" });
       setPreviewTab("all");
       setActiveMediaTab("default");
@@ -855,6 +880,20 @@ export default function PostEditor({
        }
     });
 
+    // Extract thumbnails
+    let resolvedThumbnailFile = thumbnailFile;
+    if (!resolvedThumbnailFile && values.thumbnail && values.thumbnail.length > 0) {
+      resolvedThumbnailFile = values.thumbnail[0]?.originFileObj || values.thumbnail[0];
+    }
+
+    const resolvedPlatformThumbnailFiles = { ...platformThumbnailFiles };
+    uniqueAccountIds.forEach(id => {
+      const pThumb = values[`thumbnail_${id}`];
+      if (pThumb && pThumb.length > 0 && !resolvedPlatformThumbnailFiles[id]) {
+        resolvedPlatformThumbnailFiles[id] = pThumb[0]?.originFileObj || pThumb[0];
+      }
+    });
+
     const isScheduled = mode === "scheduled";
     const resolvedDate = isScheduled ? values.date : dayjs();
     const resolvedTime = isScheduled ? values.time : dayjs();
@@ -886,6 +925,8 @@ export default function PostEditor({
       boards: selectedBoards,
       mediaFile,
       platformMediaFiles,
+      thumbnailFile: resolvedThumbnailFile,
+      platformThumbnailFiles: resolvedPlatformThumbnailFiles,
     };
   };
 
@@ -1019,7 +1060,38 @@ export default function PostEditor({
                 mode="multiple"
                 options={accountOptions}
                 placeholder="Select accounts to publish to"
-                optionFilterProp="label"
+                filterOption={(input, option) =>
+                  (option?.searchValue || "")
+                    .toLowerCase()
+                    .includes(input.toLowerCase())
+                }
+                tagRender={(props) => {
+                  const { label, value, closable, onClose } = props;
+                  const account = (accounts || []).find((a) => a.id === value);
+                  const accountName = account
+                    ? account.page_name || account.username || account.id
+                    : typeof label === "string"
+                    ? label
+                    : value;
+                  return (
+                    <Tag
+                      closable={closable}
+                      onClose={onClose}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginRight: 4,
+                        margin: "2px 4px 2px 0",
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                      }}
+                    >
+                      {account && renderPlatformIcon(account.platform)}
+                      <span>{accountName}</span>
+                    </Tag>
+                  );
+                }}
                 onChange={(nextIds) => {
                   form.setFieldValue("platforms", nextIds);
                 }}
@@ -1079,7 +1151,11 @@ export default function PostEditor({
                     items={[
                       {
                         key: "default",
-                        label: "Default Media",
+                        label: (
+                          <Space size={4}>
+                            <span>Default Media</span>
+                          </Space>
+                        ),
                         children: (
                           <div style={{ padding: '16px 0' }}>
                             <Form.Item
@@ -1116,6 +1192,33 @@ export default function PostEditor({
                                 </Button>
                               </Upload>
                             </Form.Item>
+
+                            {postType === "video" && (
+                              <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px dashed #e2e8f0" }}>
+                                <Form.Item
+                                  label="Default Video Thumbnail"
+                                  name="thumbnail"
+                                  valuePropName="fileList"
+                                  getValueFromEvent={(e) => e?.fileList || []}
+                                >
+                                  <Upload
+                                    beforeUpload={() => false}
+                                    maxCount={1}
+                                    accept="image/*"
+                                    listType="picture"
+                                    onChange={(info) => {
+                                      const file = info.fileList?.[0]?.originFileObj || null;
+                                      setThumbnailFile(file);
+                                    }}
+                                  >
+                                    <Button icon={<UploadOutlined />}>Upload Default Thumbnail</Button>
+                                  </Upload>
+                                </Form.Item>
+                                <div style={{ marginTop: -8, fontSize: 12, color: "#888" }}>
+                                  Optional. Used as cover thumbnail for video posts.
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )
                       },
@@ -1124,7 +1227,12 @@ export default function PostEditor({
                         const accountName = account ? (account.page_name || account.username || account.platform) : accountId;
                         return {
                           key: accountId,
-                          label: accountName,
+                          label: (
+                            <Space size={6}>
+                              {account && renderPlatformIcon(account.platform)}
+                              <span>{accountName}</span>
+                            </Space>
+                          ),
                           children: (
                             <div style={{ padding: '16px 0' }}>
                               <Form.Item
@@ -1154,6 +1262,36 @@ export default function PostEditor({
                               <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
                                 Optional. If not provided, the Default Media will be used.
                               </div>
+
+                              {postType === "video" && (
+                                <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px dashed #e2e8f0" }}>
+                                  <Form.Item
+                                    label={`Thumbnail for ${accountName}`}
+                                    name={`thumbnail_${accountId}`}
+                                    valuePropName="fileList"
+                                    getValueFromEvent={(e) => e?.fileList || []}
+                                  >
+                                    <Upload
+                                      beforeUpload={() => false}
+                                      maxCount={1}
+                                      accept="image/*"
+                                      listType="picture"
+                                      onChange={(info) => {
+                                        const file = info.fileList?.[0]?.originFileObj || null;
+                                        setPlatformThumbnailFiles(prev => ({
+                                          ...prev,
+                                          [accountId]: file
+                                        }));
+                                      }}
+                                    >
+                                      <Button icon={<UploadOutlined />}>Upload thumbnail for {accountName}</Button>
+                                    </Upload>
+                                  </Form.Item>
+                                  <div style={{ marginTop: -8, fontSize: 12, color: "#888" }}>
+                                    Optional. Used as cover thumbnail for {accountName}.
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )
                         };
@@ -1161,30 +1299,59 @@ export default function PostEditor({
                     ]}
                   />
                 ) : (
-                  <Form.Item
-                    name="media"
-                    valuePropName="fileList"
-                    getValueFromEvent={(e) => e?.fileList || []}
-                    rules={[
-                      { required: true, message: `Please upload a ${postType}` },
-                    ]}
-                    noStyle
-                  >
-                    <Upload
-                      beforeUpload={() => false}
-                      maxCount={10}
-                      multiple={true}
-                      accept={postType === "video" ? "video/*" : "image/*"}
-                      listType="text"
-                      onChange={(info) => {
-                        setMediaFiles([...(info.fileList || [])]);
-                      }}
+                  <div>
+                    <Form.Item
+                      name="media"
+                      valuePropName="fileList"
+                      getValueFromEvent={(e) => e?.fileList || []}
+                      rules={[
+                        { required: true, message: `Please upload a ${postType}` },
+                      ]}
+                      noStyle
                     >
-                      <Button icon={<UploadOutlined />}>
-                        {postType === "video" ? "Upload Video" : "Upload Image"}
-                      </Button>
-                    </Upload>
-                  </Form.Item>
+                      <Upload
+                        beforeUpload={() => false}
+                        maxCount={10}
+                        multiple={true}
+                        accept={postType === "video" ? "video/*" : "image/*"}
+                        listType="text"
+                        onChange={(info) => {
+                          setMediaFiles([...(info.fileList || [])]);
+                        }}
+                      >
+                        <Button icon={<UploadOutlined />}>
+                          {postType === "video" ? "Upload Video" : "Upload Image"}
+                        </Button>
+                      </Upload>
+                    </Form.Item>
+
+                    {postType === "video" && (
+                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px dashed #e2e8f0" }}>
+                        <Form.Item
+                          label="Video Thumbnail"
+                          name="thumbnail"
+                          valuePropName="fileList"
+                          getValueFromEvent={(e) => e?.fileList || []}
+                        >
+                          <Upload
+                            beforeUpload={() => false}
+                            maxCount={1}
+                            accept="image/*"
+                            listType="picture"
+                            onChange={(info) => {
+                              const file = info.fileList?.[0]?.originFileObj || null;
+                              setThumbnailFile(file);
+                            }}
+                          >
+                            <Button icon={<UploadOutlined />}>Upload Video Thumbnail</Button>
+                          </Upload>
+                        </Form.Item>
+                        <div style={{ marginTop: -8, fontSize: 12, color: "#888" }}>
+                          Optional. Used as cover thumbnail for video posts.
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 )}
               </Form.Item>
             )}

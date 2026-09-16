@@ -152,3 +152,141 @@ exports.deleteTemplate = async (req, res, next) => {
     next(err);
   }
 };
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const axios = require('axios');
+const unzipper = require('unzipper');
+const cloudinary = require('../../config/cloudinary');
+
+const PREVIEWS_DIR = path.join(os.tmpdir(), 'tunepath_template_previews');
+
+function findRootHtmlDir(baseDir) {
+  const items = fs.readdirSync(baseDir);
+  const hasRootHtml = items.some(item => item.toLowerCase().endsWith('.html'));
+  if (hasRootHtml) return baseDir;
+
+  const subdirs = items.filter(item => {
+    const fullPath = path.join(baseDir, item);
+    return fs.statSync(fullPath).isDirectory();
+  });
+
+  if (subdirs.length === 1) {
+    const subDirPath = path.join(baseDir, subdirs[0]);
+    const subItems = fs.readdirSync(subDirPath);
+    if (subItems.some(i => i.toLowerCase().endsWith('.html'))) {
+      return subDirPath;
+    }
+  }
+
+  return baseDir;
+}
+
+async function getOrExtractTemplateDir(template) {
+  const templateDir = path.join(PREVIEWS_DIR, template._id.toString());
+  if (fs.existsSync(templateDir) && fs.readdirSync(templateDir).length > 0) {
+    return findRootHtmlDir(templateDir);
+  }
+
+  fs.mkdirSync(templateDir, { recursive: true });
+
+  let publicId = template.zipPublicId;
+  let uploadType = 'upload';
+  if (template.zipUrl) {
+    const regex = /\/(upload|authenticated)(?:\/s--[a-zA-Z0-9_-]+--)?(?:\/v\d+)?\/(.+)$/;
+    const match = template.zipUrl.match(regex);
+    if (match) {
+      uploadType = match[1];
+      publicId = match[2];
+    }
+  }
+
+  const downloadUrl = cloudinary.utils.private_download_url(publicId, 'zip', {
+    resource_type: 'raw',
+    type: uploadType
+  });
+
+  const zipPath = path.join(os.tmpdir(), `template_${template._id.toString()}.zip`);
+  const response = await axios({ method: 'GET', url: downloadUrl, responseType: 'stream' });
+
+  const writer = fs.createWriteStream(zipPath);
+  response.data.pipe(writer);
+
+  await new Promise((resolve, reject) => {
+    writer.on('finish', resolve);
+    writer.on('error', reject);
+  });
+
+  await fs.createReadStream(zipPath).pipe(unzipper.Extract({ path: templateDir })).promise();
+
+  try { fs.unlinkSync(zipPath); } catch (e) {}
+
+  return findRootHtmlDir(templateDir);
+}
+
+exports.previewTemplate = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const template = await Template.findById(id);
+
+    if (!template || template.isDeleted) {
+      return res.status(404).send('Template not found');
+    }
+
+    const templateRootDir = await getOrExtractTemplateDir(template);
+
+    let subPath = '';
+    if (Array.isArray(req.params.splat)) {
+      subPath = path.join(...req.params.splat);
+    } else if (typeof req.params.splat === 'string') {
+      subPath = req.params.splat;
+    }
+
+    if (!subPath || subPath === '.') {
+      subPath = 'index.html';
+    }
+
+    let filePath = path.normalize(path.join(templateRootDir, subPath));
+    if (!filePath.startsWith(templateRootDir)) {
+      return res.status(403).send('Forbidden');
+    }
+
+    if (!fs.existsSync(filePath)) {
+      if (fs.existsSync(path.join(filePath, 'index.html'))) {
+        filePath = path.join(filePath, 'index.html');
+      } else {
+        return res.status(404).send('File not found');
+      }
+    }
+
+    if (fs.statSync(filePath).isDirectory()) {
+      const indexFile = path.join(filePath, 'index.html');
+      if (fs.existsSync(indexFile)) {
+        filePath = indexFile;
+      } else {
+        return res.status(404).send('Index file not found');
+      }
+    }
+
+    if (filePath.toLowerCase().endsWith('.html')) {
+      let content = fs.readFileSync(filePath, 'utf-8');
+      const baseTag = `<base href="/api/templates/${template._id.toString()}/preview/">`;
+      if (!content.includes('<base ')) {
+        if (content.includes('<head>')) {
+          content = content.replace('<head>', `<head>\n  ${baseTag}`);
+        } else if (content.includes('<HEAD>')) {
+          content = content.replace('<HEAD>', `<HEAD>\n  ${baseTag}`);
+        } else {
+          content = `${baseTag}\n${content}`;
+        }
+      }
+      return res.type('html').send(content);
+    }
+
+    res.sendFile(filePath);
+  } catch (err) {
+    console.error('Template preview error:', err);
+    res.status(500).send('Error serving template preview');
+  }
+};

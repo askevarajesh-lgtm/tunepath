@@ -54,23 +54,30 @@ async function request(path, options = {}) {
 }
 
 function normalizePost(post) {
+  const rawMedia = post.media_url || post.mediaUrl || post.media;
+  const normalizedMediaUrl = Array.isArray(rawMedia) ? rawMedia : (rawMedia ? [rawMedia] : []);
+  const primaryMediaUrl = normalizedMediaUrl.length > 0 ? normalizedMediaUrl[0] : null;
+
   return {
-    id: post.id,
+    id: post.id || post._id,
     caption: post.caption,
+    title: post.title || post.campaign,
     campaign: post.campaign,
-    mediaUrl: post.media_url,
+    mediaUrl: primaryMediaUrl,
+    media_url: rawMedia,
+    mediaList: normalizedMediaUrl,
     status: post.status,
     type: post.type,
-    postMode: post.postMode || "scheduled",
-    scheduledDate: post.scheduled_date,
-    scheduledTime: post.scheduled_time,
-    scheduledISO: post.scheduled_iso,
+    postMode: post.postMode || post.post_mode || "scheduled",
+    scheduledDate: post.scheduled_date || post.scheduledDate,
+    scheduledTime: post.scheduled_time || post.scheduledTime,
+    scheduledISO: post.scheduled_iso || post.scheduledISO,
     platforms: post.platforms || [],
     likes: Number(post.likes) || 0,
     comments: Number(post.comments) || 0,
     shares: Number(post.shares) || 0,
-    publishedAt: post.published_at || null,
-    errorMessage: post.error_message || null,
+    publishedAt: post.published_at || post.publishedAt || null,
+    errorMessage: post.error_message || post.errorMessage || null,
     platform_publications: post.platform_publications || {},
     boards: post.boards || {},
   };
@@ -112,8 +119,11 @@ export const campaignScheduledApi = {
     };
   },
   async createPost(payload, mediaFile = null, clientCompanyId = null) {
-    const { platformMediaFiles, ...restPayload } = payload;
-    if (mediaFile || (platformMediaFiles && Object.keys(platformMediaFiles).length > 0)) {
+    const { platformMediaFiles, thumbnailFile, platformThumbnailFiles, ...restPayload } = payload;
+    const hasMedia = mediaFile || (platformMediaFiles && Object.keys(platformMediaFiles).length > 0);
+    const hasThumbnail = thumbnailFile || (platformThumbnailFiles && Object.keys(platformThumbnailFiles).length > 0);
+
+    if (hasMedia || hasThumbnail) {
       const formData = new FormData();
       if (mediaFile) {
         if (Array.isArray(mediaFile)) {
@@ -133,8 +143,18 @@ export const campaignScheduledApi = {
         });
       }
 
+      if (thumbnailFile) {
+        formData.append("thumbnail", thumbnailFile);
+      }
+
+      if (platformThumbnailFiles) {
+        Object.entries(platformThumbnailFiles).forEach(([id, file]) => {
+          if (file) formData.append(`thumbnail_${id}`, file);
+        });
+      }
+
       Object.keys(restPayload).forEach((key) => {
-        if (key === "platforms" || key === "boards" || key === "post_option") {
+        if (key === "platforms" || key === "boards" || key === "post_option" || key === "platform_thumbnails") {
           formData.append(key, JSON.stringify(restPayload[key]));
         } else {
           formData.append(key, restPayload[key]);
@@ -160,8 +180,11 @@ export const campaignScheduledApi = {
     return normalizePost(data.post);
   },
   async updatePost(id, payload, mediaFile = null, clientCompanyId = null) {
-    const { platformMediaFiles, ...restPayload } = payload;
-    if (mediaFile || (platformMediaFiles && Object.keys(platformMediaFiles).length > 0)) {
+    const { platformMediaFiles, thumbnailFile, platformThumbnailFiles, ...restPayload } = payload;
+    const hasMedia = mediaFile || (platformMediaFiles && Object.keys(platformMediaFiles).length > 0);
+    const hasThumbnail = thumbnailFile || (platformThumbnailFiles && Object.keys(platformThumbnailFiles).length > 0);
+
+    if (hasMedia || hasThumbnail) {
       const formData = new FormData();
       if (mediaFile) {
         if (Array.isArray(mediaFile)) {
@@ -181,8 +204,18 @@ export const campaignScheduledApi = {
         });
       }
 
+      if (thumbnailFile) {
+        formData.append("thumbnail", thumbnailFile);
+      }
+
+      if (platformThumbnailFiles) {
+        Object.entries(platformThumbnailFiles).forEach(([pId, file]) => {
+          if (file) formData.append(`thumbnail_${pId}`, file);
+        });
+      }
+
       Object.keys(restPayload).forEach((key) => {
-        if (key === "platforms" || key === "boards" || key === "post_option") {
+        if (key === "platforms" || key === "boards" || key === "post_option" || key === "platform_thumbnails") {
           formData.append(key, JSON.stringify(restPayload[key]));
         } else {
           formData.append(key, restPayload[key]);
