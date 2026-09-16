@@ -54,4 +54,20 @@ export const getClientMonthlyReportsList = async (clientId) => {
     return response.data.data;
 };
 
+export const getMetaLeadCampaigns = async (clientId) => {
+    const params = {};
+    if (clientId && clientId !== 'all') params.clientId = clientId;
+    const response = await api.get('/reports/meta-lead-campaigns', { params });
+    return response.data.data;
+};
+
+export const getMetaReachCampaigns = async (clientId) => {
+    const params = {};
+    if (clientId && clientId !== 'all') params.clientId = clientId;
+    const response = await api.get('/reports/meta-reach-campaigns', { params });
+    return response.data.data;
+};
+
+
+
 

@@ -8,6 +8,8 @@ router.use(protect);
 
 router.get('/history', reportController.getRecentSentReports);
 router.get('/analytics', reportController.getAnalytics);
+router.get('/meta-lead-campaigns', reportController.getMetaLeadCampaigns);
+router.get('/meta-reach-campaigns', reportController.getMetaReachCampaigns);
 router.post('/generate', reportController.generateReport);
 
 // Monthly Highlights (Month-on-Month Client Report)

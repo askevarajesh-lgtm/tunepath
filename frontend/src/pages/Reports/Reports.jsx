@@ -21,7 +21,10 @@ const { Option } = Select;
 // Colors for charts
 const COLORS = ['#8b5cf6', '#10b981', '#f59e0b', '#ef4444', 'var(--accent-primary)'];
 
-import MonthlyHighlightsEditorModal from './components/MonthlyHighlightsEditorModal';
+import CreateReportModal from './components/CreateReportModal';
+import { generateMetaLeadCampaignPDF } from '../../utils/metaLeadCampaignPdfGenerator';
+import { generateMetaReachCampaignPDF } from '../../utils/metaReachCampaignPdfGenerator';
+import { getMetaLeadCampaigns, getMetaReachCampaigns } from '../../api/reportApi';
 import { Sparkles } from 'lucide-react';
 
 const Reports = () => {
@@ -32,8 +35,9 @@ const Reports = () => {
   const [realLeads, setRealLeads] = useState([]);
   const [realProposals, setRealProposals] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isHighlightsModalOpen, setIsHighlightsModalOpen] = useState(false);
-  
+  const [isCreateReportModalOpen, setIsCreateReportModalOpen] = useState(false);
+  const [selectedReportType, setSelectedReportType] = useState('meta_lead');
+
   const [selectedClient, setSelectedClient] = useState('all');
   const [selectedMonth, setSelectedMonth] = useState(dayjs());
   
@@ -213,18 +217,45 @@ const Reports = () => {
 
     if (action === 'edit' || action === 'view') {
       if (clientId) setSelectedClient(clientId);
+      if (record.template?.includes('Lead')) {
+        setSelectedReportType('Meta Campaign Insights – Lead Campaign');
+      } else if (record.template?.includes('Reach')) {
+        setSelectedReportType('Meta Campaign Insights – Reach Campaign');
+      } else if (record.template?.includes('Overview')) {
+        setSelectedReportType('Keyword Ranking Overview');
+      } else if (record.template?.includes('Details')) {
+        setSelectedReportType('Keyword Ranking Details');
+      } else if (record.template?.includes('Facebook')) {
+        setSelectedReportType('Meta Insights – Facebook');
+      } else if (record.template?.includes('Instagram')) {
+        setSelectedReportType('Meta Insights – Instagram');
+      } else {
+        setSelectedReportType('Highlights of the Month');
+      }
       setSelectedMonth(dayjs().month(month - 1).year(year));
-      setIsHighlightsModalOpen(true);
+      setIsCreateReportModalOpen(true);
     } else if (action === 'download') {
       const hide = message.loading('Generating PDF report...', 0);
       try {
-        const res = await getMonthlyHighlights(clientId, month, year);
-        hide();
-        if (res && res.status !== 'NotPublished') {
-          generateMonthlyHighlightsPDF(res, { companyName: clientName });
-          message.success('PDF report downloaded successfully');
+        if (record.template === 'Meta Campaign Insights - Lead Campaign' || record.template === 'Meta Lead Campaign Report') {
+          const metaRes = await getMetaLeadCampaigns(clientId);
+          hide();
+          generateMetaLeadCampaignPDF(metaRes, { companyName: clientName });
+          message.success('Meta Lead Campaign PDF report downloaded');
+        } else if (record.template === 'Meta Campaign Insights - Reach Campaign' || record.template === 'Meta Reach Campaign Report' || record.template?.includes('Reach')) {
+          const reachRes = await getMetaReachCampaigns(clientId);
+          hide();
+          generateMetaReachCampaignPDF(reachRes, { companyName: clientName });
+          message.success('Meta Reach Campaign PDF report downloaded');
         } else {
-          message.error('Report details not found for PDF export');
+          const res = await getMonthlyHighlights(clientId, month, year);
+          hide();
+          if (res && res.status !== 'NotPublished') {
+            generateMonthlyHighlightsPDF(res, { companyName: clientName });
+            message.success('PDF report downloaded successfully');
+          } else {
+            message.error('Report details not found for PDF export');
+          }
         }
       } catch (err) {
         hide();
@@ -314,10 +345,10 @@ const Reports = () => {
           <Button 
             type="primary" 
             icon={<Sparkles size={16} />} 
-            onClick={() => setIsHighlightsModalOpen(true)}
+            onClick={() => { setSelectedReportType('meta_lead'); setIsCreateReportModalOpen(true); }}
             style={{ borderRadius: 10, background: 'var(--accent-primary)', fontWeight: 600, height: 40 }}
           >
-            Create / Edit MoM Highlights
+            Create Report
           </Button>
 
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', background: 'var(--bg-secondary)', padding: '4px 6px 4px 16px', borderRadius: 12, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: 40 }}>
@@ -352,11 +383,12 @@ const Reports = () => {
         </div>
       </motion.div>
 
-      <MonthlyHighlightsEditorModal 
-        visible={isHighlightsModalOpen}
-        onClose={() => setIsHighlightsModalOpen(false)}
+      <CreateReportModal 
+        visible={isCreateReportModalOpen}
+        onClose={() => setIsCreateReportModalOpen(false)}
         clients={clients}
         defaultClientId={selectedClient !== 'all' ? selectedClient : (clients[0]?._id || null)}
+        defaultReportType={selectedReportType}
         onSuccess={fetchData}
       />
 

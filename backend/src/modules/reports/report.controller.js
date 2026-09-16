@@ -95,3 +95,26 @@ exports.generateReport = async (req, res, next) => {
         next(error);
     }
 };
+
+exports.getMetaLeadCampaigns = async (req, res, next) => {
+    try {
+        const { clientId } = req.query;
+        const targetId = clientId || req.user.agencyId || req.user._id;
+        const data = await reportService.getMetaLeadCampaigns(targetId);
+        res.status(200).json({ status: 'success', data });
+    } catch (error) {
+        next(error);
+    }
+};
+
+exports.getMetaReachCampaigns = async (req, res, next) => {
+    try {
+        const { clientId } = req.query;
+        const targetId = clientId || req.user.agencyId || req.user._id;
+        const data = await reportService.getMetaReachCampaigns(targetId);
+        res.status(200).json({ status: 'success', data });
+    } catch (error) {
+        next(error);
+    }
+};
+

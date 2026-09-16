@@ -93,6 +93,177 @@ exports.getReportAnalytics = async (agencyId) => {
     };
 };
 
+exports.getMetaLeadCampaigns = async (targetId) => {
+    const PerformanceAd = require('../performanceAds/performanceAds.model');
+    const mongoose = require('mongoose');
+
+    let queryId = targetId;
+    if (!queryId || !mongoose.Types.ObjectId.isValid(queryId)) {
+        queryId = null;
+    }
+
+    let dashboard = null;
+    if (queryId) {
+        dashboard = await PerformanceAd.findOne({ agency: queryId }).lean();
+        if (!dashboard) {
+            dashboard = await PerformanceAd.findOne({ clientId: queryId }).lean();
+        }
+    }
+    if (!dashboard) {
+        dashboard = await PerformanceAd.findOne({}).sort({ updatedAt: -1 }).lean();
+    }
+
+    const rawCampaigns = dashboard?.activeCampaigns || [];
+
+    const leadCampaigns = rawCampaigns
+        .filter(c => {
+            const isMeta = !c.platform || String(c.platform).toLowerCase().includes('meta') || String(c.platform).toLowerCase().includes('facebook');
+            return isMeta;
+        })
+        .map(c => {
+            const rawSpendNum = typeof c.spend === 'number' 
+                ? c.spend 
+                : parseFloat(String(c.spend || '0').replace(/[^0-9.]/g, '')) || 0;
+            const leadsNum = parseInt(c.leads || 0, 10) || 0;
+            let cplNum = 0;
+            if (leadsNum > 0) {
+                cplNum = parseFloat((rawSpendNum / leadsNum).toFixed(2));
+            } else if (c.cpl) {
+                cplNum = parseFloat(String(c.cpl).replace(/[^0-9.]/g, '')) || 0;
+            }
+
+            return {
+                id: c.id || c._id,
+                campaignName: c.campaign || c.name || 'Meta Lead Campaign',
+                typeOfCampaign: 'Lead',
+                amountSpent: `₹${rawSpendNum.toLocaleString('en-IN')}`,
+                rawSpend: rawSpendNum,
+                noOfLeads: leadsNum,
+                cpl: `₹${cplNum.toLocaleString('en-IN')}`,
+                rawCpl: cplNum,
+                status: c.status || 'Active',
+                adAccount: c.adAccount || 'Connected Meta Account'
+            };
+        });
+
+    const totalSpent = leadCampaigns.reduce((acc, c) => acc + c.rawSpend, 0);
+    const totalLeads = leadCampaigns.reduce((acc, c) => acc + c.noOfLeads, 0);
+    const avgCpl = totalLeads > 0 ? (totalSpent / totalLeads).toFixed(2) : 0;
+
+    return {
+        campaigns: leadCampaigns,
+        summary: {
+            totalCampaigns: leadCampaigns.length,
+            totalAmountSpent: `₹${totalSpent.toLocaleString('en-IN')}`,
+            rawTotalAmountSpent: totalSpent,
+            totalLeads: totalLeads,
+            avgCpl: `₹${parseFloat(avgCpl).toLocaleString('en-IN')}`,
+            rawAvgCpl: parseFloat(avgCpl)
+        }
+    };
+};
+
+exports.getMetaReachCampaigns = async (targetId) => {
+    const PerformanceAd = require('../performanceAds/performanceAds.model');
+    const mongoose = require('mongoose');
+
+    let queryId = targetId;
+    if (!queryId || !mongoose.Types.ObjectId.isValid(queryId)) {
+        queryId = null;
+    }
+
+    let dashboard = null;
+    if (queryId) {
+        dashboard = await PerformanceAd.findOne({ agency: queryId }).lean();
+        if (!dashboard) {
+            dashboard = await PerformanceAd.findOne({ clientId: queryId }).lean();
+        }
+    }
+    if (!dashboard) {
+        dashboard = await PerformanceAd.findOne({}).sort({ updatedAt: -1 }).lean();
+    }
+
+    const rawCampaigns = dashboard?.activeCampaigns || [];
+
+    const reachCampaigns = rawCampaigns
+        .filter(c => {
+            const isMeta = !c.platform || String(c.platform).toLowerCase().includes('meta') || String(c.platform).toLowerCase().includes('facebook');
+            return isMeta;
+        })
+        .map(c => {
+            const rawSpendNum = typeof c.spend === 'number' 
+                ? c.spend 
+                : parseFloat(String(c.spend || '0').replace(/[^0-9.]/g, '')) || 0;
+
+            const insights = c.insights || {};
+            const actions = Array.isArray(insights.actions) ? insights.actions : [];
+
+            // Extract Views (Video views or play actions or impressions fallback)
+            let viewsNum = parseInt(c.views || 0, 10) || 0;
+            if (viewsNum === 0 && insights) {
+                const videoAction = actions.find(a => 
+                    a.action_type === 'video_view' || 
+                    a.action_type === 'video_play' ||
+                    a.action_type === 'video_p30_watched_actions'
+                );
+                if (videoAction) viewsNum = parseInt(videoAction.value || 0, 10);
+                else if (insights.clicks) viewsNum = parseInt(insights.clicks || 0, 10);
+                else if (insights.impressions) viewsNum = parseInt(insights.impressions || 0, 10);
+            }
+
+            // Extract Reach
+            let reachNum = parseInt(c.reach || 0, 10) || 0;
+            if (reachNum === 0 && insights.reach) {
+                reachNum = parseInt(insights.reach || 0, 10);
+            }
+
+            // Extract Followers Gained (Page likes, page engagement, follows)
+            let followersNum = parseInt(c.followersGained || c.followers || 0, 10) || 0;
+            if (followersNum === 0 && actions.length > 0) {
+                const followAction = actions.find(a => 
+                    a.action_type === 'like' || 
+                    a.action_type === 'page_like' || 
+                    a.action_type === 'follow' || 
+                    a.action_type === 'page_engagement'
+                );
+                if (followAction) followersNum = parseInt(followAction.value || 0, 10);
+            }
+
+            return {
+                id: c.id || c._id,
+                campaignName: c.campaign || c.name || 'Meta Reach Campaign',
+                typeOfCampaign: 'Reach',
+                amountSpent: `₹${rawSpendNum.toLocaleString('en-IN')}`,
+                rawSpend: rawSpendNum,
+                views: viewsNum,
+                reach: reachNum,
+                followersGained: followersNum,
+                status: c.status || 'Active',
+                adAccount: c.adAccount || 'Connected Meta Account'
+            };
+        });
+
+    const totalSpentExclGst = reachCampaigns.reduce((acc, c) => acc + c.rawSpend, 0);
+    const totalSpentInclGst = Math.round(totalSpentExclGst * 1.18 * 100) / 100;
+    const totalViews = reachCampaigns.reduce((acc, c) => acc + c.views, 0);
+    const totalReach = reachCampaigns.reduce((acc, c) => acc + c.reach, 0);
+    const totalFollowersGained = reachCampaigns.reduce((acc, c) => acc + c.followersGained, 0);
+
+    return {
+        campaigns: reachCampaigns,
+        summary: {
+            totalCampaigns: reachCampaigns.length,
+            totalAmountSpent: `₹${totalSpentExclGst.toLocaleString('en-IN')}`,
+            rawTotalAmountSpent: totalSpentExclGst,
+            totalAmountSpentInclGst: `₹${totalSpentInclGst.toLocaleString('en-IN')}`,
+            rawTotalAmountSpentInclGst: totalSpentInclGst,
+            totalViews: totalViews,
+            totalReach: totalReach,
+            totalFollowersGained: totalFollowersGained
+        }
+    };
+};
+
 // Generates a report (either manually triggered or via cron)
 exports.generateAndSendReport = async (agencyId, clientId, template, scheduleId = null, recipients = [], deliveryMethod = 'Email', generatedBy = null) => {
     
@@ -100,20 +271,14 @@ exports.generateAndSendReport = async (agencyId, clientId, template, scheduleId 
     const client = await User.findById(clientId);
     if (!client) throw new Error('Client not found');
 
-    // 2. Gather Data from connected modules (Mocked data gathering process to simulate processing time)
-    // In a real scenario, we would call:
-    // const analyticsData = await analyticsService.getAnalyticsForClient(clientId);
-    // const mosData = await mosService.getClientMOS(clientId);
-    // etc...
-
-    // 3. Generate PDF (Mock implementation as requested)
-    // Using a public dummy PDF URL so the download button actually downloads a file
+    // 2. Gather Data from connected modules
     const dummyPdfUrl = `https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf`;
     let pages = 1;
     if (template === 'MOS Score Report') pages = 12;
     else if (template === 'SEO & Web Analytics') pages = 7;
     else if (template === 'Lead Generation & Conversion' || template === 'Leads Performance Report') pages = 6;
     else if (template === 'Social Media Engagement') pages = 8;
+    else if (template === 'Meta Campaign Insights - Lead Campaign' || template === 'Meta Lead Campaign Report') pages = 2;
 
     // 4. Send via Email/WhatsApp (Mock tracking)
     // Normally we would invoke the email service here.
