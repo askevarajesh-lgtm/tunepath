@@ -710,14 +710,31 @@ const getAllTasks = async (
       { watchers: userObjId },
     ];
   } else if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) && userId) {
-    // Strict isolation for clients: only their own company data
-    const user = await User.findById(userId).select("clientId");
-    if (user && user.clientId) {
-      additionalFilters.companyId = user.clientId;
-    } else {
-      // If no clientId linked, fallback to user ID as they are likely the client company itself
-      additionalFilters.companyId = userObjId;
-    }
+    // Strict isolation for clients: include companyId and tasks created/assigned by brand managers/admins
+    const user = await User.findById(userId).select("clientId brandId");
+    const activeBrandId = user?.brandId || user?.clientId || userObjId;
+
+    const brandUserIds = await User.find({
+      $or: [
+        { brandId: activeBrandId },
+        { clientId: activeBrandId },
+        { _id: activeBrandId }
+      ]
+    }).distinct("_id");
+
+    const allCompanyIds = Array.from(new Set([
+      activeBrandId.toString(),
+      userObjId.toString(),
+      ...(user?.clientId ? [user.clientId.toString()] : []),
+      ...(user?.brandId ? [user.brandId.toString()] : []),
+      ...brandUserIds.map(id => id.toString())
+    ])).map(id => new mongoose.Types.ObjectId(id));
+
+    additionalFilters.$or = [
+      { companyId: { $in: allCompanyIds } },
+      { createdBy: { $in: allCompanyIds } },
+      { assignedBy: { $in: allCompanyIds } }
+    ];
   } else if (restrictToOwnAssignedTasks) {
     // Regular assignee roles should only see tasks explicitly assigned to them, created by them, or watched by them.
     console.log(`[taskService.getAllTasks] Visibility DEBUG:`, {
@@ -1016,20 +1033,39 @@ const getTaskById = async (
     throw new Error("Task not found");
   }
 
-  // Apply role-based data filtering: Strict isolation for clients
+  // Apply role-based data filtering: Strict isolation for clients & brand users
   if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) && userId) {
-    const user = await User.findById(userId).select("clientId");
-    
-    // The user's company is either their linked clientId, or their own userId (if they are the client company)
-    const userCompanyId = user?.clientId ? user.clientId.toString() : userId.toString();
+    const user = await User.findById(userId).select("clientId brandId");
+    const activeBrandId = user?.brandId || user?.clientId || userId;
 
-    // Use both clientId (legacy) and companyId (ClientCompany ref) for check
+    const brandUserIds = await User.find({
+      $or: [
+        { brandId: activeBrandId },
+        { clientId: activeBrandId },
+        { _id: activeBrandId }
+      ]
+    }).distinct("_id");
+
+    const allowedCompanyIds = new Set([
+      activeBrandId.toString(),
+      userId.toString(),
+      ...(user?.clientId ? [user.clientId.toString()] : []),
+      ...(user?.brandId ? [user.brandId.toString()] : []),
+      ...brandUserIds.map(id => id.toString())
+    ]);
+
     const taskClientRef = task.companyId?._id || task.companyId;
     const taskClientIdLegacy = task.clientId?._id || task.clientId;
+    const taskCreatedBy = task.createdBy?._id || task.createdBy;
+    const taskAssignedBy = task.assignedBy?._id || task.assignedBy;
+    const taskAssignedTo = task.assignedTo?._id || task.assignedTo;
 
     const isAuthorized =
-      (taskClientRef && taskClientRef.toString() === userCompanyId) ||
-      (taskClientIdLegacy && taskClientIdLegacy.toString() === userCompanyId);
+      (taskClientRef && allowedCompanyIds.has(taskClientRef.toString())) ||
+      (taskClientIdLegacy && allowedCompanyIds.has(taskClientIdLegacy.toString())) ||
+      (taskCreatedBy && allowedCompanyIds.has(taskCreatedBy.toString())) ||
+      (taskAssignedBy && allowedCompanyIds.has(taskAssignedBy.toString())) ||
+      (taskAssignedTo && allowedCompanyIds.has(taskAssignedTo.toString()));
 
     if (!isAuthorized) {
       throw new Error(
@@ -3022,14 +3058,31 @@ const getTasksForKanban = async (
       { watchers: userObjId },
     ];
   } else if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) && userId) {
-    // Strict isolation for clients: only their own company data
-    const user = await User.findById(userId).select("clientId");
-    if (user && user.clientId) {
-      query.companyId = user.clientId;
-    } else {
-      // If no clientId linked, fallback to user ID as they are likely the client company itself
-      query.companyId = userObjId;
-    }
+    // Strict isolation for clients: include companyId and tasks created/assigned by brand managers/admins
+    const user = await User.findById(userId).select("clientId brandId");
+    const activeBrandId = user?.brandId || user?.clientId || userObjId;
+
+    const brandUserIds = await User.find({
+      $or: [
+        { brandId: activeBrandId },
+        { clientId: activeBrandId },
+        { _id: activeBrandId }
+      ]
+    }).distinct("_id");
+
+    const allCompanyIds = Array.from(new Set([
+      activeBrandId.toString(),
+      userObjId.toString(),
+      ...(user?.clientId ? [user.clientId.toString()] : []),
+      ...(user?.brandId ? [user.brandId.toString()] : []),
+      ...brandUserIds.map(id => id.toString())
+    ])).map(id => new mongoose.Types.ObjectId(id));
+
+    query.$or = [
+      { companyId: { $in: allCompanyIds } },
+      { createdBy: { $in: allCompanyIds } },
+      { assignedBy: { $in: allCompanyIds } }
+    ];
   } else if (restrictToOwnAssignedTasks) {
     // Regular assignee roles should only see tasks explicitly assigned to them, created by them, or watched by them.
     console.log(`[taskService.getTasksForKanban] Visibility DEBUG:`, {

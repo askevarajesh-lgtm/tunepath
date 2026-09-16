@@ -6,15 +6,16 @@ exports.getBrands = async (req, res, next) => {
   try {
     const isAdmin = ['supreme_super_admin', 'commander_admin'].includes(req.user.role);
     const isAgencyAdmin = ['agency_super_admin', 'agency_manager'].includes(req.user.role);
-    const isEmployee = !isAdmin && !isAgencyAdmin && !['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role);
+    const isBrandUser = ['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role);
+    const isEmployee = !isAdmin && !isAgencyAdmin && !isBrandUser;
 
-    if (!isAdmin && !isAgencyAdmin && !isEmployee) {
-      return res.status(403).json({ success: false, message: 'Not authorized to access brands' });
-    }
+    let filter = {};
 
-    let filter = { role: { $in: ['brand_super_admin', 'brand_manager', 'agency_client'] } };
-
-    if (isAgencyAdmin || isEmployee) {
+    if (isBrandUser) {
+      const brandId = req.companyId || req.user.tenantCompanyId || req.user.brandId || req.user._id;
+      filter._id = brandId;
+    } else if (isAgencyAdmin || isEmployee) {
+      filter.role = { $in: ['brand_super_admin', 'brand_manager', 'agency_client'] };
       // For agency admins and their employees, companyId represents the agency.
       const agencyId = req.user.agencyId || req.user.adminId || req.companyId || (isAgencyAdmin ? req.user._id : null);
       if (!agencyId) {
@@ -47,6 +48,7 @@ exports.getBrands = async (req, res, next) => {
         }
       }
     } else {
+      filter.role = { $in: ['brand_super_admin', 'brand_manager', 'agency_client'] };
       filter.isDirect = true;
       if (req.user && req.user.role === 'commander_admin') {
         filter.createdBy = req.user._id;

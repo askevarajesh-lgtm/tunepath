@@ -239,6 +239,17 @@ const DashboardTab = () => {
     const { stats, recentDeliverables, actionItems } = overviewData;
     const currentMonthName = selectedDate.format('MMMM YYYY');
 
+    const deliverableIds = new Set((recentDeliverables || []).map(d => (d._id || d.id || '').toString()));
+    const filteredActionItems = (actionItems || []).filter(item => {
+      const status = (item.status || '').toString().trim().toLowerCase();
+      const clientStatus = (item.clientReviewStatus || item.clientApprovalStatus || '').toString().trim().toLowerCase();
+      const isClientApproved = item.clientApproved === true || clientStatus === 'approved' || clientStatus === 'client_approved';
+      const isValidated = (item.validationStatus || '').toString().trim().toLowerCase() === 'validated';
+      const isCompleted = ['done', 'complete', 'completed', 'validated', 'approved', 'approved_by_client', 'client_approved', 'closed'].includes(status) || isClientApproved || isValidated;
+      const isDeliverable = deliverableIds.has((item._id || item.id || '').toString());
+      return !isCompleted && !isDeliverable;
+    });
+
     const kpis = [
       { label: 'TASKS COMPLETED', value: stats.completedTasksThisMonth, sub: `Out of ${stats.totalTasksThisMonth} this month`, color: 'var(--accent-secondary)', icon: <TrendingUp size={20} /> },
       { label: 'OPEN TASKS', value: stats.openTasksCount, sub: `In progress`, color: 'var(--accent-primary)', icon: <CheckSquare size={20} /> },
@@ -417,8 +428,8 @@ const DashboardTab = () => {
               <Text type="secondary" style={{ fontSize: 14, display: 'block', marginBottom: 24, fontWeight: 500 }}>Tasks requiring attention</Text>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {actionItems && actionItems.length > 0 ? (
-                  actionItems.map((item, idx) => (
+                {filteredActionItems && filteredActionItems.length > 0 ? (
+                  filteredActionItems.map((item, idx) => (
                     <div key={idx} className="hover-bg" style={{ display: 'flex', alignItems: 'center', padding: '20px 24px', background: 'var(--bg-secondary)', borderRadius: '24px 24px 24px 8px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', flexWrap: 'wrap', gap: 16 }}>
                       <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 12, color: 'var(--accent-danger)', border: '1px solid var(--border-color)' }}>
                         <AlertTriangle size={18}/>

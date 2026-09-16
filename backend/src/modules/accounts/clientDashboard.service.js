@@ -46,6 +46,8 @@ exports.getClientExecutiveDashboard = async (clientId, companyId, queryMonth, qu
   const pendingApprovalTasks = await Task.find({ 
     $or: [{ companyId: clientId }, { tenantCompanyId: clientId }, { companyId }], 
     status: { $in: ['sent_for_client_review', 'review', 'in_review'] },
+    clientReviewStatus: { $nin: ['approved', 'client_approved'] },
+    clientApproved: { $ne: true },
     createdAt: { $lte: endOfMonth }
   }).limit(5);
 
@@ -86,7 +88,15 @@ exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, q
     ]
   });
 
-  const completedStatuses = ['done', 'complete', 'completed', 'validated', 'approved'];
+  const completedStatuses = ['done', 'complete', 'completed', 'validated', 'approved', 'approved_by_client', 'client_approved', 'closed'];
+
+  const isTaskCompleted = (t) => {
+    const status = (t.status || '').toString().trim().toLowerCase();
+    const clientStatus = (t.clientReviewStatus || t.clientApprovalStatus || '').toString().trim().toLowerCase();
+    const isClientApproved = t.clientApproved === true || clientStatus === 'approved' || clientStatus === 'client_approved';
+    const isValidated = (t.validationStatus || '').toString().trim().toLowerCase() === 'validated';
+    return completedStatuses.includes(status) || isClientApproved || isValidated;
+  };
 
   // Filter tasks created on or before the end of the selected month
   const tasksUpToMonth = allTasks.filter(t => {
@@ -99,7 +109,7 @@ exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, q
     const created = t.createdAt ? new Date(t.createdAt) : null;
     const due = t.dueDate ? new Date(t.dueDate) : null;
     const completedDate = t.workCompletedAt || t.actualCompletionDate || t.completedAt || t.updatedAt;
-    const completedInMonth = completedStatuses.includes(t.status?.toLowerCase()) &&
+    const completedInMonth = isTaskCompleted(t) &&
       completedDate && new Date(completedDate) >= startOfMonth && new Date(completedDate) <= endOfMonth;
 
     const inMonth = (created && created >= startOfMonth && created <= endOfMonth) ||
@@ -110,30 +120,29 @@ exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, q
 
   // Completed tasks completed within this month
   const completedTasksThisMonth = allTasks.filter(t => {
-    const isCompleted = completedStatuses.includes(t.status?.toLowerCase());
-    if (!isCompleted) return false;
+    if (!isTaskCompleted(t)) return false;
     const dateToUse = t.workCompletedAt || t.actualCompletionDate || t.completedAt || t.updatedAt || t.createdAt;
     const d = new Date(dateToUse);
     return d >= startOfMonth && d <= endOfMonth;
   }).length;
+
+  // Deliverables logic
+  const actualDeliverables = tasksUpToMonth
+    .filter(t => isTaskCompleted(t))
+    .sort((a, b) => new Date(b.workCompletedAt || b.actualCompletionDate || b.updatedAt || b.createdAt || 0).getTime() - new Date(a.workCompletedAt || a.actualCompletionDate || a.updatedAt || a.createdAt || 0).getTime());
   
-  // Open tasks up to this month
-  const openTasks = tasksUpToMonth.filter(t => !completedStatuses.includes(t.status?.toLowerCase()));
+  const recentDeliverables = actualDeliverables.slice(0, 5);
+  const deliverableIds = new Set(actualDeliverables.map(t => (t._id || '').toString()));
+  
+  // Open tasks up to this month (excluding any completed or deliverable tasks)
+  const openTasks = tasksUpToMonth.filter(t => !isTaskCompleted(t) && !deliverableIds.has((t._id || '').toString()));
   
   // Overdue tasks cutoff (end of month for past months, or current time if current/future month)
   const cutoffDate = new Date() < endOfMonth ? new Date() : endOfMonth;
   const overdueTasks = openTasks.filter(t => t.dueDate && new Date(t.dueDate) < cutoffDate);
-
-  // Deliverables logic
-  const deliverableStatuses = ['completed', 'complete', 'approved', 'validated', 'done'];
-  const actualDeliverables = tasksUpToMonth
-    .filter(t => deliverableStatuses.includes(t.status?.toLowerCase()))
-    .sort((a, b) => new Date(b.workCompletedAt || b.actualCompletionDate || b.updatedAt || b.createdAt || 0).getTime() - new Date(a.workCompletedAt || a.actualCompletionDate || a.updatedAt || a.createdAt || 0).getTime());
   
-  const recentDeliverables = actualDeliverables.slice(0, 5);
-  
-  const pendingDeliverableStatuses = ['todo', 'in_progress', 'in_review', 'review', 'sent_for_client_review'];
-  const pendingDeliverables = tasksUpToMonth.filter(t => pendingDeliverableStatuses.includes(t.status?.toLowerCase())).length;
+  const pendingDeliverableStatuses = ['todo', 'in_progress', 'in_review', 'review', 'sent_for_client_review', 'to_do', 'created', 'assigned'];
+  const pendingDeliverables = tasksUpToMonth.filter(t => pendingDeliverableStatuses.includes((t.status || '').toString().trim().toLowerCase())).length;
 
   return {
     stats: {

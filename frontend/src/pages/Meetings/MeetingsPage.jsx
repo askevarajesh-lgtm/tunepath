@@ -829,7 +829,10 @@ const MeetingsPage = () => {
                 label="Date"
                 rules={[{ required: true, message: 'Please select date' }]}
               >
-                <DatePicker style={{ width: '100%' }} />
+                <DatePicker 
+                  style={{ width: '100%' }} 
+                  disabledDate={(current) => current && current < dayjs().startOf('day')} 
+                />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -1186,6 +1189,7 @@ const MeetingsPage = () => {
                           <DatePicker 
                             value={followUpDueDate} 
                             onChange={setFollowUpDueDate} 
+                            disabledDate={(current) => current && current < dayjs().startOf('day')}
                             style={{ width: '100%' }}
                           />
                         </Form.Item>

@@ -1,5 +1,5 @@
 import { useAuth } from "../../contexts/AuthContext";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Form,
   Input,
@@ -50,7 +50,8 @@ import {
 } from "../../api/projectApi";
 import { useGetUsersDropdownQuery } from "../../api/userApi";
 import { useGetPriorityLevelsQuery } from "../../api/settingsApi";
-import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
+import { useGetDepartmentsDynamicQuery, useGetRolesQuery } from "../../api/accessControlApi";
+import { resolveUserDepartmentSlug } from "../../utils/departmentUtils";
 import dayjs from "dayjs";
 // import { isPresentAttendanceStatus } from "../../utils/ektaAttendanceStatus";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
@@ -270,6 +271,9 @@ const TaskForm = () => {
   } = useGetDepartmentsDynamicQuery();
   const departments = departmentsResp?.data?.departments || [];
 
+  const { data: rolesResp } = useGetRolesQuery();
+  const roles = rolesResp?.data?.roles || rolesResp?.roles || [];
+
   const users = usersData?.data?.users || usersData?.data?.data || [];
   const companyUsers =
     companyUsersData?.data?.users || companyUsersData?.data?.data || [];
@@ -487,28 +491,84 @@ const TaskForm = () => {
 
   const [absentEmails, setAbsentEmails] = useState([]);
 
-  // For SEO members creating/editing tasks: show only SEO users in Assigned To (so they can assign to other SEOs or interns)
-  // Filter users by department for "Assigned To" field, excluding admins and managers
+  const getFilteredAssigneesForDepartment = useCallback(
+    (deptValue) => {
+      const topAdminRoles = [
+        "supreme_super_admin",
+        "commander_admin",
+        "agency_super_admin",
+        "agency_manager",
+        "brand_super_admin",
+        "brand_admin",
+        "brand_manager",
+        "admin",
+        "super_admin",
+        "agency_client",
+        "client",
+      ];
+
+      const baseAssignees = (users || []).filter((u) => {
+        if (!u) return false;
+        if (u.customRoleId) return true;
+        return !topAdminRoles.includes(u.role);
+      });
+
+      if (!deptValue) return baseAssignees;
+
+      const deptObj = departments.find(
+        (d) =>
+          d._id === deptValue ||
+          d.id === deptValue ||
+          d.slug === deptValue ||
+          d.name?.toLowerCase() === String(deptValue).toLowerCase(),
+      );
+
+      const targetId = deptObj?._id ? String(deptObj._id) : (typeof deptValue === "string" ? deptValue : "");
+      const targetSlug = (deptObj?.slug || (typeof deptValue === "string" ? deptValue : "")).toLowerCase();
+      const targetName = (deptObj?.name || "").toLowerCase();
+
+      const filtered = baseAssignees.filter((u) => {
+        if (!u) return false;
+        if (
+          task?.assignedTo &&
+          (task.assignedTo._id === u._id || task.assignedTo === u._id)
+        ) {
+          return true;
+        }
+
+        const uDeptId = u.departmentId?._id ? String(u.departmentId._id) : (typeof u.departmentId === "string" ? u.departmentId : "");
+        const uDeptName = (u.departmentName || u.departmentId?.name || u.department || "").toLowerCase();
+        const uDeptSlug = (u.departmentId?.slug || resolveUserDepartmentSlug(u, departments, roles) || "").toLowerCase();
+
+        const isIdMatch = targetId && uDeptId && uDeptId === targetId;
+        const isNameMatch = targetName && uDeptName && (uDeptName.includes(targetName) || targetName.includes(uDeptName));
+        const isSlugMatch = targetSlug && uDeptSlug && (uDeptSlug === targetSlug || uDeptSlug.includes(targetSlug) || targetSlug.includes(uDeptSlug));
+
+        return Boolean(isIdMatch || isNameMatch || isSlugMatch);
+      });
+
+      return filtered;
+    },
+    [users, departments, roles, task],
+  );
+
   const usersForAssignees = useMemo(() => {
-    const topAdminRoles = [
-      "supreme_super_admin",
-      "commander_admin",
-      "agency_super_admin",
-      "agency_manager",
-      "brand_super_admin",
-      "brand_admin",
-      "brand_manager",
-      "admin",
-      "super_admin",
-      "agency_client",
-      "client"
-    ];
-    return (users || []).filter(u => {
-      if (!u) return false;
-      if (u.customRoleId) return true;
-      return !topAdminRoles.includes(u.role);
-    });
-  }, [users]);
+    return getFilteredAssigneesForDepartment(selectedDepartment);
+  }, [getFilteredAssigneesForDepartment, selectedDepartment]);
+
+  useEffect(() => {
+    if (!selectedDepartment || isEdit) return;
+    const currentAssigned = form.getFieldValue("assignedTo");
+    if (!currentAssigned) return;
+
+    const currentFiltered = getFilteredAssigneesForDepartment(selectedDepartment);
+    const isStillValid = currentFiltered.some(
+      (u) => u._id === currentAssigned || u._id === currentAssigned?._id,
+    );
+    if (!isStillValid) {
+      form.setFieldsValue({ assignedTo: undefined });
+    }
+  }, [selectedDepartment, getFilteredAssigneesForDepartment, form, isEdit]);
 
   const absentEmailSet = useMemo(() => {
     return new Set(
@@ -1009,6 +1069,14 @@ const TaskForm = () => {
           }
         }
         if (field === "department") {
+          const blockFiltered = getFilteredAssigneesForDepartment(value);
+          const isStillValid = blockFiltered.some(
+            (u) => u._id === updated.assignedTo,
+          );
+          if (!isStillValid) {
+            updated.assignedTo = undefined;
+          }
+
           const fixedIds = getFixedWatcherIds(value);
           const lekaUser = allAvailableUsers.find(
             (u) => u.email?.toLowerCase() === "leka@tunepath.com"
@@ -1515,11 +1583,13 @@ const TaskForm = () => {
                         showSearch
                         filterOption={filterOptionByChildrenOrLabel}
                       >
-                        {usersForAssigneesSorted.map((u) => (
-                          <Option key={u._id} value={u._id} disabled={isAbsentUser(u)}>
-                            {u.name} ({u.email}) {isAbsentUser(u) ? " - Absent" : ""}
-                          </Option>
-                        ))}
+                        {getFilteredAssigneesForDepartment(block.department)
+                          .sort((a, b) => Number(isAbsentUser(a)) - Number(isAbsentUser(b)))
+                          .map((u) => (
+                            <Option key={u._id} value={u._id} disabled={isAbsentUser(u)}>
+                              {u.name} ({u.email}) {isAbsentUser(u) ? " - Absent" : ""}
+                            </Option>
+                          ))}
                       </Select>
                     </div>
                   </Col>

@@ -69,6 +69,15 @@ const buildScopingFilter = (userRole, userId, companyId) => {
 const createMeeting = async (meetingData, companyId, creatorId) => {
   const { participants = [], clientId, leadId, projectId, date, time } = meetingData;
 
+  if (date) {
+    const meetingDate = new Date(date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (meetingDate < today) {
+      throw new Error('Cannot schedule meetings for past dates');
+    }
+  }
+
   const meeting = new Meeting({
     ...meetingData,
     companyId,
@@ -714,6 +723,13 @@ const rescheduleMeeting = async (meetingId, rescheduleData, companyId, userId) =
 
   if (!date || !time) {
     throw new Error('Date and time are required to reschedule a meeting');
+  }
+
+  const newMeetingDate = new Date(date);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (newMeetingDate < today) {
+    throw new Error('Cannot reschedule meeting to a past date');
   }
 
   const oldDate = meeting.date;

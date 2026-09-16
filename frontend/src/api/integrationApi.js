@@ -19,8 +19,11 @@ const createQueryHook = (endpointFn) => {
         const response = await api.get(url, { params: queryParams });
         setData(response.data);
         setError(null);
+        return response.data;
       } catch (err) {
         setError(err);
+        setData(null);
+        throw err;
       } finally {
         setIsLoading(false);
       }

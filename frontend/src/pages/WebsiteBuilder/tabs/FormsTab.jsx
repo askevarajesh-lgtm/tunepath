@@ -39,6 +39,8 @@ const FormsTab = ({ itemVariants }) => {
   const [submissionFormId, setSubmissionFormId] = useState("all");
   const [formSearch, setFormSearch] = useState("");
   const [submissionSearch, setSubmissionSearch] = useState("");
+  const [submissionFromDate, setSubmissionFromDate] = useState(null);
+  const [submissionToDate, setSubmissionToDate] = useState(null);
 
   const [viewSubmission, setViewSubmission] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -87,7 +89,13 @@ const FormsTab = ({ itemVariants }) => {
     setIsLoadingSubmissions(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`/api/forms/submissions?formId=${submissionFormId}&search=${encodeURIComponent(submissionSearch)}`, {
+      const params = new URLSearchParams();
+      if (submissionFormId && submissionFormId !== 'all') params.append("formId", submissionFormId);
+      if (submissionSearch) params.append("search", submissionSearch);
+      if (submissionFromDate) params.append("startDate", submissionFromDate.format("YYYY-MM-DD"));
+      if (submissionToDate) params.append("endDate", submissionToDate.format("YYYY-MM-DD"));
+
+      const res = await fetch(`/api/forms/submissions?${params.toString()}`, {
         headers: { "Authorization": token ? `Bearer ${token}` : "" }
       });
       const data = await res.json();
@@ -132,7 +140,7 @@ const FormsTab = ({ itemVariants }) => {
   useEffect(() => {
     if (activeSubTab === "analyze") fetchAnalytics();
     if (activeSubTab === "submissions") fetchSubmissions();
-  }, [activeSubTab, submissionFormId, submissionSearch]);
+  }, [activeSubTab, submissionFormId, submissionSearch, submissionFromDate, submissionToDate]);
 
   useEffect(() => {
     if (isTemplateModalOpen) {
@@ -408,11 +416,27 @@ const FormsTab = ({ itemVariants }) => {
           </div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-tertiary)', marginBottom: 8, letterSpacing: 0.5 }}>FROM</div>
-            <DatePicker size="large" placeholder="dd-mm-yyyy" format="DD-MM-YYYY" style={{ width: 150, borderRadius: 8 }} />
+            <DatePicker 
+              size="large" 
+              placeholder="dd-mm-yyyy" 
+              format="DD-MM-YYYY" 
+              value={submissionFromDate}
+              onChange={setSubmissionFromDate}
+              allowClear
+              style={{ width: 150, borderRadius: 8 }} 
+            />
           </div>
           <div>
             <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-tertiary)', marginBottom: 8, letterSpacing: 0.5 }}>TO</div>
-            <DatePicker size="large" placeholder="dd-mm-yyyy" format="DD-MM-YYYY" style={{ width: 150, borderRadius: 8 }} />
+            <DatePicker 
+              size="large" 
+              placeholder="dd-mm-yyyy" 
+              format="DD-MM-YYYY" 
+              value={submissionToDate}
+              onChange={setSubmissionToDate}
+              allowClear
+              style={{ width: 150, borderRadius: 8 }} 
+            />
           </div>
           <div style={{ flex: 1, minWidth: 200 }}>
             <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--text-tertiary)', marginBottom: 8, letterSpacing: 0.5 }}>SEARCH</div>

@@ -244,10 +244,11 @@ exports.submitForm = async (req, res, next) => {
 exports.getSubmissions = async (req, res, next) => {
   try {
     const workspaceId = req.workspaceId;
-    const { formId, startDate, endDate, search } = req.query;
+    const { formId, startDate, endDate, fromDate, toDate, search } = req.query;
 
-    // Find all forms in workspace to restrict scoped visibility
-    const workspaceForms = await Form.find({ workspaceId, isDeleted: false });
+    // Find all forms belonging to the user/brand/workspace to restrict scoped visibility
+    const scopedFormQuery = buildAssetAuthQuery(req);
+    const workspaceForms = await Form.find(scopedFormQuery);
     const formIds = workspaceForms.map(f => f._id);
 
     const query = { isDeleted: false };
@@ -260,23 +261,31 @@ exports.getSubmissions = async (req, res, next) => {
       query.formId = { $in: formIds };
     }
 
-    // Date filters
-    if (startDate || endDate) {
+    // Date filters with full day start and end times
+    const sDate = startDate || fromDate;
+    const eDate = endDate || toDate;
+    if (sDate || eDate) {
       query.submittedAt = {};
-      if (startDate) {
-        query.submittedAt.$gte = new Date(startDate);
+      if (sDate) {
+        const start = new Date(sDate);
+        start.setHours(0, 0, 0, 0);
+        query.submittedAt.$gte = start;
       }
-      if (endDate) {
-        query.submittedAt.$lte = new Date(endDate);
+      if (eDate) {
+        const end = new Date(eDate);
+        end.setHours(23, 59, 59, 999);
+        query.submittedAt.$lte = end;
       }
     }
 
-    // Search filters (matches name, email, or phone)
-    if (search) {
+    // Search filters (matches name, email, phone, or firstName)
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), 'i');
       query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } }
+        { name: regex },
+        { email: regex },
+        { phone: regex },
+        { firstName: regex }
       ];
     }
 
@@ -293,8 +302,8 @@ exports.getSubmissions = async (req, res, next) => {
 // Analytics details
 exports.getFormAnalytics = async (req, res, next) => {
   try {
-    const workspaceId = req.workspaceId;
-    const workspaceForms = await Form.find({ workspaceId, isDeleted: false });
+    const scopedFormQuery = buildAssetAuthQuery(req);
+    const workspaceForms = await Form.find(scopedFormQuery);
     const formIds = workspaceForms.map(f => f._id);
 
     const totalSubmissions = await FormSubmission.countDocuments({

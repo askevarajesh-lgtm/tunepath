@@ -113,7 +113,10 @@ exports.getUsersDropdown = async (req, res, next) => {
       }
     }
 
-    const users = await User.find(queryFilter).select('name email role customRoleId').sort({ name: 1 });
+    const users = await User.find(queryFilter)
+      .select('name email role customRoleId departmentId departmentName department')
+      .populate('departmentId', 'name slug')
+      .sort({ name: 1 });
     res.status(200).json({ success: true, data: { users } });
   } catch (error) {
     next(error);

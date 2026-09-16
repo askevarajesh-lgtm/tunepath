@@ -415,7 +415,8 @@ const IntegrationsTab = () => {
       refetch();
     } catch (error) {
       console.error("Failed to toggle integration", error);
-      message.error("Failed to toggle integration status");
+      const errMsg = error?.data?.message || error?.message || "Failed to toggle integration status";
+      message.error(errMsg);
     }
   };
 

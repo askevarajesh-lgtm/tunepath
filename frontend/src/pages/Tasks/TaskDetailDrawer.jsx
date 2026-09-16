@@ -33,6 +33,7 @@ import {
   ReloadOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
 import {
   useGetTaskCommentsQuery,
   useGetTaskActivityQuery,
@@ -72,6 +73,37 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
   const [updateTask] = useUpdateTaskMutation();
   const [clientApproveTask, { isLoading: isApproving }] = useClientApproveTaskMutation();
   const [holdTask, { isLoading: isHoldingTask }] = useHoldTaskMutation();
+
+  const { data: departmentsResp } = useGetDepartmentsDynamicQuery();
+  const departments = departmentsResp?.data?.departments || [];
+
+  const formatDepartmentName = (deptValue) => {
+    if (!deptValue) return "N/A";
+    if (typeof deptValue === "object") return deptValue.name || deptValue.title || "N/A";
+
+    const strVal = String(deptValue).trim();
+    const matchedDept = departments.find(
+      (d) =>
+        d._id === strVal ||
+        d.id === strVal ||
+        d.slug === strVal ||
+        d._id?.toString() === strVal ||
+        d.slug?.toLowerCase() === strVal.toLowerCase() ||
+        d.name?.toLowerCase() === strVal.toLowerCase()
+    );
+
+    if (matchedDept && matchedDept.name) {
+      return matchedDept.name;
+    }
+
+    if (/^[0-9a-fA-F]{24}$/.test(strVal)) {
+      return "General";
+    }
+
+    return strVal
+      .replace(/[-_]/g, " ")
+      .replace(/\b\w/g, (l) => l.toUpperCase());
+  };
 
   // Check permissions and roles
   // SEO users must be full-time
@@ -310,7 +342,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
             {liveTask.companyId?.name || "N/A"}
           </Descriptions.Item>
           <Descriptions.Item label="Department">
-            {liveTask.department?.replace("_", " ").toUpperCase() || "N/A"}
+            {formatDepartmentName(liveTask.department)}
           </Descriptions.Item>
           <Descriptions.Item label="Assigned To">
             <Space>
@@ -774,7 +806,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
             <span>{liveTask?.title || task?.title || "Task Details"}</span>
             <Space>
               {liveTask &&
-                (['brand_super_admin', 'brand_manager', 'agency_client', 'client', 'brand_team_user'].includes(userRole) || (userRole === 'user' && user?.brandId)) &&
+                (['brand_super_admin', 'brand_admin', 'brand_manager', 'agency_client', 'client'].includes(userRole)) &&
                 (['review', 'sent_for_client_review', 'in_review'].includes(liveTask.status?.toLowerCase()) ||
                  (['complete', 'completed', 'done', 'validated'].includes(liveTask.status?.toLowerCase()) && liveTask.clientReviewStatus !== 'approved')) && (
                   <>
@@ -797,7 +829,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
                 )}
               {liveTask && liveTask.clientReviewStatus === 'approved' && (
                 <Tag color="green" style={{ padding: '4px 10px', fontSize: '13px', fontWeight: 'bold' }}>
-                  ✓ CLIENT APPROVED
+                  ✓ {['brand_super_admin', 'brand_admin', 'brand_manager'].includes(userRole) ? 'APPROVED' : 'CLIENT APPROVED'}
                 </Tag>
               )}
               {task &&

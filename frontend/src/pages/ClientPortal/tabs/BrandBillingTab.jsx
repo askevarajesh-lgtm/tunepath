@@ -1,11 +1,34 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Typography, Tag, Table, Card, Button, Skeleton, message } from 'antd';
-import { Download, FileText, Calendar, CreditCard, Box, Zap, Shield, HelpCircle } from 'lucide-react';
+import { Row, Col, Typography, Tag, Table, Card, Button, Skeleton, message, Modal, Input, Badge } from 'antd';
+import { Download, FileText, Calendar, CreditCard, Box, Zap, Shield, HelpCircle, Star, Check, Sparkles, Send, Users, Layers } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useTheme } from '../../../contexts/ThemeContext';
+import api from '../../../services/api';
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
+const { TextArea } = Input;
+
+const availableFeatures = [
+  { id: 'hrms', label: 'HRMS' },
+  { id: 'crm', label: 'CRM & Leads' },
+  { id: 'website', label: 'Website Builder' },
+  { id: 'social', label: 'Social Media' },
+  { id: 'ads', label: 'Performance Ads' },
+  { id: 'analytics', label: 'Google Analytics' },
+  { id: 'chatgpt', label: 'ChatGPT AI' },
+  { id: 'canva', label: 'Canva Design' },
+  { id: 'seo-aeo-geo', label: 'SEO/AEO/GEO' },
+];
+
+const availableIntegrations = [
+  { type: 'whatsapp', name: 'WhatsApp Integration' },
+  { type: 'sms', name: 'SMS Gateway' },
+  { type: 'email', name: 'Email (SendPulse)' },
+  { type: 'website', name: 'Lead Management' },
+  { type: 'payment', name: 'Payment Integration' },
+  { type: 'ekta', name: 'Ekta HR Integration' },
+];
 
 const BrandBillingTab = () => {
   const { user } = useAuth();
@@ -13,6 +36,9 @@ const BrandBillingTab = () => {
   
   const [loading, setLoading] = useState(false);
   const [packageDetails, setPackageDetails] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmittingUpgrade, setIsSubmittingUpgrade] = useState(false);
+  const [upgradeRemarks, setUpgradeRemarks] = useState('');
 
   useEffect(() => {
     if (user && user.brandPackageDetails) {
@@ -40,6 +66,24 @@ const BrandBillingTab = () => {
   if (interval === 'Yearly') {
     nextBillingDate = dayjs(user?.createdAt).add(1, 'year');
   }
+
+  const handleRequestUpgrade = async () => {
+    try {
+      setIsSubmittingUpgrade(true);
+      await api.post('/plan-upgrades', {
+        requestedModules: packageDetails?.features || availableFeatures.map(f => f.id),
+        remarks: upgradeRemarks || 'Requesting package upgrade for Direct Brand account'
+      });
+      message.success('Plan upgrade request submitted successfully! Our team will contact you shortly.');
+      setIsModalOpen(false);
+      setUpgradeRemarks('');
+    } catch (err) {
+      console.error('Error submitting plan upgrade:', err);
+      message.error(err.response?.data?.message || 'Failed to submit upgrade request');
+    } finally {
+      setIsSubmittingUpgrade(false);
+    }
+  };
 
   return (
     <div>
@@ -107,7 +151,7 @@ const BrandBillingTab = () => {
                 type="primary" 
                 size="large" 
                 style={{ fontWeight: 600, borderRadius: 8, background: 'var(--accent-primary)', borderColor: 'var(--accent-primary)' }}
-                onClick={() => message.info('Please contact your administrator to upgrade your package.')}
+                onClick={() => setIsModalOpen(true)}
               >
                 Upgrade Package
               </Button>
@@ -162,7 +206,12 @@ const BrandBillingTab = () => {
             </div>
 
             <div style={{ marginTop: 'auto', paddingTop: 24 }}>
-              <Button type="text" icon={<HelpCircle size={14} />} style={{ padding: 0, color: 'var(--accent-primary)', fontWeight: 600 }}>
+              <Button 
+                type="text" 
+                icon={<HelpCircle size={14} />} 
+                style={{ padding: 0, color: 'var(--accent-primary)', fontWeight: 600 }}
+                onClick={() => setIsModalOpen(true)}
+              >
                 View full package details
               </Button>
             </div>
@@ -176,9 +225,9 @@ const BrandBillingTab = () => {
               <Text style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
                 Billing History
               </Text>
-              <Button icon={<Download size={14} />} style={{ borderRadius: 6, fontWeight: 600, color: 'var(--text-secondary)' }}>
+              {/* <Button icon={<Download size={14} />} style={{ borderRadius: 6, fontWeight: 600, color: 'var(--text-secondary)' }}>
                 Export
-              </Button>
+              </Button> */}
             </div>
             
             <div style={{ textAlign: 'center', padding: '40px 0' }}>
@@ -193,6 +242,204 @@ const BrandBillingTab = () => {
           </div>
         </Col>
       </Row>
+
+      {/* Direct Brand Package Details & Upgrade Modal */}
+      <Modal
+        title={null}
+        footer={null}
+        open={isModalOpen}
+        onCancel={() => setIsModalOpen(false)}
+        width={680}
+        bodyStyle={{ padding: 0, borderRadius: 16, overflow: 'hidden' }}
+        style={{ top: 20 }}
+        closeIcon={<span style={{ color: '#fff', fontSize: 22, lineHeight: 1 }}>×</span>}
+      >
+        <div>
+          {/* Header Banner */}
+          <div style={{ 
+            background: 'linear-gradient(135deg, var(--accent-primary) 0%, #3b82f6 100%)', 
+            padding: '32px 28px',
+            color: '#fff',
+            position: 'relative'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              <div style={{ 
+                width: 60, height: 60, borderRadius: 16, 
+                background: 'rgba(255,255,255,0.2)', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.3)'
+              }}>
+                <Star size={30} color="#fff" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Title level={3} style={{ color: '#fff', margin: 0, fontWeight: 800 }}>
+                    {packageDetails?.name || user?.packageName || 'Enterprise Package'}
+                  </Title>
+                  <Tag style={{ background: 'rgba(255,255,255,0.25)', color: '#fff', border: 'none', borderRadius: 6, fontWeight: 700, padding: '2px 10px' }}>
+                    Active
+                  </Tag>
+                </div>
+                <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 14 }}>
+                  {packageDetails?.description || 'Direct Brand Subscription Package with full platform feature entitlements.'}
+                </Text>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '24px 28px', maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
+            {/* Quick Metrics */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 24 }}>
+              <div style={{ padding: 16, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                <Text type="secondary" style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>
+                  PRICE ({interval})
+                </Text>
+                <Text style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  ₹{Number(planAmount).toLocaleString()}
+                </Text>
+              </div>
+
+              <div style={{ padding: 16, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Users size={14} color="var(--text-secondary)" />
+                  <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>MAX USERS</Text>
+                </div>
+                <Text style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  {packageDetails?.userCount || 5} Seats
+                </Text>
+              </div>
+
+              <div style={{ padding: 16, background: isDark ? 'rgba(255,255,255,0.03)' : '#f8fafc', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <Layers size={14} color="var(--text-secondary)" />
+                  <Text type="secondary" style={{ fontSize: 12, fontWeight: 600 }}>BILLING TYPE</Text>
+                </div>
+                <Text style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
+                  Direct Brand
+                </Text>
+              </div>
+            </div>
+
+            {/* Included Features */}
+            <div style={{ marginBottom: 24 }}>
+              <Title level={5} style={{ marginBottom: 14, fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+                Included Modules & Features
+              </Title>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {availableFeatures.map(feat => {
+                  const isIncluded = !packageDetails?.features || packageDetails.features.includes(feat.id);
+                  return (
+                    <div 
+                      key={feat.id} 
+                      style={{ 
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                        background: isIncluded ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-tertiary)', 
+                        padding: '10px 14px', 
+                        borderRadius: 8,
+                        border: isIncluded ? '1px solid rgba(16, 185, 129, 0.25)' : '1px solid var(--border-color)',
+                        opacity: isIncluded ? 1 : 0.6
+                      }}
+                    >
+                      <span style={{ 
+                        fontSize: 13, 
+                        fontWeight: 600, 
+                        color: isIncluded ? 'var(--text-primary)' : 'var(--text-secondary)' 
+                      }}>
+                        {feat.label}
+                      </span>
+                      {isIncluded ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#10b981', fontSize: 12, fontWeight: 700 }}>
+                          <Check size={14} /> Included
+                        </div>
+                      ) : (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--border-color)' }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Included Integrations */}
+            <div style={{ marginBottom: 28 }}>
+              <Title level={5} style={{ marginBottom: 14, fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+                Supported Integrations
+              </Title>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {availableIntegrations.map(integ => {
+                  const isIncluded = !packageDetails?.integrations || packageDetails.integrations.includes(integ.type);
+                  return (
+                    <div
+                      key={integ.type}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        background: isIncluded ? 'rgba(51, 149, 255, 0.06)' : 'var(--bg-tertiary)',
+                        padding: '10px 14px',
+                        borderRadius: 8,
+                        border: isIncluded ? '1px solid rgba(51, 149, 255, 0.25)' : '1px solid var(--border-color)',
+                        opacity: isIncluded ? 1 : 0.6
+                      }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 600, color: isIncluded ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                        {integ.name}
+                      </span>
+                      {isIncluded ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#3395FF', fontSize: 12, fontWeight: 700 }}>
+                          <Check size={14} /> Active
+                        </div>
+                      ) : (
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--border-color)' }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Request Plan Upgrade Section */}
+            <div style={{ 
+              background: isDark ? 'rgba(30, 41, 59, 0.6)' : '#f8fafc', 
+              borderRadius: 12, 
+              padding: 20, 
+              border: '1px solid var(--border-color)' 
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Sparkles size={18} color="var(--accent-primary)" />
+                <Title level={5} style={{ margin: 0, fontWeight: 700, fontSize: 15, color: 'var(--text-primary)' }}>
+                  Request Package Upgrade
+                </Title>
+              </div>
+              <Text type="secondary" style={{ fontSize: 13, display: 'block', marginBottom: 12 }}>
+                Need additional seats, custom module entitlements, or an upgraded billing plan? Submit your request below to notify our administration team.
+              </Text>
+
+              <TextArea
+                rows={3}
+                placeholder="Enter details about your upgrade request (e.g. Need 10 user seats, custom API access...)"
+                value={upgradeRemarks}
+                onChange={(e) => setUpgradeRemarks(e.target.value)}
+                style={{ borderRadius: 8, marginBottom: 16, background: isDark ? 'rgba(0,0,0,0.2)' : '#fff' }}
+              />
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <Button onClick={() => setIsModalOpen(false)} style={{ borderRadius: 8, fontWeight: 600 }}>
+                  Close
+                </Button>
+                <Button 
+                  type="primary" 
+                  icon={<Send size={14} />} 
+                  loading={isSubmittingUpgrade}
+                  onClick={handleRequestUpgrade}
+                  style={{ borderRadius: 8, fontWeight: 700, background: 'var(--accent-primary)', borderColor: 'var(--accent-primary)' }}
+                >
+                  Submit Upgrade Request
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

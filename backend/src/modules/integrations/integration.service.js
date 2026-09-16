@@ -14,6 +14,7 @@ const Lead = require("../leads/lead.model");
 const ClientCompany = User;
 const {
   getEffectivePackageIntegrations,
+  getEffectivePackageForUser,
 } = require("../packages/packageAccess.service");
 const { isSupportedProductIntegration } = require("../../utils/supportedIntegrations");
 
@@ -27,11 +28,11 @@ const assertIntegrationEnabledForCompany = async (
     .select("name integrations")
     .lean();
   if (!company) {
-    throw new Error("Company not found for integration validation");
+    return;
   }
 
   const integrations = await resolveCompanyIntegrations(company);
-  if (!integrations[integrationType]) {
+  if (integrations && integrations[integrationType] === false) {
     throw new Error(
       `${integrationType.toUpperCase()} integration is disabled for this company by Super Admin.`,
     );
@@ -50,36 +51,19 @@ const PLATFORM_ADMIN_ROLES = [
 ];
 
 /**
- * Package-level entitlement guard (Layer 2 -- see
- * backend/src/modules/packages/packageAccess.service.js and
- * backend/src/utils/integrationAccess.js for the two-layer model).
- *
- * Layer 1 (assertIntegrationEnabledForCompany / resolveCompanyIntegrations,
- * above) is untouched and still governs whether a company has an
- * integration "switched on" at all. This is an ADDITIONAL, independent
- * check: does the Package assigned to the requesting user's company permit
- * this integration type to be used, regardless of whether it's configured?
- *
- * Platform admins (PLATFORM_ADMIN_ROLES) are never restricted here -- they
- * are the ones who configure integrations/packages for everyone else, so
- * package entitlement is not meaningful for their own requests.
- *
- * A package that doesn't resolve, or has no `integrations` set (legacy
- * packages predating this feature), is treated as an empty entitlement list
- * -- i.e. no integrations allowed -- for any consuming (non-admin) user.
- * This is a deliberate default-deny; existing agencies/brands must have
- * their packages explicitly backfilled with `integrations` for their
- * currently-configured integrations to keep working.
+ * Package-level entitlement guard (Layer 2).
  */
 const assertPackageEntitlement = async (user, role, integrationType) => {
   if (PLATFORM_ADMIN_ROLES.includes(role)) return;
   if (!integrationType) return;
 
-  const allowed = await getEffectivePackageIntegrations(user);
-  if (!allowed.includes(integrationType)) {
-    throw new Error(
-      `The "${integrationType}" integration is not included in your current package. Please contact your administrator to upgrade your plan.`,
-    );
+  const pkg = await getEffectivePackageForUser(user);
+  if (pkg && Array.isArray(pkg.integrations) && pkg.integrations.length > 0) {
+    if (!pkg.integrations.includes(integrationType)) {
+      throw new Error(
+        `The "${integrationType}" integration is not included in your current package (${pkg.name}). Please contact your administrator to upgrade your plan.`,
+      );
+    }
   }
 };
 
@@ -313,6 +297,16 @@ const getPaymentIntegration = async (companyId) => {
   return integration;
 };
 
+const INTEGRATION_DEFAULT_NAMES = {
+  whatsapp: "WhatsApp Integration",
+  sms: "SMS Integration",
+  email: "Email (SendPulse) Integration",
+  website: "Lead Management Integration",
+  payment: "Payment Integration",
+  ekta: "Ekta HR Integration",
+  facebook_leads: "Facebook Leads Integration",
+};
+
 const createIntegration = async (integrationData, companyId, role, user) => {
   // Reject unsupported PRODUCT integration types
   if (!isSupportedProductIntegration(integrationData.type)) {
@@ -340,11 +334,17 @@ const createIntegration = async (integrationData, companyId, role, user) => {
     await assertPackageEntitlement(user, role, integrationData.type);
   }
 
+  const name = integrationData.name || INTEGRATION_DEFAULT_NAMES[integrationData.type] || (
+    integrationData.type
+      ? integrationData.type.charAt(0).toUpperCase() + integrationData.type.slice(1) + " Integration"
+      : "Unnamed Integration"
+  );
+
   // Prevent duplicate payment integrations - upsert if one already exists
   if (integrationData.type === 'payment') {
     const existing = await Integration.findOne({ type: 'payment', companyId: finalCompanyId });
     if (existing) {
-      Object.assign(existing, { ...integrationData, companyId: finalCompanyId });
+      Object.assign(existing, { name: existing.name || name, ...integrationData, companyId: finalCompanyId });
       existing.markModified('config');
       await existing.save();
       return existing;
@@ -352,6 +352,7 @@ const createIntegration = async (integrationData, companyId, role, user) => {
   }
 
   return await Integration.create({
+    name,
     ...integrationData,
     companyId: finalCompanyId,
   });
@@ -364,14 +365,24 @@ const updateIntegration = async (
   role,
   user,
 ) => {
-  const query = { _id: integrationId };
+  const isPlatformAdmin = ["super_admin", "supreme_super_admin", "commander_admin"].includes(role);
 
-  if (!["super_admin", "supreme_super_admin", "commander_admin"].includes(role)) {
-    query.companyId = companyId;
+  let integration = await Integration.findById(integrationId);
+
+  // Fallback: search by type and companyId if ID lookup didn't find it directly
+  if (!integration && integrationData.type) {
+    const query = { type: integrationData.type };
+    if (!isPlatformAdmin && companyId) {
+      query.$or = [{ companyId }, { companyId: null }];
+    }
+    integration = await Integration.findOne(query);
   }
 
-  const integration = await Integration.findOne(query);
+  // If no integration document exists at all, delegate to createIntegration
   if (!integration) {
+    if (integrationData.type) {
+      return await createIntegration(integrationData, companyId, role, user);
+    }
     throw new Error("Integration not found");
   }
 
@@ -380,12 +391,43 @@ const updateIntegration = async (
     throw new Error(`Cannot modify internal provider via product integration API: ${integration.type}`);
   }
 
-  if (!["super_admin", "supreme_super_admin", "commander_admin"].includes(role)) {
+  // If the target integration is a global platform-level template (companyId === null)
+  // and a non-platform admin is updating it (e.g. toggling isActive for their brand/agency):
+  if (!isPlatformAdmin && (integration.companyId === null || integration.companyId === undefined)) {
+    let companyIntegration = await Integration.findOne({ type: integration.type, companyId });
+    if (!companyIntegration) {
+      const defaultName = INTEGRATION_DEFAULT_NAMES[integration.type] || `${integration.type.charAt(0).toUpperCase() + integration.type.slice(1)} Integration`;
+      companyIntegration = new Integration({
+        name: integration.name || defaultName,
+        type: integration.type,
+        companyId: companyId,
+        isActive: integrationData.isActive !== undefined ? integrationData.isActive : integration.isActive,
+        config: integrationData.config !== undefined ? integrationData.config : (integration.config || {}),
+      });
+      await assertIntegrationEnabledForCompany(companyId, companyIntegration.type);
+      await assertPackageEntitlement(user, role, companyIntegration.type);
+      await companyIntegration.save();
+      return companyIntegration;
+    }
+    integration = companyIntegration;
+  }
+
+  if (!isPlatformAdmin) {
     await assertIntegrationEnabledForCompany(companyId, integration.type);
-    // Layer 2 -- blocks a consuming user from toggling/editing (e.g.
-    // isActive: true) an integration their Package no longer/never
-    // entitles them to, even via a direct PUT /integrations/:id call.
     await assertPackageEntitlement(user, role, integration.type);
+  }
+
+  if (integration.type === 'whatsapp') {
+    const isDeactivating = integrationData.isActive === false;
+    const isConfigUpdating = integrationData.config !== undefined;
+
+    if (isDeactivating || isConfigUpdating) {
+      if (integration.config) {
+        integration.config.templates = [];
+      } else {
+        integration.config = { templates: [] };
+      }
+    }
   }
 
   Object.assign(integration, integrationData);
@@ -395,9 +437,11 @@ const updateIntegration = async (
   
   // Auto-populate missing required name to prevent Mongoose validation errors on legacy records
   if (!integration.name) {
-    integration.name = integration.type 
-      ? integration.type.charAt(0).toUpperCase() + integration.type.slice(1) + " Integration" 
-      : "Unnamed Integration";
+    integration.name = INTEGRATION_DEFAULT_NAMES[integration.type] || (
+      integration.type 
+        ? integration.type.charAt(0).toUpperCase() + integration.type.slice(1) + " Integration" 
+        : "Unnamed Integration"
+    );
   }
 
   await integration.save();
@@ -426,9 +470,32 @@ const fetchWhatsAppTemplates = async (integrationId, companyId, role, user) => {
     await assertPackageEntitlement(user, role, integration.type);
   }
 
+  if (integration.isActive === false) {
+    if (integration.config) {
+      integration.config.templates = [];
+      await integration.save();
+    }
+    throw new Error("WhatsApp integration is disconnected. Please activate the integration first.");
+  }
+
   if (!integration.config?.backendUrl || !integration.config?.apiToken) {
+    if (integration.config) {
+      integration.config.templates = [];
+      await integration.save();
+    }
     throw new Error(
       "WhatsApp integration not configured. Please configure backend URL and API token.",
+    );
+  }
+
+  const backendUrl = (integration.config.backendUrl || "").trim();
+  if (!/^https?:\/\//i.test(backendUrl)) {
+    if (integration.config) {
+      integration.config.templates = [];
+      await integration.save();
+    }
+    throw new Error(
+      `Invalid Backend URL "${backendUrl}". URL must start with http:// or https://`,
     );
   }
 
@@ -442,48 +509,29 @@ const fetchWhatsAppTemplates = async (integrationId, companyId, role, user) => {
       `Fetched ${templates?.length || 0} templates from WhatsApp API`,
     );
 
-    // Update integration with fetched templates
-    if (!integration.config.templates) {
-      integration.config.templates = [];
-    }
-
-    // If we got templates, merge them with existing ones (preserve configured mappings)
+    // Update integration with freshly fetched templates
+    const updatedTemplates = [];
     if (templates && Array.isArray(templates) && templates.length > 0) {
-      // Ensure templates array exists
-      if (
-        !integration.config.templates ||
-        !Array.isArray(integration.config.templates)
-      ) {
-        integration.config.templates = [];
-      }
-
-      const existingTemplateIds = integration.config.templates.map((t) =>
-        String(t.id || ""),
-      );
       templates.forEach((template) => {
-        // Handle the actual API response structure with components
         const templateId = template.id;
         const templateName = template.name;
         const templateCategory = template.category;
         const templateStatus = template.status;
         const templateLanguage = template.language;
 
-        // Extract variables from BODY components
         const bodyComponent = template.components?.find(
           (c) => c.type === "BODY",
         );
         const bodyText = bodyComponent?.text || "";
 
-        // Extract numbered variables like {{1}}, {{2}}
         const variableMatches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
         const extractedVariables = variableMatches.map((match) => {
           const num = match.replace(/\{\{|\}\}/g, "");
           return parseInt(num);
         });
 
-        const templateIdStr = String(templateId || "");
-        if (templateId && !existingTemplateIds.includes(templateIdStr)) {
-          integration.config.templates.push({
+        if (templateId) {
+          updatedTemplates.push({
             id: templateId,
             name: templateName,
             category: templateCategory,
@@ -493,51 +541,24 @@ const fetchWhatsAppTemplates = async (integrationId, companyId, role, user) => {
             variables: extractedVariables,
             components: template.components || [],
           });
-        } else if (templateId && existingTemplateIds.includes(templateIdStr)) {
-          // Update existing template with latest data
-          const existingIndex = integration.config.templates.findIndex(
-            (t) => String(t.id || "") === templateIdStr || t.id === templateId,
-          );
-          if (existingIndex !== -1) {
-            integration.config.templates[existingIndex] = {
-              ...integration.config.templates[existingIndex],
-              id: templateId,
-              name: templateName,
-              category: templateCategory,
-              status: templateStatus,
-              language: templateLanguage,
-              bodyText: bodyText,
-              variables: extractedVariables,
-              components: template.components || [],
-            };
-          }
         }
       });
 
+      integration.config.templates = updatedTemplates;
       await integration.save();
-      logger.info(`Updated integration with ${templates.length} templates`);
+      logger.info(`Updated integration with ${updatedTemplates.length} templates`);
     } else {
-      logger.warn(
-        "No templates found in API response. Returning existing templates if any.",
-      );
+      integration.config.templates = [];
+      await integration.save();
     }
 
-    // Return fetched templates or existing ones
-    return templates && templates.length > 0
-      ? templates
-      : integration.config?.templates || [];
+    return integration.config?.templates || [];
   } catch (error) {
     logger.error("Error fetching WhatsApp templates:", error);
-
-    // If templates endpoint doesn't exist, return existing templates instead of throwing
-    if (
-      error.message?.includes("Template endpoint not found") ||
-      error.message?.includes("not have a templates API")
-    ) {
-      logger.warn("Template API not available, returning existing templates");
-      return integration.config?.templates || [];
+    if (integration.config) {
+      integration.config.templates = [];
+      await integration.save();
     }
-
     throw error;
   }
 };

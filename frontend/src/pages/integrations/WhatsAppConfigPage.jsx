@@ -291,17 +291,16 @@ const WhatsAppConfigPage = ({ integrationId: propId, onBack }) => {
     });
   };
 
-  // Get templates from API response or from integration config (fallback)
-  const apiTemplates = templatesData?.data?.templates || [];
-  const configTemplates = whatsappIntegration?.config?.templates || [];
-  const allTemplates = apiTemplates.length > 0 ? apiTemplates : configTemplates;
-  const templates = parseTemplates(allTemplates);
-
   // Check connection status
   const isConnected =
     whatsappIntegration?.isActive &&
     whatsappIntegration?.config?.backendUrl &&
     whatsappIntegration?.config?.apiToken;
+
+  // Get templates ONLY if connection is active and valid, and no fetch error occurred
+  const hasFetchError = Boolean(templatesData?.error || templatesData?.success === false);
+  const apiTemplates = (isConnected && !hasFetchError) ? (templatesData?.data?.templates || []) : [];
+  const templates = isConnected ? parseTemplates(apiTemplates) : [];
 
   useEffect(() => {
     if (whatsappIntegration) {
@@ -385,13 +384,23 @@ const WhatsAppConfigPage = ({ integrationId: propId, onBack }) => {
   };
 
   const handleTestConnection = async () => {
+    const currentBackendUrl = (whatsappIntegration?.config?.backendUrl || "").trim();
+    if (!currentBackendUrl || !/^https?:\/\//i.test(currentBackendUrl)) {
+      message.error("Connection failed: Invalid Backend URL. URL must start with http:// or https://");
+      return;
+    }
+
     setConnectionTesting(true);
     try {
-      await refetchTemplates();
+      const res = await refetchTemplates();
+      if (!res || res.success === false) {
+        throw new Error(res?.message || "Failed to fetch templates");
+      }
       message.success("Connection successful! Templates fetched.");
       setActiveTab("2"); // Switch to templates tab
     } catch (error) {
-      message.error("Connection failed. Please check your configuration.");
+      const errMsg = error?.response?.data?.message || error?.message || "Connection failed. Please check your configuration.";
+      message.error(errMsg);
     } finally {
       setConnectionTesting(false);
     }

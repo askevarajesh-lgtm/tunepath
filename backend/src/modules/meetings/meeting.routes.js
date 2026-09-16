@@ -9,7 +9,16 @@ router.use(authMiddleware);
 // Validation rules
 const createMeetingValidation = [
   body('title').notEmpty().withMessage('Meeting title is required').trim(),
-  body('date').notEmpty().withMessage('Meeting date is required'),
+  body('date').notEmpty().withMessage('Meeting date is required')
+    .custom((value) => {
+      const meetingDate = new Date(value);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (meetingDate < today) {
+        throw new Error('Cannot schedule meetings for past dates');
+      }
+      return true;
+    }),
   body('time').notEmpty().withMessage('Meeting time is required'),
   body('meetingType').notEmpty().withMessage('Meeting type is required'),
 ];

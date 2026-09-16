@@ -222,8 +222,20 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
   };
 
   const getDepartmentLabel = (value) => {
-    const dept = departments.find((d) => d._id === value || d.slug === value);
-    return dept?.name || value;
+    if (!value) return "N/A";
+    if (typeof value === "object") return value.name || value.title || "N/A";
+    const strVal = String(value).trim();
+    const dept = departments.find(
+      (d) =>
+        d._id === strVal ||
+        d.id === strVal ||
+        d.slug === strVal ||
+        d.slug?.toLowerCase() === strVal.toLowerCase() ||
+        d.name?.toLowerCase() === strVal.toLowerCase()
+    );
+    if (dept?.name) return dept.name;
+    if (/^[0-9a-fA-F]{24}$/.test(strVal)) return "General";
+    return strVal.replace(/[-_]/g, " ").replace(/\b\w/g, (l) => l.toUpperCase());
   };
 
   const handleDelete = async (taskId) => {

@@ -133,7 +133,7 @@ const CalendarPage = () => {
   const detailData = detailResponse?.data || null;
 
   const users = usersData?.data?.users || usersData?.data || [];
-  const clients = companiesData?.data?.companies || companiesData?.data || [];
+  const clients = companiesData?.data?.companies || companiesData?.data?.data || companiesData?.data || (Array.isArray(companiesData) ? companiesData : []);
   const leads = leadsData?.data?.leads || leadsData?.data || [];
   const projects = projectsData?.data?.projects || projectsData?.data || [];
 
@@ -282,13 +282,25 @@ const CalendarPage = () => {
   const getStatusTag = (status) => {
     const statusMap = {
       upcoming: { color: 'blue', label: 'Upcoming' },
+      to_do: { color: 'blue', label: 'To Do' },
+      created: { color: 'blue', label: 'Created' },
+      assigned: { color: 'blue', label: 'Assigned' },
+      in_progress: { color: 'processing', label: 'In Progress' },
+      review: { color: 'purple', label: 'In Review' },
+      submitted: { color: 'cyan', label: 'Submitted' },
+      hold: { color: 'warning', label: 'On Hold' },
+      rejected: { color: 'error', label: 'Rejected' },
       awaiting_confirmation: { color: 'orange', label: 'Awaiting Confirm' },
       completed: { color: 'green', label: 'Completed' },
+      complete: { color: 'green', label: 'Completed' },
+      validated: { color: 'green', label: 'Validated' },
+      done: { color: 'green', label: 'Done' },
       cancelled: { color: 'red', label: 'Cancelled' },
       rescheduled: { color: 'purple', label: 'Rescheduled' },
       missed: { color: 'default', label: 'Missed' }
     };
-    const { color, label } = statusMap[status] || { color: 'default', label: status };
+    const key = String(status || '').toLowerCase();
+    const { color, label } = statusMap[key] || { color: 'default', label: status };
     return <Tag color={color}>{label}</Tag>;
   };
 
@@ -838,29 +850,35 @@ const CalendarPage = () => {
       </Drawer>
 
       {/* Detail Modal — renders directly from selectedEvent; no API call needed for system activities */}
-      <Modal
-        title={
-          selectedEvent ? (
-            <div>
-              <span style={{ fontSize: '18px', fontWeight: 600 }}>{selectedEvent.title}</span>
-              <div style={{ marginTop: 4 }}>{getStatusTag(selectedEvent.status)}</div>
-            </div>
-          ) : null
-        }
-        open={detailModalVisible}
-        onCancel={() => {
-          setDetailModalVisible(false);
-          setSelectedEventId(null);
-          setSelectedEvent(null);
-        }}
-        footer={null}
-        width={720}
-        styles={{ body: { padding: '0 24px 24px 24px' } }}
-      >
-        {selectedEvent ? (() => {
-          // Use full selectedEvent for immediate rendering
-          const ev = detailData?.event || selectedEvent;
-          const isCustom = selectedEvent.source === 'custom';
+      {(() => {
+        const ev = selectedEvent
+          ? ((detailData?.event && (String(detailData.event._id) === String(selectedEvent._id) || String(detailData.event.meetingId) === String(selectedEvent._id) || String(detailData.event.taskId) === String(selectedEvent._id)))
+              ? detailData.event
+              : selectedEvent)
+          : null;
+
+        return (
+          <Modal
+            title={
+              ev ? (
+                <div>
+                  <span style={{ fontSize: '18px', fontWeight: 600 }}>{ev.title}</span>
+                  <div style={{ marginTop: 4 }}>{getStatusTag(ev.status)}</div>
+                </div>
+              ) : null
+            }
+            open={detailModalVisible}
+            onCancel={() => {
+              setDetailModalVisible(false);
+              setSelectedEventId(null);
+              setSelectedEvent(null);
+            }}
+            footer={null}
+            width={720}
+            styles={{ body: { padding: '0 24px 24px 24px' } }}
+          >
+            {ev ? (() => {
+              const isCustom = ev.source === 'custom';
 
           // Source label map
           const sourceLabels = {
@@ -1057,6 +1075,8 @@ const CalendarPage = () => {
           <div style={{ textAlign: 'center', padding: '24px' }}>Select an activity to view details.</div>
         )}
       </Modal>
+        );
+      })()}
 
       {/* Day Events Modal */}
       <Modal

@@ -1,19 +1,50 @@
 class WhatsAppService {
   async fetchTemplates(backendUrl, apiToken) {
+    if (!backendUrl || typeof backendUrl !== 'string' || !backendUrl.trim()) {
+      throw new Error("Backend URL is required.");
+    }
+
+    const trimmedUrl = backendUrl.trim();
+    if (!/^https?:\/\//i.test(trimmedUrl)) {
+      throw new Error(`Invalid Backend URL "${trimmedUrl}". URL must start with http:// or https://`);
+    }
+
+    if (!apiToken || typeof apiToken !== 'string' || !apiToken.trim()) {
+      throw new Error("API Token is required.");
+    }
+
+    const axios = require('axios');
+    const templatesUrl = trimmedUrl.replace('message/send-message', 'templates').replace('{{token}}', apiToken.trim());
+    
     try {
-      const axios = require('axios');
-      // The templates endpoint is usually /v1/templates
-      const templatesUrl = backendUrl.replace('message/send-message', 'templates').replace('{{token}}', apiToken);
-      
       const response = await axios.get(templatesUrl, {
         headers: {
-          'Authorization': `Bearer ${apiToken}`
-        }
+          'Authorization': `Bearer ${apiToken.trim()}`
+        },
+        timeout: 10000
       });
-      return response.data?.data || response.data?.templates || response.data || [];
+      
+      const templatesData = response.data?.data || response.data?.templates || response.data;
+      if (!templatesData || (!Array.isArray(templatesData) && typeof templatesData !== 'object')) {
+        throw new Error("Invalid response format received from WhatsApp API backend.");
+      }
+      return Array.isArray(templatesData) ? templatesData : [];
     } catch (error) {
-      console.warn('[WhatsAppService] Failed to fetch real templates:', error.response?.data || error.message);
-      return [];
+      console.error('[WhatsAppService] Failed to fetch real templates:', error.response?.data || error.message);
+      if (error.response) {
+        const status = error.response.status;
+        const errDetail = error.response.data?.error?.message || error.response.data?.message || error.response.data?.error || error.message;
+        if (status === 401 || status === 403) {
+          throw new Error(`Authentication failed (HTTP ${status}): Invalid API Token or unauthorized access.`);
+        }
+        if (status === 404) {
+          throw new Error(`Endpoint not found (HTTP 404): Backend URL "${trimmedUrl}" is invalid or template API endpoint not available.`);
+        }
+        throw new Error(`WhatsApp API Error (HTTP ${status}): ${errDetail}`);
+      } else if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED' || error.code === 'ERR_INVALID_URL' || error.message?.includes('Invalid URL')) {
+        throw new Error(`Connection failed: Unable to connect to Backend URL "${trimmedUrl}". Please check the URL.`);
+      }
+      throw new Error(error.message || "Failed to fetch templates from WhatsApp API backend.");
     }
   }
 
