@@ -123,7 +123,7 @@ exports.getAgencyExecutiveDashboard = async (agencyId, queryMonth, queryYear, qu
     { $group: { 
         _id: '$assignedTo', 
         total: { $sum: 1 }, 
-        completed: { $sum: { $cond: [{ $in: [{ $toLower: '$status' }, ['done', 'complete', 'completed']] }, 1, 0] } } 
+        completed: { $sum: { $cond: [{ $in: [{ $toLower: '$status' }, ['done', 'complete', 'completed', 'validated', 'approved']] }, 1, 0] } } 
     } }
   ]);
 
@@ -174,7 +174,7 @@ exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, q
   }));
   
   // Tasks Due Today & Overdue
-  let taskQuery = { tenantCompanyId: { $in: [agencyId, ...clientIds] }, status: { $nin: ['done', 'complete', 'completed'] } };
+  let taskQuery = { tenantCompanyId: { $in: [agencyId, ...clientIds] }, status: { $nin: ['done', 'complete', 'completed', 'validated', 'approved'] } };
   if (queryClientId) taskQuery.companyId = queryClientId;
   
   const activeTasks = await Task.find(taskQuery).populate('assignedTo', 'name').populate('companyId', 'companyName');

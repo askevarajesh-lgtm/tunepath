@@ -410,7 +410,6 @@ exports.createWebsite = async (req, res, next) => {
                     const assetUrlMapLower = {};
                     const failedAssets = [];
                     const recoveredCdnLinks = new Set();
-                    const invalidHtmlHrefs = new Set();
 
                     const nonCssAssetFiles = assetFiles.filter(f => !f.toLowerCase().endsWith('.css'));
 
@@ -471,14 +470,16 @@ exports.createWebsite = async (req, res, next) => {
 
                         // Rewrite src and href to Cloudinary URLs
                         htmlContent = htmlContent.replace(/(src|href)=["'](?!http|\/\/|data:|#|mailto:|tel:)([^"']+)["']/gi, (match, attr, pathStr) => {
-                            // If it's a link to another real page, rewrite it to a clean path
-                            if (attr.toLowerCase() === 'href' && pathStr.toLowerCase().endsWith('.html')) {
-                                const rawBaseName = pathStr.split('/').pop().toLowerCase();
-                                if (pageBaseNames.has(rawBaseName)) {
+                            // If it's a link to another page (ending with .html, with optional query or hash), rewrite it to a clean route path
+                            if (attr.toLowerCase() === 'href') {
+                                const cleanPath = pathStr.split('?')[0].split('#')[0];
+                                if (cleanPath.toLowerCase().endsWith('.html')) {
+                                    const suffix = pathStr.slice(cleanPath.length);
+                                    const rawBaseName = cleanPath.split('/').pop().toLowerCase();
                                     const cleanName = rawBaseName.replace(/\.html$/i, '');
-                                    return `href="/${cleanName === 'index' ? 'home' : cleanName}"`;
+                                    const routePath = cleanName === 'index' ? 'home' : cleanName;
+                                    return `href="/${routePath}${suffix}"`;
                                 }
-                                invalidHtmlHrefs.add(pathStr);
                             }
 
                             const resolved = resolveReference(pathStr, fileDir, extractedDir, assetUrlMap, assetUrlMapLower);
@@ -560,11 +561,6 @@ exports.createWebsite = async (req, res, next) => {
                         const shown = [...recoveredCdnLinks].slice(0, 3).join(', ');
                         const more = recoveredCdnLinks.size > 3 ? ` and ${recoveredCdnLinks.size - 3} more` : '';
                         warningParts.push(`${recoveredCdnLinks.size} broken local reference(s) to CDN libraries (e.g. ${shown}${more}) were pointed back at their real CDN URLs — this template's zip was likely a browser "Save Page As" copy that never included those library files`);
-                    }
-
-                    if (invalidHtmlHrefs.size > 0) {
-                        const shown = [...invalidHtmlHrefs].join(', ');
-                        warningParts.push(`${invalidHtmlHrefs.size} link(s) pointed at an .html target that wasn't part of this import (e.g. ${shown}) — this is either a page missing from the template zip itself, or a non-page file mislabeled with an .html extension (e.g. a favicon); worth checking manually`);
                     }
 
                     if (warningParts.length > 0) {

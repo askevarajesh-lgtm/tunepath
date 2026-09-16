@@ -898,12 +898,12 @@ const MeetingsPage = () => {
           {isClientRole ? (
             <Form.Item
               name="participants"
-              label="Agency Manager / Agency Admin"
-              rules={[{ required: true, message: 'Please select at least one Agency Manager or Agency Admin' }]}
+              label="Brand Admin / Participants"
+              rules={[{ required: true, message: 'Please select at least one Brand Admin or participant' }]}
             >
               <Select
                 mode="multiple"
-                placeholder="Select Agency Manager / Agency Admin"
+                placeholder="Select Brand Admin / Participants"
                 filterOption={(input, option) => {
                   const labelText = Array.isArray(option?.children)
                     ? option.children.join(' ')
@@ -911,8 +911,8 @@ const MeetingsPage = () => {
                   return labelText.toLowerCase().indexOf(input.toLowerCase()) >= 0;
                 }}
               >
-                {users.filter(u => u.role === 'agency_manager' || u.role === 'agency_super_admin').map(u => (
-                  <Option key={u._id} value={u._id}>{u.name} ({u.role})</Option>
+                {users.map(u => (
+                  <Option key={u._id} value={u._id}>{u.name} ({u.roleName || u.role})</Option>
                 ))}
               </Select>
             </Form.Item>

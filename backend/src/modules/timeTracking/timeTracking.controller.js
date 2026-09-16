@@ -6,22 +6,48 @@ const mongoose = require('mongoose');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/**
- * Build the User filter for the current tenant.
- * User.agencyId is the correct field (NOT tenantCompanyId which doesn't exist on User schema).
- */
-function buildTenantUserFilter(tenantObjectId) {
-  return { agencyId: tenantObjectId };
-}
-
-/** Roles that are considered trackable employees */
-const EMPLOYEE_ROLES = [
-  'user', 'brand_team_user',
-  'coordinator', 'digital_marketing_manager', 'digital_marketing_coordinator', 'website_coordinator'
-];
+const EXCLUDED_SYSTEM_ROLES = ['supreme_super_admin', 'commander_admin', 'agency_super_admin'];
 
 /** Roles that are considered clients */
 const CLIENT_ROLES = ['brand_super_admin', 'brand_manager', 'agency_client'];
+
+function getCompanyIdList(req, tenantObjectId) {
+  const ids = [
+    tenantObjectId,
+    req.companyId,
+    req.user?.companyId,
+    req.user?.brandId,
+    req.user?.agencyId,
+    req.user?.clientId,
+    req.user?._id
+  ]
+    .filter(Boolean)
+    .map(id => id.toString());
+
+  return Array.from(new Set(ids)).map(id => new mongoose.Types.ObjectId(id));
+}
+
+async function getEligibleUsers(companyIdList) {
+  return await User.find({
+    $or: [
+      { agencyId: { $in: companyIdList } },
+      { brandId: { $in: companyIdList } },
+      { companyId: { $in: companyIdList } }
+    ],
+    role: { $nin: EXCLUDED_SYSTEM_ROLES }
+  }).select('_id name role departmentId departmentName').lean();
+}
+
+async function getDepartments(companyIdList) {
+  return await Department.find({
+    $or: [
+      { agencyId: { $in: companyIdList } },
+      { companyId: { $in: companyIdList } },
+      { brandId: { $in: companyIdList } },
+      { tenantCompanyId: { $in: companyIdList } }
+    ]
+  }).select('_id name slug status').lean();
+}
 
 /**
  * Compute week boundaries (Mon–Sun) from a date.
@@ -289,21 +315,39 @@ exports.getDashboardData = async (req, res) => {
     const utilizationRate = kpi.totalHours > 0 ? Math.round((kpi.billableHours / kpi.totalHours) * 100) : 0;
 
     // ── Active timers (tasks in_progress with workStartedAt set) ─────────────
+    const companyIdSet = new Set(
+      [tenantObjectId, req.user?.companyId, req.user?.brandId, req.user?.agencyId, req.user?._id]
+        .filter(Boolean)
+        .map(id => id.toString())
+    );
+    const companyIdList = Array.from(companyIdSet).map(id => new mongoose.Types.ObjectId(id));
+
     const activeTasks = await Task.find({
-      $or: [{ tenantCompanyId: tenantObjectId }, { companyId: tenantObjectId }],
+      $or: [
+        { tenantCompanyId: { $in: companyIdList } },
+        { companyId: { $in: companyIdList } }
+      ],
       status: 'in_progress',
       workStartedAt: { $ne: null }
     }).populate('assignedTo', 'name departmentName');
 
     const now = new Date();
+    // Active timers represent tasks running right now.
+    // If the selected date range does NOT include today ('now'), active timers for that selected range is 0.
+    const isTodayInRange = now >= startOfWeek && now <= endOfWeek;
+
+    const filteredActiveTasks = isTodayInRange
+      ? activeTasks.filter(t => t.workStartedAt && new Date(t.workStartedAt) <= endOfWeek)
+      : [];
+
     let activeTimersRunningTimeMin = 0;
-    activeTasks.forEach(t => {
+    filteredActiveTasks.forEach(t => {
       const elapsedMin = Math.max(0, Math.round((now - new Date(t.workStartedAt)) / 60000));
       // Cap running time per timer to 12 hours (720 min) to handle unstopped stale timers
       activeTimersRunningTimeMin += Math.min(elapsedMin, 720);
     });
 
-    const activeTimersList = activeTasks.map(t => ({
+    const activeTimersList = filteredActiveTasks.map(t => ({
       taskId: t._id,
       taskTitle: t.title,
       memberName: t.assignedTo?.name || 'Unknown',
@@ -312,11 +356,7 @@ exports.getDashboardData = async (req, res) => {
     }));
 
     // ── Missing timesheets: employees who haven't logged today ───────────────
-    // Use agencyId (correct field), not tenantCompanyId which doesn't exist on User
-    const eligibleUsers = await User.find({
-      agencyId: tenantObjectId,
-      role: { $in: EMPLOYEE_ROLES }
-    }).select('_id name role departmentId departmentName').lean();
+    const eligibleUsers = await getEligibleUsers(companyIdList);
 
     const todayStart = new Date(dateParam); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(dateParam); todayEnd.setHours(23, 59, 59, 999);
@@ -340,7 +380,7 @@ exports.getDashboardData = async (req, res) => {
       billablePercent: kpi.totalHours > 0 ? Math.round((kpi.billableHours / kpi.totalHours) * 100) : 0,
       nonBillablePercent: kpi.totalHours > 0 ? Math.round((kpi.nonBillableHours / kpi.totalHours) * 100) : 0,
       utilizationRate: utilizationRate > 100 ? 100 : utilizationRate,
-      activeTimersCount: activeTasks.length,
+      activeTimersCount: filteredActiveTasks.length,
       activeTimersRunningTime: parseFloat((activeTimersRunningTimeMin / 60).toFixed(2)),
       activeTimersList,
       missingTimesheetsCount: missingCount,
@@ -356,8 +396,8 @@ exports.getDashboardData = async (req, res) => {
     // ── Weekly timesheet: hours per member per day ───────────────────────────
     const weekEntries = await TimeEntry.find(weekMatch).lean();
 
-    // Fetch departments in this agency for enriching data
-    const departments = await Department.find({ agencyId: tenantObjectId }).select('_id name').lean();
+    // Fetch departments in this tenant/company for enriching data
+    const departments = await getDepartments(companyIdList);
     const deptMap = {};
     departments.forEach(d => { deptMap[d._id.toString()] = d.name; });
 
@@ -472,27 +512,25 @@ exports.getFormOptions = async (req, res) => {
   try {
     if (!req.companyId) return res.status(401).json({ success: false, message: 'Unauthorized' });
     const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
+    const companyIdList = getCompanyIdList(req, tenantObjectId);
 
-    // Use agencyId (correct field on User schema)
-    const employees = await User.find({
-      agencyId: tenantObjectId,
-      role: { $in: EMPLOYEE_ROLES }
-    }).select('name role departmentId departmentName').lean();
+    const employees = await getEligibleUsers(companyIdList);
 
     const clients = await User.find({
-      agencyId: tenantObjectId,
+      $or: [
+        { agencyId: { $in: companyIdList } },
+        { brandId: { $in: companyIdList } },
+        { companyId: { $in: companyIdList } }
+      ],
       role: { $in: CLIENT_ROLES }
     }).select('companyName name').lean();
 
     const tasks = await Task.find({
-      $or: [{ tenantCompanyId: tenantObjectId }, { companyId: tenantObjectId }],
+      $or: [{ tenantCompanyId: { $in: companyIdList } }, { companyId: { $in: companyIdList } }],
       status: { $nin: ['completed', 'complete', 'validated', 'done', 'rejected'] }
     }).select('title department').lean();
 
-    const departments = await Department.find({
-      agencyId: tenantObjectId,
-      status: 'active'
-    }).select('name slug').lean();
+    const departments = await getDepartments(companyIdList);
 
     res.status(200).json({ success: true, data: { employees, clients, tasks, departments } });
   } catch (error) {
@@ -507,6 +545,7 @@ exports.getTeamTaskPerformance = async (req, res) => {
   try {
     if (!req.companyId) return res.status(401).json({ success: false, message: 'Unauthorized' });
     const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
+    const companyIdList = getCompanyIdList(req, tenantObjectId);
 
     const startDateParam = req.query.startDate ? new Date(req.query.startDate) : null;
     const endDateParam = req.query.endDate ? new Date(req.query.endDate) : null;
@@ -535,7 +574,7 @@ exports.getTeamTaskPerformance = async (req, res) => {
     // Tasks completed this week based on any completion date field or updatedAt
     const tasksCompletedAgg = await Task.aggregate([
       { $match: {
-        $or: [{ tenantCompanyId: tenantObjectId }, { companyId: tenantObjectId }],
+        $or: [{ tenantCompanyId: { $in: companyIdList } }, { companyId: { $in: companyIdList } }],
         status: { $in: completedStatuses },
         assignedTo: { $ne: null },
         $or: [
@@ -551,18 +590,15 @@ exports.getTeamTaskPerformance = async (req, res) => {
 
     // Hours from TimeEntry this week
     const timeSpentAgg = await TimeEntry.aggregate([
-      { $match: { tenantCompanyId: tenantObjectId, date: { $gte: startOfWeek, $lte: endOfWeek } } },
+      { $match: { tenantCompanyId: { $in: companyIdList }, date: { $gte: startOfWeek, $lte: endOfWeek } } },
       { $group: { _id: '$employee', totalTimeSpentHours: { $sum: '$hours' } } }
     ]);
 
     // Fetch ALL active trackable users for this tenant
-    const users = await User.find({ 
-      agencyId: tenantObjectId,
-      role: { $in: EMPLOYEE_ROLES }
-    }).select('name role departmentId departmentName').lean();
+    const users = await getEligibleUsers(companyIdList);
 
     // Fetch departments for label mapping
-    const departments = await Department.find({ agencyId: tenantObjectId }).select('_id name').lean();
+    const departments = await getDepartments(companyIdList);
     const deptMap = {};
     departments.forEach(d => { deptMap[d._id.toString()] = d.name; });
 

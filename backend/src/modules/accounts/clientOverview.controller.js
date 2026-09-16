@@ -8,9 +8,9 @@ exports.getClientOverviewData = async (req, res, next) => {
 
     let data = {};
     if (req.user.role === 'brand_super_admin') {
-      data = await clientDashboardService.getClientExecutiveDashboard(clientId, companyId, month, year);
+      data = await clientDashboardService.getClientExecutiveDashboard(clientId, companyId, month, year, req.user);
     } else {
-      data = await clientDashboardService.getClientOperationsDashboard(clientId, companyId, month, year);
+      data = await clientDashboardService.getClientOperationsDashboard(clientId, companyId, month, year, req.user);
     }
 
     res.status(200).json({

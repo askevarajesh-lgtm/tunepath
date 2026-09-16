@@ -65,16 +65,28 @@ exports.getClientExecutiveDashboard = async (clientId, companyId, queryMonth, qu
   };
 };
 
-exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, queryYear) => {
+exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, queryYear, reqUser = null) => {
   const hasMonthYear = queryMonth !== undefined && queryMonth !== null && queryMonth !== '' && queryYear !== undefined && queryYear !== null && queryYear !== '';
   const now = hasMonthYear ? new Date(parseInt(queryYear), parseInt(queryMonth), 15) : new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
+  const companyIdSet = new Set(
+    [clientId, companyId, reqUser?.clientId, reqUser?.companyId, reqUser?.brandId, reqUser?.tenantCompanyId, reqUser?._id]
+      .filter(Boolean)
+      .map(id => id.toString())
+  );
+  const companyIdList = Array.from(companyIdSet);
+
   // Tasks
   const allTasks = await Task.find({ 
-    $or: [{ companyId: clientId }, { tenantCompanyId: clientId }, { companyId }]
+    $or: [
+      { companyId: { $in: companyIdList } },
+      { tenantCompanyId: { $in: companyIdList } }
+    ]
   });
+
+  const completedStatuses = ['done', 'complete', 'completed', 'validated', 'approved'];
 
   // Filter tasks created on or before the end of the selected month
   const tasksUpToMonth = allTasks.filter(t => {
@@ -82,26 +94,31 @@ exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, q
     return created <= endOfMonth;
   });
 
-  // Total tasks relevant to this month (either created or due within the month)
+  // Total tasks relevant to this month (either created, due, or completed within the month)
   const totalTasksThisMonth = allTasks.filter(t => {
     const created = t.createdAt ? new Date(t.createdAt) : null;
     const due = t.dueDate ? new Date(t.dueDate) : null;
+    const completedDate = t.workCompletedAt || t.actualCompletionDate || t.completedAt || t.updatedAt;
+    const completedInMonth = completedStatuses.includes(t.status?.toLowerCase()) &&
+      completedDate && new Date(completedDate) >= startOfMonth && new Date(completedDate) <= endOfMonth;
+
     const inMonth = (created && created >= startOfMonth && created <= endOfMonth) ||
-                    (due && due >= startOfMonth && due <= endOfMonth);
+                    (due && due >= startOfMonth && due <= endOfMonth) ||
+                    completedInMonth;
     return inMonth;
   }).length;
 
   // Completed tasks completed within this month
   const completedTasksThisMonth = allTasks.filter(t => {
-    const isCompleted = ['done', 'complete', 'completed'].includes(t.status?.toLowerCase());
+    const isCompleted = completedStatuses.includes(t.status?.toLowerCase());
     if (!isCompleted) return false;
-    const dateToUse = t.completedAt || t.updatedAt || t.createdAt;
+    const dateToUse = t.workCompletedAt || t.actualCompletionDate || t.completedAt || t.updatedAt || t.createdAt;
     const d = new Date(dateToUse);
     return d >= startOfMonth && d <= endOfMonth;
   }).length;
   
   // Open tasks up to this month
-  const openTasks = tasksUpToMonth.filter(t => !['done', 'complete', 'completed'].includes(t.status?.toLowerCase()));
+  const openTasks = tasksUpToMonth.filter(t => !completedStatuses.includes(t.status?.toLowerCase()));
   
   // Overdue tasks cutoff (end of month for past months, or current time if current/future month)
   const cutoffDate = new Date() < endOfMonth ? new Date() : endOfMonth;
@@ -111,7 +128,7 @@ exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, q
   const deliverableStatuses = ['completed', 'complete', 'approved', 'validated', 'done'];
   const actualDeliverables = tasksUpToMonth
     .filter(t => deliverableStatuses.includes(t.status?.toLowerCase()))
-    .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0).getTime() - new Date(a.updatedAt || a.createdAt || 0).getTime());
+    .sort((a, b) => new Date(b.workCompletedAt || b.actualCompletionDate || b.updatedAt || b.createdAt || 0).getTime() - new Date(a.workCompletedAt || a.actualCompletionDate || a.updatedAt || a.createdAt || 0).getTime());
   
   const recentDeliverables = actualDeliverables.slice(0, 5);
   

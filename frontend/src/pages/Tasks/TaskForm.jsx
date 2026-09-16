@@ -490,17 +490,24 @@ const TaskForm = () => {
   // For SEO members creating/editing tasks: show only SEO users in Assigned To (so they can assign to other SEOs or interns)
   // Filter users by department for "Assigned To" field, excluding admins and managers
   const usersForAssignees = useMemo(() => {
-    const excludedRoles = [
+    const topAdminRoles = [
       "supreme_super_admin",
       "commander_admin",
       "agency_super_admin",
-      "brand_super_admin",
       "agency_manager",
+      "brand_super_admin",
+      "brand_admin",
       "brand_manager",
       "admin",
-      "super_admin"
+      "super_admin",
+      "agency_client",
+      "client"
     ];
-    return (users || []).filter(u => !excludedRoles.includes(u.role));
+    return (users || []).filter(u => {
+      if (!u) return false;
+      if (u.customRoleId) return true;
+      return !topAdminRoles.includes(u.role);
+    });
   }, [users]);
 
   const absentEmailSet = useMemo(() => {

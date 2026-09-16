@@ -82,13 +82,15 @@ exports.getUsersDropdown = async (req, res, next) => {
         { _id: clientBrandId, role: 'agency_client' },
         { agencyId: clientAgencyId, role: { $in: ['agency_super_admin', 'agency_manager'] } }
       ];
-    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
-      queryFilter.brandId = req.user.brandId;
-      if (req.user.role === 'brand_manager' || req.user.role === 'user') {
-        queryFilter.role = { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'brand_super_admin'] };
-      } else {
-        queryFilter.role = { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin'] };
+    } else if (['brand_super_admin', 'brand_manager', 'brand_admin'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
+      const activeBrandId = req.user.brandId || (['brand_super_admin', 'brand_manager', 'brand_admin'].includes(req.user.role) ? req.user._id : null);
+      if (activeBrandId) {
+        queryFilter.$or = [
+          { brandId: activeBrandId },
+          { _id: activeBrandId }
+        ];
       }
+      queryFilter.role = { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin'] };
     } else {
       if (req.user.adminId && !req.user.agencyId) {
         queryFilter.adminId = req.user.adminId;
@@ -111,7 +113,7 @@ exports.getUsersDropdown = async (req, res, next) => {
       }
     }
 
-    const users = await User.find(queryFilter).select('name email role').sort({ name: 1 });
+    const users = await User.find(queryFilter).select('name email role customRoleId').sort({ name: 1 });
     res.status(200).json({ success: true, data: { users } });
   } catch (error) {
     next(error);
