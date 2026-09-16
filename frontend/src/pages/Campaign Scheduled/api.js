@@ -58,11 +58,21 @@ function normalizePost(post) {
   const normalizedMediaUrl = Array.isArray(rawMedia) ? rawMedia : (rawMedia ? [rawMedia] : []);
   const primaryMediaUrl = normalizedMediaUrl.length > 0 ? normalizedMediaUrl[0] : null;
 
+  const validCampaign =
+    post.campaign && post.campaign !== "undefined" && post.campaign !== "null"
+      ? post.campaign.trim()
+      : "";
+
+  const validTitle =
+    post.title && post.title !== "undefined" && post.title !== "null"
+      ? post.title.trim()
+      : validCampaign || post.caption || "";
+
   return {
     id: post.id || post._id,
-    caption: post.caption,
-    title: post.title || post.campaign,
-    campaign: post.campaign,
+    caption: post.caption || "",
+    title: validTitle,
+    campaign: validCampaign,
     mediaUrl: primaryMediaUrl,
     media_url: rawMedia,
     mediaList: normalizedMediaUrl,
@@ -156,7 +166,7 @@ export const campaignScheduledApi = {
       Object.keys(restPayload).forEach((key) => {
         if (key === "platforms" || key === "boards" || key === "post_option" || key === "platform_thumbnails") {
           formData.append(key, JSON.stringify(restPayload[key]));
-        } else {
+        } else if (restPayload[key] !== undefined && restPayload[key] !== null) {
           formData.append(key, restPayload[key]);
         }
       });
@@ -217,7 +227,7 @@ export const campaignScheduledApi = {
       Object.keys(restPayload).forEach((key) => {
         if (key === "platforms" || key === "boards" || key === "post_option" || key === "platform_thumbnails") {
           formData.append(key, JSON.stringify(restPayload[key]));
-        } else {
+        } else if (restPayload[key] !== undefined && restPayload[key] !== null) {
           formData.append(key, restPayload[key]);
         }
       });

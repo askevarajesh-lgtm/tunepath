@@ -486,35 +486,68 @@ export default function ListView({
               title: "Content",
               key: "content",
               width: 250,
-              render: (_, row) => (
-                <div style={{ maxWidth: 250 }}>
-                  {row.campaign && (
+              render: (_, row) => {
+                const hasCampaign = Boolean(
+                  row.campaign &&
+                    row.campaign !== "undefined" &&
+                    row.campaign !== "null" &&
+                    row.campaign.trim() !== "",
+                );
+                return (
+                  <div style={{ maxWidth: 250 }}>
+                    {hasCampaign && (
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: 13,
+                          marginBottom: 2,
+                          color: "#1e293b",
+                        }}
+                      >
+                        {row.campaign}
+                      </div>
+                    )}
                     <div
                       style={{
-                        fontWeight: 600,
-                        fontSize: 13,
-                        marginBottom: 2,
-                        color: "#1e293b",
+                        color: hasCampaign ? "#64748b" : "inherit",
+                        fontSize: hasCampaign ? 12 : "inherit",
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
                       }}
                     >
-                      {row.campaign}
+                      {row.caption || "-"}
                     </div>
-                  )}
+                  </div>
+                );
+              },
+            },
+            {
+              title: "Title",
+              key: "campaign",
+              render: (_, row) => {
+                const hasCampaign = Boolean(
+                  row.campaign &&
+                    row.campaign !== "undefined" &&
+                    row.campaign !== "null" &&
+                    row.campaign.trim() !== "",
+                );
+                const displayTitle = hasCampaign ? row.campaign : (row.caption || "-");
+                return (
                   <div
                     style={{
-                      color: row.campaign ? "#64748b" : "inherit",
-                      fontSize: row.campaign ? 12 : "inherit",
+                      maxWidth: 200,
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis",
                     }}
+                    title={displayTitle}
                   >
-                    {row.caption}
+                    {displayTitle}
                   </div>
-                </div>
-              ),
+                );
+              },
             },
-            { title: "Title", dataIndex: "campaign", key: "campaign" },
             {
               title: "Action",
               key: "action",

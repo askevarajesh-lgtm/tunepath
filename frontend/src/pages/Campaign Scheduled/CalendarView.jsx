@@ -79,10 +79,13 @@ export default function CalendarView({ posts, accounts = [], onView, onEdit }) {
       ),
     ];
 
+    const hasCampaign = Boolean(post.campaign && post.campaign !== "undefined" && post.campaign !== "null" && post.campaign.trim() !== "");
+    const displayTitle = hasCampaign ? post.campaign : (post.caption || "Untitled");
+
     return (
       <Tooltip
         key={post.id}
-        title={`${post.scheduledTime} - ${post.campaign || "Untitled"}`}
+        title={`${post.scheduledTime} - ${displayTitle}`}
         mouseEnterDelay={0.5}
       >
         <div
@@ -121,7 +124,7 @@ export default function CalendarView({ posts, accounts = [], onView, onEdit }) {
           <span
             style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}
           >
-            {post.campaign || post.caption || "Untitled"}
+            {displayTitle}
           </span>
         </div>
       </Tooltip>
@@ -376,7 +379,11 @@ export default function CalendarView({ posts, accounts = [], onView, onEdit }) {
                 title={
                   <Space>
                     <Text strong>{post.scheduledTime}</Text>
-                    <Text>{post.campaign || "Untitled Campaign"}</Text>
+                    <Text>
+                      {(post.campaign && post.campaign !== "undefined" && post.campaign !== "null" && post.campaign.trim() !== "")
+                        ? post.campaign
+                        : (post.caption || "Untitled Post")}
+                    </Text>
                     <Tag color={getStatusConfig(post.status).color}>
                       {post.status}
                     </Tag>

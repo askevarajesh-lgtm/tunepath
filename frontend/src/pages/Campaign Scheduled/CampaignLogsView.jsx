@@ -152,7 +152,15 @@ export default function CampaignLogsView({ posts = [], accounts = [] }) {
                                 >
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                            <Text strong className="premium-card-title" style={{ fontSize: '16px', letterSpacing: '-0.3px', lineHeight: '1.2' }}>{log.campaign || "General Campaign"}</Text>
+                                            {(() => {
+                                                const hasCampaign = Boolean(log.campaign && log.campaign !== "undefined" && log.campaign !== "null" && log.campaign.trim() !== "");
+                                                const displayTitle = hasCampaign ? log.campaign : (log.caption || "General Campaign");
+                                                return (
+                                                    <Text strong className="premium-card-title" style={{ fontSize: '16px', letterSpacing: '-0.3px', lineHeight: '1.2' }}>
+                                                        {displayTitle}
+                                                    </Text>
+                                                );
+                                            })()}
                                             <Text type="secondary" className="premium-card-subtitle" style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                                                 <CalendarOutlined />
                                                 {getScheduleText(log)}

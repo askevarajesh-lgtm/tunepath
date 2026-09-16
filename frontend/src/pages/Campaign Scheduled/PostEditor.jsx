@@ -900,8 +900,8 @@ export default function PostEditor({
 
     return {
       id: post?.id || `p-${Date.now()}`,
-      caption: values.caption,
-      campaign: values.campaign,
+      caption: values.caption || "",
+      campaign: values.campaign || "",
       mediaUrl,
       type: values.postType === "text" ? "Text Post" : "Post Composer",
       status:
