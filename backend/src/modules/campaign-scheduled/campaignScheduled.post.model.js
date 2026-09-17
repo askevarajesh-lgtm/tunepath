@@ -38,6 +38,7 @@ const campaignScheduledPostSchema = new mongoose.Schema(
     },
     post_option: { type: mongoose.Schema.Types.Mixed, default: {} }, // platform-specific options: { youtube: 'video_short', ... }
     boards: { type: mongoose.Schema.Types.Mixed, default: {} }, // Pinterest board IDs keyed by account ID
+    made_for_kids: { type: Boolean, default: false },
     platforms: { type: [String], default: [] },
     platform_media_urls: { type: mongoose.Schema.Types.Mixed, default: {} },
     thumbnail_url: { type: String, default: null },

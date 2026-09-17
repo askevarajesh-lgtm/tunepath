@@ -2734,6 +2734,7 @@ router.post("/posts", mediaUpload.any(), async (req, res, next) => {
             postMode,
             post_option,
             boards,
+            made_for_kids,
         } = req.body;
 
         if (!caption) {
@@ -2880,6 +2881,7 @@ router.post("/posts", mediaUpload.any(), async (req, res, next) => {
             platforms: platforms,
             post_option: post_option ? (typeof post_option === "string" ? JSON.parse(post_option) : post_option) : {},
             boards: boards ? (typeof boards === "string" ? JSON.parse(boards) : boards) : {},
+            made_for_kids: made_for_kids === "true" || made_for_kids === true ? true : false,
             created_at: new Date().toISOString(),
         });
 
@@ -2956,6 +2958,9 @@ router.put("/posts/:id", mediaUpload.any(), async (req, res) => {
     }
     if (updates.post_option && typeof updates.post_option === "string") {
         try { updates.post_option = JSON.parse(updates.post_option); } catch (e) { delete updates.post_option; }
+    }
+    if (updates.made_for_kids !== undefined) {
+        updates.made_for_kids = updates.made_for_kids === "true" || updates.made_for_kids === true ? true : false;
     }
 
     updates.platform_media_urls = post.platform_media_urls || {};

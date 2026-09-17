@@ -433,15 +433,35 @@ async function postToFacebook(account, post) {
     platformOption === "video_short" ||
     platformOption === "short";
 
+  const effectiveMedia = (post.platform_media_urls && post.platform_media_urls[account.id])
+    ? post.platform_media_urls[account.id]
+    : post.media_url;
+
+  const firstMedia = Array.isArray(effectiveMedia) ? effectiveMedia[0] : (effectiveMedia || "");
+
   const hasMedia =
-    post.media_url &&
-    (Array.isArray(post.media_url) ? post.media_url.length > 0 : (post.media_url.startsWith("http") && !post.media_url.includes("picsum")));
+    Boolean(firstMedia) &&
+    typeof firstMedia === "string" &&
+    firstMedia.startsWith("http") &&
+    !firstMedia.includes("picsum");
 
-  const firstMedia = Array.isArray(post.media_url) ? post.media_url[0] : post.media_url;
-  const isVideo =
-    hasMedia && /\.(mp4|mov|avi|webm|mkv)$/i.test(firstMedia);
+  const postTypeStr = (post.postType || post.post_type || post.type || "").toLowerCase();
+  const isVideoUrl = typeof firstMedia === "string" && (
+    /\.(mp4|mov|avi|webm|mkv)(\?.*)?$/i.test(firstMedia) ||
+    firstMedia.includes("/video/upload/") ||
+    (firstMedia.includes("res.cloudinary.com") && firstMedia.includes("/video/"))
+  );
+  const isVideo = hasMedia && (postTypeStr.includes("video") || isVideoUrl);
 
-  const isCarousel = Array.isArray(post.media_url) && post.media_url.length > 1;
+  const isCarousel = Array.isArray(effectiveMedia) && effectiveMedia.length > 1;
+
+  // Extract thumbnail URL for Facebook if provided
+  let thumbnailUrl = null;
+  if (post.platform_thumbnails && post.platform_thumbnails[account.id]) {
+    thumbnailUrl = post.platform_thumbnails[account.id];
+  } else if (post.thumbnail_url) {
+    thumbnailUrl = post.thumbnail_url;
+  }
 
   if (isVideo && isReel) {
     // Facebook Reels Flow
@@ -480,6 +500,25 @@ async function postToFacebook(account, post) {
       account,
     );
 
+    // Upload custom thumbnail to Facebook Reel if thumbnail URL is provided
+    if (thumbnailUrl && typeof thumbnailUrl === "string" && thumbnailUrl.startsWith("http")) {
+      try {
+        const thumbRes = await axios.get(thumbnailUrl, { responseType: "arraybuffer" });
+        const FormData = require("form-data");
+        const form = new FormData();
+        form.append("source", Buffer.from(thumbRes.data), { filename: "thumbnail.jpg", contentType: "image/jpeg" });
+        form.append("is_preferred", "true");
+        form.append("access_token", account.access_token);
+
+        await axios.post(`${META_GRAPH}/${video_reel_id}/thumbnails`, form, {
+          headers: form.getHeaders(),
+        });
+        console.log(`[Facebook Reel Thumbnail] Successfully uploaded thumbnail for reel ${video_reel_id}`);
+      } catch (thumbErr) {
+        console.warn(`[Facebook Reel Thumbnail Warning] Failed to upload thumbnail for reel ${video_reel_id}:`, thumbErr?.response?.data || thumbErr.message);
+      }
+    }
+
     return {
       externalId: video_reel_id,
       url: `https://www.facebook.com/reels/${video_reel_id}/`,
@@ -498,6 +537,26 @@ async function postToFacebook(account, post) {
       account,
     );
     const postId = res.data.id;
+
+    // Upload custom thumbnail to Facebook Video if thumbnail URL is provided
+    if (thumbnailUrl && typeof thumbnailUrl === "string" && thumbnailUrl.startsWith("http")) {
+      try {
+        const thumbRes = await axios.get(thumbnailUrl, { responseType: "arraybuffer" });
+        const FormData = require("form-data");
+        const form = new FormData();
+        form.append("source", Buffer.from(thumbRes.data), { filename: "thumbnail.jpg", contentType: "image/jpeg" });
+        form.append("is_preferred", "true");
+        form.append("access_token", account.access_token);
+
+        await axios.post(`${META_GRAPH}/${postId}/thumbnails`, form, {
+          headers: form.getHeaders(),
+        });
+        console.log(`[Facebook Video Thumbnail] Successfully uploaded thumbnail for video ${postId}`);
+      } catch (thumbErr) {
+        console.warn(`[Facebook Video Thumbnail Warning] Failed to upload thumbnail for video ${postId}:`, thumbErr?.response?.data || thumbErr.message);
+      }
+    }
+
     return {
       externalId: postId,
       url: `https://www.facebook.com/${postId}`,
@@ -571,9 +630,17 @@ async function postToInstagram(account, post, options = {}) {
   if (!account.ig_user_id)
     throw new Error("No Instagram user ID linked to this account");
 
+  const effectiveMedia = (post.platform_media_urls && post.platform_media_urls[account.id])
+    ? post.platform_media_urls[account.id]
+    : post.media_url;
+
+  const firstMedia = Array.isArray(effectiveMedia) ? effectiveMedia[0] : (effectiveMedia || "");
+
   const hasMedia =
-    post.media_url &&
-    (Array.isArray(post.media_url) ? post.media_url.length > 0 : (post.media_url.startsWith("http") && !post.media_url.includes("picsum")));
+    Boolean(firstMedia) &&
+    typeof firstMedia === "string" &&
+    firstMedia.startsWith("http") &&
+    !firstMedia.includes("picsum");
 
   if (!hasMedia) {
     throw new Error(
@@ -581,12 +648,18 @@ async function postToInstagram(account, post, options = {}) {
     );
   }
 
-  const isCarousel = Array.isArray(post.media_url) && post.media_url.length > 1;
-  const firstMedia = Array.isArray(post.media_url) ? post.media_url[0] : post.media_url;
+  const isCarousel = Array.isArray(effectiveMedia) && effectiveMedia.length > 1;
 
   // Determine media type from post or options
+  const postTypeStr = (post.postType || post.post_type || post.type || "").toLowerCase();
+  const isVideoUrl = typeof firstMedia === "string" && (
+    /\.(mp4|mov|avi|webm|mkv)(\?.*)?$/i.test(firstMedia) ||
+    firstMedia.includes("/video/upload/") ||
+    (firstMedia.includes("res.cloudinary.com") && firstMedia.includes("/video/"))
+  );
+
   let mediaType = "IMAGE";
-  if (firstMedia && /\.(mp4|mov|avi|webm|mkv)$/i.test(firstMedia)) {
+  if (postTypeStr.includes("video") || isVideoUrl) {
     mediaType = "VIDEO";
   }
   if (options.mediaType) {
@@ -654,18 +727,85 @@ async function postToInstagram(account, post, options = {}) {
     );
     
     creationId = carouselRes.data.id;
+  } else if (mediaType === "VIDEO") {
+    const maxRetries = 3;
+    let videoSuccess = false;
+    let lastErrorDetail = "";
+
+    for (let retry = 1; retry <= maxRetries; retry++) {
+      try {
+        const containerPayload = {
+          caption: post.caption || "",
+          media_type: "REELS",
+          video_url: firstMedia,
+          share_to_feed: true,
+        };
+
+        // Check if custom thumbnail was uploaded
+        let thumbnailUrl = null;
+        if (post.platform_thumbnails && post.platform_thumbnails[account.id]) {
+          thumbnailUrl = post.platform_thumbnails[account.id];
+        } else if (post.thumbnail_url) {
+          thumbnailUrl = post.thumbnail_url;
+        }
+
+        if (thumbnailUrl && typeof thumbnailUrl === "string" && thumbnailUrl.startsWith("http")) {
+          containerPayload.cover_url = enforceJpegForInstagram(thumbnailUrl);
+        }
+
+        const containerRes = await executeMetaGraphApi(
+          (token) =>
+            axios.post(`${META_GRAPH}/${account.ig_user_id}/media`, {
+              ...containerPayload,
+              access_token: token,
+            }),
+          account,
+        );
+
+        creationId = containerRes.data.id;
+
+        // Poll until status = FINISHED (max ~75s)
+        const maxAttempts = 25;
+        let lastStatus = null;
+        for (let i = 0; i < maxAttempts; i++) {
+          await new Promise((r) => setTimeout(r, 3000));
+          const statusRes = await executeMetaGraphApi(
+            (token) =>
+              axios.get(`${META_GRAPH}/${creationId}`, {
+                params: { fields: "status_code,status", access_token: token },
+              }),
+            account,
+          );
+          lastStatus = statusRes.data;
+          if (lastStatus?.status_code === "FINISHED") {
+            videoSuccess = true;
+            break;
+          }
+          if (lastStatus?.status_code === "ERROR") {
+            lastErrorDetail = lastStatus?.status || "Video processing failed on Instagram";
+            break;
+          }
+        }
+
+        if (videoSuccess) break;
+
+        console.warn(`[Instagram Reel Upload Attempt ${retry}/${maxRetries} Failed] ${lastErrorDetail}. Retrying in 4s...`);
+        await new Promise((r) => setTimeout(r, 4000));
+      } catch (err) {
+        lastErrorDetail = err.message;
+        console.warn(`[Instagram Reel Upload Attempt ${retry}/${maxRetries} Exception] ${err.message}. Retrying in 4s...`);
+        await new Promise((r) => setTimeout(r, 4000));
+      }
+    }
+
+    if (!videoSuccess) {
+      throw new Error(`Video processing failed on Instagram after ${maxRetries} attempts: ${lastErrorDetail || "Container did not finish processing"}`);
+    }
   } else {
     const containerPayload = {
       caption: post.caption || "",
+      image_url: enforceJpegForInstagram(firstMedia),
     };
-
-    if (mediaType === "VIDEO") {
-      containerPayload.media_type = "REELS";
-      containerPayload.video_url = firstMedia;
-      containerPayload.share_to_feed = true;
-    } else {
-      containerPayload.image_url = enforceJpegForInstagram(firstMedia);
-    }
 
     const containerRes = await executeMetaGraphApi(
       (token) =>
@@ -678,43 +818,24 @@ async function postToInstagram(account, post, options = {}) {
 
     creationId = containerRes.data.id;
 
-    // For videos, poll until status = FINISHED (max ~60s)
-    if (mediaType === "VIDEO") {
-      const maxAttempts = 20;
-      for (let i = 0; i < maxAttempts; i++) {
-        await new Promise((r) => setTimeout(r, 3000));
-        const statusRes = await executeMetaGraphApi(
-          (token) =>
-            axios.get(`${META_GRAPH}/${creationId}`, {
-              params: { fields: "status_code", access_token: token },
-            }),
-          account,
-        );
-        if (statusRes.data.status_code === "FINISHED") break;
-        if (statusRes.data.status_code === "ERROR") {
-          throw new Error("Video processing failed on Instagram");
-        }
+    // For images, wait a bit then check status
+    let ready = false;
+    for (let i = 0; i < 10; i += 1) {
+      const statusRes = await executeMetaGraphApi(
+        (token) =>
+          axios.get(`${META_GRAPH}/${creationId}`, {
+            params: { fields: "status_code", access_token: token },
+          }),
+        account,
+      );
+      if (statusRes.data.status_code === "FINISHED") {
+        ready = true;
+        break;
       }
-    } else {
-      // For images, wait a bit then check status
-      let ready = false;
-      for (let i = 0; i < 10; i += 1) {
-        const statusRes = await executeMetaGraphApi(
-          (token) =>
-            axios.get(`${META_GRAPH}/${creationId}`, {
-              params: { fields: "status_code", access_token: token },
-            }),
-          account,
-        );
-        if (statusRes.data.status_code === "FINISHED") {
-          ready = true;
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-      if (!ready)
-        throw new Error("Instagram media container did not finish processing");
+      await new Promise((r) => setTimeout(r, 1500));
     }
+    if (!ready)
+      throw new Error("Instagram media container did not finish processing");
   }
 
   const publishRes = await executeMetaGraphApi(
@@ -857,6 +978,7 @@ async function uploadLinkedInVideo(
   token,
   post,
   uploadedMedia = null,
+  account = null,
 ) {
   const { mediaBuffer } = await getLinkedInMediaBinary(
     post.media_url,
@@ -868,8 +990,21 @@ async function uploadLinkedInVideo(
     throw new Error("LinkedIn video upload failed: empty file received");
   }
 
+  // Extract custom thumbnail if provided
+  let thumbnailUrl = null;
+  const accountId = account?.id || post.account_id;
+  if (post.platform_thumbnails && accountId && post.platform_thumbnails[accountId]) {
+    thumbnailUrl = post.platform_thumbnails[accountId];
+  } else if (post.thumbnail_url) {
+    thumbnailUrl = post.thumbnail_url;
+  }
+
+  const hasThumbnail = Boolean(
+    thumbnailUrl && typeof thumbnailUrl === "string" && thumbnailUrl.startsWith("http")
+  );
+
   console.log(
-    `[LinkedIn Video] Initializing upload for ${authorUrn}, size: ${mediaBuffer.length} bytes`,
+    `[LinkedIn Video] Initializing upload for ${authorUrn}, size: ${mediaBuffer.length} bytes, hasThumbnail: ${hasThumbnail}`,
   );
   const initializeRes = await axios.post(
     "https://api.linkedin.com/rest/videos?action=initializeUpload",
@@ -878,7 +1013,7 @@ async function uploadLinkedInVideo(
         owner: authorUrn,
         fileSizeBytes: mediaBuffer.length,
         uploadCaptions: false,
-        uploadThumbnail: false,
+        uploadThumbnail: hasThumbnail,
       },
     },
     {
@@ -890,13 +1025,29 @@ async function uploadLinkedInVideo(
 
   const uploadSession = initializeRes.data?.value || {};
   const videoUrn = uploadSession.video;
+  const thumbnailUploadUrl = uploadSession.thumbnailUploadUrl;
   const uploadInstructions = Array.isArray(uploadSession.uploadInstructions)
     ? uploadSession.uploadInstructions
     : [];
 
   console.log(
-    `[LinkedIn Video] Initialized. videoUrn: ${videoUrn}, parts: ${uploadInstructions.length}`,
+    `[LinkedIn Video] Initialized. videoUrn: ${videoUrn}, parts: ${uploadInstructions.length}, thumbnailUploadUrl: ${thumbnailUploadUrl ? "yes" : "no"}`,
   );
+
+  if (hasThumbnail && thumbnailUploadUrl) {
+    try {
+      const thumbRes = await axios.get(thumbnailUrl, { responseType: "arraybuffer" });
+      await axios.put(thumbnailUploadUrl, Buffer.from(thumbRes.data), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "image/jpeg",
+        },
+      });
+      console.log(`[LinkedIn Video] Thumbnail uploaded successfully for ${videoUrn}`);
+    } catch (thumbErr) {
+      console.warn(`[LinkedIn Video Thumbnail Warning] Failed to upload thumbnail:`, thumbErr?.response?.data || thumbErr.message);
+    }
+  }
 
   if (!videoUrn || uploadInstructions.length === 0) {
     throw new Error("LinkedIn did not return valid video upload instructions");
@@ -1188,8 +1339,12 @@ async function postToLinkedIn(account, post, options = {}) {
   console.log(
     `[LinkedIn] Resolved authorUrn: ${authorUrn} (type: ${account.token_type})`,
   );
-  const isCarousel = Array.isArray(post.media_url) && post.media_url.length > 1;
-  const firstMedia = Array.isArray(post.media_url) ? post.media_url[0] : post.media_url;
+  const effectiveMedia = (post.platform_media_urls && post.platform_media_urls[account.id])
+    ? post.platform_media_urls[account.id]
+    : post.media_url;
+
+  const isCarousel = Array.isArray(effectiveMedia) && effectiveMedia.length > 1;
+  const firstMedia = extractSingleMediaUrl(effectiveMedia);
   const mediaUrl = firstMedia;
   const uploadedMedia = options.uploadedMedia || null;
   let mediaBuffer = uploadedMedia?.buffer || options.mediaBuffer || null;
@@ -1201,6 +1356,7 @@ async function postToLinkedIn(account, post, options = {}) {
   // Detect if media is a video
   const isVideo =
     (mediaUrl &&
+      typeof mediaUrl === "string" &&
       (/\.(mp4|mov|avi|webm|mkv)(\?|$)/i.test(mediaUrl) ||
         mediaUrl.includes("/video/upload/"))) ||
     uploadedMedia?.mimetype?.startsWith("video/") ||
@@ -1212,6 +1368,7 @@ async function postToLinkedIn(account, post, options = {}) {
   // Skip blob/localhost URLs because they are not accessible by the server.
   const isValidMediaUrl =
     mediaUrl &&
+    typeof mediaUrl === "string" &&
     mediaUrl.startsWith("http") &&
     !mediaUrl.includes("localhost") &&
     !mediaUrl.startsWith("blob:");
@@ -1234,8 +1391,9 @@ async function postToLinkedIn(account, post, options = {}) {
     const { videoUrn, mediaBuffer: newBuffer } = await uploadLinkedInVideo(
       authorUrn,
       token,
-      post,
+      { ...post, media_url: firstMedia },
       uploadedMedia || (mediaBuffer ? { buffer: mediaBuffer } : null),
+      account,
     );
     console.log(`[LinkedIn] Video upload complete. videoUrn: ${videoUrn}`);
     if (newBuffer && !mediaBuffer) {
@@ -1602,6 +1760,13 @@ async function postToYoutube(account, post, options = {}) {
         description = `${description}\n\n#Shorts`;
     }
 
+    const madeForKids =
+      post.made_for_kids !== undefined
+        ? Boolean(post.made_for_kids)
+        : post.post_option?.made_for_kids !== undefined
+        ? Boolean(post.post_option.made_for_kids)
+        : false;
+
     const youtube = await createYoutubeClientForAccount(account);
     const uploadRes = await youtube.videos.insert({
       part: ["snippet", "status"],
@@ -1610,13 +1775,43 @@ async function postToYoutube(account, post, options = {}) {
           title,
           description,
         },
-        status: { privacyStatus: "public" },
+        status: {
+          privacyStatus: "public",
+          madeForKids: madeForKids,
+          selfDeclaredMadeForKids: madeForKids,
+        },
       },
       media: {
         body: mediaBodyStream,
       },
     });
     const videoId = uploadRes.data.id;
+
+    // Upload custom thumbnail to YouTube if available
+    let thumbnailUrl = null;
+    if (post.platform_thumbnails && post.platform_thumbnails[account.id]) {
+      thumbnailUrl = post.platform_thumbnails[account.id];
+    } else if (post.thumbnail_url) {
+      thumbnailUrl = post.thumbnail_url;
+    }
+
+    if (thumbnailUrl && typeof thumbnailUrl === "string" && thumbnailUrl.startsWith("http")) {
+      try {
+        const formattedThumbUrl = enforceJpegForInstagram(thumbnailUrl);
+        const thumbRes = await axios.get(formattedThumbUrl, { responseType: "arraybuffer" });
+        await youtube.thumbnails.set({
+          videoId,
+          media: {
+            mimeType: "image/jpeg",
+            body: Readable.from(Buffer.from(thumbRes.data)),
+          },
+        });
+        console.log(`[YouTube Thumbnail] Successfully set custom thumbnail for video ${videoId}`);
+      } catch (thumbErr) {
+        const errMsg = thumbErr?.response?.data?.error?.message || thumbErr.message;
+        console.warn(`[YouTube Thumbnail Warning] Failed to upload thumbnail for video ${videoId}:`, errMsg);
+      }
+    }
     const statsRes = await youtube.videos.list({
       part: ["statistics"],
       id: [videoId],

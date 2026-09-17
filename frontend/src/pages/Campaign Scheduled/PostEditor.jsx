@@ -834,6 +834,7 @@ export default function PostEditor({
             : dayjs("09:00", "HH:mm"),
         platforms: post?.platforms || [],
         media: [],
+        made_for_kids: post?.made_for_kids !== undefined ? post.made_for_kids : false,
       });
       setPlatformOptions(post?.post_option || {});
       setSelectedBoards(post?.boards || {});
@@ -922,6 +923,7 @@ export default function PostEditor({
         .toISOString(),
       platforms: uniqueAccountIds,
       post_option: platformOptions,
+      made_for_kids: values.made_for_kids !== undefined ? values.made_for_kids : false,
       boards: selectedBoards,
       mediaFile,
       platformMediaFiles,
@@ -1126,6 +1128,23 @@ export default function PostEditor({
               </div>
             )}
 
+            {selectedPlatformIds.length > 0 && accounts.some(a => selectedPlatformIds.includes(a.id) && a.platform === "youtube") && (
+              <div style={{ marginBottom: 20, padding: "14px 16px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
+                <Text strong style={{ display: "block", marginBottom: 4, color: "#1e293b", fontSize: 13 }}>
+                  Audience (YouTube)
+                </Text>
+                <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 10 }}>
+                  Is this video made for kids? Required by YouTube COPPA compliance.
+                </Text>
+                <Form.Item name="made_for_kids" initialValue={false} style={{ marginBottom: 0 }}>
+                  <Radio.Group>
+                    <Radio value={false}>No, it's not made for kids</Radio>
+                    <Radio value={true}>Yes, it's made for kids</Radio>
+                  </Radio.Group>
+                </Form.Item>
+              </div>
+            )}
+
             <Form.Item
               label="Post Type"
               name="postType"
@@ -1265,6 +1284,9 @@ export default function PostEditor({
 
                               {postType === "video" && (
                                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px dashed #e2e8f0" }}>
+                                  <div style={{ marginBottom: 6, fontSize: 12, color: "#64748b", fontWeight: 500 }}>
+                                    Supported Formats: JPG, JPEG, PNG, WEBP (Max 10MB)
+                                  </div>
                                   <Form.Item
                                     label={`Thumbnail for ${accountName}`}
                                     name={`thumbnail_${accountId}`}
@@ -1274,7 +1296,7 @@ export default function PostEditor({
                                     <Upload
                                       beforeUpload={() => false}
                                       maxCount={1}
-                                      accept="image/*"
+                                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                                       listType="picture"
                                       onChange={(info) => {
                                         const file = info.fileList?.[0]?.originFileObj || null;
@@ -1327,6 +1349,9 @@ export default function PostEditor({
 
                     {postType === "video" && (
                       <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px dashed #e2e8f0" }}>
+                        <div style={{ marginBottom: 6, fontSize: 12, color: "#64748b", fontWeight: 500 }}>
+                          Supported Formats: JPG, JPEG, PNG, WEBP (Max 10MB)
+                        </div>
                         <Form.Item
                           label="Video Thumbnail"
                           name="thumbnail"
@@ -1336,7 +1361,7 @@ export default function PostEditor({
                           <Upload
                             beforeUpload={() => false}
                             maxCount={1}
-                            accept="image/*"
+                            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
                             listType="picture"
                             onChange={(info) => {
                               const file = info.fileList?.[0]?.originFileObj || null;

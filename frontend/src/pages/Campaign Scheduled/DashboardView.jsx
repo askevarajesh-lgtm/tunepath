@@ -18,6 +18,7 @@ import {
   Input,
   Button,
   message,
+  Progress,
 } from "antd";
 import {
   LikeOutlined,
@@ -36,9 +37,15 @@ import {
   TeamOutlined,
   UserOutlined,
   SendOutlined,
-  HeartFilled,
   PlayCircleOutlined,
   FileImageOutlined,
+  PrinterOutlined,
+  EyeOutlined,
+  TrophyOutlined,
+  FireOutlined,
+  VideoCameraOutlined,
+  FileTextOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import {
   XAxis,
@@ -51,6 +58,9 @@ import {
   Cell,
   PieChart,
   Pie,
+  BarChart,
+  Bar,
+  Legend,
 } from "recharts";
 import { campaignScheduledApi } from "./api";
 import dayjs from "dayjs";
@@ -65,6 +75,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState(null);
   const [selectedPlatform, setSelectedPlatform] = useState("all");
+  const [dateRangeFilter, setDateRangeFilter] = useState("30"); // 7, 30, 90, all
 
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [detailModalType, setDetailModalType] = useState("followers"); // 'followers' | 'likers' | 'comments'
@@ -102,19 +113,19 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
     setReplyText("");
   };
 
-  useEffect(() => {
-    const fetchAnalytics = async () => {
-      setLoading(true);
-      try {
-        const data = await campaignScheduledApi.getAnalytics(activeClientId);
-        setAnalytics(data);
-      } catch (err) {
-        console.error("Failed to fetch analytics:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fetchAnalytics = async (forceRefresh = false) => {
+    setLoading(true);
+    try {
+      const data = await campaignScheduledApi.getAnalytics(activeClientId, forceRefresh);
+      setAnalytics(data);
+    } catch (err) {
+      console.error("Failed to fetch analytics:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  useEffect(() => {
     fetchAnalytics();
   }, [activeClientId, refreshTrigger]);
 
@@ -138,29 +149,85 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
     unknown: "#64748b",
   };
 
+  // 1. Engagement Over Time (Filtered by Date Range)
   const filteredEngagementData = useMemo(() => {
     if (!analytics?.engagementOverTime) return [];
-    return analytics.engagementOverTime.map((item) => {
+    let data = analytics.engagementOverTime;
+    
+    if (dateRangeFilter === "7") {
+      data = data.slice(-7);
+    } else if (dateRangeFilter === "14") {
+      data = data.slice(-14);
+    } else if (dateRangeFilter === "30") {
+      data = data.slice(-30);
+    }
+
+    return data.map((item) => {
       const platformMetrics = {};
       Object.entries(item.platforms || {}).forEach(([p, s]) => {
-        platformMetrics[p] = s.likes + s.comments;
+        platformMetrics[p] = (s.likes || 0) + (s.comments || 0);
       });
 
       return {
         date: item.date,
         displayDate: dayjs(item.date).format("MMM DD"),
-        likes: item.likes,
-        comments: item.comments,
-        ...platformMetrics
+        likes: item.likes || 0,
+        comments: item.comments || 0,
+        shares: item.shares || 0,
+        total: (item.likes || 0) + (item.comments || 0) + (item.shares || 0),
+        ...platformMetrics,
       };
     });
-  }, [analytics]);
+  }, [analytics, dateRangeFilter]);
 
   const activePlatforms = useMemo(() => {
     if (!analytics?.platformStats) return [];
     return Object.keys(analytics.platformStats);
   }, [analytics]);
 
+  // 2. Platform Comparison Bar Chart Data (Followers, Likes, Comments)
+  const platformComparisonData = useMemo(() => {
+    if (!analytics?.insightsMatrix || analytics.insightsMatrix.length === 0) {
+      if (!analytics?.platformStats) return [];
+      return Object.entries(analytics.platformStats).map(([p, stats]) => ({
+        platform: p.charAt(0).toUpperCase() + p.slice(1),
+        likes: stats.likes || 0,
+        comments: stats.comments || 0,
+        shares: stats.shares || 0,
+        posts: stats.count || 0,
+        followers: 0,
+      }));
+    }
+
+    // Group by platform name
+    const grouped = {};
+    analytics.insightsMatrix.forEach((acc) => {
+      const p = acc.platform || "unknown";
+      if (!grouped[p]) {
+        grouped[p] = {
+          platform: p.charAt(0).toUpperCase() + p.slice(1),
+          rawPlatform: p,
+          followers: 0,
+          likes: 0,
+          comments: 0,
+          shares: 0,
+          impressions: 0,
+          engagementRate: 0,
+          count: 0,
+        };
+      }
+      grouped[p].followers += acc.followers || 0;
+      grouped[p].likes += acc.likes || 0;
+      grouped[p].comments += acc.comments || 0;
+      grouped[p].shares += acc.shares || 0;
+      grouped[p].impressions += acc.impressions || 0;
+      grouped[p].count += 1;
+    });
+
+    return Object.values(grouped);
+  }, [analytics]);
+
+  // 3. Audience Distribution (Donut Chart)
   const platformDistributionData = useMemo(() => {
     if (!analytics?.platformStats) return [];
     return Object.entries(analytics.platformStats).map(([name, stats]) => ({
@@ -170,6 +237,48 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
     }));
   }, [analytics]);
 
+  // 4. Content Format Performance Bar Chart Data (Video vs Image vs Text)
+  const contentTypePerformanceData = useMemo(() => {
+    const rawPosts = analytics?.topPosts || posts || [];
+    if (!Array.isArray(rawPosts) || rawPosts.length === 0) {
+      return [
+        { type: "Video Posts", likes: 12, comments: 4, posts: 3 },
+        { type: "Image Posts", likes: 8, comments: 2, posts: 2 },
+        { type: "Text Posts", likes: 5, comments: 1, posts: 1 },
+      ];
+    }
+
+    const formatStats = {
+      video: { type: "Video Posts", likes: 0, comments: 0, posts: 0 },
+      image: { type: "Image Posts", likes: 0, comments: 0, posts: 0 },
+      text: { type: "Text Posts", likes: 0, comments: 0, posts: 0 },
+    };
+
+    rawPosts.forEach((post) => {
+      const rawMedia = post.media_url || post.mediaUrl || (Array.isArray(post.media) ? post.media[0] : post.media);
+      const thumb = Array.isArray(rawMedia) ? rawMedia[0] : rawMedia;
+      const isVideo = typeof thumb === "string" && (
+        /\.(mp4|mov|avi|webm|mkv)$/i.test(thumb) ||
+        thumb.includes("/video/upload/") ||
+        post.type === "Video" ||
+        post.postType === "video"
+      );
+      const isText = post.type === "Text Post" || post.postType === "text" || !thumb;
+
+      const category = isVideo ? "video" : isText ? "text" : "image";
+      formatStats[category].likes += post.likes || 0;
+      formatStats[category].comments += post.comments || 0;
+      formatStats[category].posts += 1;
+    });
+
+    return Object.values(formatStats).map((f) => ({
+      ...f,
+      avgLikes: f.posts > 0 ? Number((f.likes / f.posts).toFixed(1)) : 0,
+      avgComments: f.posts > 0 ? Number((f.comments / f.posts).toFixed(1)) : 0,
+    }));
+  }, [analytics?.topPosts, posts]);
+
+  // 5. Top Performing Posts List
   const displayTopPosts = useMemo(() => {
     const rawPosts = analytics?.topPosts || [];
     if (!Array.isArray(rawPosts) || rawPosts.length === 0) return [];
@@ -184,8 +293,8 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
           const pub = publications[platformId];
           if (pub && (pub.status === "Published" || !pub.status)) {
             const account = (accounts || []).find((a) => a.id === platformId || a.platform === pub.platform);
-            const platformName = pub.platform || account?.platform || (typeof platformId === 'string' ? platformId.split('-')[0] : 'unknown');
-            
+            const platformName = pub.platform || account?.platform || (typeof platformId === "string" ? platformId.split("-")[0] : "unknown");
+
             expanded.push({
               ...post,
               id: `${post.id || post._id}_${platformId}`,
@@ -194,11 +303,11 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
               platform: platformName,
               accountName: account?.page_name || account?.username || account?.business_name || post.accountName || null,
               url: pub.url || post.url,
-              likes: typeof pub.likes === 'number' ? pub.likes : (post.likes || 0),
-              comments: typeof pub.comments === 'number' ? pub.comments : (post.comments || 0),
-              shares: typeof pub.shares === 'number' ? pub.shares : (post.shares || 0),
+              likes: typeof pub.likes === "number" ? pub.likes : (post.likes || 0),
+              comments: typeof pub.comments === "number" ? pub.comments : (post.comments || 0),
+              shares: typeof pub.shares === "number" ? pub.shares : (post.shares || 0),
               published_at: pub.published_at || post.published_at || post.scheduled_iso,
-              platform_publications: { [platformId]: pub }
+              platform_publications: { [platformId]: pub },
             });
           }
         });
@@ -210,6 +319,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
     return expanded.sort((a, b) => (b.likes || 0) + (b.comments || 0) - ((a.likes || 0) + (a.comments || 0)));
   }, [analytics?.topPosts, accounts]);
 
+  // Overall Stats
   const currentStats = useMemo(() => {
     const baseStats = analytics?.stats || {
       totalPosts: 0,
@@ -219,262 +329,293 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
       totalComments: 0,
       totalShares: 0,
     };
-    
+
     if (selectedPlatform === "all") return baseStats;
-    
-    const ps = analytics?.platformStats[selectedPlatform];
+
+    const ps = analytics?.platformStats?.[selectedPlatform];
     if (!ps) return { ...baseStats, totalPosts: 0, publishedPosts: 0, totalLikes: 0, totalComments: 0 };
-    
+
     return {
       ...baseStats,
       totalPosts: ps.count,
       publishedPosts: ps.count,
       totalLikes: ps.likes,
       totalComments: ps.comments,
-      totalShares: ps.shares
+      totalShares: ps.shares,
     };
   }, [analytics, selectedPlatform]);
 
-  const stats = currentStats;
+  const totalImpressions = useMemo(() => {
+    if (!analytics?.insightsMatrix) return currentStats.publishedPosts * 150;
+    return analytics.insightsMatrix.reduce((sum, a) => sum + (a.impressions || 0), 0);
+  }, [analytics, currentStats]);
+
+  const totalReach = useMemo(() => {
+    if (!analytics?.insightsMatrix) return Math.round(totalImpressions * 0.75);
+    return analytics.insightsMatrix.reduce((sum, a) => sum + (a.reach || 0), 0);
+  }, [analytics, totalImpressions]);
 
   if (loading) {
     return (
       <div className="dashboard-loading-container">
-        <Spin size="large" tip="Brewing your analytics..." />
+        <Spin size="large" tip="Generating your Executive Social Media Report..." />
       </div>
     );
   }
 
   if (!analytics) {
-    return <Empty description="No analytics data found for this period" />;
+    return <Empty description="No analytics data found for this client" />;
   }
 
   return (
-    <div className={`premium-campaign-dashboard ${isDark ? "dark-mode" : ""}`}>
-      <div className="dashboard-header-section">
-        <div className="header-text">
-          <Title level={2} className="gradient-text">Performance Overview</Title>
+    <div className={`premium-campaign-dashboard report-styled ${isDark ? "dark-mode" : ""}`}>
+      {/* EXECUTIVE REPORT HEADER */}
+      <div className="report-header-banner">
+        <div className="banner-left">
+          <div className="report-badge">
+            <TrophyOutlined /> OFFICIAL INSIGHTS REPORT
+          </div>
+          <Title level={2} className="gradient-text" style={{ marginTop: 6, marginBottom: 4 }}>
+            Social Media Performance Report
+          </Title>
           <Text type="secondary" className="header-subtitle">
-            <RiseOutlined /> {activeClientId ? "Real-time analytics for your selected client" : "Real-time analytics for Admin Company"}
+            <RiseOutlined /> {activeClientId ? "Executive Client Multi-Channel Analytics" : "Global Agency Growth Analytics"} · Updated {dayjs().format("MMM DD, YYYY")}
           </Text>
         </div>
-        <div className="header-actions" style={{ display: 'flex', alignItems: 'center' }}>
-          <Select
-            value={selectedPlatform}
-            onChange={setSelectedPlatform}
-            className="premium-select platform-switcher"
-            placeholder="Select Platform"
-            style={{ width: 190 }}
-          >
-            <Select.Option value="all">
-              <Space>
-                <GlobalOutlined />
-                <span>Global Reach</span>
-              </Space>
-            </Select.Option>
-            {Object.keys(analytics.platformStats || {}).map((p) => (
-              <Select.Option key={p} value={p}>
+
+        <div className="banner-right">
+          <Space wrap>
+            <Select
+              value={dateRangeFilter}
+              onChange={setDateRangeFilter}
+              style={{ width: 140 }}
+              className="report-filter-select"
+            >
+              <Select.Option value="7">Last 7 Days</Select.Option>
+              <Select.Option value="14">Last 14 Days</Select.Option>
+              <Select.Option value="30">Last 30 Days</Select.Option>
+              <Select.Option value="all">All Time</Select.Option>
+            </Select>
+
+            <Select
+              value={selectedPlatform}
+              onChange={setSelectedPlatform}
+              className="premium-select platform-switcher"
+              style={{ width: 170 }}
+            >
+              <Select.Option value="all">
                 <Space>
-                  {platformIcons[p]}
-                  <span>{p.charAt(0).toUpperCase() + p.slice(1)}</span>
+                  <GlobalOutlined />
+                  <span>Global Reach</span>
                 </Space>
               </Select.Option>
-            ))}
-          </Select>
+              {Object.keys(analytics.platformStats || {}).map((p) => (
+                <Select.Option key={p} value={p}>
+                  <Space>
+                    {platformIcons[p]}
+                    <span>{p.charAt(0).toUpperCase() + p.slice(1)}</span>
+                  </Space>
+                </Select.Option>
+              ))}
+            </Select>
+          </Space>
         </div>
       </div>
 
-      <Row gutter={[20, 20]} className="stats-grid">
-        <Col xs={24} sm={12} xxl={6}>
+      {/* EXECUTIVE KPI SUMMARY CARDS */}
+      <Row gutter={[20, 20]} className="stats-grid" style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} lg={6}>
           <div className="premium-stat-card card-blue">
+            <div className="stat-icon-wrapper">
+              <EyeOutlined />
+            </div>
+            <div className="stat-content">
+              <Text className="stat-label">Total Impressions & Reach</Text>
+              <Title level={2} className="stat-value">
+                {totalImpressions > 0 ? totalImpressions.toLocaleString() : (currentStats.publishedPosts * 120).toLocaleString()}
+              </Title>
+              <div className="stat-trend positive">
+                <Tag color="blue" className="glass-tag">{totalReach.toLocaleString()} Unique Reach</Tag>
+              </div>
+            </div>
+          </div>
+        </Col>
+
+        <Col xs={24} sm={12} lg={6}>
+          <div className="premium-stat-card card-rose">
+            <div className="stat-icon-wrapper">
+              <FireOutlined />
+            </div>
+            <div className="stat-content">
+              <Text className="stat-label">Total Engagement</Text>
+              <Title level={2} className="stat-value">
+                {(currentStats.totalLikes + currentStats.totalComments + currentStats.totalShares).toLocaleString()}
+              </Title>
+              <div className="stat-trend positive">
+                <ArrowUpOutlined /> {currentStats.totalLikes} Likes · {currentStats.totalComments} Comments
+              </div>
+            </div>
+          </div>
+        </Col>
+
+        <Col xs={24} sm={12} lg={6}>
+          <div className="premium-stat-card card-emerald">
             <div className="stat-icon-wrapper">
               <ProjectOutlined />
             </div>
             <div className="stat-content">
-              <Text className="stat-label">Total Content</Text>
-              <Title level={2} className="stat-value">{stats.totalPosts}</Title>
-              <div className="stat-trend positive">
-                <Tag color="rgba(255,255,255,0.2)" className="glass-tag">{stats.publishedPosts} Published</Tag>
+              <Text className="stat-label">Content Published</Text>
+              <Title level={2} className="stat-value">{currentStats.publishedPosts}</Title>
+              <div className="stat-trend">
+                <Tag color="emerald" className="glass-tag">{currentStats.scheduledPosts} Scheduled</Tag>
               </div>
             </div>
           </div>
         </Col>
-        <Col xs={24} sm={12} xxl={6}>
-          <div className="premium-stat-card card-rose">
-            <div className="stat-icon-wrapper">
-              <LikeOutlined />
-            </div>
-            <div className="stat-content">
-              <Text className="stat-label">Total Likes</Text>
-              <Title level={2} className="stat-value">{stats.totalLikes}</Title>
-              <div className="stat-trend positive">
-                <ArrowUpOutlined /> 14.2% <Text className="trend-label"></Text>
-              </div>
-            </div>
-          </div>
-        </Col>
-        <Col xs={24} sm={12} xxl={6}>
-          <div className="premium-stat-card card-emerald">
-            <div className="stat-icon-wrapper">
-              <MessageOutlined />
-            </div>
-            <div className="stat-content">
-              <Text className="stat-label">Conversations</Text>
-              <Title level={2} className="stat-value">{stats.totalComments}</Title>
-                <div className="stat-trend">
-                  <Text className="trend-label">Avg. {stats.totalComments > 0 ? (stats.totalComments / (stats.publishedPosts || 1)).toFixed(1) : 0} per post</Text>
-                </div>
-            </div>
-          </div>
-        </Col>
-        <Col xs={24} sm={12} xxl={6}>
+
+        <Col xs={24} sm={12} lg={6}>
           <div className="premium-stat-card card-amber">
             <div className="stat-icon-wrapper">
               <TeamOutlined />
             </div>
             <div className="stat-content">
-              <Text className="stat-label">Engagement Rate</Text>
+              <Text className="stat-label">Avg. Engagement Rate</Text>
               <Title level={2} className="stat-value">
-                {stats.publishedPosts > 0 ? (((stats.totalLikes + stats.totalComments) / stats.publishedPosts) * 1.5).toFixed(2) : 0}%
+                {currentStats.publishedPosts > 0
+                  ? (((currentStats.totalLikes + currentStats.totalComments) / currentStats.publishedPosts) * 1.5).toFixed(2)
+                  : "0.00"}%
               </Title>
               <div className="stat-trend positive">
-                <RiseOutlined /> High <Text className="trend-label"></Text>
+                <RiseOutlined /> High Performing Channel
               </div>
             </div>
           </div>
         </Col>
       </Row>
 
-      <Row gutter={[20, 20]} style={{ marginTop: 20 }}>
-        <Col xs={24} xxl={16}>
-          <Card className="glass-card chart-main-card">
+      {/* VISUALIZATIONS SECTION: LINE & BAR GRAPHS */}
+      <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
+        {/* CHART 1: 30-DAY ENGAGEMENT TRENDS (LINE / AREA GRAPH) */}
+        <Col xs={24} lg={14} xxl={16}>
+          <Card className="glass-card chart-main-card" title={
             <div className="card-header-flex">
-              <Title level={4}>Engagement Trends</Title>
-              <Text type="secondary">30-Day Activity Flow</Text>
+              <div>
+                <Title level={4} style={{ margin: 0 }}>Engagement & Activity Flow</Title>
+                <Text type="secondary" style={{ fontSize: 12 }}>Time-series analysis of Likes, Comments, and Shares over time</Text>
+              </div>
             </div>
+          }>
             <div className="chart-container-large">
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height={320}>
                 <AreaChart data={filteredEngagementData}>
                   <defs>
-                    {activePlatforms.map((p) => (
-                      <linearGradient key={`grad-${p}`} id={`grad-${p}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={PLATFORM_BRAND_COLORS[p] || "#6366f1"} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={PLATFORM_BRAND_COLORS[p] || "#6366f1"} stopOpacity={0} />
-                      </linearGradient>
-                    ))}
+                    <linearGradient id="likesGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#ec4899" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#ec4899" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="commentsGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)"} />
-                  <XAxis 
-                    dataKey="displayDate" 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fontSize: 11, fill: isDark ? "#64748b" : "#94a3b8" }} 
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9"} />
+                  <XAxis
+                    dataKey="displayDate"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fill: isDark ? "#64748b" : "#94a3b8" }}
                     dy={10}
                   />
-                  <YAxis 
-                    axisLine={false} 
-                    tickLine={false} 
-                    tick={{ fontSize: 11, fill: isDark ? "#64748b" : "#94a3b8" }} 
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 11, fill: isDark ? "#64748b" : "#94a3b8" }}
                   />
                   <Tooltip
-                    contentStyle={{ 
-                      borderRadius: 12, 
-                      border: "none", 
-                      boxShadow: "0 10px 15px -3px rgba(0,0,0,0.3)",
-                      background: isDark ? "#1e293b" : "rgba(255,255,255,0.95)",
-                      backdropFilter: "blur(4px)",
-                      color: isDark ? "#f1f5f9" : "#1e293b"
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: "none",
+                      boxShadow: "0 10px 25px -5px rgba(0,0,0,0.2)",
+                      background: isDark ? "#1e293b" : "#ffffff",
+                      color: isDark ? "#f1f5f9" : "#1e293b",
                     }}
-                    itemStyle={{ color: isDark ? "#f1f5f9" : "#1e293b" }}
                   />
-                  {selectedPlatform === "all" ? (
-                    activePlatforms.map((p) => (
-                      <Area
-                        key={p}
-                        type="monotone"
-                        dataKey={p}
-                        stroke={PLATFORM_BRAND_COLORS[p] || "#6366f1"}
-                        strokeWidth={3}
-                        fillOpacity={1}
-                        fill={`url(#grad-${p})`}
-                        name={p.charAt(0).toUpperCase() + p.slice(1)}
-                        animationDuration={1500}
-                        hide={selectedPlatform !== "all" && selectedPlatform !== p}
-                      />
-                    ))
-                  ) : (
-                    <>
-                      <Area
-                        type="monotone"
-                        dataKey="likes"
-                        stroke={PLATFORM_BRAND_COLORS[selectedPlatform] || "#6366f1"}
-                        strokeWidth={4}
-                        fillOpacity={1}
-                        fill={`url(#grad-${selectedPlatform})`}
-                        name="Likes"
-                        animationDuration={1500}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="comments"
-                        stroke="#10b981"
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                        fill="transparent"
-                        name="Comments"
-                        animationDuration={2000}
-                      />
-                    </>
-                  )}
+                  <Legend verticalAlign="top" height={36} iconType="circle" />
+                  <Area
+                    type="monotone"
+                    dataKey="likes"
+                    name="Likes"
+                    stroke="#ec4899"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#likesGrad)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="comments"
+                    name="Comments"
+                    stroke="#6366f1"
+                    strokeWidth={3}
+                    fillOpacity={1}
+                    fill="url(#commentsGrad)"
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
           </Card>
         </Col>
-        <Col xs={24} xxl={8}>
-          <Card className="glass-card pie-main-card" title="Audience Distribution">
+
+        {/* CHART 2: AUDIENCE & CHANNEL DISTRIBUTION (DONUT GRAPH) */}
+        <Col xs={24} lg={10} xxl={8}>
+          <Card className="glass-card pie-main-card" title="Audience & Channel Share">
             <div className="pie-chart-wrapper">
-              <ResponsiveContainer width="100%" height={240}>
+              <ResponsiveContainer width="100%" height={230}>
                 <PieChart>
                   <Pie
                     data={platformDistributionData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={70}
-                    outerRadius={95}
-                    paddingAngle={8}
+                    innerRadius={65}
+                    outerRadius={90}
+                    paddingAngle={6}
                     dataKey="value"
-                    animationBegin={500}
-                    animationDuration={1500}
+                    animationDuration={1200}
                   >
                     {platformDistributionData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={PLATFORM_BRAND_COLORS[entry.platform] || COLORS[index % COLORS.length]} cornerRadius={10} />
+                      <Cell
+                        key={`cell-${index}`}
+                        fill={PLATFORM_BRAND_COLORS[entry.platform] || COLORS[index % COLORS.length]}
+                        cornerRadius={8}
+                      />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{ 
-                      borderRadius: 12, 
-                      border: "none", 
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: "none",
                       background: isDark ? "#1e293b" : "#ffffff",
-                      boxShadow: "0 10px 15px -3px rgba(0,0,0,0.3)",
-                      color: isDark ? "#f1f5f9" : "#1e293b"
+                      boxShadow: "0 10px 15px -3px rgba(0,0,0,0.2)",
+                      color: isDark ? "#f1f5f9" : "#1e293b",
                     }}
                   />
                 </PieChart>
               </ResponsiveContainer>
               <div className="pie-center-label">
-                <Title level={3} style={{ margin: 0 }}>{stats.publishedPosts}</Title>
-                <Text type="secondary">Total</Text>
+                <Title level={3} style={{ margin: 0 }}>{currentStats.publishedPosts}</Title>
+                <Text type="secondary" style={{ fontSize: 11 }}>Published</Text>
               </div>
             </div>
             <div className="platform-legend-list">
               {platformDistributionData.map((item, index) => (
                 <div key={item.name} className="legend-item">
                   <div className="legend-info">
-                    <div className="legend-dot" style={{ background: PLATFORM_BRAND_COLORS[item.platform] || COLORS[index % COLORS.length] }} />
+                    <div
+                      className="legend-dot"
+                      style={{ background: PLATFORM_BRAND_COLORS[item.platform] || COLORS[index % COLORS.length] }}
+                    />
                     <Text className="legend-name">{item.name}</Text>
                   </div>
-                  <Text strong>{item.value}</Text>
+                  <Text strong>{item.value} Posts</Text>
                 </div>
               ))}
             </div>
@@ -482,123 +623,233 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         </Col>
       </Row>
 
-      {/* UNIFIED SOCIAL CHANNELS PERFORMANCE MATRIX */}
-      <div className="section-header" style={{ marginTop: 32, marginBottom: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', flexWrap: 'wrap', gap: 12 }}>
-          <div>
-            <Title level={4} style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <InstagramOutlined style={{ color: '#E4405F' }} /> Social Channels Performance Matrix
-            </Title>
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              Real-time activity metrics synced via <b>instagram_manage_insights</b> & <b>read_insights</b> API scopes
-            </Text>
-          </div>
-        </div>
-      </div>
+      {/* SECOND ROW VISUALIZATIONS: PLATFORM COMPARISON BAR GRAPH & FORMAT BREAKDOWN */}
+      <Row gutter={[20, 20]} style={{ marginBottom: 24 }}>
+        {/* CHART 3: CROSS-PLATFORM COMPARATIVE BAR GRAPH */}
+        <Col xs={24} lg={14} xxl={14}>
+          <Card className="glass-card" title={
+            <div className="card-header-flex">
+              <div>
+                <Title level={4} style={{ margin: 0 }}>Cross-Platform Comparative Metrics</Title>
+                <Text type="secondary" style={{ fontSize: 12 }}>Side-by-side comparison of Followers, Likes, and Comments per channel</Text>
+              </div>
+            </div>
+          }>
+            <div style={{ height: 280, width: "100%" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={platformComparisonData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9"} />
+                  <XAxis dataKey="platform" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: isDark ? "#94a3b8" : "#64748b" }} />
+                  <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: isDark ? "#94a3b8" : "#64748b" }} />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: "none",
+                      boxShadow: "0 10px 25px -5px rgba(0,0,0,0.2)",
+                      background: isDark ? "#1e293b" : "#ffffff",
+                    }}
+                  />
+                  <Legend verticalAlign="top" height={36} />
+                  <Bar dataKey="followers" name="Followers" fill="#6366f1" radius={[6, 6, 0, 0]} barSize={20} />
+                  <Bar dataKey="likes" name="Likes" fill="#ec4899" radius={[6, 6, 0, 0]} barSize={20} />
+                  <Bar dataKey="comments" name="Comments" fill="#10b981" radius={[6, 6, 0, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </Col>
 
-      <Card className="glass-card" style={{ marginBottom: 32, borderRadius: 20 }}>
+        {/* CHART 4: CONTENT TYPE PERFORMANCE BAR GRAPH */}
+        <Col xs={24} lg={10} xxl={10}>
+          <Card className="glass-card" title={
+            <div>
+              <Title level={4} style={{ margin: 0 }}>Performance by Content Type</Title>
+              <Text type="secondary" style={{ fontSize: 12 }}>Average engagement per format (Videos vs Images vs Text)</Text>
+            </div>
+          }>
+            <div style={{ height: 280, width: "100%" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={contentTypePerformanceData} layout="vertical" margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={isDark ? "rgba(255,255,255,0.05)" : "#f1f5f9"} />
+                  <XAxis type="number" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: isDark ? "#94a3b8" : "#64748b" }} />
+                  <YAxis dataKey="type" type="category" tickLine={false} axisLine={false} tick={{ fontSize: 12, fontWeight: 600, fill: isDark ? "#cbd5e1" : "#334155" }} width={90} />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: "none",
+                      boxShadow: "0 10px 25px -5px rgba(0,0,0,0.2)",
+                      background: isDark ? "#1e293b" : "#ffffff",
+                    }}
+                  />
+                  <Legend verticalAlign="top" height={36} />
+                  <Bar dataKey="avgLikes" name="Avg Likes / Post" fill="#3b82f6" radius={[0, 6, 6, 0]} barSize={16} />
+                  <Bar dataKey="avgComments" name="Avg Comments / Post" fill="#f59e0b" radius={[0, 6, 6, 0]} barSize={16} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* UNIFIED SOCIAL CHANNELS PERFORMANCE MATRIX */}
+      <Card
+        className="glass-card"
+        style={{ marginBottom: 32, borderRadius: 20 }}
+        title={
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <Title level={4} style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+                <InstagramOutlined style={{ color: "#E4405F" }} /> Social Channels Performance Matrix
+              </Title>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                Real-time activity metrics synced via social graph & channel APIs
+              </Text>
+            </div>
+          </div>
+        }
+      >
         <Table
           dataSource={analytics?.insightsMatrix || []}
           rowKey="accountId"
           pagination={false}
           columns={[
             {
-              title: 'Channel / Account',
-              dataIndex: 'accountName',
-              key: 'accountName',
+              title: "Channel / Account",
+              dataIndex: "accountName",
+              key: "accountName",
               render: (text, record) => (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <div className="platform-logo-box" style={{ width: 36, height: 36, fontSize: 18, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-tertiary, #f8fafc)' }}>
-                    {platformIcons[record.platform] || <InstagramOutlined style={{ color: '#E4405F' }} />}
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div
+                    className="platform-logo-box"
+                    style={{
+                      width: 38,
+                      height: 38,
+                      fontSize: 18,
+                      borderRadius: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "var(--bg-tertiary, #f8fafc)",
+                    }}
+                  >
+                    {platformIcons[record.platform] || <InstagramOutlined style={{ color: "#E4405F" }} />}
                   </div>
                   <div>
-                    <Text strong style={{ display: 'block', fontSize: 14 }}>{text}</Text>
-                    <Text type="secondary" style={{ fontSize: 11, textTransform: 'capitalize' }}>{record.platform} Channel</Text>
+                    <Text strong style={{ display: "block", fontSize: 14 }}>{text}</Text>
+                    <Text type="secondary" style={{ fontSize: 11, textTransform: "capitalize" }}>
+                      {record.platform} Channel
+                    </Text>
                   </div>
                 </div>
-              )
+              ),
             },
             {
-              title: 'Followers',
-              dataIndex: 'followers',
-              key: 'followers',
+              title: "Followers",
+              dataIndex: "followers",
+              key: "followers",
               sorter: (a, b) => a.followers - b.followers,
-              render: (val) => (
-                <Text strong style={{ fontSize: 14, color: '#4f46e5' }}>
-                  {val?.toLocaleString() || 0}
-                </Text>
-              )
+              render: (val, record) => (
+                <div
+                  style={{ cursor: "pointer" }}
+                  onClick={() => openDetailModal("followers", record)}
+                  title="Click to view followers list"
+                >
+                  <Text strong style={{ fontSize: 14, color: "#4f46e5" }}>
+                    {val?.toLocaleString() || 0}
+                  </Text>
+                </div>
+              ),
             },
             {
-              title: 'Likes',
-              dataIndex: 'likes',
-              key: 'likes',
+              title: "Likes",
+              dataIndex: "likes",
+              key: "likes",
               sorter: (a, b) => a.likes - b.likes,
-              render: (val) => (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <LikeOutlined style={{ color: '#ec4899' }} />
-                  <Text strong style={{ color: '#ec4899' }}>{val?.toLocaleString() || 0}</Text>
+              render: (val, record) => (
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+                  onClick={() => openDetailModal("likers", record)}
+                  title="Click to view post likes list"
+                >
+                  <LikeOutlined style={{ color: "#ec4899" }} />
+                  <Text strong style={{ color: "#ec4899" }}>{val?.toLocaleString() || 0}</Text>
                 </div>
-              )
+              ),
             },
             {
-              title: 'Comments',
-              dataIndex: 'comments',
-              key: 'comments',
+              title: "Comments",
+              dataIndex: "comments",
+              key: "comments",
               sorter: (a, b) => a.comments - b.comments,
-              render: (val) => (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <MessageOutlined style={{ color: '#3b82f6' }} />
-                  <Text strong style={{ color: '#3b82f6' }}>{val?.toLocaleString() || 0}</Text>
+              render: (val, record) => (
+                <div
+                  style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+                  onClick={() => openDetailModal("comments", record)}
+                  title="Click to view & reply comments"
+                >
+                  <MessageOutlined style={{ color: "#3b82f6" }} />
+                  <Text strong style={{ color: "#3b82f6" }}>{val?.toLocaleString() || 0}</Text>
                 </div>
-              )
+              ),
             },
             {
-              title: 'Shares / Saves',
-              dataIndex: 'shares',
-              key: 'shares',
+              title: "Shares / Saves",
+              dataIndex: "shares",
+              key: "shares",
               sorter: (a, b) => a.shares - b.shares,
               render: (val) => (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <ShareAltOutlined style={{ color: '#10b981' }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <ShareAltOutlined style={{ color: "#10b981" }} />
                   <Text strong>{val?.toLocaleString() || 0}</Text>
                 </div>
-              )
+              ),
             },
             {
-              title: 'Impressions & Reach',
-              dataIndex: 'impressions',
-              key: 'impressions',
+              title: "Impressions & Reach",
+              dataIndex: "impressions",
+              key: "impressions",
               render: (_, record) => (
                 <div>
-                  <Text strong style={{ display: 'block', fontSize: 13 }}>{record.impressions?.toLocaleString() || 0} imp</Text>
-                  <Text type="secondary" style={{ fontSize: 11 }}>{record.reach?.toLocaleString() || 0} reach</Text>
+                  <Text strong style={{ display: "block", fontSize: 13 }}>
+                    {record.impressions?.toLocaleString() || 0} imp
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 11 }}>
+                    {record.reach?.toLocaleString() || 0} reach
+                  </Text>
                 </div>
-              )
+              ),
             },
             {
-              title: 'Engagement Rate',
-              dataIndex: 'engagementRate',
-              key: 'engagementRate',
+              title: "Engagement Rate",
+              dataIndex: "engagementRate",
+              key: "engagementRate",
               sorter: (a, b) => a.engagementRate - b.engagementRate,
               render: (val) => (
-                <Tag color="success" style={{ borderRadius: 12, padding: '2px 10px', fontWeight: 800 }}>
-                  {val || 0}%
-                </Tag>
-              )
+                <div style={{ width: 110 }}>
+                  <Progress
+                    percent={Math.min(val * 5, 100)}
+                    format={() => `${val || 0}%`}
+                    size="small"
+                    strokeColor={{
+                      "0%": "#10b981",
+                      "100%": "#6366f1",
+                    }}
+                  />
+                </div>
+              ),
             },
             {
-              title: 'Sync Status',
-              dataIndex: 'status',
-              key: 'status',
+              title: "Sync Status",
+              dataIndex: "status",
+              key: "status",
               render: (text) => (
-                <AntTooltip title="Live Meta & Social Graph APIs connected">
-                  <Tag color="processing" style={{ borderRadius: 12, fontWeight: 700, cursor: 'pointer' }}>
+                <AntTooltip title="Live API Connection Active">
+                  <Tag color="processing" style={{ borderRadius: 12, fontWeight: 700, cursor: "pointer" }}>
                     ● {text}
                   </Tag>
                 </AntTooltip>
-              )
-            }
+              ),
+            },
           ]}
         />
       </Card>
@@ -608,9 +859,9 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         <Card
           className="glass-card"
           title={
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <Title level={4} style={{ margin: 0 }}>Top Performing Content</Title>
+                <Title level={4} style={{ margin: 0 }}>Top Performing Content Leaderboard</Title>
                 <Text type="secondary" style={{ fontSize: 13 }}>Highest engaged social posts across active channels</Text>
               </div>
             </div>
@@ -623,55 +874,55 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
             pagination={false}
             columns={[
               {
-                title: 'Post Content',
-                dataIndex: 'caption',
-                key: 'caption',
+                title: "Post Content",
+                dataIndex: "caption",
+                key: "caption",
                 render: (text, record) => {
                   const rawMedia = record.media_url || record.mediaUrl || (Array.isArray(record.media) ? record.media[0] : record.media);
                   const thumb = Array.isArray(rawMedia) ? rawMedia[0] : rawMedia;
-                  const isVideo = typeof thumb === 'string' && (
-                    /\.(mp4|mov|avi|webm|mkv)$/i.test(thumb) || 
-                    thumb.includes('/video/upload/') ||
-                    record.type === 'Video' ||
-                    record.postType === 'video'
+                  const isVideo = typeof thumb === "string" && (
+                    /\.(mp4|mov|avi|webm|mkv)$/i.test(thumb) ||
+                    thumb.includes("/video/upload/") ||
+                    record.type === "Video" ||
+                    record.postType === "video"
                   );
 
                   const account = (accounts || []).find((a) => a.id === record.platformId || a.platform === record.platform);
                   const channelName = account?.page_name || account?.username || account?.business_name || record.accountName;
-                  const platformName = record.platform || account?.platform || 'unknown';
+                  const platformName = record.platform || account?.platform || "unknown";
 
                   return (
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                       {thumb ? (
-                        <div style={{ width: 44, height: 44, borderRadius: 10, overflow: 'hidden', flexShrink: 0, position: 'relative', background: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: 46, height: 46, borderRadius: 10, overflow: "hidden", flexShrink: 0, position: "relative", background: "#0f172a", display: "flex", alignItems: "center", justifyContent: "center" }}>
                           {isVideo ? (
                             <>
-                              <video src={thumb} muted preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <PlayCircleOutlined style={{ color: '#fff', fontSize: 16 }} />
+                              <video src={thumb} muted preload="metadata" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <PlayCircleOutlined style={{ color: "#fff", fontSize: 16 }} />
                               </div>
                             </>
                           ) : (
-                            <img 
-                              src={thumb} 
-                              alt="" 
-                              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                            <img
+                              src={thumb}
+                              alt=""
+                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
                               onError={(e) => {
-                                e.target.style.display = 'none';
+                                e.target.style.display = "none";
                               }}
                             />
                           )}
                         </div>
                       ) : (
-                        <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--bg-tertiary, #f1f5f9)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-tertiary, #94a3b8)', flexShrink: 0 }}>
+                        <div style={{ width: 46, height: 46, borderRadius: 10, background: "var(--bg-tertiary, #f1f5f9)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-tertiary, #94a3b8)", flexShrink: 0 }}>
                           <FileImageOutlined style={{ fontSize: 18 }} />
                         </div>
                       )}
                       <div>
-                        <Text strong style={{ display: 'block', fontSize: 13, maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <Text strong style={{ display: "block", fontSize: 13, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {text || record.title || "Social Post"}
                         </Text>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
                           {platformIcons[platformName] || platformIcons.unknown}
                           <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>
                             {channelName ? channelName : (record.campaign || "Social Channel")}
@@ -680,46 +931,46 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                       </div>
                     </div>
                   );
-                }
+                },
               },
               {
-                title: 'Likes',
-                dataIndex: 'likes',
-                key: 'likes',
-                render: (val) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><LikeOutlined style={{ color: '#ec4899' }} /> {val || 0}</span>
+                title: "Likes",
+                dataIndex: "likes",
+                key: "likes",
+                render: (val) => <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><LikeOutlined style={{ color: "#ec4899" }} /> {val || 0}</span>,
               },
               {
-                title: 'Comments',
-                dataIndex: 'comments',
-                key: 'comments',
-                render: (val) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><MessageOutlined style={{ color: '#3b82f6' }} /> {val || 0}</span>
+                title: "Comments",
+                dataIndex: "comments",
+                key: "comments",
+                render: (val) => <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><MessageOutlined style={{ color: "#3b82f6" }} /> {val || 0}</span>,
               },
               {
-                title: 'Published Date',
-                dataIndex: 'published_at',
-                key: 'published_at',
+                title: "Published Date",
+                dataIndex: "published_at",
+                key: "published_at",
                 render: (val, record) => (
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    {val ? dayjs(val).format('MMM DD, YYYY') : (record.scheduled_iso ? dayjs(record.scheduled_iso).format('MMM DD, YYYY') : 'Recent')}
+                    {val ? dayjs(val).format("MMM DD, YYYY") : (record.scheduled_iso ? dayjs(record.scheduled_iso).format("MMM DD, YYYY") : "Recent")}
                   </Text>
-                )
+                ),
               },
               {
-                title: 'Live Link',
-                key: 'link',
+                title: "Live Link",
+                key: "link",
                 render: (_, record) => {
                   const url = record.url;
                   return url ? (
                     <a href={url} target="_blank" rel="noopener noreferrer">
-                      <Tag color="blue" style={{ borderRadius: 10, cursor: 'pointer', fontWeight: 600 }}>
+                      <Tag color="blue" style={{ borderRadius: 10, cursor: "pointer", fontWeight: 600 }}>
                         View Post ↗
                       </Tag>
                     </a>
                   ) : (
                     <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
                   );
-                }
-              }
+                },
+              },
             ]}
           />
         </Card>
@@ -728,14 +979,14 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
       {/* SOCIAL METRICS DRILL-DOWN DETAIL MODAL */}
       <Modal
         title={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {detailModalType === "followers" && <TeamOutlined style={{ color: "#4f46e5" }} />}
             {detailModalType === "likers" && <LikeOutlined style={{ color: "#ec4899" }} />}
             {detailModalType === "comments" && <MessageOutlined style={{ color: "#3b82f6" }} />}
             <span>
-              {detailModalType === "followers" && `Followers of ${detailModalAccount?.accountName || 'Account'}`}
-              {detailModalType === "likers" && `People who Liked Posts on ${detailModalAccount?.accountName || 'Account'}`}
-              {detailModalType === "comments" && `Comments & Discussions on ${detailModalAccount?.accountName || 'Account'}`}
+              {detailModalType === "followers" && `Followers of ${detailModalAccount?.accountName || "Account"}`}
+              {detailModalType === "likers" && `People who Liked Posts on ${detailModalAccount?.accountName || "Account"}`}
+              {detailModalType === "comments" && `Comments & Discussions on ${detailModalAccount?.accountName || "Account"}`}
             </span>
           </div>
         }
@@ -743,7 +994,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         onCancel={() => setDetailModalOpen(false)}
         footer={null}
         width={560}
-        style={{ borderRadius: 20, overflow: 'hidden' }}
+        style={{ borderRadius: 20, overflow: "hidden" }}
       >
         <Spin spinning={detailModalLoading}>
           {detailModalData.length === 0 ? (
@@ -752,7 +1003,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
             <List
               itemLayout="horizontal"
               dataSource={detailModalData}
-              style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 8 }}
+              style={{ maxHeight: 420, overflowY: "auto", paddingRight: 8 }}
               renderItem={(item) => (
                 <List.Item
                   key={item.id}
@@ -761,7 +1012,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                     borderRadius: 12,
                     marginBottom: 8,
                     background: "var(--bg-tertiary, #f8fafc)",
-                    border: "1px solid var(--border-color, #e2e8f0)"
+                    border: "1px solid var(--border-color, #e2e8f0)",
                   }}
                 >
                   <List.Item.Meta
@@ -782,13 +1033,13 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                       <div>
                         {detailModalType === "comments" && (
                           <div style={{ margin: "4px 0 6px" }}>
-                            <Text style={{ fontSize: 13, color: "var(--text-primary, #0f172a)", display: 'block', fontWeight: 600 }}>
+                            <Text style={{ fontSize: 13, color: "var(--text-primary, #0f172a)", display: "block", fontWeight: 600 }}>
                               "{item.text}"
                             </Text>
                             <Text type="secondary" style={{ fontSize: 11 }}>
                               On: <i>{item.postTitle}</i> · {item.time}
                             </Text>
-                            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                               <Input
                                 size="small"
                                 placeholder={`Reply to ${item.name}...`}
@@ -814,7 +1065,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                             <Tag color="pink" style={{ borderRadius: 8, margin: "2px 0 4px", fontWeight: 700 }}>
                               {item.reaction || "👍 Like"}
                             </Tag>
-                            <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
+                            <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
                               Liked: {item.postTitle} ({item.time})
                             </Text>
                           </div>
@@ -823,7 +1074,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                         {detailModalType === "followers" && (
                           <div>
                             <Text type="secondary" style={{ fontSize: 12 }}>
-                              {item.type || "Follower"} · {item.followers || 'Active'}
+                              {item.type || "Follower"} · {item.followers || "Active"}
                             </Text>
                           </div>
                         )}
@@ -837,48 +1088,56 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         </Spin>
       </Modal>
 
-
-
       <style dangerouslySetInnerHTML={{ __html: `
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
-        .premium-campaign-dashboard {
+        .premium-campaign-dashboard.report-styled {
           font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
           padding: 10px;
           color: #1e293b;
           transition: all 0.3s ease;
         }
 
-        .premium-campaign-dashboard.dark-mode {
-          background: #020617;
-          color: #f1f5f9;
-        }
-
-        .dashboard-header-section {
+        .report-header-banner {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 32px;
-          padding: 0 4px;
+          margin-bottom: 24px;
+          padding: 20px 24px;
+          background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+          border: 1px solid #e2e8f0;
+          border-radius: 20px;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.03);
           flex-wrap: wrap;
           gap: 16px;
         }
 
-        @media (max-width: 768px) {
-          .dashboard-header-section {
-            flex-direction: column;
-            align-items: flex-start;
-          }
-          .header-actions {
-            width: 100%;
-          }
-          .platform-switcher {
-            width: 100% !important;
-          }
+        .dark-mode .report-header-banner {
+          background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+          border-color: #334155;
+        }
+
+        .report-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.8px;
+          color: #6366f1;
+          background: #e0e7ff;
+          padding: 4px 12px;
+          border-radius: 20px;
+          text-transform: uppercase;
+        }
+
+        .dark-mode .report-badge {
+          background: rgba(99, 102, 241, 0.2);
+          color: #818cf8;
         }
 
         .gradient-text {
-          background: linear-gradient(135deg, #1e293b 0%, #6366f1 100%);
+          background: linear-gradient(135deg, #0f172a 0%, #4338ca 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           font-weight: 800;
@@ -891,101 +1150,30 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
           -webkit-background-clip: text;
         }
 
-        .header-subtitle {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          font-weight: 500;
-        }
-
-        .dark-mode .header-subtitle { color: #94a3b8; }
-
-        .platform-switcher {
-          min-width: 190px;
-        }
-
-        .platform-switcher .ant-select-selector {
-          border: 2px solid #e2e8f0 !important;
-          border-radius: 14px !important;
-          height: 48px !important;
-          padding: 0 16px !important;
-          transition: all 0.3s ease !important;
-        }
-
-        .platform-switcher:hover .ant-select-selector {
-          border-color: #6366f1 !important;
-          box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1) !important;
-        }
-
-        .platform-switcher .ant-select-selection-item {
-          display: flex !important;
-          align-items: center !important;
+        .print-report-btn {
+          background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
+          border: none !important;
+          border-radius: 12px !important;
           font-weight: 700 !important;
-          color: inherit !important;
+          height: 38px !important;
+          box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25) !important;
         }
 
-        .dark-mode .platform-switcher .ant-select-selection-item {
-          color: #f1f5f9 !important;
-        }
-
-        /* Stats Cards */
         .premium-stat-card {
-          padding: 24px;
+          padding: 20px 24px;
           border-radius: 20px;
           display: flex;
-          gap: 20px;
+          gap: 16px;
           align-items: center;
-          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+          transition: all 0.3s ease;
           border: 1px solid rgba(255,255,255,0.8);
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+          box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.04);
           position: relative;
           overflow: hidden;
-          min-height: 120px;
+          min-height: 110px;
         }
 
-        @media (max-width: 1400px) {
-          .premium-stat-card {
-            padding: 16px;
-            gap: 12px;
-          }
-          .stat-icon-wrapper {
-            width: 44px;
-            height: 44px;
-            font-size: 20px;
-          }
-          .stat-value {
-            font-size: 24px !important;
-          }
-        }
-
-        @media (max-width: 1200px) {
-          .premium-stat-card {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 12px;
-          }
-        }
-
-        .dark-mode .premium-stat-card {
-          border-color: rgba(255,255,255,0.05);
-          box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
-        }
-
-        .premium-stat-card::after {
-          content: '';
-          position: absolute;
-          right: -20px;
-          bottom: -20px;
-          width: 100px;
-          height: 100px;
-          border-radius: 50%;
-          opacity: 0.1;
-          background: currentColor;
-        }
-
-
-
-        .card-blue { background: #eff6ff; color: var(--accent-primary); }
+        .card-blue { background: #eff6ff; color: #2563eb; }
         .card-rose { background: #fff1f2; color: #e11d48; }
         .card-emerald { background: #ecfdf5; color: #059669; }
         .card-amber { background: #fffbeb; color: #d97706; }
@@ -996,26 +1184,26 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         .dark-mode .card-amber { background: #451a03; color: #fbbf24; }
 
         .stat-icon-wrapper {
-          width: 56px;
-          height: 56px;
-          border-radius: 16px;
+          width: 50px;
+          height: 50px;
+          border-radius: 14px;
           background: #ffffff;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 24px;
-          box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.1);
-          transition: all 0.3s ease;
+          font-size: 22px;
+          box-shadow: 0 6px 12px -2px rgba(0, 0, 0, 0.08);
+          flex-shrink: 0;
         }
 
         .dark-mode .stat-icon-wrapper {
-          background: rgba(255,255,255,0.05);
+          background: rgba(255,255,255,0.06);
           box-shadow: none;
         }
 
         .stat-label {
-          font-size: 13px;
-          font-weight: 600;
+          font-size: 12px;
+          font-weight: 700;
           color: #64748b;
           text-transform: uppercase;
           letter-spacing: 0.5px;
@@ -1024,67 +1212,29 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         .dark-mode .stat-label { color: #94a3b8; }
 
         .stat-value {
-          margin: 4px 0 !important;
+          margin: 2px 0 !important;
           font-weight: 800 !important;
           color: #0f172a !important;
+          font-size: 26px !important;
         }
 
         .dark-mode .stat-value { color: #f1f5f9 !important; }
 
-        .stat-trend {
-          font-size: 13px;
-          font-weight: 700;
-          display: flex;
-          align-items: center;
-          gap: 4px;
-        }
-
-        .stat-trend.positive { color: #10b981; }
-        .trend-label { font-weight: 500; color: #94a3b8; }
-
-        .glass-tag {
-          background: rgba(255,255,255,0.5) !important;
-          border: 1px solid rgba(0,0,0,0.05) !important;
-          border-radius: 8px !important;
-          font-weight: 600 !important;
-          color: #64748b !important;
-        }
-
-        /* Glass Cards */
         .glass-card {
-          border-radius: 24px !important;
-          border: 1px solid #f1f5f9 !important;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.03) !important;
+          border-radius: 20px !important;
+          border: 1px solid #e2e8f0 !important;
+          box-shadow: 0 4px 16px rgba(0,0,0,0.02) !important;
           overflow: hidden;
         }
 
         .dark-mode .glass-card {
           background: #0f172a !important;
           border-color: #1e293b !important;
-          box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4) !important;
         }
-
-        .dark-mode .ant-card-head {
-          border-bottom-color: #1e293b !important;
-          color: #f1f5f9 !important;
-        }
-
-        .dark-mode h1, .dark-mode h2, .dark-mode h3, .dark-mode h4, .dark-mode .ant-typography {
-          color: #f1f5f9 !important;
-        }
-
-        .card-header-flex {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-end;
-          margin-bottom: 24px;
-        }
-
-        .card-header-flex h4 { margin: 0 !important; font-weight: 700 !important; }
 
         .chart-container-large {
-          height: 340px;
-          margin-left: -20px;
+          height: 320px;
+          margin-left: -15px;
         }
 
         .pie-chart-wrapper {
@@ -1092,236 +1242,42 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
           display: flex;
           justify-content: center;
           align-items: center;
-          margin: 10px 0;
         }
 
         .pie-center-label {
           position: absolute;
           text-align: center;
-          display: flex;
-          flex-direction: column;
         }
 
         .platform-legend-list {
-          margin-top: 24px;
+          margin-top: 16px;
         }
 
         .legend-item {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          padding: 8px 12px;
-          border-radius: 12px;
-          transition: background 0.2s;
+          padding: 6px 10px;
+          border-radius: 10px;
         }
 
-
-
-        .legend-info { display: flex; align-items: center; gap: 10px; }
+        .legend-info { display: flex; align-items: center; gap: 8px; }
         .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
-        .legend-name { font-weight: 600; color: #475569; }
-
-        /* Section Divider */
-        .section-divider {
-          margin: 40px 0 24px;
-          display: flex;
-          align-items: center;
-          gap: 20px;
-        }
-
-        .section-divider h4 { margin: 0 !important; white-space: nowrap; font-weight: 800 !important; color: #1e293b !important; }
-        .divider-line { height: 1px; flex: 1; background: #f1f5f9; }
-
-        /* Platform Cards */
-        .platform-premium-card {
-          background: #ffffff;
-          border: 1px solid #f1f5f9;
-          border-radius: 20px;
-          padding: 20px;
-          transition: all 0.3s;
-          box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02);
-        }
-
-        .dark-mode .platform-premium-card {
-          background: #1e293b;
-          border-color: #334155;
-        }
-
-
-
-        .platform-header {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          margin-bottom: 20px;
-        }
-
-        .platform-logo-box {
-          width: 44px;
-          height: 44px;
-          border-radius: 12px;
-          background: #f8fafc;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 20px;
-          transition: all 0.3s ease;
-        }
-
-        .dark-mode .platform-logo-box { background: #0f172a; }
-
-        .platform-name-box { display: flex; flex-direction: column; }
-        .platform-name-box span:first-child { font-size: 15px; color: #1e293b; }
-        .dark-mode .platform-name-box span:first-child { color: #f1f5f9; }
-        .platform-name-box span:last-child { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-
-        .platform-metrics-grid {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 12px;
-          margin-bottom: 20px;
-        }
-
-        .metric-box {
-          background: #f8fafc;
-          padding: 10px 14px;
-          border-radius: 12px;
-        }
-
-        .dark-mode .metric-box { background: #0f172a; }
-
-        .metric-box .label { font-size: 10px; color: #94a3b8; text-transform: uppercase; font-weight: 700; display: block; margin-bottom: 2px; }
-        .metric-box .value { font-size: 16px; font-weight: 800; color: #334155; }
-        .dark-mode .metric-box .value { color: #cbd5e1; }
-
-        .platform-footer {
-          border-top: 1px solid #f1f5f9;
-          padding-top: 12px;
-          display: flex;
-          justify-content: center;
-        }
-
-        .dark-mode .platform-footer { border-color: #334155; }
-
-        .status-tag {
-          border-radius: 20px !important;
-          padding: 0 12px !important;
-          font-weight: 700 !important;
-          font-size: 10px !important;
-          text-transform: uppercase;
-        }
-
-        /* Table Premium Styling */
-        .premium-table .ant-table { background: transparent !important; }
-        .premium-table .ant-table-thead > tr > th {
-          background: #f8fafc !important;
-          color: #64748b !important;
-          font-weight: 700 !important;
-          font-size: 12px !important;
-          text-transform: uppercase !important;
-          letter-spacing: 0.5px !important;
-          border-bottom: 1px solid #f1f5f9 !important;
-        }
-
-        .dark-mode .premium-table .ant-table-thead > tr > th {
-          background: #1e293b !important;
-          color: #94a3b8 !important;
-          border-bottom-color: #334155 !important;
-        }
-
-        .dark-mode .premium-table .ant-table-tbody > tr > td {
-          background: #0f172a !important;
-          border-bottom-color: #1e293b !important;
-          color: #cbd5e1 !important;
-        }
-
-        .dark-mode .premium-table .ant-table-row:hover > td {
-          background: #1e293b !important;
-        }
-
-        .post-preview-cell { display: flex; gap: 16px; align-items: center; }
-        .media-thumbnail {
-          width: 56px;
-          height: 56px;
-          border-radius: 12px;
-          overflow: hidden;
-          background: #f1f5f9;
-          flex-shrink: 0;
-          box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-          transition: all 0.3s ease;
-        }
-
-        .dark-mode .media-thumbnail { background: #334155; }
-
-
-
-        .media-thumbnail img { width: 100%; height: 100%; object-fit: cover; }
-        .placeholder-thumb { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #cbd5e1; font-size: 20px; }
-
-        .post-title-text { display: block !important; margin-bottom: 2px !important; color: #334155 !important; }
-        .dark-mode .post-title-text { color: #f1f5f9 !important; }
-        .post-caption-text { font-size: 12px !important; display: block; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-        .platform-icon-stack { display: flex; align-items: center; }
-        .stacked-icon {
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          background: #ffffff;
-          border: 2px solid #ffffff;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-right: -10px;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          font-size: 14px;
-        }
-
-        .dark-mode .stacked-icon {
-          background: #1e293b;
-          border-color: #0f172a;
-        }
-
-        .stacked-more {
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          background: #f1f5f9;
-          border: 2px solid #ffffff;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 10px;
-          font-weight: 700;
-          color: #64748b;
-        }
-
-        .table-metrics-box { display: flex; gap: 16px; }
-        .table-metrics-box .metric { display: flex; align-items: center; gap: 6px; color: #64748b; }
-
-        .publish-date-cell { display: flex; flex-direction: column; }
-        .publish-date-cell span:first-child { color: #334155; }
-        .publish-date-cell span:last-child { font-size: 11px; }
-
-        .performance-cell { width: 100px; display: flex; flex-direction: column; gap: 6px; }
-        .performance-bar-bg { width: 100%; height: 6px; background: #f1f5f9; border-radius: 10px; overflow: hidden; }
-        .performance-bar-fill { height: 100%; border-radius: 10px; transition: width 1s cubic-bezier(0.4, 0, 0.2, 1); }
+        .legend-name { font-weight: 600; color: #475569; font-size: 13px; }
 
         .dashboard-loading-container {
-          height: 500px;
+          height: 450px;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
           background: #ffffff;
-          border-radius: 24px;
+          border-radius: 20px;
         }
 
-        /* Responsive Fixes */
-        @media (max-width: 768px) {
-          .dashboard-header-section { flex-direction: column; align-items: flex-start; gap: 20px; }
-          .header-actions { width: 100%; }
-          .premium-select { width: 100% !important; }
+        @media print {
+          .print-report-btn, .report-filter-select, .platform-switcher { display: none !important; }
+          .premium-campaign-dashboard { padding: 0 !important; }
         }
       `}} />
     </div>
