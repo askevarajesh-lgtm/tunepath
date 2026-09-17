@@ -2,68 +2,102 @@ const Task = require('../tasks/task.model');
 const Project = require('../projects/project.model');
 const Invoice = require('../invoices/invoice.model');
 
-exports.getClientExecutiveDashboard = async (clientId, companyId, queryMonth, queryYear) => {
+exports.getClientExecutiveDashboard = async (clientId, companyId, queryMonth, queryYear, reqUser = null) => {
   const hasMonthYear = queryMonth !== undefined && queryMonth !== null && queryMonth !== '' && queryYear !== undefined && queryYear !== null && queryYear !== '';
   const now = hasMonthYear ? new Date(parseInt(queryYear), parseInt(queryMonth), 15) : new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
+  const companyIdSet = new Set(
+    [clientId, companyId, reqUser?.clientId, reqUser?.companyId, reqUser?.brandId, reqUser?.tenantCompanyId, reqUser?._id]
+      .filter(Boolean)
+      .map(id => id.toString())
+  );
+  const companyIdList = Array.from(companyIdSet);
+
   // Projects
-  const allProjects = await Project.find({ clientId: clientId });
+  const allProjects = await Project.find({
+    $or: [
+      { clientId: { $in: companyIdList } },
+      { companyId: { $in: companyIdList } }
+    ]
+  }).catch(() => []);
   const activeProjectsCount = allProjects.filter(p => p.status !== 'completed').length;
   const completedProjectsCount = allProjects.filter(p => p.status === 'completed').length;
-  
-  // Invoices (Spend/ROI tracking up to selected month)
-  const invoices = await Invoice.find({ clientId: clientId, isDeleted: false });
-  const sentInvoices = invoices
-    .filter(i => i.invoiceStatus !== 'Draft' && new Date(i.createdAt) <= endOfMonth)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  const pendingInvoices = sentInvoices.filter(i => i.paymentStatus !== 'Paid');
-  const latestPendingInvoice = pendingInvoices[0] || null;
-
-  let outstandingAmount = 0;
-  let paidAmountThisMonth = 0;
-  let totalSpend = 0;
-
-  sentInvoices.forEach(inv => {
-    const pending = inv.pendingAmount || inv.grandTotal || 0;
-    const paid = inv.totalPaid || 0;
-    totalSpend += paid;
-
-    if (inv.paymentStatus !== 'Paid') {
-      outstandingAmount += pending;
-    }
-    
-    if (inv.createdAt) {
-      const d = new Date(inv.createdAt);
-      if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) {
-         paidAmountThisMonth += paid;
-      }
-    }
-  });
 
   // Approvals (Tasks waiting for review created on or before selected month)
   const pendingApprovalTasks = await Task.find({ 
-    $or: [{ companyId: clientId }, { tenantCompanyId: clientId }, { companyId }], 
+    $or: [{ companyId: { $in: companyIdList } }, { tenantCompanyId: { $in: companyIdList } }, { clientId: { $in: companyIdList } }], 
     status: { $in: ['sent_for_client_review', 'review', 'in_review'] },
     clientReviewStatus: { $nin: ['approved', 'client_approved'] },
     clientApproved: { $ne: true },
     createdAt: { $lte: endOfMonth }
-  }).limit(5);
+  }).limit(5).catch(() => []);
+
+  // Tasks Execution Stats
+  const allTasks = await Task.find({ 
+    $or: [
+      { companyId: { $in: companyIdList } },
+      { tenantCompanyId: { $in: companyIdList } }
+    ]
+  }).catch(() => []);
+
+  const completedStatuses = ['done', 'complete', 'completed', 'validated', 'approved', 'approved_by_client', 'client_approved', 'closed'];
+
+  const isTaskCompleted = (t) => {
+    const status = (t.status || '').toString().trim().toLowerCase();
+    const clientStatus = (t.clientReviewStatus || t.clientApprovalStatus || '').toString().trim().toLowerCase();
+    const isClientApproved = t.clientApproved === true || clientStatus === 'approved' || clientStatus === 'client_approved';
+    const isValidated = (t.validationStatus || '').toString().trim().toLowerCase() === 'validated';
+    return completedStatuses.includes(status) || isClientApproved || isValidated;
+  };
+
+  const totalTasksThisMonth = allTasks.filter(t => {
+    const created = t.createdAt ? new Date(t.createdAt) : null;
+    const due = t.dueDate ? new Date(t.dueDate) : null;
+    const completedDate = t.workCompletedAt || t.actualCompletionDate || t.completedAt || t.updatedAt;
+    const completedInMonth = isTaskCompleted(t) &&
+      completedDate && new Date(completedDate) >= startOfMonth && new Date(completedDate) <= endOfMonth;
+
+    return (created && created >= startOfMonth && created <= endOfMonth) ||
+           (due && due >= startOfMonth && due <= endOfMonth) ||
+           completedInMonth;
+  }).length;
+
+  const completedTasksThisMonth = allTasks.filter(t => {
+    if (!isTaskCompleted(t)) return false;
+    const dateToUse = t.workCompletedAt || t.actualCompletionDate || t.completedAt || t.updatedAt || t.createdAt;
+    const d = new Date(dateToUse);
+    return d >= startOfMonth && d <= endOfMonth;
+  }).length;
+
+  // Workspace Team Members
+  const User = require('../auth/user.model');
+  const teamMembers = await User.find({
+    $or: [
+      { companyId: { $in: companyIdList } },
+      { tenantCompanyId: { $in: companyIdList } },
+      { brandId: { $in: companyIdList } }
+    ]
+  }).select('name email role status isActive avatar').catch(() => []);
+
+  const activeTeamMembers = teamMembers.filter(u => u.status === 'active' || u.isActive !== false).length;
+
+  const openTasksCount = allTasks.filter(t => !isTaskCompleted(t)).length;
 
   return {
     stats: {
       activeProjects: activeProjectsCount,
       completedProjects: completedProjectsCount,
-      totalInvoicesCount: sentInvoices.length,
-      pendingInvoicesCount: pendingInvoices.length,
-      outstandingAmount,
-      paidAmountThisMonth,
-      totalSpend
+      pendingApprovalsCount: pendingApprovalTasks.length,
+      completedTasksThisMonth,
+      totalTasksThisMonth,
+      totalTeamMembers: teamMembers.length,
+      activeTeamMembers,
+      openTasksCount
     },
-    upcomingInvoice: latestPendingInvoice,
     pendingApprovals: pendingApprovalTasks,
-    recentInvoices: sentInvoices.slice(0, 5)
+    recentTeamMembers: teamMembers.slice(0, 5)
   };
 };
 

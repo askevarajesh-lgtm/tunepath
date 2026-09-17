@@ -234,10 +234,22 @@ const ReportsRedirect = () => {
   if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
     return <Navigate to="/agency/reports" replace />;
   }
-  if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'].includes(role) || isClientUser) {
+  if (role === 'agency_client') {
     return <Navigate to="/client/reports" replace />;
   }
+  if (['brand_super_admin', 'brand_manager', 'brand_team_user', 'client_user'].includes(role) || isClientUser) {
+    return <Navigate to="/client/dashboard" replace />;
+  }
   return <Navigate to="/intelligence/reporting" replace />;
+};
+
+const ClientReportsRouteGuard = () => {
+  const { role, user } = useAuth();
+  const isClientUser = role === 'user' && user?.brandId;
+  if (['brand_super_admin', 'brand_manager', 'brand_team_user', 'client_user'].includes(role) || isClientUser) {
+    return <Navigate to="/client/dashboard" replace />;
+  }
+  return <ClientReportsTab />;
 };
 
 const AppRoutes = () => {
@@ -604,7 +616,7 @@ const AppRoutes = () => {
           <Route path="tasks" element={<ClientTasksTab />} />
 
           <Route path="billing" element={<ClientBillingTab />} />
-          <Route path="reports" element={<ClientReportsTab />} />
+          <Route path="reports" element={<ClientReportsRouteGuard />} />
           <Route path="support" element={<ClientSupportTab />} />
           <Route path="meetings" element={<MeetingsPage />} />
           <Route path="calendar" element={<CalendarPage />} />

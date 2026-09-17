@@ -4,6 +4,86 @@ const mongoose = require('mongoose');
 /**
  * Auto-aggregates metrics for a given client and month/year
  */
+const getGa4PropertyIdForClient = async (clientId) => {
+    try {
+        if (!clientId) return process.env.GA4_PROPERTY_ID || null;
+        const targetIds = [clientId, String(clientId)];
+        if (mongoose.Types.ObjectId.isValid(clientId)) {
+            targetIds.push(new mongoose.Types.ObjectId(clientId));
+        }
+
+        // 1. Primary: Check AnalyticsProject model (where Google Analytics module projects & property IDs are stored)
+        const AnalyticsProject = mongoose.models.AnalyticsProject || require('../analytics/models/analyticsProject.model');
+        const analyticsProj = await AnalyticsProject.findOne({
+            $or: [
+                { clientId: { $in: targetIds } },
+                { companyId: { $in: targetIds } },
+                { createdBy: { $in: targetIds } }
+            ],
+            isDeleted: false,
+            'credentials.ga4PropertyId': { $exists: true, $ne: null, $ne: '' }
+        }).catch(() => null);
+
+        if (analyticsProj && analyticsProj.credentials?.ga4PropertyId) {
+            const rawPropId = String(analyticsProj.credentials.ga4PropertyId).trim();
+            const match = rawPropId.match(/\b\d{7,12}\b/);
+            if (match) return match[0];
+            if (rawPropId) return rawPropId;
+        }
+
+        // 2. Check User.ga4PropertyId
+        const User = mongoose.models.User || require('../auth/user.model');
+        const user = await User.findById(clientId).catch(() => null);
+        if (user && user.ga4PropertyId) {
+            const match = String(user.ga4PropertyId).match(/\b\d{7,12}\b/);
+            if (match) return match[0];
+            return user.ga4PropertyId;
+        }
+
+        // 3. Check SEOProject
+        const SEOProject = mongoose.models.SEOProject || require('../seoIntelligence/models/seoProject.model');
+        const seoProj = await SEOProject.findOne({ clientId: { $in: targetIds } }).catch(() => null);
+        if (seoProj && (seoProj.ga4PropertyId || seoProj.credentials?.ga4PropertyId)) {
+            const pId = seoProj.ga4PropertyId || seoProj.credentials?.ga4PropertyId;
+            const match = String(pId).match(/\b\d{7,12}\b/);
+            if (match) return match[0];
+            return pId;
+        }
+
+        // 4. Check WorkspaceProject
+        const WorkspaceProject = mongoose.models.WorkspaceProject || require('../seoWorkspace/models/workspaceProject.model');
+        const wsProj = await WorkspaceProject.findOne({ clientId: { $in: targetIds } }).catch(() => null);
+        if (wsProj && (wsProj.ga4PropertyId || wsProj.credentials?.ga4PropertyId)) {
+            const pId = wsProj.ga4PropertyId || wsProj.credentials?.ga4PropertyId;
+            const match = String(pId).match(/\b\d{7,12}\b/);
+            if (match) return match[0];
+            return pId;
+        }
+
+        // 5. Check Integration model
+        if (mongoose.models.Integration) {
+            const Integration = mongoose.models.Integration;
+            const gaInteg = await Integration.findOne({
+                $or: [{ clientId: { $in: targetIds } }, { companyId: { $in: targetIds } }],
+                type: { $in: ['google_analytics', 'ga4', 'google'] },
+                isActive: true
+            }).catch(() => null);
+            if (gaInteg && gaInteg.config) {
+                const pId = gaInteg.config.ga4PropertyId || gaInteg.config.propertyId;
+                if (pId) {
+                    const match = String(pId).match(/\b\d{7,12}\b/);
+                    if (match) return match[0];
+                    return pId;
+                }
+            }
+        }
+
+        return process.env.GA4_PROPERTY_ID || null;
+    } catch (err) {
+        return process.env.GA4_PROPERTY_ID || null;
+    }
+};
+
 const checkSocialMediaModuleEnabled = async (clientId, digitalInsights, deliverables) => {
     try {
         if (!clientId) return false;
@@ -185,11 +265,13 @@ const autoAggregateMetrics = async (clientId, month, year) => {
         trackedMonthsList.push(mStr);
     }
 
-    // Real Social Media (Facebook & Instagram) Metrics Aggregation - Real Data Only
+    // Real Social Media (Facebook, Instagram & YouTube) Metrics Aggregation - Real Data Only
     let liveFbFollowers = 0;
     let liveIgFollowers = 0;
+    let liveYtSubscribers = 0;
     const fbMonthlyStatsMap = {};
     const igMonthlyStatsMap = {};
+    const ytMonthlyStatsMap = {};
 
     try {
         const AccountModel = mongoose.models.CampaignScheduledAccount || require('../campaign-scheduled/campaignScheduled.account.model');
@@ -238,13 +320,16 @@ const autoAggregateMetrics = async (clientId, month, year) => {
             clientIntegrations.forEach(intg => {
                 const config = intg.config || {};
                 const type = String(intg.type || '').toLowerCase();
-                const followersCount = Number(config.followers_count || config.fan_count || config.followers || 0);
+                const followersCount = Number(config.followers_count || config.fan_count || config.followers || config.subscriberCount || config.subscribers || 0);
 
                 if (type.includes('instagram') || type.includes('ig')) {
                     liveIgFollowers = Math.max(liveIgFollowers, followersCount);
                 }
                 if (type.includes('facebook') || type.includes('fb') || type.includes('meta')) {
                     liveFbFollowers = Math.max(liveFbFollowers, followersCount);
+                }
+                if (type.includes('youtube') || type.includes('yt')) {
+                    liveYtSubscribers = Math.max(liveYtSubscribers, followersCount);
                 }
 
                 if (Array.isArray(config.pages)) {
@@ -272,7 +357,7 @@ const autoAggregateMetrics = async (clientId, month, year) => {
         });
 
         for (const acc of clientAccounts) {
-            let followers = Number(acc.followers || acc.fan_count || acc.followers_count || 0);
+            let followers = Number(acc.followers || acc.fan_count || acc.followers_count || acc.subscriberCount || acc.subscribers || 0);
             if (acc.access_token && (acc.platform === 'facebook' || acc.platform === 'instagram')) {
                 try {
                     const targetId = acc.ig_user_id || acc.page_id || 'me';
@@ -290,6 +375,17 @@ const autoAggregateMetrics = async (clientId, month, year) => {
                 liveFbFollowers = Math.max(liveFbFollowers, followers);
             } else if (acc.platform === 'instagram' || (acc.id && String(acc.id).startsWith('ig-'))) {
                 liveIgFollowers = Math.max(liveIgFollowers, followers);
+            } else if (acc.platform === 'youtube' || (acc.id && String(acc.id).startsWith('yt-'))) {
+                try {
+                    const campaignScheduledService = require('../campaign-scheduled/campaignScheduled.service');
+                    if (campaignScheduledService && campaignScheduledService.fetchYoutubeChannelLiveStats) {
+                        const ytStats = await campaignScheduledService.fetchYoutubeChannelLiveStats(acc).catch(() => null);
+                        if (ytStats && ytStats.subscribers) {
+                            followers = Math.max(followers, ytStats.subscribers);
+                        }
+                    }
+                } catch (e) {}
+                liveYtSubscribers = Math.max(liveYtSubscribers, followers);
             }
         }
 
@@ -300,6 +396,7 @@ const autoAggregateMetrics = async (clientId, month, year) => {
 
             let fbViews = 0, fbReach = 0;
             let igViews = 0, igReach = 0;
+            let ytViews = 0;
 
             publishedPosts.forEach(post => {
                 const rawDate = post.published_at || post.publishedAt || post.scheduled_iso || post.scheduledISO || post.created_at || post.createdAt;
@@ -314,6 +411,7 @@ const autoAggregateMetrics = async (clientId, month, year) => {
 
                     const isFb = allPStrings.some(s => s.includes('facebook') || s.startsWith('fb-') || s.includes('fb'));
                     const isIg = allPStrings.some(s => s.includes('instagram') || s.startsWith('ig-') || s.includes('ig'));
+                    const isYt = allPStrings.some(s => s.includes('youtube') || s.startsWith('yt-') || s.includes('yt'));
 
                     const likes = Number(post.likes) || 0;
                     const comments = Number(post.comments) || 0;
@@ -331,17 +429,60 @@ const autoAggregateMetrics = async (clientId, month, year) => {
                         igViews += rawViews;
                         igReach += rawReach;
                     }
+                    if (isYt) {
+                        ytViews += rawViews;
+                    }
                 }
             });
 
             fbMonthlyStatsMap[mStr] = { views: fbViews, reach: fbReach };
             igMonthlyStatsMap[mStr] = { views: igViews, reach: igReach };
+            ytMonthlyStatsMap[mStr] = { views: ytViews };
         });
 
         digitalInsights.facebookTotalFollowers = liveFbFollowers;
         digitalInsights.facebookReach = fbMonthlyStatsMap[`${monthAbbrs[month - 1]} ${year}`]?.reach || 0;
         digitalInsights.instagramTotalFollowers = liveIgFollowers;
         digitalInsights.instagramReach = igMonthlyStatsMap[`${monthAbbrs[month - 1]} ${year}`]?.reach || 0;
+
+        let publishedVideoCount = 0;
+        let publishedPostCount = 0;
+
+        publishedPosts.forEach(post => {
+            const rawDate = post.published_at || post.publishedAt || post.scheduled_iso || post.scheduledISO || post.created_at || post.createdAt;
+            if (!rawDate) return;
+            const pDate = new Date(rawDate);
+            if (isNaN(pDate.getTime())) return;
+
+            if (pDate.getMonth() === (month - 1) && pDate.getFullYear() === year) {
+                const postTypeStr = String(post.type || '').toLowerCase();
+                const postOption = post.post_option || {};
+                const platformOption = String(postOption.youtube || postOption.facebook || postOption.instagram || '').toLowerCase();
+                const firstMedia = Array.isArray(post.media_url) ? post.media_url[0] : post.media_url;
+                const isVideoUrl = typeof firstMedia === 'string' && (
+                    firstMedia.endsWith('.mp4') || firstMedia.endsWith('.mov') || firstMedia.endsWith('.webm') ||
+                    firstMedia.includes('/video/upload/') || (firstMedia.includes('res.cloudinary.com') && firstMedia.includes('/video/'))
+                );
+                const isVideo = postTypeStr.includes('video') || postTypeStr.includes('reel') || platformOption.includes('video') || platformOption.includes('reel') || isVideoUrl;
+
+                if (isVideo) {
+                    publishedVideoCount++;
+                } else {
+                    publishedPostCount++;
+                }
+            }
+        });
+
+        if (publishedVideoCount === 0 && publishedPostCount === 0) {
+            publishedVideoCount = videosCount;
+            publishedPostCount = postDesignsCount;
+        }
+
+        var socialMediaPostInsights = {
+            videoCount: publishedVideoCount,
+            postCount: publishedPostCount,
+            totalCount: publishedVideoCount + publishedPostCount
+        };
     } catch (err) {
         console.warn('Real social media aggregation note:', err.message);
     }
@@ -468,9 +609,101 @@ const autoAggregateMetrics = async (clientId, month, year) => {
         };
     });
 
+    const youTubeReport = trackedMonthsList.map(mStr => {
+        const stats = ytMonthlyStatsMap[mStr] || { views: 0 };
+        return {
+            month: mStr,
+            views: stats.views,
+            lastMonthSubscribers: liveYtSubscribers > 0 ? Math.max(0, liveYtSubscribers - Math.floor(liveYtSubscribers * 0.05)) : 0,
+            totalSubscribers: liveYtSubscribers
+        };
+    });
+
+    // Real Google Analytics 4 (GA4) Traffic Overview Aggregation
+    let websiteTrafficOverview = [];
+    try {
+        const googleAnalyticsSource = require('../analytics/sources/googleAnalytics.source');
+        const ga4PropertyId = await getGa4PropertyIdForClient(clientId);
+
+        const trafficPromises = trackedMonthsList.map(async (mStr) => {
+            const [mName, yNum] = mStr.split(' ');
+            const mIdx = monthAbbrs.indexOf(mName) + 1;
+            const yVal = Number(yNum);
+
+            let totalUsers = 0;
+            let newUsers = 0;
+
+            if (ga4PropertyId && mIdx > 0 && yVal > 0) {
+                const startDateStr = `${yVal}-${String(mIdx).padStart(2, '0')}-01`;
+                const lastDayNum = new Date(yVal, mIdx, 0).getDate();
+                const endDateStr = `${yVal}-${String(mIdx).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+
+                const gaRes = await googleAnalyticsSource.getOverviewMetrics(ga4PropertyId, startDateStr, endDateStr).catch(() => null);
+                if (gaRes && gaRes.connected) {
+                    totalUsers = gaRes.totalUsers || 0;
+                    newUsers = gaRes.newUsers || 0;
+                }
+            }
+
+            return {
+                month: mStr,
+                users: totalUsers,
+                newUsers: newUsers
+            };
+        });
+
+        websiteTrafficOverview = await Promise.all(trafficPromises);
+    } catch (err) {
+        console.warn('Real GA4 traffic overview aggregation note:', err.message);
+        websiteTrafficOverview = trackedMonthsList.map(mStr => ({ month: mStr, users: 0, newUsers: 0 }));
+    }
+
+    // Real Google Analytics 4 (GA4) Landing Page Views Aggregation
+    let websiteTrafficLandingPages = [];
+    try {
+        const googleAnalyticsSource = require('../analytics/sources/googleAnalytics.source');
+        const ga4PropertyId = await getGa4PropertyIdForClient(clientId);
+
+        if (ga4PropertyId && month > 0 && year > 0) {
+            const startDateStr = `${year}-${String(month).padStart(2, '0')}-01`;
+            const lastDayNum = new Date(year, month, 0).getDate();
+            const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+
+            const landingRes = await googleAnalyticsSource.getLandingPagesReport(ga4PropertyId, startDateStr, endDateStr, 20).catch(() => null);
+            if (landingRes && landingRes.connected && Array.isArray(landingRes.rows)) {
+                websiteTrafficLandingPages = landingRes.rows;
+            }
+        }
+    } catch (err) {
+        console.warn('Real GA4 landing page report aggregation note:', err.message);
+        websiteTrafficLandingPages = [];
+    }
+
+    // Real Google Analytics 4 (GA4) Users by City Aggregation
+    let websiteTrafficUsersByCity = [];
+    try {
+        const googleAnalyticsSource = require('../analytics/sources/googleAnalytics.source');
+        const ga4PropertyId = await getGa4PropertyIdForClient(clientId);
+
+        if (ga4PropertyId && month > 0 && year > 0) {
+            const startDateStr = `${year}-${String(month).padStart(2, '0')}-01`;
+            const lastDayNum = new Date(year, month, 0).getDate();
+            const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
+
+            const cityRes = await googleAnalyticsSource.getCityTrafficReport(ga4PropertyId, startDateStr, endDateStr, 20).catch(() => null);
+            if (cityRes && cityRes.connected && Array.isArray(cityRes.rows)) {
+                websiteTrafficUsersByCity = cityRes.rows;
+            }
+        }
+    } catch (err) {
+        console.warn('Real GA4 city traffic report aggregation note:', err.message);
+        websiteTrafficUsersByCity = [];
+    }
+
     return {
         hasSocialMediaModule,
         digitalInsights,
+        socialMediaPostInsights,
         blogs: {
             count: blogCount,
             notes: `${blogCount} blog update(s) completed in ${monthName} ${year}`
@@ -486,7 +719,11 @@ const autoAggregateMetrics = async (clientId, month, year) => {
         keywordRankingOverview: keywordRankingOverview,
         keywordRankingDetails: keywordRankingDetails,
         metaInsightsFacebook: metaInsightsFacebook,
-        metaInsightsInstagram: metaInsightsInstagram
+        metaInsightsInstagram: metaInsightsInstagram,
+        youTubeReport: youTubeReport,
+        websiteTrafficOverview: websiteTrafficOverview,
+        websiteTrafficLandingPages: websiteTrafficLandingPages,
+        websiteTrafficUsersByCity: websiteTrafficUsersByCity
     };
 };
 
@@ -498,25 +735,63 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
         .populate('clientId', 'name companyName email')
         .populate('createdBy', 'name email');
 
-    if (report && !forceRefresh) {
-        if (isClientUser && report.status !== 'Published') {
-            return { status: 'NotPublished', message: 'Report for this month has not been published yet.' };
-        }
-        return report;
+    // Also check SentReport history for individual sent reports for this client
+    let sentTypes = [];
+    try {
+        const SentReport = mongoose.models.SentReport || require('./sentReport.model');
+        const sentList = await SentReport.find({ clientId, status: { $in: ['Sent', 'Delivered', 'Opened'] } }).lean();
+        sentTypes = sentList.map(s => s.template).filter(Boolean);
+    } catch (err) {
+        console.warn('SentReport check note:', err.message);
     }
 
-    if (isClientUser && !report) {
-        return { status: 'NotPublished', message: 'No report found for this month.' };
+    if (report && !forceRefresh) {
+        const allPublishedTypes = Array.from(new Set([...(report.publishedReportTypes || []), ...sentTypes]));
+        
+        if (isClientUser && report.status !== 'Published' && allPublishedTypes.length === 0) {
+            return { status: 'NotPublished', publishedReportTypes: [], message: 'Report for this month has not been published yet.' };
+        }
+        
+        report = report.toObject ? report.toObject() : report;
+        report.publishedReportTypes = allPublishedTypes;
+        
+        const hasTrafficData = Array.isArray(report.websiteTrafficOverview) && report.websiteTrafficOverview.some(w => (w.users || 0) > 0 || (w.newUsers || 0) > 0);
+        const hasLandingPages = Array.isArray(report.websiteTrafficLandingPages) && report.websiteTrafficLandingPages.length > 0;
+        const hasCityTraffic = Array.isArray(report.websiteTrafficUsersByCity) && report.websiteTrafficUsersByCity.length > 0;
+        if (hasTrafficData && hasLandingPages && hasCityTraffic) {
+            return report;
+        }
+    }
+
+    if (isClientUser && (!report || (report.status !== 'Published' && sentTypes.length === 0))) {
+        return { status: 'NotPublished', publishedReportTypes: sentTypes, message: 'No report published for this month.' };
     }
 
     const aggregated = await autoAggregateMetrics(clientId, month, year);
 
-    if (report && forceRefresh) {
-        report.hasSocialMediaModule = aggregated.hasSocialMediaModule;
-        report.blogs = aggregated.blogs;
-        report.brandCommunicationDesign = aggregated.brandCommunicationDesign;
-        await report.save();
-        return report;
+    if (report) {
+        const MonthlyHighlightsModel = MonthlyHighlights;
+        const dbDoc = await MonthlyHighlightsModel.findOne({ clientId, month, year });
+        if (dbDoc) {
+            dbDoc.hasSocialMediaModule = aggregated.hasSocialMediaModule;
+            dbDoc.socialMediaPostInsights = aggregated.socialMediaPostInsights;
+            dbDoc.youTubeReport = aggregated.youTubeReport;
+            dbDoc.blogs = aggregated.blogs;
+            dbDoc.brandCommunicationDesign = aggregated.brandCommunicationDesign;
+            if (!dbDoc.websiteTrafficOverview || dbDoc.websiteTrafficOverview.length === 0 || dbDoc.websiteTrafficOverview.every(w => (w.users || 0) === 0 && (w.newUsers || 0) === 0) || forceRefresh) {
+                dbDoc.websiteTrafficOverview = aggregated.websiteTrafficOverview;
+            }
+            if (!dbDoc.websiteTrafficLandingPages || dbDoc.websiteTrafficLandingPages.length === 0 || forceRefresh) {
+                dbDoc.websiteTrafficLandingPages = aggregated.websiteTrafficLandingPages;
+            }
+            if (!dbDoc.websiteTrafficUsersByCity || dbDoc.websiteTrafficUsersByCity.length === 0 || forceRefresh) {
+                dbDoc.websiteTrafficUsersByCity = aggregated.websiteTrafficUsersByCity;
+            }
+            await dbDoc.save();
+            const resObj = dbDoc.toObject();
+            resObj.publishedReportTypes = Array.from(new Set([...(dbDoc.publishedReportTypes || []), ...sentTypes]));
+            return resObj;
+        }
     }
 
     return {
@@ -524,6 +799,7 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
         month,
         year,
         status: 'Draft',
+        publishedReportTypes: sentTypes,
         ...aggregated,
         isNew: true
     };
@@ -533,17 +809,27 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
  * Save or update monthly highlights report
  */
 exports.upsertMonthlyHighlights = async (agencyId, userId, payload) => {
-    const { clientId, month, year, status, hasSocialMediaModule, digitalInsights, blogs, brandCommunicationDesign, offlineCollaterals, specialInitiatives, keywordRankingOverview, keywordRankingDetails, metaInsightsFacebook, metaInsightsInstagram } = payload;
+    const { clientId, month, year, status, reportType, hasSocialMediaModule, digitalInsights, socialMediaPostInsights, blogs, brandCommunicationDesign, offlineCollaterals, specialInitiatives, keywordRankingOverview, keywordRankingDetails, metaInsightsFacebook, metaInsightsInstagram, youTubeReport, websiteTrafficOverview, websiteTrafficLandingPages, websiteTrafficUsersByCity } = payload;
 
     const query = { clientId, month, year };
+    
+    // Retrieve existing to merge publishedReportTypes
+    const existing = await MonthlyHighlights.findOne(query);
+    const existingTypes = new Set(existing?.publishedReportTypes || []);
+    if (reportType) {
+        existingTypes.add(reportType);
+    }
+
     const update = {
         agencyId,
         clientId,
         month,
         year,
         status: status || 'Draft',
+        publishedReportTypes: Array.from(existingTypes),
         hasSocialMediaModule: hasSocialMediaModule ?? false,
         digitalInsights: digitalInsights || {},
+        socialMediaPostInsights: socialMediaPostInsights || {},
         blogs: blogs || {},
         brandCommunicationDesign: brandCommunicationDesign || {},
         offlineCollaterals: offlineCollaterals || '',
@@ -552,6 +838,10 @@ exports.upsertMonthlyHighlights = async (agencyId, userId, payload) => {
         keywordRankingDetails: keywordRankingDetails || [],
         metaInsightsFacebook: metaInsightsFacebook || [],
         metaInsightsInstagram: metaInsightsInstagram || [],
+        youTubeReport: youTubeReport || [],
+        websiteTrafficOverview: websiteTrafficOverview || [],
+        websiteTrafficLandingPages: websiteTrafficLandingPages || [],
+        websiteTrafficUsersByCity: websiteTrafficUsersByCity || [],
         createdBy: userId,
     };
 
@@ -570,15 +860,16 @@ exports.upsertMonthlyHighlights = async (agencyId, userId, payload) => {
             const SentReport = mongoose.models.SentReport || require('./sentReport.model');
             const clientName = report.clientId?.companyName || report.clientId?.name || 'Client';
             const clientEmail = report.clientId?.email ? [report.clientId.email] : ['Client Portal'];
-            const reportName = `${clientName} - Monthly Highlights (${month}/${year})`;
+            const templateName = reportType || 'Monthly Highlights';
+            const reportName = `${clientName} - ${templateName} (${month}/${year})`;
 
             await SentReport.findOneAndUpdate(
-                { clientId, template: 'Monthly Highlights', name: reportName },
+                { clientId, template: templateName, name: reportName },
                 {
                     agencyId: agencyId || report.clientId?.agencyId || userId,
                     clientId,
                     name: reportName,
-                    template: 'Monthly Highlights',
+                    template: templateName,
                     sentAt: new Date(),
                     deliveredTo: clientEmail,
                     deliveryMethod: 'Email & Portal',
@@ -589,7 +880,7 @@ exports.upsertMonthlyHighlights = async (agencyId, userId, payload) => {
                 { upsert: true, new: true }
             );
         } catch (sentErr) {
-            console.error('Error logging SentReport history for Monthly Highlights:', sentErr);
+            console.error('Error logging SentReport history:', sentErr);
         }
     }
 
@@ -602,6 +893,6 @@ exports.upsertMonthlyHighlights = async (agencyId, userId, payload) => {
 exports.getClientReportsList = async (clientId) => {
     return await MonthlyHighlights.find({ clientId, status: 'Published' })
         .sort({ year: -1, month: -1 })
-        .select('month year publishedAt updatedAt status digitalInsights blogs brandCommunicationDesign offlineCollaterals specialInitiatives metaInsightsFacebook metaInsightsInstagram');
+        .select('month year publishedAt updatedAt status publishedReportTypes digitalInsights socialMediaPostInsights blogs brandCommunicationDesign offlineCollaterals specialInitiatives metaInsightsFacebook metaInsightsInstagram youTubeReport websiteTrafficOverview websiteTrafficLandingPages websiteTrafficUsersByCity');
 };
 

@@ -10,7 +10,7 @@ import {
 } from 'recharts';
 import api from '../../services/api';
 import { getRecentSentReports, getMonthlyHighlights } from '../../api/reportApi';
-import { generateMonthlyHighlightsPDF } from '../../utils/monthlyHighlightsPdfGenerator';
+import { generateMonthlyHighlightsPDF, generateMetaCampaignCombinedPDF } from '../../utils/monthlyHighlightsPdfGenerator';
 import { useGetClientsQuery } from '../../api/clientApi';
 import { useClientContext } from '../../contexts/ClientContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -29,7 +29,7 @@ import { Sparkles } from 'lucide-react';
 
 const Reports = () => {
   const { role } = useAuth();
-  const { agencyClients } = useClientContext();
+  const { selectedClient: headerSelectedClient, agencyClients } = useClientContext();
   
   const [recentSentReports, setRecentSentReports] = useState([]);
   const [realLeads, setRealLeads] = useState([]);
@@ -38,8 +38,14 @@ const Reports = () => {
   const [isCreateReportModalOpen, setIsCreateReportModalOpen] = useState(false);
   const [selectedReportType, setSelectedReportType] = useState('meta_lead');
 
-  const [selectedClient, setSelectedClient] = useState('all');
+  const [selectedClient, setSelectedClient] = useState(() => headerSelectedClient?._id || 'all');
   const [selectedMonth, setSelectedMonth] = useState(dayjs());
+
+  useEffect(() => {
+    if (headerSelectedClient?._id) {
+      setSelectedClient(headerSelectedClient._id);
+    }
+  }, [headerSelectedClient]);
   
   const { data: clientsData, isLoading: isLoadingClients } = useGetClientsQuery({ limit: 1000 });
   
@@ -217,18 +223,16 @@ const Reports = () => {
 
     if (action === 'edit' || action === 'view') {
       if (clientId) setSelectedClient(clientId);
-      if (record.template?.includes('Lead')) {
-        setSelectedReportType('Meta Campaign Insights – Lead Campaign');
-      } else if (record.template?.includes('Reach')) {
-        setSelectedReportType('Meta Campaign Insights – Reach Campaign');
-      } else if (record.template?.includes('Overview')) {
-        setSelectedReportType('Keyword Ranking Overview');
-      } else if (record.template?.includes('Details')) {
-        setSelectedReportType('Keyword Ranking Details');
-      } else if (record.template?.includes('Facebook')) {
-        setSelectedReportType('Meta Insights – Facebook');
-      } else if (record.template?.includes('Instagram')) {
-        setSelectedReportType('Meta Insights – Instagram');
+      if (record.template?.includes('Keyword')) {
+        setSelectedReportType('Keywords');
+      } else if (record.template?.includes('Meta Campaign') || record.template?.includes('Lead') || record.template?.includes('Reach')) {
+        setSelectedReportType('Meta Campaign');
+      } else if (record.template?.includes('Meta Insights') || record.template?.includes('Facebook') || record.template?.includes('Instagram')) {
+        setSelectedReportType('Meta Insights');
+      } else if (record.template?.includes('Website Traffic') || record.template?.includes('Traffic') || record.template?.includes('Landing') || record.template?.includes('City')) {
+        setSelectedReportType('Website Traffic');
+      } else if (record.template?.includes('Post Insights') || record.template?.includes('Social Media') || record.template?.includes('YouTube')) {
+        setSelectedReportType('Social Media Post Insights');
       } else {
         setSelectedReportType('Highlights of the Month');
       }
@@ -237,21 +241,19 @@ const Reports = () => {
     } else if (action === 'download') {
       const hide = message.loading('Generating PDF report...', 0);
       try {
-        if (record.template === 'Meta Campaign Insights - Lead Campaign' || record.template === 'Meta Lead Campaign Report') {
-          const metaRes = await getMetaLeadCampaigns(clientId);
+        if (record.template?.includes('Meta Campaign') || record.template?.includes('Lead') || record.template?.includes('Reach')) {
+          const [leadRes, reachRes] = await Promise.all([
+            getMetaLeadCampaigns(clientId).catch(() => ({ campaigns: [] })),
+            getMetaReachCampaigns(clientId).catch(() => ({ campaigns: [] }))
+          ]);
           hide();
-          generateMetaLeadCampaignPDF(metaRes, { companyName: clientName });
-          message.success('Meta Lead Campaign PDF report downloaded');
-        } else if (record.template === 'Meta Campaign Insights - Reach Campaign' || record.template === 'Meta Reach Campaign Report' || record.template?.includes('Reach')) {
-          const reachRes = await getMetaReachCampaigns(clientId);
-          hide();
-          generateMetaReachCampaignPDF(reachRes, { companyName: clientName });
-          message.success('Meta Reach Campaign PDF report downloaded');
+          generateMetaCampaignCombinedPDF(leadRes, reachRes, { companyName: clientName });
+          message.success('Meta Campaign PDF report downloaded');
         } else {
           const res = await getMonthlyHighlights(clientId, month, year);
           hide();
           if (res && res.status !== 'NotPublished') {
-            generateMonthlyHighlightsPDF(res, { companyName: clientName });
+            generateMonthlyHighlightsPDF(res, { companyName: clientName }, record.template);
             message.success('PDF report downloaded successfully');
           } else {
             message.error('Report details not found for PDF export');
@@ -387,7 +389,7 @@ const Reports = () => {
         visible={isCreateReportModalOpen}
         onClose={() => setIsCreateReportModalOpen(false)}
         clients={clients}
-        defaultClientId={selectedClient !== 'all' ? selectedClient : (clients[0]?._id || null)}
+        defaultClientId={selectedClient !== 'all' ? selectedClient : (headerSelectedClient?._id || clients[0]?._id || null)}
         defaultReportType={selectedReportType}
         onSuccess={fetchData}
       />

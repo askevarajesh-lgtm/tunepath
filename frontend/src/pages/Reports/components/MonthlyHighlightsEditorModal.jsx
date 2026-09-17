@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, InputNumber, Select, DatePicker, Button, Row, Col, Divider, Typography, message, Spin, Space, Card, Tag, Switch } from 'antd';
-import { RefreshCw, Save, Send, Sparkles, FileText, Share2, Layers, Award, Plus, Trash2 } from 'lucide-react';
+import { Modal, Form, Input, InputNumber, Select, DatePicker, Button, Row, Col, Divider, Typography, message, Spin, Space, Card, Tag, Switch, Pagination } from 'antd';
+import { RefreshCw, Save, Send, Sparkles, FileText, Share2, Layers, Award, Plus, Trash2, Video, Play } from 'lucide-react';
 import dayjs from 'dayjs';
 import { getMonthlyHighlights, upsertMonthlyHighlights } from '../../../api/reportApi';
+import { useClientContext } from '../../../contexts/ClientContext';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
 const { TextArea } = Input;
 
 const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultClientId = null, onSuccess }) => {
+    const { selectedClient: headerSelectedClient } = useClientContext();
     const [form] = Form.useForm();
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -19,6 +21,14 @@ const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultC
     const [keywordDetailsList, setKeywordDetailsList] = useState([]);
     const [metaInsightsFacebookList, setMetaInsightsFacebookList] = useState([]);
     const [metaInsightsInstagramList, setMetaInsightsInstagramList] = useState([]);
+    const [websiteTrafficList, setWebsiteTrafficList] = useState([]);
+    const [websiteTrafficLandingPagesList, setWebsiteTrafficLandingPagesList] = useState([]);
+    const [websiteTrafficUsersByCityList, setWebsiteTrafficUsersByCityList] = useState([]);
+    const [youTubeReportList, setYouTubeReportList] = useState([]);
+    const [landingPagesPage, setLandingPagesPage] = useState(1);
+    const [landingPagesPageSize, setLandingPagesPageSize] = useState(5);
+    const [cityPage, setCityPage] = useState(1);
+    const [cityPageSize, setCityPageSize] = useState(5);
     const [hasSocialMediaModule, setHasSocialMediaModule] = useState(false);
     const [addMonthModalVisible, setAddMonthModalVisible] = useState(false);
     const [selectedMonthToAdd, setSelectedMonthToAdd] = useState(null);
@@ -26,13 +36,15 @@ const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultC
 
     useEffect(() => {
         if (visible) {
-            if (defaultClientId && defaultClientId !== 'all') {
-                setSelectedClient(defaultClientId);
-            } else if (clients.length > 0 && (!selectedClient || selectedClient === 'all')) {
-                setSelectedClient(clients[0]._id);
+            const activeClientId = (defaultClientId && defaultClientId !== 'all')
+                ? defaultClientId
+                : (headerSelectedClient?._id || (clients.length > 0 ? clients[0]._id : null));
+
+            if (activeClientId) {
+                setSelectedClient(activeClientId);
             }
         }
-    }, [visible, defaultClientId, clients]);
+    }, [visible, defaultClientId, headerSelectedClient, clients]);
 
     const loadData = async (clientId, dateVal, refresh = false) => {
         if (!clientId || !dateVal) return;
@@ -55,6 +67,8 @@ const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultC
                     blogsNotes: res.blogs?.notes ?? '',
                     socialMediaPostDesignsCount: res.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0,
                     videosCount: res.brandCommunicationDesign?.videosCount ?? 0,
+                    socialMediaVideoCount: res.socialMediaPostInsights?.videoCount ?? res.brandCommunicationDesign?.videosCount ?? 0,
+                    socialMediaPostCount: res.socialMediaPostInsights?.postCount ?? res.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0,
                     brandCommNotes: res.brandCommunicationDesign?.notes ?? '',
                     offlineCollaterals: res.offlineCollaterals ?? '',
                     specialInitiatives: res.specialInitiatives ?? '',
@@ -98,6 +112,32 @@ const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultC
                 } else {
                     const defaultMetaRows = defaultMonths.map(mStr => ({ month: mStr, views: 0, reach: 0, followers: 0 }));
                     setMetaInsightsInstagramList(defaultMetaRows);
+                }
+
+                if (res.websiteTrafficOverview && Array.isArray(res.websiteTrafficOverview) && res.websiteTrafficOverview.length > 0) {
+                    setWebsiteTrafficList(res.websiteTrafficOverview);
+                } else {
+                    const defaultRows = defaultMonths.map(mStr => ({ month: mStr, users: 0, newUsers: 0 }));
+                    setWebsiteTrafficList(defaultRows);
+                }
+
+                if (res.websiteTrafficLandingPages && Array.isArray(res.websiteTrafficLandingPages) && res.websiteTrafficLandingPages.length > 0) {
+                    setWebsiteTrafficLandingPagesList(res.websiteTrafficLandingPages);
+                } else {
+                    setWebsiteTrafficLandingPagesList([]);
+                }
+
+                if (res.websiteTrafficUsersByCity && Array.isArray(res.websiteTrafficUsersByCity) && res.websiteTrafficUsersByCity.length > 0) {
+                    setWebsiteTrafficUsersByCityList(res.websiteTrafficUsersByCity);
+                } else {
+                    setWebsiteTrafficUsersByCityList([]);
+                }
+
+                if (res.youTubeReport && Array.isArray(res.youTubeReport) && res.youTubeReport.length > 0) {
+                    setYouTubeReportList(res.youTubeReport);
+                } else {
+                    const defaultYT = [{ month: `${monthAbbrs[m - 1]} ${y}`, views: 0, lastMonthSubscribers: 0, totalSubscribers: 0 }];
+                    setYouTubeReportList(defaultYT);
                 }
             }
         } catch (error) {
@@ -308,6 +348,66 @@ const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultC
         setMetaInsightsInstagramList(metaInsightsInstagramList.filter((_, i) => i !== index));
     };
 
+    const handleWebsiteTrafficChange = (index, field, value) => {
+        const updated = [...websiteTrafficList];
+        updated[index] = { ...updated[index], [field]: value };
+        setWebsiteTrafficList(updated);
+    };
+
+    const handleAddWebsiteTrafficRow = () => {
+        const mStr = selectedDate.format('MMM YYYY');
+        setWebsiteTrafficList([
+            ...websiteTrafficList,
+            { month: mStr, users: 0, newUsers: 0 }
+        ]);
+    };
+
+    const handleRemoveWebsiteTrafficRow = (index) => {
+        setWebsiteTrafficList(websiteTrafficList.filter((_, i) => i !== index));
+    };
+
+    const handleWebsiteTrafficLandingPagesChange = (index, field, value) => {
+        const updated = [...websiteTrafficLandingPagesList];
+        updated[index] = { ...updated[index], [field]: value };
+        setWebsiteTrafficLandingPagesList(updated);
+    };
+
+    const handleAddWebsiteTrafficLandingPagesRow = () => {
+        setWebsiteTrafficLandingPagesList([
+            ...websiteTrafficLandingPagesList,
+            { pagePath: '/', views: 0, activeUsers: 0, viewsPerActiveUser: 0, avgEngagementTime: '0s', eventCount: 0 }
+        ]);
+    };
+
+    const handleRemoveWebsiteTrafficLandingPagesRow = (index) => {
+        setWebsiteTrafficLandingPagesList(websiteTrafficLandingPagesList.filter((_, i) => i !== index));
+    };
+
+    const handleWebsiteTrafficUsersByCityChange = (index, field, value) => {
+        const updated = [...websiteTrafficUsersByCityList];
+        updated[index] = { ...updated[index], [field]: value };
+        setWebsiteTrafficUsersByCityList(updated);
+    };
+
+    const handleYouTubeReportChange = (index, field, value) => {
+        const updated = [...youTubeReportList];
+        updated[index] = { ...updated[index], [field]: value };
+        setYouTubeReportList(updated);
+    };
+
+    const handleAddWebsiteTrafficUsersByCityRow = () => {
+        const newList = [
+            ...websiteTrafficUsersByCityList,
+            { city: 'Bengaluru', activeUsers: 0, newUsers: 0, engagedSessions: 0, engagementRate: '0.0%', engagedSessionsPerActiveUser: 0, avgEngagementTime: '0s', eventCount: 0, keyEvents: 0, userKeyEventRate: '0.0%' }
+        ];
+        setWebsiteTrafficUsersByCityList(newList);
+        setCityPage(Math.ceil(newList.length / cityPageSize));
+    };
+
+    const handleRemoveWebsiteTrafficUsersByCityRow = (index) => {
+        setWebsiteTrafficUsersByCityList(websiteTrafficUsersByCityList.filter((_, i) => i !== index));
+    };
+
     const handleSave = async (status = 'Draft') => {
         try {
             const values = await form.validateFields();
@@ -336,6 +436,11 @@ const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultC
                     instagramTotalFollowers: values.instagramTotalFollowers || 0,
                     instagramReach: values.instagramReach || 0,
                 },
+                socialMediaPostInsights: {
+                    videoCount: values.socialMediaVideoCount || 0,
+                    postCount: values.socialMediaPostCount || 0,
+                    totalCount: (values.socialMediaVideoCount || 0) + (values.socialMediaPostCount || 0)
+                },
                 blogs: {
                     count: values.blogsCount || 0,
                     notes: values.blogsNotes || '',
@@ -351,7 +456,11 @@ const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultC
                 keywordRankingOverview: keywordRankingList.filter(k => k.month && k.month.trim() !== ''),
                 keywordRankingDetails: keywordDetailsList.filter(k => k.keyword && k.keyword.trim() !== ''),
                 metaInsightsFacebook: metaInsightsFacebookList.filter(m => m.month && m.month.trim() !== ''),
-                metaInsightsInstagram: metaInsightsInstagramList.filter(m => m.month && m.month.trim() !== '')
+                metaInsightsInstagram: metaInsightsInstagramList.filter(m => m.month && m.month.trim() !== ''),
+                websiteTrafficOverview: websiteTrafficList.filter(w => w.month && w.month.trim() !== ''),
+                websiteTrafficLandingPages: websiteTrafficLandingPagesList.filter(w => w.pagePath && w.pagePath.trim() !== ''),
+                websiteTrafficUsersByCity: websiteTrafficUsersByCityList.filter(w => w.city && w.city.trim() !== ''),
+                youTubeReport: youTubeReportList
             };
 
             await upsertMonthlyHighlights(payload);
@@ -492,6 +601,102 @@ const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultC
                             </Row>
                         </Card>
                     )}
+
+                    {/* 3.12 SOCIAL MEDIA POST INSIGHTS */}
+                    <Card
+                        size="small"
+                        title={
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Share2 size={16} color="#ec4899" />
+                                <strong style={{ fontSize: 14 }}>3.12 Social Media Post Insights</strong>
+                            </div>
+                        }
+                        style={{ marginBottom: 20, borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}
+                    >
+                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
+                            Purpose: Track the number of social media contents published during the month.
+                        </Text>
+                        <Row gutter={[16, 0]}>
+                            <Col span={8}>
+                                <Form.Item name="socialMediaVideoCount" label="Video Posts Published">
+                                    <InputNumber style={{ width: '100%' }} min={0} placeholder="0" />
+                                </Form.Item>
+                            </Col>
+                            <Col span={8}>
+                                <Form.Item name="socialMediaPostCount" label="Standard Posts Published">
+                                    <InputNumber style={{ width: '100%' }} min={0} placeholder="0" />
+                                </Form.Item>
+                            </Col>
+                            <Col span={8}>
+                                <Form.Item label="Total Content Published">
+                                    <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => prevValues.socialMediaVideoCount !== currentValues.socialMediaVideoCount || prevValues.socialMediaPostCount !== currentValues.socialMediaPostCount}>
+                                        {({ getFieldValue }) => {
+                                            const v = getFieldValue('socialMediaVideoCount') || 0;
+                                            const p = getFieldValue('socialMediaPostCount') || 0;
+                                            return <InputNumber style={{ width: '100%' }} disabled value={v + p} />;
+                                        }}
+                                    </Form.Item>
+                                </Form.Item>
+                            </Col>
+                        </Row>
+                    </Card>
+
+                    {/* 3.14 YOUTUBE REPORT */}
+                    <Card
+                        size="small"
+                        title={
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Play size={16} color="#ff0000" />
+                                <strong style={{ fontSize: 14 }}>3.14 YouTube Report</strong>
+                            </div>
+                        }
+                        style={{ marginBottom: 20, borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}
+                    >
+                        <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
+                            Purpose: Simple monthly YouTube performance reporting.
+                        </Text>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {youTubeReportList.map((item, idx) => (
+                                <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-card-subtle, #f9fafb)', padding: '10px 12px', borderRadius: 8 }}>
+                                    <Col span={6}>
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Reporting Month</Text>
+                                        <Input
+                                            value={item.month}
+                                            onChange={e => handleYouTubeReportChange(idx, 'month', e.target.value)}
+                                            placeholder="e.g. Sep 2026"
+                                        />
+                                    </Col>
+                                    <Col span={6}>
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Views during Month</Text>
+                                        <InputNumber
+                                            style={{ width: '100%' }}
+                                            min={0}
+                                            value={item.views}
+                                            onChange={val => handleYouTubeReportChange(idx, 'views', val || 0)}
+                                        />
+                                    </Col>
+                                    <Col span={6}>
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Last Month Subscribers</Text>
+                                        <InputNumber
+                                            style={{ width: '100%' }}
+                                            min={0}
+                                            value={item.lastMonthSubscribers}
+                                            onChange={val => handleYouTubeReportChange(idx, 'lastMonthSubscribers', val || 0)}
+                                        />
+                                    </Col>
+                                    <Col span={6}>
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Total Subscribers</Text>
+                                        <InputNumber
+                                            style={{ width: '100%' }}
+                                            min={0}
+                                            value={item.totalSubscribers}
+                                            onChange={val => handleYouTubeReportChange(idx, 'totalSubscribers', val || 0)}
+                                        />
+                                    </Col>
+                                </Row>
+                            ))}
+                        </div>
+                    </Card>
 
                     {/* BLOGS */}
                     <Card
@@ -879,6 +1084,301 @@ const MonthlyHighlightsEditorModal = ({ visible, onClose, clients = [], defaultC
                                     </Col>
                                 </Row>
                             ))}
+                        </div>
+                    </Card>
+
+                    {/* WEBSITE TRAFFIC – OVERVIEW */}
+                    <Card
+                        size="small"
+                        style={{ marginBottom: 20, borderRadius: 12, border: '1px solid var(--border-color)' }}
+                        title={
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div>
+                                    <strong style={{ fontSize: 14 }}>Website Traffic – Overview</strong>
+                                    <Text type="secondary" style={{ fontSize: 11, display: 'block', fontWeight: 'normal' }}>
+                                        Show monthly website traffic trend from Google Analytics (Month, Users, New Users).
+                                    </Text>
+                                </div>
+                                <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={handleAddWebsiteTrafficRow}>
+                                    Add Row
+                                </Button>
+                            </div>
+                        }
+                    >
+                        <div style={{ padding: '4px 0' }}>
+                            {websiteTrafficList.map((item, idx) => (
+                                <Row key={idx} gutter={[12, 12]} style={{ marginBottom: 12, background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8 }}>
+                                    <Col span={7}>
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Month</Text>
+                                        <Input
+                                            value={item.month}
+                                            onChange={e => handleWebsiteTrafficChange(idx, 'month', e.target.value)}
+                                        />
+                                    </Col>
+                                    <Col span={7}>
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Users (Total users)</Text>
+                                        <InputNumber
+                                            style={{ width: '100%' }}
+                                            min={0}
+                                            value={item.users}
+                                            onChange={val => handleWebsiteTrafficChange(idx, 'users', val || 0)}
+                                        />
+                                    </Col>
+                                    <Col span={7}>
+                                        <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>New Users (New users)</Text>
+                                        <InputNumber
+                                            style={{ width: '100%' }}
+                                            min={0}
+                                            value={item.newUsers}
+                                            onChange={val => handleWebsiteTrafficChange(idx, 'newUsers', val || 0)}
+                                        />
+                                    </Col>
+                                    <Col span={3} style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingTop: 14 }}>
+                                        <Button type="text" danger icon={<Trash2 size={16} />} onClick={() => handleRemoveWebsiteTrafficRow(idx)} />
+                                    </Col>
+                                </Row>
+                            ))}
+                        </div>
+                    </Card>
+
+                    {/* WEBSITE TRAFFIC – LANDING PAGE VIEWS */}
+                    <Card
+                        size="small"
+                        style={{ marginBottom: 20, borderRadius: 12, border: '1px solid var(--border-color)' }}
+                        title={
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div>
+                                    <strong style={{ fontSize: 14 }}>Website Traffic – Landing Page Views</strong>
+                                    <Text type="secondary" style={{ fontSize: 11, display: 'block', fontWeight: 'normal' }}>
+                                        Show which website pages receive the most traffic and engagement from Google Analytics (Page path, Views, Active users, Views/user, Avg engagement time, Event count).
+                                    </Text>
+                                </div>
+                                <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={handleAddWebsiteTrafficLandingPagesRow}>
+                                    Add Page Row
+                                </Button>
+                            </div>
+                        }
+                    >
+                        <div style={{ padding: '4px 0' }}>
+                            <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: '4px' }}>
+                                {websiteTrafficLandingPagesList.slice((landingPagesPage - 1) * landingPagesPageSize, landingPagesPage * landingPagesPageSize).map((item, pIdx) => {
+                                    const idx = (landingPagesPage - 1) * landingPagesPageSize + pIdx;
+                                    return (
+                                        <Row key={idx} gutter={[8, 8]} style={{ marginBottom: 12, background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8 }}>
+                                            <Col span={7}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Page path</Text>
+                                                <Input
+                                                    value={item.pagePath}
+                                                    onChange={e => handleWebsiteTrafficLandingPagesChange(idx, 'pagePath', e.target.value)}
+                                                />
+                                            </Col>
+                                            <Col span={3}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Views</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    min={0}
+                                                    value={item.views}
+                                                    onChange={val => handleWebsiteTrafficLandingPagesChange(idx, 'views', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={3}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Active Users</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    min={0}
+                                                    value={item.activeUsers}
+                                                    onChange={val => handleWebsiteTrafficLandingPagesChange(idx, 'activeUsers', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={3}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Views / User</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    step={0.01}
+                                                    min={0}
+                                                    value={item.viewsPerActiveUser}
+                                                    onChange={val => handleWebsiteTrafficLandingPagesChange(idx, 'viewsPerActiveUser', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={4}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Avg Engagement</Text>
+                                                <Input
+                                                    value={item.avgEngagementTime}
+                                                    onChange={e => handleWebsiteTrafficLandingPagesChange(idx, 'avgEngagementTime', e.target.value)}
+                                                />
+                                            </Col>
+                                            <Col span={3}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Events</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    min={0}
+                                                    value={item.eventCount}
+                                                    onChange={val => handleWebsiteTrafficLandingPagesChange(idx, 'eventCount', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={1} style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingTop: 14 }}>
+                                                <Button type="text" danger icon={<Trash2 size={16} />} onClick={() => {
+                                                    handleRemoveWebsiteTrafficLandingPagesRow(idx);
+                                                    if ((landingPagesPage - 1) * landingPagesPageSize >= websiteTrafficLandingPagesList.length - 1 && landingPagesPage > 1) {
+                                                        setLandingPagesPage(landingPagesPage - 1);
+                                                    }
+                                                }} />
+                                            </Col>
+                                        </Row>
+                                    );
+                                })}
+                            </div>
+                            {websiteTrafficLandingPagesList.length > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        Showing {(landingPagesPage - 1) * landingPagesPageSize + 1}–{Math.min(landingPagesPage * landingPagesPageSize, websiteTrafficLandingPagesList.length)} of {websiteTrafficLandingPagesList.length} pages
+                                    </Text>
+                                    <Pagination
+                                        size="small"
+                                        current={landingPagesPage}
+                                        pageSize={landingPagesPageSize}
+                                        total={websiteTrafficLandingPagesList.length}
+                                        onChange={(page, size) => {
+                                            setLandingPagesPage(page);
+                                            setLandingPagesPageSize(size);
+                                        }}
+                                        showSizeChanger
+                                        pageSizeOptions={['5', '10', '20', '50']}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    {/* WEBSITE TRAFFIC – USERS BY CITY */}
+                    <Card
+                        size="small"
+                        style={{ marginBottom: 20, borderRadius: 12, border: '1px solid var(--border-color)' }}
+                        title={
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <div>
+                                    <strong style={{ fontSize: 14 }}>Website Traffic – Users by City</strong>
+                                    <Text type="secondary" style={{ fontSize: 11, display: 'block', fontWeight: 'normal' }}>
+                                        Show website audience and engagement by city from Google Analytics (City, Active users, New users, Engaged sessions, Engagement rate, Sessions/user, Avg engagement time, Event count, Key events, User key event rate).
+                                    </Text>
+                                </div>
+                                <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={handleAddWebsiteTrafficUsersByCityRow}>
+                                    Add City Row
+                                </Button>
+                            </div>
+                        }
+                    >
+                        <div style={{ padding: '4px 0' }}>
+                            <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: '4px' }}>
+                                {websiteTrafficUsersByCityList.slice((cityPage - 1) * cityPageSize, cityPage * cityPageSize).map((item, pIdx) => {
+                                    const idx = (cityPage - 1) * cityPageSize + pIdx;
+                                    return (
+                                        <Row key={idx} gutter={[6, 6]} align="middle" style={{ marginBottom: 12, background: 'var(--bg-secondary)', padding: '10px 10px', borderRadius: 8 }}>
+                                            <Col span={4}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>City</Text>
+                                                <Input
+                                                    value={item.city}
+                                                    onChange={e => handleWebsiteTrafficUsersByCityChange(idx, 'city', e.target.value)}
+                                                />
+                                            </Col>
+                                            <Col span={2}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Active Users</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    min={0}
+                                                    value={item.activeUsers}
+                                                    onChange={val => handleWebsiteTrafficUsersByCityChange(idx, 'activeUsers', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={2}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>New Users</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    min={0}
+                                                    value={item.newUsers}
+                                                    onChange={val => handleWebsiteTrafficUsersByCityChange(idx, 'newUsers', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={2}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Engaged</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    min={0}
+                                                    value={item.engagedSessions}
+                                                    onChange={val => handleWebsiteTrafficUsersByCityChange(idx, 'engagedSessions', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={2}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Eng Rate</Text>
+                                                <Input
+                                                    value={item.engagementRate}
+                                                    onChange={e => handleWebsiteTrafficUsersByCityChange(idx, 'engagementRate', e.target.value)}
+                                                />
+                                            </Col>
+                                            <Col span={2}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Sess/User</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    step={0.01}
+                                                    min={0}
+                                                    value={item.engagedSessionsPerActiveUser}
+                                                    onChange={val => handleWebsiteTrafficUsersByCityChange(idx, 'engagedSessionsPerActiveUser', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={3}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Avg Time</Text>
+                                                <Input
+                                                    value={item.avgEngagementTime}
+                                                    onChange={e => handleWebsiteTrafficUsersByCityChange(idx, 'avgEngagementTime', e.target.value)}
+                                                />
+                                            </Col>
+                                            <Col span={2}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Events</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    min={0}
+                                                    value={item.eventCount}
+                                                    onChange={val => handleWebsiteTrafficUsersByCityChange(idx, 'eventCount', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={2}>
+                                                <Text type="secondary" style={{ fontSize: 11, display: 'block', marginBottom: 4 }}>Key Events</Text>
+                                                <InputNumber
+                                                    style={{ width: '100%' }}
+                                                    min={0}
+                                                    value={item.keyEvents}
+                                                    onChange={val => handleWebsiteTrafficUsersByCityChange(idx, 'keyEvents', val || 0)}
+                                                />
+                                            </Col>
+                                            <Col span={1} style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingTop: 14 }}>
+                                                <Button type="text" danger icon={<Trash2 size={16} />} onClick={() => {
+                                                    handleRemoveWebsiteTrafficUsersByCityRow(idx);
+                                                    if ((cityPage - 1) * cityPageSize >= websiteTrafficUsersByCityList.length - 1 && cityPage > 1) {
+                                                        setCityPage(cityPage - 1);
+                                                    }
+                                                }} />
+                                            </Col>
+                                        </Row>
+                                    );
+                                })}
+                            </div>
+                            {websiteTrafficUsersByCityList.length > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+                                    <Text type="secondary" style={{ fontSize: 12 }}>
+                                        Showing {(cityPage - 1) * cityPageSize + 1}–{Math.min(cityPage * cityPageSize, websiteTrafficUsersByCityList.length)} of {websiteTrafficUsersByCityList.length} cities
+                                    </Text>
+                                    <Pagination
+                                        size="small"
+                                        current={cityPage}
+                                        pageSize={cityPageSize}
+                                        total={websiteTrafficUsersByCityList.length}
+                                        onChange={(page, size) => {
+                                            setCityPage(page);
+                                            setCityPageSize(size);
+                                        }}
+                                        showSizeChanger
+                                        pageSizeOptions={['5', '10', '20', '50']}
+                                    />
+                                </div>
+                            )}
                         </div>
                     </Card>
                 </Form>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Modal, Form, Input, InputNumber, Select, DatePicker, Button, Row, Col, Typography, message, Spin, Space, Card, Tag, Switch, Table, Alert } from 'antd';
+import { Modal, Form, Input, InputNumber, Select, DatePicker, Button, Row, Col, Typography, message, Spin, Space, Card, Tag, Switch, Table, Alert, Pagination } from 'antd';
 import { 
   RefreshCw, Save, Send, Sparkles, FileText, Share2, Layers, Award, Plus, Trash2, 
   Megaphone, Download, TrendingUp, Eye 
@@ -13,12 +13,23 @@ import {
   getMetaReachCampaigns,
   generateReport 
 } from '../../../api/reportApi';
+import { useClientContext } from '../../../contexts/ClientContext';
 import { 
   generateHighlightsOfTheMonthPDF,
+  generateKeywordsCombinedPDF,
+  generateMetaInsightsCombinedPDF,
+  generateWebsiteTrafficCombinedPDF,
+  generateSocialMediaInsightsCombinedPDF,
+  generateMetaCampaignCombinedPDF,
   generateKeywordRankingOverviewPDF,
   generateKeywordRankingDetailsPDF,
   generateMetaInsightsFacebookPDF,
-  generateMetaInsightsInstagramPDF
+  generateMetaInsightsInstagramPDF,
+  generateWebsiteTrafficOverviewPDF,
+  generateWebsiteTrafficLandingPagesPDF,
+  generateWebsiteTrafficUsersByCityPDF,
+  generateSocialMediaPostInsightsPDF,
+  generateYouTubeReportPDF
 } from '../../../utils/monthlyHighlightsPdfGenerator';
 import { generateMetaLeadCampaignPDF } from '../../../utils/metaLeadCampaignPdfGenerator';
 import { generateMetaReachCampaignPDF } from '../../../utils/metaReachCampaignPdfGenerator';
@@ -28,16 +39,26 @@ const { Option } = Select;
 const { TextArea } = Input;
 
 const REPORT_TYPES = [
-  { value: 'Highlights of the Month', label: '1. Highlights of the Month', icon: Sparkles, color: '#8b5cf6', desc: 'Management-level summary of completed deliverables, blogs, offline collaterals & initiatives' },
-  { value: 'Keyword Ranking Overview', label: '2. Keyword Ranking Overview', icon: TrendingUp, color: '#10b981', desc: 'Organic keyword position counts (Top 10, Top 20, Top 30 Above) compared across months' },
-  { value: 'Keyword Ranking Details', label: '3. Keyword Ranking Details', icon: Eye, color: '#059669', desc: 'Granular keyword list with search volume, categories, and month-wise rank trends' },
-  { value: 'Meta Insights – Facebook', label: '4. Meta Insights – Facebook', icon: Share2, color: '#1877f2', desc: 'Monthly Facebook page performance (views, reach, and followers growth)' },
-  { value: 'Meta Insights – Instagram', label: '5. Meta Insights – Instagram', icon: Share2, color: '#e1306c', desc: 'Monthly Instagram profile performance (views, reach, and followers growth)' },
-  { value: 'Meta Campaign Insights – Lead Campaign', label: '6. Meta Campaign Insights – Lead Campaign', icon: Megaphone, color: '#3b82f6', desc: 'Campaign-wise reporting for connected Meta Lead campaigns (Campaign Name, Type, Spend, Leads, CPL)' },
-  { value: 'Meta Campaign Insights – Reach Campaign', label: '7. Meta Campaign Insights – Reach Campaign', icon: Megaphone, color: '#ec4899', desc: 'Campaign-wise reporting for connected Meta Reach campaigns (Campaign Name, Type, Spend, Views, Reach, Followers Gained)' },
+  { value: 'Highlights of the Month', label: '1. Highlight of the Month', icon: Sparkles, color: '#8b5cf6', desc: 'Management-level summary of completed deliverables, blogs, offline collaterals & special initiatives' },
+  { value: 'Keywords', label: '2. Keywords', icon: TrendingUp, color: '#10b981', desc: 'Organic keyword ranking performance including Overview (Top 10/20/30) & Granular Ranking Details' },
+  { value: 'Meta Campaign', label: '3. Meta Campaign', icon: Megaphone, color: '#3b82f6', desc: 'Campaign-wise reporting for connected Meta Lead Campaigns & Meta Reach Campaigns' },
+  { value: 'Meta Insights', label: '4. Meta Insights', icon: Share2, color: '#1877f2', desc: 'Monthly profile performance for Facebook Page Insights & Instagram Profile Insights' },
+  { value: 'Website Traffic', label: '5. Website Traffic', icon: Eye, color: '#0284c7', desc: 'Google Analytics traffic metrics including Traffic Overview, Landing Page Views, and Users by City' },
+  { value: 'Social Media Post Insights', label: '6. Social Media Post Insights', icon: Share2, color: '#ec4899', desc: 'Monthly content creation metrics including Published Post Insights (Video/Post) & YouTube Report' }
 ];
 
+const getNormalizedReportType = (rt) => {
+  if (!rt) return 'Highlights of the Month';
+  if (rt === 'Keywords' || rt.includes('Keyword')) return 'Keywords';
+  if (rt === 'Meta Campaign' || rt.includes('Meta Campaign') || rt.includes('Lead') || rt.includes('Reach')) return 'Meta Campaign';
+  if (rt === 'Meta Insights' || rt.includes('Meta Insights') || rt.includes('Facebook') || rt.includes('Instagram')) return 'Meta Insights';
+  if (rt === 'Website Traffic' || rt.includes('Website Traffic') || rt.includes('Landing') || rt.includes('City')) return 'Website Traffic';
+  if (rt === 'Social Media Post Insights' || rt.includes('Social Media') || rt.includes('YouTube') || rt.includes('Post Insights')) return 'Social Media Post Insights';
+  return 'Highlights of the Month';
+};
+
 const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = null, defaultReportType = 'Highlights of the Month', onSuccess }) => {
+  const { selectedClient: headerSelectedClient } = useClientContext();
   const [form] = Form.useForm();
   const [reportType, setReportType] = useState(defaultReportType || 'Highlights of the Month');
   const [loading, setLoading] = useState(false);
@@ -57,18 +78,33 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   const [keywordDetailsList, setKeywordDetailsList] = useState([]);
   const [metaInsightsFacebookList, setMetaInsightsFacebookList] = useState([]);
   const [metaInsightsInstagramList, setMetaInsightsInstagramList] = useState([]);
+  const [websiteTrafficList, setWebsiteTrafficList] = useState([]);
+  const [websiteTrafficLandingPagesList, setWebsiteTrafficLandingPagesList] = useState([]);
+  const [websiteTrafficUsersByCityList, setWebsiteTrafficUsersByCityList] = useState([]);
+  const [landingPagesPage, setLandingPagesPage] = useState(1);
+  const [landingPagesPageSize, setLandingPagesPageSize] = useState(5);
+  const [overviewPage, setOverviewPage] = useState(1);
+  const [overviewPageSize, setOverviewPageSize] = useState(5);
+  const [cityPage, setCityPage] = useState(1);
+  const [cityPageSize, setCityPageSize] = useState(5);
+  const [keywordDetailsPage, setKeywordDetailsPage] = useState(1);
+  const [keywordDetailsPageSize, setKeywordDetailsPageSize] = useState(10);
   const [hasSocialMediaModule, setHasSocialMediaModule] = useState(false);
+  const [socialMediaPostInsights, setSocialMediaPostInsights] = useState({ videoCount: 0, postCount: 0, totalCount: 0 });
+  const [youTubeReportList, setYouTubeReportList] = useState([]);
 
   useEffect(() => {
     if (visible) {
-      if (defaultClientId && defaultClientId !== 'all') {
-        setSelectedClient(defaultClientId);
-      } else if (clients.length > 0 && (!selectedClient || selectedClient === 'all')) {
-        setSelectedClient(clients[0]._id);
+      const activeClientId = (defaultClientId && defaultClientId !== 'all') 
+        ? defaultClientId 
+        : (headerSelectedClient?._id || (clients.length > 0 ? clients[0]._id : null));
+
+      if (activeClientId) {
+        setSelectedClient(activeClientId);
       }
-      setReportType(defaultReportType || 'Highlights of the Month');
+      setReportType(getNormalizedReportType(defaultReportType));
     }
-  }, [visible, defaultClientId, clients, defaultReportType]);
+  }, [visible, defaultClientId, headerSelectedClient, clients, defaultReportType]);
 
   const loadData = async (clientId, dateVal, refresh = false) => {
     if (!clientId || !dateVal) return;
@@ -77,15 +113,13 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       const m = dateVal.month() + 1;
       const y = dateVal.year();
 
-      // Fetch Meta Lead Data
-      if (reportType === 'Meta Campaign Insights – Lead Campaign') {
-        const metaRes = await getMetaLeadCampaigns(clientId);
-        setMetaReportData(metaRes || { campaigns: [], summary: {} });
-      }
-
-      // Fetch Meta Reach Data
-      if (reportType === 'Meta Campaign Insights – Reach Campaign') {
-        const reachRes = await getMetaReachCampaigns(clientId);
+      // Fetch Meta Lead & Reach Data if Meta Campaign selected
+      if (reportType === 'Meta Campaign' || reportType.includes('Meta Campaign') || reportType.includes('Lead') || reportType.includes('Reach')) {
+        const [leadRes, reachRes] = await Promise.all([
+          getMetaLeadCampaigns(clientId).catch(() => ({ campaigns: [], summary: {} })),
+          getMetaReachCampaigns(clientId).catch(() => ({ campaigns: [], summary: {} }))
+        ]);
+        setMetaReportData(leadRes || { campaigns: [], summary: {} });
         setMetaReachReportData(reachRes || { campaigns: [], summary: {} });
       }
 
@@ -145,6 +179,38 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
         } else {
           setMetaInsightsInstagramList(defaultMonths.map(mStr => ({ month: mStr, views: 0, reach: 0, followers: 0 })));
         }
+
+        if (res.websiteTrafficOverview && Array.isArray(res.websiteTrafficOverview) && res.websiteTrafficOverview.length > 0) {
+          setWebsiteTrafficList(res.websiteTrafficOverview);
+        } else {
+          setWebsiteTrafficList(defaultMonths.map(mStr => ({ month: mStr, users: 0, newUsers: 0 })));
+        }
+
+        if (res.websiteTrafficLandingPages && Array.isArray(res.websiteTrafficLandingPages) && res.websiteTrafficLandingPages.length > 0) {
+          setWebsiteTrafficLandingPagesList(res.websiteTrafficLandingPages);
+        } else {
+          setWebsiteTrafficLandingPagesList([]);
+        }
+
+        if (res.websiteTrafficUsersByCity && Array.isArray(res.websiteTrafficUsersByCity)) {
+          setWebsiteTrafficUsersByCityList(res.websiteTrafficUsersByCity);
+        } else {
+          setWebsiteTrafficUsersByCityList([]);
+        }
+
+        if (res.youTubeReport && Array.isArray(res.youTubeReport) && res.youTubeReport.length > 0) {
+          setYouTubeReportList(res.youTubeReport);
+        } else {
+          setYouTubeReportList([{ month: `${monthAbbrs[m - 1]} ${y}`, views: 0, lastMonthSubscribers: 0, totalSubscribers: 0 }]);
+        }
+
+        if (res.socialMediaPostInsights) {
+          setSocialMediaPostInsights(res.socialMediaPostInsights);
+        } else {
+          const v = res.brandCommunicationDesign?.videosCount ?? 0;
+          const p = res.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0;
+          setSocialMediaPostInsights({ videoCount: v, postCount: p, totalCount: v + p });
+        }
       }
     } catch (error) {
       console.error('Error loading report data:', error);
@@ -183,12 +249,19 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   const handleDownloadPDF = async () => {
     const clientInfo = getSelectedClientInfo();
     try {
-      if (reportType === 'Meta Campaign Insights – Lead Campaign') {
-        generateMetaLeadCampaignPDF(metaReportData, clientInfo);
-        message.success('Meta Lead Campaign PDF downloaded');
-      } else if (reportType === 'Meta Campaign Insights – Reach Campaign') {
-        generateMetaReachCampaignPDF(metaReachReportData, clientInfo);
-        message.success('Meta Reach Campaign PDF downloaded');
+      if (reportType === 'Meta Campaign' || reportType.includes('Meta Campaign')) {
+        let leadData = metaReportData;
+        let reachData = metaReachReportData;
+        if ((!leadData.campaigns?.length && !reachData.campaigns?.length) && selectedClient) {
+          const [lRes, rRes] = await Promise.all([
+            getMetaLeadCampaigns(selectedClient).catch(() => ({ campaigns: [] })),
+            getMetaReachCampaigns(selectedClient).catch(() => ({ campaigns: [] }))
+          ]);
+          leadData = lRes || { campaigns: [] };
+          reachData = rRes || { campaigns: [] };
+        }
+        generateMetaCampaignCombinedPDF(leadData, reachData, clientInfo);
+        message.success('Meta Campaign Report PDF downloaded');
       } else {
         const values = form.getFieldsValue();
         const dataPayload = {
@@ -203,24 +276,29 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
           keywordRankingOverview: keywordRankingList,
           keywordRankingDetails: keywordDetailsList,
           metaInsightsFacebook: metaInsightsFacebookList,
-          metaInsightsInstagram: metaInsightsInstagramList
+          metaInsightsInstagram: metaInsightsInstagramList,
+          websiteTrafficOverview: websiteTrafficList,
+          websiteTrafficLandingPages: websiteTrafficLandingPagesList,
+          websiteTrafficUsersByCity: websiteTrafficUsersByCityList,
+          socialMediaPostInsights: socialMediaPostInsights,
+          youTubeReport: youTubeReportList
         };
 
-        if (reportType === 'Highlights of the Month') {
+        if (reportType === 'Keywords' || reportType.includes('Keyword')) {
+          generateKeywordsCombinedPDF(dataPayload, clientInfo);
+          message.success('Keywords Report PDF downloaded');
+        } else if (reportType === 'Meta Insights' || reportType.includes('Meta Insights')) {
+          generateMetaInsightsCombinedPDF(dataPayload, clientInfo);
+          message.success('Meta Insights Report PDF downloaded');
+        } else if (reportType === 'Website Traffic' || reportType.includes('Website Traffic')) {
+          generateWebsiteTrafficCombinedPDF(dataPayload, clientInfo);
+          message.success('Website Traffic Report PDF downloaded');
+        } else if (reportType === 'Social Media Post Insights' || reportType.includes('Social Media')) {
+          generateSocialMediaInsightsCombinedPDF(dataPayload, clientInfo);
+          message.success('Social Media Post Insights PDF downloaded');
+        } else {
           generateHighlightsOfTheMonthPDF(dataPayload, clientInfo);
-          message.success('Highlights of the Month PDF downloaded');
-        } else if (reportType === 'Keyword Ranking Overview') {
-          generateKeywordRankingOverviewPDF(dataPayload, clientInfo);
-          message.success('Keyword Ranking Overview PDF downloaded');
-        } else if (reportType === 'Keyword Ranking Details') {
-          generateKeywordRankingDetailsPDF(dataPayload, clientInfo);
-          message.success('Keyword Ranking Details PDF downloaded');
-        } else if (reportType === 'Meta Insights – Facebook') {
-          generateMetaInsightsFacebookPDF(dataPayload, clientInfo);
-          message.success('Meta Insights – Facebook PDF downloaded');
-        } else if (reportType === 'Meta Insights – Instagram') {
-          generateMetaInsightsInstagramPDF(dataPayload, clientInfo);
-          message.success('Meta Insights – Instagram PDF downloaded');
+          message.success('Highlight of the Month PDF downloaded');
         }
       }
     } catch (err) {
@@ -248,6 +326,7 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
           month: selectedDate.month() + 1,
           year: selectedDate.year(),
           status: 'Published',
+          reportType: reportType,
           hasSocialMediaModule,
           digitalInsights: {
             facebookFollowersIncreased: values.facebookFollowersIncreased || 0,
@@ -264,7 +343,12 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
           keywordRankingOverview: keywordRankingList,
           keywordRankingDetails: keywordDetailsList,
           metaInsightsFacebook: metaInsightsFacebookList,
-          metaInsightsInstagram: metaInsightsInstagramList
+          metaInsightsInstagram: metaInsightsInstagramList,
+          websiteTrafficOverview: websiteTrafficList,
+          websiteTrafficLandingPages: websiteTrafficLandingPagesList,
+          websiteTrafficUsersByCity: websiteTrafficUsersByCityList,
+          socialMediaPostInsights: socialMediaPostInsights,
+          youTubeReport: youTubeReportList
         };
         await upsertMonthlyHighlights(payload);
       }
@@ -289,10 +373,16 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   };
 
   // List modification helpers
-  const handleDeliverableChange = (index, field, value) => {
-    const updated = [...deliverablesList];
+  const handleWebsiteTrafficUsersByCityChange = (index, field, value) => {
+    const updated = [...websiteTrafficUsersByCityList];
     updated[index] = { ...updated[index], [field]: value };
-    setDeliverablesList(updated);
+    setWebsiteTrafficUsersByCityList(updated);
+  };
+
+  const handleYouTubeReportChange = (index, field, value) => {
+    const updated = [...youTubeReportList];
+    updated[index] = { ...updated[index], [field]: value };
+    setYouTubeReportList(updated);
   };
   const handleAddDeliverable = () => setDeliverablesList([...deliverablesList, { name: '', completed: 0, total: 0, unit: 'Completed' }]);
   const handleRemoveDeliverable = (index) => setDeliverablesList(deliverablesList.filter((_, i) => i !== index));
@@ -320,6 +410,8 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       onCancel={onClose}
       style={{ top: 20 }}
       width={1050}
+      bodyStyle={{ maxHeight: 'calc(82vh - 110px)', overflowY: 'auto', paddingRight: 10 }}
+      styles={{ body: { maxHeight: 'calc(82vh - 110px)', overflowY: 'auto', paddingRight: 10 } }}
       title={
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 40, height: 40, borderRadius: 12, background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.15))', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(59, 130, 246, 0.2)' }}>
@@ -407,280 +499,964 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
 
         {/* 1. HIGHLIGHTS OF THE MONTH */}
         {reportType === 'Highlights of the Month' && (
-          <Form form={form} layout="vertical">
-            <Card size="small" title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><FileText size={16} color="#10b981" /><strong style={{ fontSize: 14 }}>Blogs & Articles</strong></div>} style={{ marginBottom: 16, borderRadius: 12 }}>
-              <Row gutter={[16, 0]}>
-                <Col span={6}>
-                  <Form.Item name="blogsCount" label="Number of Blog Updates">
-                    <InputNumber style={{ width: '100%' }} min={0} placeholder="0" />
-                  </Form.Item>
+          <div>
+            <div style={{ marginBottom: 16 }}>
+              <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Highlights of the Month</Title>
+              <Text type="secondary" style={{ fontSize: 12 }}>Summary of blogs, content deliverables, offline branding, and key achievements for the month.</Text>
+            </div>
+
+            <Alert
+              message="Report Requirement Fields"
+              description="Blogs & Articles | Brand Communication & Deliverables | Offline Collaterals & Special Initiatives"
+              type="info"
+              showIcon
+              style={{ marginBottom: 16, borderRadius: 10 }}
+            />
+
+            <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+              <Col span={8}>
+                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>BLOG UPDATES</Text>
+                  <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{form.getFieldValue('blogsCount') || 0}</Title>
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>DELIVERABLES ADDED</Text>
+                  <Title level={4} style={{ margin: '4px 0 0 0', color: '#8b5cf6', fontWeight: 800 }}>{deliverablesList.length}</Title>
+                </Card>
+              </Col>
+              <Col span={8}>
+                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>SPECIAL INITIATIVES</Text>
+                  <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>Active</Title>
+                </Card>
+              </Col>
+            </Row>
+
+            <Form form={form} layout="vertical">
+              <Card size="small" title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><FileText size={16} color="#10b981" /><strong style={{ fontSize: 14 }}>Blogs & Articles</strong></div>} style={{ marginBottom: 16, borderRadius: 12 }}>
+                <Row gutter={[16, 0]}>
+                  <Col span={6}>
+                    <Form.Item name="blogsCount" label="Number of Blog Updates">
+                      <InputNumber style={{ width: '100%' }} min={0} placeholder="0" />
+                    </Form.Item>
+                  </Col>
+                  <Col span={18}>
+                    <Form.Item name="blogsNotes" label="Blog Notes / Topics (Optional)">
+                      <Input placeholder="e.g., Published 2 articles on Orthopedic health tips & IVF treatments" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </Card>
+
+              <Card size="small" title={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Layers size={16} color="#8b5cf6" /><strong style={{ fontSize: 14 }}>Brand Communication & Deliverables</strong></div><Button type="dashed" size="small" icon={<Plus size={14} />} onClick={handleAddDeliverable}>Add Deliverable</Button></div>} style={{ marginBottom: 16, borderRadius: 12 }}>
+                {deliverablesList.map((item, idx) => (
+                  <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
+                    <Col span={10}><Input placeholder="Deliverable name" value={item.name} onChange={e => handleDeliverableChange(idx, 'name', e.target.value)} /></Col>
+                    <Col span={5}><InputNumber style={{ width: '100%' }} placeholder="Completed" value={item.completed} onChange={val => handleDeliverableChange(idx, 'completed', val || 0)} /></Col>
+                    <Col span={5}><InputNumber style={{ width: '100%' }} placeholder="Total" value={item.total} onChange={val => handleDeliverableChange(idx, 'total', val || 0)} /></Col>
+                    <Col span={4} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => handleRemoveDeliverable(idx)} /></Col>
+                  </Row>
+                ))}
+                <Form.Item name="brandCommNotes" label="Summary Notes (Optional)">
+                  <Input placeholder="Summary of brand communication deliverables..." />
+                </Form.Item>
+              </Card>
+
+              <Card size="small" title={<strong style={{ fontSize: 14 }}>Offline Collaterals & Special Initiatives</strong>} style={{ marginBottom: 16, borderRadius: 12 }}>
+                <Form.Item name="offlineCollaterals" label="Offline Collaterals & Internal Branding">
+                  <TextArea rows={2} placeholder="Clinic standees, visiting cards..." />
+                </Form.Item>
+                <Form.Item name="specialInitiatives" label="Special Initiatives & Campaigns">
+                  <TextArea rows={2} placeholder="Free checkup campaign branding..." />
+                </Form.Item>
+              </Card>
+            </Form>
+          </div>
+        )}
+
+        {/* 2. KEYWORD RANKING OVERVIEW & DETAILS */}
+        {(reportType === 'Keywords' || reportType.includes('Keyword')) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Keyword Ranking Overview</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Show overall organic keyword-ranking performance for the selected month and compare it with previous months.</Text>
+                </div>
+                <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => setKeywordRankingList([...keywordRankingList, { month: selectedDate.format('MMM YYYY'), top10: 0, top20: 0, top30Above: 0 }])}>
+                  Add Month Row
+                </Button>
+              </div>
+
+              <Alert
+                message="Report Requirement Fields"
+                description="Month: Reporting month | Top 10 (1-10): Keywords ranked 1 to 10 | Top 20 (1-20): Keywords ranked 1 to 20 | Top 30 Above: Keywords ranked >30"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOP 10 KEYWORDS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{keywordRankingList[keywordRankingList.length - 1]?.top10 || 0}</Title>
+                  </Card>
                 </Col>
-                <Col span={18}>
-                  <Form.Item name="blogsNotes" label="Blog Notes / Topics (Optional)">
-                    <Input placeholder="e.g., Published 2 articles on Orthopedic health tips & IVF treatments" />
-                  </Form.Item>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOP 20 KEYWORDS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{keywordRankingList[keywordRankingList.length - 1]?.top20 || 0}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOP 30 ABOVE</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#8b5cf6', fontWeight: 800 }}>{keywordRankingList[keywordRankingList.length - 1]?.top30Above || 0}</Title>
+                  </Card>
                 </Col>
               </Row>
-            </Card>
 
-            <Card size="small" title={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Layers size={16} color="#8b5cf6" /><strong style={{ fontSize: 14 }}>Brand Communication & Deliverables</strong></div><Button type="dashed" size="small" icon={<Plus size={14} />} onClick={handleAddDeliverable}>Add Deliverable</Button></div>} style={{ marginBottom: 16, borderRadius: 12 }}>
-              {deliverablesList.map((item, idx) => (
-                <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
-                  <Col span={10}><Input placeholder="Deliverable name" value={item.name} onChange={e => handleDeliverableChange(idx, 'name', e.target.value)} /></Col>
-                  <Col span={5}><InputNumber style={{ width: '100%' }} placeholder="Completed" value={item.completed} onChange={val => handleDeliverableChange(idx, 'completed', val || 0)} /></Col>
-                  <Col span={5}><InputNumber style={{ width: '100%' }} placeholder="Total" value={item.total} onChange={val => handleDeliverableChange(idx, 'total', val || 0)} /></Col>
-                  <Col span={4} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => handleRemoveDeliverable(idx)} /></Col>
-                </Row>
-              ))}
-              <Form.Item name="brandCommNotes" label="Summary Notes (Optional)">
-                <Input placeholder="Summary of brand communication deliverables..." />
-              </Form.Item>
-            </Card>
-
-            <Card size="small" title={<strong style={{ fontSize: 14 }}>Offline Collaterals & Special Initiatives</strong>} style={{ marginBottom: 16, borderRadius: 12 }}>
-              <Form.Item name="offlineCollaterals" label="Offline Collaterals & Internal Branding">
-                <TextArea rows={2} placeholder="Clinic standees, visiting cards..." />
-              </Form.Item>
-              <Form.Item name="specialInitiatives" label="Special Initiatives & Campaigns">
-                <TextArea rows={2} placeholder="Free checkup campaign branding..." />
-              </Form.Item>
-            </Card>
-          </Form>
-        )}
-
-        {/* 2. KEYWORD RANKING OVERVIEW */}
-        {reportType === 'Keyword Ranking Overview' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div>
-                <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Keyword Ranking Overview</Title>
-                <Text type="secondary" style={{ fontSize: 12 }}>Show overall organic keyword-ranking performance for the selected month and compare it with previous months.</Text>
-              </div>
-              <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => setKeywordRankingList([...keywordRankingList, { month: selectedDate.format('MMM YYYY'), top10: 0, top20: 0, top30Above: 0 }])}>
-                Add Month Row
-              </Button>
+              <Card size="small" style={{ borderRadius: 12 }}>
+                {keywordRankingList.map((item, idx) => (
+                  <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
+                    <Col span={6}><Text style={{ fontSize: 11, fontWeight: 600 }}>Month</Text><Input value={item.month} onChange={e => { const updated = [...keywordRankingList]; updated[idx].month = e.target.value; setKeywordRankingList(updated); }} /></Col>
+                    <Col span={5}><Text style={{ fontSize: 11 }}>Top 10 (1-10)</Text><InputNumber style={{ width: '100%' }} value={item.top10} onChange={val => { const updated = [...keywordRankingList]; updated[idx].top10 = val || 0; setKeywordRankingList(updated); }} /></Col>
+                    <Col span={5}><Text style={{ fontSize: 11 }}>Top 20 (1-20)</Text><InputNumber style={{ width: '100%' }} value={item.top20} onChange={val => { const updated = [...keywordRankingList]; updated[idx].top20 = val || 0; setKeywordRankingList(updated); }} /></Col>
+                    <Col span={5}><Text style={{ fontSize: 11 }}>Top 30 Above</Text><InputNumber style={{ width: '100%' }} value={item.top30Above} onChange={val => { const updated = [...keywordRankingList]; updated[idx].top30Above = val || 0; setKeywordRankingList(updated); }} /></Col>
+                    <Col span={3} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => setKeywordRankingList(keywordRankingList.filter((_, i) => i !== idx))} /></Col>
+                  </Row>
+                ))}
+              </Card>
             </div>
-            <Card size="small" style={{ borderRadius: 12 }}>
-              {keywordRankingList.map((item, idx) => (
-                <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
-                  <Col span={6}><Text style={{ fontSize: 11, fontWeight: 600 }}>Month</Text><Input value={item.month} onChange={e => { const updated = [...keywordRankingList]; updated[idx].month = e.target.value; setKeywordRankingList(updated); }} /></Col>
-                  <Col span={5}><Text style={{ fontSize: 11 }}>Top 10 (1-10)</Text><InputNumber style={{ width: '100%' }} value={item.top10} onChange={val => { const updated = [...keywordRankingList]; updated[idx].top10 = val || 0; setKeywordRankingList(updated); }} /></Col>
-                  <Col span={5}><Text style={{ fontSize: 11 }}>Top 20 (1-20)</Text><InputNumber style={{ width: '100%' }} value={item.top20} onChange={val => { const updated = [...keywordRankingList]; updated[idx].top20 = val || 0; setKeywordRankingList(updated); }} /></Col>
-                  <Col span={5}><Text style={{ fontSize: 11 }}>Top 30 Above</Text><InputNumber style={{ width: '100%' }} value={item.top30Above} onChange={val => { const updated = [...keywordRankingList]; updated[idx].top30Above = val || 0; setKeywordRankingList(updated); }} /></Col>
-                  <Col span={3} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => setKeywordRankingList(keywordRankingList.filter((_, i) => i !== idx))} /></Col>
-                </Row>
-              ))}
-            </Card>
-          </div>
-        )}
 
-        {/* 3. KEYWORD RANKING DETAILS */}
-        {reportType === 'Keyword Ranking Details' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div>
-                <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Keyword Ranking Details</Title>
-                <Text type="secondary" style={{ fontSize: 12 }}>Granular organic keyword rankings, search volumes, categories, and month-wise rank trends.</Text>
+            {/* Keyword Ranking Details */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Keyword Ranking Details</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Granular organic keyword rankings, search volumes, categories, and month-wise rank trends.</Text>
+                </div>
+                <Button 
+                  type="dashed" 
+                  size="small" 
+                  icon={<Plus size={14} />} 
+                  onClick={() => {
+                    const newList = [...keywordDetailsList, { keyword: '', category: 'General', volume: 0, monthRanks: [{ month: selectedDate.format('MMM YYYY'), rank: '-' }] }];
+                    setKeywordDetailsList(newList);
+                    const lastPage = Math.ceil(newList.length / keywordDetailsPageSize);
+                    setKeywordDetailsPage(lastPage);
+                  }}
+                >
+                  Add Keyword Detail
+                </Button>
               </div>
-              <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => setKeywordDetailsList([...keywordDetailsList, { keyword: '', category: 'General', volume: 0, monthRanks: [{ month: selectedDate.format('MMM YYYY'), rank: '-' }] }])}>
-                Add Keyword Detail
-              </Button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {keywordDetailsList.length > 0 ? (
-                keywordDetailsList.map((item, idx) => (
-                  <Card key={idx} size="small" style={{ background: 'var(--bg-secondary)', borderRadius: 10 }}>
-                    <Row gutter={[12, 8]} align="middle">
-                      <Col span={10}><Input placeholder="Keyword" value={item.keyword} onChange={e => { const updated = [...keywordDetailsList]; updated[idx].keyword = e.target.value; setKeywordDetailsList(updated); }} /></Col>
-                      <Col span={8}><Input placeholder="Category" value={item.category} onChange={e => { const updated = [...keywordDetailsList]; updated[idx].category = e.target.value; setKeywordDetailsList(updated); }} /></Col>
-                      <Col span={4}><InputNumber style={{ width: '100%' }} placeholder="Volume" value={item.volume} onChange={val => { const updated = [...keywordDetailsList]; updated[idx].volume = val || 0; setKeywordDetailsList(updated); }} /></Col>
-                      <Col span={2} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => setKeywordDetailsList(keywordDetailsList.filter((_, i) => i !== idx))} /></Col>
-                    </Row>
+
+              <Alert
+                message="Report Requirement Fields"
+                description="Keyword: Search term | Category: Topic group | Volume: Monthly search volume | Rank History: Month-by-month ranking"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={12}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>KEYWORDS TRACKED</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{keywordDetailsList.length}</Title>
                   </Card>
-                ))
-              ) : (
-                <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>No keyword details added yet. Click "Add Keyword Detail" to add manually.</div>
-              )}
+                </Col>
+                <Col span={12}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL SEARCH VOLUME</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{keywordDetailsList.reduce((acc, k) => acc + (k.volume || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {keywordDetailsList.length > 0 ? (
+                  <>
+                    {keywordDetailsList
+                      .slice((keywordDetailsPage - 1) * keywordDetailsPageSize, keywordDetailsPage * keywordDetailsPageSize)
+                      .map((item, idx) => {
+                        const globalIdx = (keywordDetailsPage - 1) * keywordDetailsPageSize + idx;
+                        return (
+                          <Card key={globalIdx} size="small" style={{ background: 'var(--bg-secondary)', borderRadius: 10 }}>
+                            <Row gutter={[12, 8]} align="middle">
+                              <Col span={10}>
+                                <Input 
+                                  placeholder="Keyword" 
+                                  value={item.keyword} 
+                                  onChange={e => { 
+                                    const updated = [...keywordDetailsList]; 
+                                    updated[globalIdx].keyword = e.target.value; 
+                                    setKeywordDetailsList(updated); 
+                                  }} 
+                                />
+                              </Col>
+                              <Col span={8}>
+                                <Input 
+                                  placeholder="Category" 
+                                  value={item.category} 
+                                  onChange={e => { 
+                                    const updated = [...keywordDetailsList]; 
+                                    updated[globalIdx].category = e.target.value; 
+                                    setKeywordDetailsList(updated); 
+                                  }} 
+                                />
+                              </Col>
+                              <Col span={4}>
+                                <InputNumber 
+                                  style={{ width: '100%' }} 
+                                  placeholder="Volume" 
+                                  value={item.volume} 
+                                  onChange={val => { 
+                                    const updated = [...keywordDetailsList]; 
+                                    updated[globalIdx].volume = val || 0; 
+                                    setKeywordDetailsList(updated); 
+                                  }} 
+                                />
+                              </Col>
+                              <Col span={2} style={{ textAlign: 'right' }}>
+                                <Button 
+                                  type="text" 
+                                  danger 
+                                  icon={<Trash2 size={16} />} 
+                                  onClick={() => {
+                                    const newList = keywordDetailsList.filter((_, i) => i !== globalIdx);
+                                    setKeywordDetailsList(newList);
+                                    if ((keywordDetailsPage - 1) * keywordDetailsPageSize >= newList.length && keywordDetailsPage > 1) {
+                                      setKeywordDetailsPage(keywordDetailsPage - 1);
+                                    }
+                                  }} 
+                                />
+                              </Col>
+                            </Row>
+                          </Card>
+                        );
+                      })}
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                      <Pagination
+                        current={keywordDetailsPage}
+                        pageSize={keywordDetailsPageSize}
+                        total={keywordDetailsList.length}
+                        onChange={(page, pageSize) => {
+                          setKeywordDetailsPage(page);
+                          setKeywordDetailsPageSize(pageSize);
+                        }}
+                        showSizeChanger
+                        pageSizeOptions={['5', '10', '20', '50', '100']}
+                        showTotal={(total, range) => `${range[0]}-${range[1]} of ${total} keywords`}
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-tertiary)' }}>No keyword details added yet. Click "Add Keyword Detail" to add manually.</div>
+                )}
+              </div>
             </div>
           </div>
         )}
 
-        {/* 4. META INSIGHTS – FACEBOOK */}
-        {reportType === 'Meta Insights – Facebook' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div>
-                <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Meta Insights – Facebook</Title>
-                <Text type="secondary" style={{ fontSize: 12 }}>Show monthly Facebook performance (views, reach, and followers).</Text>
+        {/* 3. META CAMPAIGN (LEAD & REACH) */}
+        {(reportType === 'Meta Campaign' || reportType.includes('Meta Campaign')) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* Lead Campaigns */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Meta Campaign Insights – Lead Campaign</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Connected real Meta Lead campaigns from Performance Ads.</Text>
+                </div>
+                <Button icon={<RefreshCw size={14} className={syncing ? 'spin' : ''} />} loading={syncing} onClick={handleSyncMetaAds} style={{ borderRadius: 8, fontWeight: 600 }}>
+                  Sync Meta Ads
+                </Button>
               </div>
-              <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => setMetaInsightsFacebookList([...metaInsightsFacebookList, { month: selectedDate.format('MMM YYYY'), views: 0, reach: 0, followers: 0 }])}>
-                Add Month Row
-              </Button>
+
+              <Alert
+                message="Report Requirement Fields"
+                description="Campaign Name | Type of Campaign: Lead | Amount Spent: Campaign spend | No. of Leads: Leads generated | CPL: Cost per lead"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>AMOUNT SPENT</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{metaReportData.summary?.totalAmountSpent || '₹0'}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>NO. OF LEADS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', fontWeight: 800 }}>{metaReportData.summary?.totalLeads ?? 0}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>BLENDED CPL</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{metaReportData.summary?.avgCpl || '₹0'}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <Table
+                columns={metaColumns}
+                dataSource={metaReportData.campaigns || []}
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                bordered
+              />
             </div>
-            <Card size="small" style={{ borderRadius: 12 }}>
-              {metaInsightsFacebookList.map((item, idx) => (
-                <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
-                  <Col span={6}><Text style={{ fontSize: 11, fontWeight: 600 }}>Month</Text><Input value={item.month} onChange={e => { const updated = [...metaInsightsFacebookList]; updated[idx].month = e.target.value; setMetaInsightsFacebookList(updated); }} /></Col>
-                  <Col span={5}><Text style={{ fontSize: 11 }}>Views</Text><InputNumber style={{ width: '100%' }} value={item.views} onChange={val => { const updated = [...metaInsightsFacebookList]; updated[idx].views = val || 0; setMetaInsightsFacebookList(updated); }} /></Col>
-                  <Col span={5}><Text style={{ fontSize: 11 }}>Reach</Text><InputNumber style={{ width: '100%' }} value={item.reach} onChange={val => { const updated = [...metaInsightsFacebookList]; updated[idx].reach = val || 0; setMetaInsightsFacebookList(updated); }} /></Col>
-                  <Col span={5}><Text style={{ fontSize: 11 }}>Followers</Text><InputNumber style={{ width: '100%' }} value={item.followers} onChange={val => { const updated = [...metaInsightsFacebookList]; updated[idx].followers = val || 0; setMetaInsightsFacebookList(updated); }} /></Col>
-                  <Col span={3} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => setMetaInsightsFacebookList(metaInsightsFacebookList.filter((_, i) => i !== idx))} /></Col>
+
+            {/* Reach Campaigns */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                  <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Meta Campaign Insights – Reach Campaign</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Connected real Meta Reach campaigns from Performance Ads.</Text>
+                </div>
+              </div>
+
+              <Alert
+                message="Report Requirement Fields"
+                description="Campaign Name | Type of Campaign: Reach | Amount Spent: Campaign spend | Views: Views generated | Reach: People reached | Followers Gained: Followers gained"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={6}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>SPENT (INCL. GST)</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{metaReachReportData.summary?.totalAmountSpentInclGst || '₹0'}</Title>
+                  </Card>
+                </Col>
+                <Col span={6}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL VIEWS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', fontWeight: 800 }}>{(metaReachReportData.summary?.totalViews ?? 0).toLocaleString('en-IN')}</Title>
+                  </Card>
+                </Col>
+                <Col span={6}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL REACH</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{(metaReachReportData.summary?.totalReach ?? 0).toLocaleString('en-IN')}</Title>
+                  </Card>
+                </Col>
+                <Col span={6}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>FOLLOWERS GAINED</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#ec4899', fontWeight: 800 }}>{(metaReachReportData.summary?.totalFollowersGained ?? 0).toLocaleString('en-IN')}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <Table
+                columns={metaReachColumns}
+                dataSource={metaReachReportData.campaigns || []}
+                rowKey="id"
+                pagination={false}
+                size="middle"
+                bordered
+                summary={() => {
+                  const summary = metaReachReportData.summary || {};
+                  return (
+                    <Table.Summary fixed>
+                      <Table.Summary.Row style={{ background: 'var(--bg-secondary)', fontWeight: 800 }}>
+                        <Table.Summary.Cell index={0}><Text style={{ fontWeight: 800 }}>Total (Including GST)</Text></Table.Summary.Cell>
+                        <Table.Summary.Cell index={1} align="center"><Tag color="magenta" style={{ borderRadius: 12, padding: '2px 10px', fontWeight: 600, border: 'none' }}>Reach</Tag></Table.Summary.Cell>
+                        <Table.Summary.Cell index={2} align="right"><Text style={{ fontWeight: 800, color: '#10b981' }}>{summary.totalAmountSpentInclGst || '₹0'}</Text></Table.Summary.Cell>
+                        <Table.Summary.Cell index={3} align="right"><Text style={{ fontWeight: 800 }}>{(summary.totalViews ?? 0).toLocaleString('en-IN')}</Text></Table.Summary.Cell>
+                        <Table.Summary.Cell index={4} align="right"><Text style={{ fontWeight: 800, color: '#3b82f6' }}>{(summary.totalReach ?? 0).toLocaleString('en-IN')}</Text></Table.Summary.Cell>
+                        <Table.Summary.Cell index={5} align="right"><Text style={{ fontWeight: 800, color: '#ec4899' }}>{(summary.totalFollowersGained ?? 0).toLocaleString('en-IN')}</Text></Table.Summary.Cell>
+                      </Table.Summary.Row>
+                    </Table.Summary>
+                  );
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 4. META INSIGHTS (FACEBOOK & INSTAGRAM) */}
+        {(reportType === 'Meta Insights' || reportType.includes('Meta Insights')) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Meta Insights – Facebook</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Show monthly Facebook performance (views, reach, and followers).</Text>
+                </div>
+                <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => setMetaInsightsFacebookList([...metaInsightsFacebookList, { month: selectedDate.format('MMM YYYY'), views: 0, reach: 0, followers: 0 }])}>
+                  Add Month Row
+                </Button>
+              </div>
+
+              <Alert
+                message="Report Requirement Fields"
+                description="Month: Reporting month | Views: Facebook views | Reach: People reached | Followers: Followers gained"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL VIEWS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{metaInsightsFacebookList.reduce((acc, i) => acc + (i.views || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL REACH</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{metaInsightsFacebookList.reduce((acc, i) => acc + (i.reach || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>FOLLOWERS GAINED</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#ec4899', fontWeight: 800 }}>{metaInsightsFacebookList.reduce((acc, i) => acc + (i.followers || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <Card size="small" style={{ borderRadius: 12 }}>
+                {metaInsightsFacebookList.map((item, idx) => (
+                  <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
+                    <Col span={6}><Text style={{ fontSize: 11, fontWeight: 600 }}>Month</Text><Input value={item.month} onChange={e => { const updated = [...metaInsightsFacebookList]; updated[idx].month = e.target.value; setMetaInsightsFacebookList(updated); }} /></Col>
+                    <Col span={5}><Text style={{ fontSize: 11 }}>Views</Text><InputNumber style={{ width: '100%' }} value={item.views} onChange={val => { const updated = [...metaInsightsFacebookList]; updated[idx].views = val || 0; setMetaInsightsFacebookList(updated); }} /></Col>
+                    <Col span={5}><Text style={{ fontSize: 11 }}>Reach</Text><InputNumber style={{ width: '100%' }} value={item.reach} onChange={val => { const updated = [...metaInsightsFacebookList]; updated[idx].reach = val || 0; setMetaInsightsFacebookList(updated); }} /></Col>
+                    <Col span={5}><Text style={{ fontSize: 11 }}>Followers</Text><InputNumber style={{ width: '100%' }} value={item.followers} onChange={val => { const updated = [...metaInsightsFacebookList]; updated[idx].followers = val || 0; setMetaInsightsFacebookList(updated); }} /></Col>
+                    <Col span={3} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => setMetaInsightsFacebookList(metaInsightsFacebookList.filter((_, i) => i !== idx))} /></Col>
+                  </Row>
+                ))}
+              </Card>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Meta Insights – Instagram</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Show monthly Instagram performance (views, reach, and followers).</Text>
+                </div>
+                <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => setMetaInsightsInstagramList([...metaInsightsInstagramList, { month: selectedDate.format('MMM YYYY'), views: 0, reach: 0, followers: 0 }])}>
+                  Add Month Row
+                </Button>
+              </div>
+
+              <Alert
+                message="Report Requirement Fields"
+                description="Month: Reporting month | Views: Instagram views | Reach: People reached | Followers: Followers gained"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL VIEWS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{metaInsightsInstagramList.reduce((acc, i) => acc + (i.views || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL REACH</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{metaInsightsInstagramList.reduce((acc, i) => acc + (i.reach || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>FOLLOWERS GAINED</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#ec4899', fontWeight: 800 }}>{metaInsightsInstagramList.reduce((acc, i) => acc + (i.followers || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <Card size="small" style={{ borderRadius: 12 }}>
+                {metaInsightsInstagramList.map((item, idx) => (
+                  <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
+                    <Col span={6}><Text style={{ fontSize: 11, fontWeight: 600 }}>Month</Text><Input value={item.month} onChange={e => { const updated = [...metaInsightsInstagramList]; updated[idx].month = e.target.value; setMetaInsightsInstagramList(updated); }} /></Col>
+                    <Col span={5}><Text style={{ fontSize: 11 }}>Views</Text><InputNumber style={{ width: '100%' }} value={item.views} onChange={val => { const updated = [...metaInsightsInstagramList]; updated[idx].views = val || 0; setMetaInsightsInstagramList(updated); }} /></Col>
+                    <Col span={5}><Text style={{ fontSize: 11 }}>Reach</Text><InputNumber style={{ width: '100%' }} value={item.reach} onChange={val => { const updated = [...metaInsightsInstagramList]; updated[idx].reach = val || 0; setMetaInsightsInstagramList(updated); }} /></Col>
+                    <Col span={5}><Text style={{ fontSize: 11 }}>Followers</Text><InputNumber style={{ width: '100%' }} value={item.followers} onChange={val => { const updated = [...metaInsightsInstagramList]; updated[idx].followers = val || 0; setMetaInsightsInstagramList(updated); }} /></Col>
+                    <Col span={3} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => setMetaInsightsInstagramList(metaInsightsInstagramList.filter((_, i) => i !== idx))} /></Col>
+                  </Row>
+                ))}
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* 5. WEBSITE TRAFFIC (OVERVIEW, LANDING PAGES & CITY) */}
+        {(reportType === 'Website Traffic' || reportType.includes('Website Traffic')) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Website Traffic – Overview</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Show monthly website traffic trend from connected Google Analytics 4 (GA4) data.</Text>
+                </div>
+                <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => {
+                  const newList = [...websiteTrafficList, { month: selectedDate.format('MMM YYYY'), users: 0, newUsers: 0 }];
+                  setWebsiteTrafficList(newList);
+                  setOverviewPage(Math.ceil(newList.length / overviewPageSize));
+                }}>
+                  Add Month Row
+                </Button>
+              </div>
+              <Alert
+                message="Report Requirement Fields"
+                description="Month: Month | Users: Total users | New Users: New users (populated directly from Google Analytics GA4)"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={12}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL USERS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{websiteTrafficList.reduce((acc, u) => acc + (u.users || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={12}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>NEW USERS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{websiteTrafficList.reduce((acc, u) => acc + (u.newUsers || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <Card size="small" style={{ borderRadius: 12 }}>
+                <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {websiteTrafficList.slice((overviewPage - 1) * overviewPageSize, overviewPage * overviewPageSize).map((item, pIdx) => {
+                    const idx = (overviewPage - 1) * overviewPageSize + pIdx;
+                    return (
+                      <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
+                        <Col span={8}><Text style={{ fontSize: 11, fontWeight: 600 }}>Month</Text><Input value={item.month} onChange={e => { const updated = [...websiteTrafficList]; updated[idx].month = e.target.value; setWebsiteTrafficList(updated); }} /></Col>
+                        <Col span={7}><Text style={{ fontSize: 11 }}>Users (Total users)</Text><InputNumber style={{ width: '100%' }} value={item.users} onChange={val => { const updated = [...websiteTrafficList]; updated[idx].users = val || 0; setWebsiteTrafficList(updated); }} /></Col>
+                        <Col span={6}><Text style={{ fontSize: 11 }}>New Users (New users)</Text><InputNumber style={{ width: '100%' }} value={item.newUsers} onChange={val => { const updated = [...websiteTrafficList]; updated[idx].newUsers = val || 0; setWebsiteTrafficList(updated); }} /></Col>
+                        <Col span={3} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => {
+                          const updated = websiteTrafficList.filter((_, i) => i !== idx);
+                          setWebsiteTrafficList(updated);
+                          if ((overviewPage - 1) * overviewPageSize >= updated.length && overviewPage > 1) {
+                            setOverviewPage(overviewPage - 1);
+                          }
+                        }} /></Col>
+                      </Row>
+                    );
+                  })}
+                </div>
+                {websiteTrafficList.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Showing {(overviewPage - 1) * overviewPageSize + 1}–{Math.min(overviewPage * overviewPageSize, websiteTrafficList.length)} of {websiteTrafficList.length} rows
+                    </Text>
+                    <Pagination
+                      size="small"
+                      current={overviewPage}
+                      pageSize={overviewPageSize}
+                      total={websiteTrafficList.length}
+                      onChange={(page, size) => {
+                        setOverviewPage(page);
+                        setOverviewPageSize(size);
+                      }}
+                      showSizeChanger
+                      pageSizeOptions={['5', '10', '20', '50']}
+                    />
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Website Traffic – Landing Page Views</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Show which website pages receive the most traffic and engagement from Google Analytics 4 (GA4).</Text>
+                </div>
+                <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => {
+                  const newList = [...websiteTrafficLandingPagesList, { pagePath: '/', views: 0, activeUsers: 0, viewsPerActiveUser: 0, avgEngagementTime: '0s', eventCount: 0 }];
+                  setWebsiteTrafficLandingPagesList(newList);
+                  setLandingPagesPage(Math.ceil(newList.length / landingPagesPageSize));
+                }}>
+                  Add Page Row
+                </Button>
+              </div>
+              <Alert
+                message="Report Requirement Fields"
+                description="Page path / screen class: Landing/page path | Views: Page views | Active users: Active users | Views per active user: Views per active user | Average engagement time per active user: Average engagement time | Event count: All events"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>PAGE VIEWS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{websiteTrafficLandingPagesList.reduce((acc, p) => acc + (p.views || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>ACTIVE USERS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{websiteTrafficLandingPagesList.reduce((acc, p) => acc + (p.activeUsers || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL EVENTS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#8b5cf6', fontWeight: 800 }}>{websiteTrafficLandingPagesList.reduce((acc, p) => acc + (p.eventCount || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <Card size="small" style={{ borderRadius: 12 }}>
+                <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {websiteTrafficLandingPagesList.slice((landingPagesPage - 1) * landingPagesPageSize, landingPagesPage * landingPagesPageSize).map((item, pIdx) => {
+                    const idx = (landingPagesPage - 1) * landingPagesPageSize + pIdx;
+                    return (
+                      <Row key={idx} gutter={[8, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
+                        <Col span={7}><Text style={{ fontSize: 11, fontWeight: 600 }}>Page path</Text><Input value={item.pagePath} onChange={e => { const updated = [...websiteTrafficLandingPagesList]; updated[idx].pagePath = e.target.value; setWebsiteTrafficLandingPagesList(updated); }} /></Col>
+                        <Col span={3}><Text style={{ fontSize: 11 }}>Views</Text><InputNumber style={{ width: '100%' }} value={item.views} onChange={val => { const updated = [...websiteTrafficLandingPagesList]; updated[idx].views = val || 0; setWebsiteTrafficLandingPagesList(updated); }} /></Col>
+                        <Col span={3}><Text style={{ fontSize: 11 }}>Active users</Text><InputNumber style={{ width: '100%' }} value={item.activeUsers} onChange={val => { const updated = [...websiteTrafficLandingPagesList]; updated[idx].activeUsers = val || 0; setWebsiteTrafficLandingPagesList(updated); }} /></Col>
+                        <Col span={3}><Text style={{ fontSize: 11 }}>Views / User</Text><InputNumber style={{ width: '100%' }} step={0.01} value={item.viewsPerActiveUser} onChange={val => { const updated = [...websiteTrafficLandingPagesList]; updated[idx].viewsPerActiveUser = val || 0; setWebsiteTrafficLandingPagesList(updated); }} /></Col>
+                        <Col span={4}><Text style={{ fontSize: 11 }}>Avg Engagement</Text><Input value={item.avgEngagementTime} onChange={e => { const updated = [...websiteTrafficLandingPagesList]; updated[idx].avgEngagementTime = e.target.value; setWebsiteTrafficLandingPagesList(updated); }} /></Col>
+                        <Col span={3}><Text style={{ fontSize: 11 }}>Events</Text><InputNumber style={{ width: '100%' }} value={item.eventCount} onChange={val => { const updated = [...websiteTrafficLandingPagesList]; updated[idx].eventCount = val || 0; setWebsiteTrafficLandingPagesList(updated); }} /></Col>
+                        <Col span={1} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => {
+                          const updated = websiteTrafficLandingPagesList.filter((_, i) => i !== idx);
+                          setWebsiteTrafficLandingPagesList(updated);
+                          if ((landingPagesPage - 1) * landingPagesPageSize >= updated.length && landingPagesPage > 1) {
+                            setLandingPagesPage(landingPagesPage - 1);
+                          }
+                        }} /></Col>
+                      </Row>
+                    );
+                  })}
+                </div>
+                {websiteTrafficLandingPagesList.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Showing {(landingPagesPage - 1) * landingPagesPageSize + 1}–{Math.min(landingPagesPage * landingPagesPageSize, websiteTrafficLandingPagesList.length)} of {websiteTrafficLandingPagesList.length} pages
+                    </Text>
+                    <Pagination
+                      size="small"
+                      current={landingPagesPage}
+                      pageSize={landingPagesPageSize}
+                      total={websiteTrafficLandingPagesList.length}
+                      onChange={(page, size) => {
+                        setLandingPagesPage(page);
+                        setLandingPagesPageSize(size);
+                      }}
+                      showSizeChanger
+                      pageSizeOptions={['5', '10', '20', '50']}
+                    />
+                  </div>
+                )}
+              </Card>
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Website Traffic – Users by City</Title>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Show website audience and engagement by city from Google Analytics 4 (GA4).</Text>
+                </div>
+                <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => {
+                  const newList = [...websiteTrafficUsersByCityList, { city: 'Bengaluru', activeUsers: 0, newUsers: 0, engagedSessions: 0, engagementRate: '0.0%', engagedSessionsPerActiveUser: 0, avgEngagementTime: '0s', eventCount: 0, keyEvents: 0, userKeyEventRate: '0.0%' }];
+                  setWebsiteTrafficUsersByCityList(newList);
+                  setCityPage(Math.ceil(newList.length / cityPageSize));
+                }}>
+                  Add City Row
+                </Button>
+              </div>
+              <Alert
+                message="Report Requirement Fields"
+                description="City: City | Active users: Active users | New users: New users | Engaged sessions: Engaged sessions | Engagement rate: Engagement rate | Engaged sessions per active user: Sessions / User | Average engagement time: Avg engagement | Event count: All events | Key events: Key events | User key event rate: Key event rate"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>CITIES COVERED</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#6366f1', fontWeight: 800 }}>{websiteTrafficUsersByCityList.length}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>ACTIVE USERS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{websiteTrafficUsersByCityList.reduce((acc, c) => acc + (c.activeUsers || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>ENGAGED SESSIONS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{websiteTrafficUsersByCityList.reduce((acc, c) => acc + (c.engagedSessions || 0), 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <Card size="small" style={{ borderRadius: 12 }}>
+                <div style={{ maxHeight: '360px', overflowY: 'auto', paddingRight: '4px' }}>
+                  {websiteTrafficUsersByCityList.slice((cityPage - 1) * cityPageSize, cityPage * cityPageSize).map((item, pIdx) => {
+                    const idx = (cityPage - 1) * cityPageSize + pIdx;
+                    return (
+                      <Row key={idx} gutter={[6, 6]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 10px', borderRadius: 8, marginBottom: 8 }}>
+                        <Col span={4}><Text style={{ fontSize: 11, fontWeight: 600 }}>City</Text><Input value={item.city} onChange={e => { const updated = [...websiteTrafficUsersByCityList]; updated[idx].city = e.target.value; setWebsiteTrafficUsersByCityList(updated); }} /></Col>
+                        <Col span={2}><Text style={{ fontSize: 11 }}>Active Users</Text><InputNumber style={{ width: '100%' }} value={item.activeUsers} onChange={val => { const updated = [...websiteTrafficUsersByCityList]; updated[idx].activeUsers = val || 0; setWebsiteTrafficUsersByCityList(updated); }} /></Col>
+                        <Col span={2}><Text style={{ fontSize: 11 }}>New Users</Text><InputNumber style={{ width: '100%' }} value={item.newUsers} onChange={val => { const updated = [...websiteTrafficUsersByCityList]; updated[idx].newUsers = val || 0; setWebsiteTrafficUsersByCityList(updated); }} /></Col>
+                        <Col span={2}><Text style={{ fontSize: 11 }}>Engaged</Text><InputNumber style={{ width: '100%' }} value={item.engagedSessions} onChange={val => { const updated = [...websiteTrafficUsersByCityList]; updated[idx].engagedSessions = val || 0; setWebsiteTrafficUsersByCityList(updated); }} /></Col>
+                        <Col span={2}><Text style={{ fontSize: 11 }}>Eng Rate</Text><Input value={item.engagementRate} onChange={e => { const updated = [...websiteTrafficUsersByCityList]; updated[idx].engagementRate = e.target.value; setWebsiteTrafficUsersByCityList(updated); }} /></Col>
+                        <Col span={2}><Text style={{ fontSize: 11 }}>Sess/User</Text><InputNumber style={{ width: '100%' }} step={0.01} value={item.engagedSessionsPerActiveUser} onChange={val => { const updated = [...websiteTrafficUsersByCityList]; updated[idx].engagedSessionsPerActiveUser = val || 0; setWebsiteTrafficUsersByCityList(updated); }} /></Col>
+                        <Col span={3}><Text style={{ fontSize: 11 }}>Avg Time</Text><Input value={item.avgEngagementTime} onChange={e => { const updated = [...websiteTrafficUsersByCityList]; updated[idx].avgEngagementTime = e.target.value; setWebsiteTrafficUsersByCityList(updated); }} /></Col>
+                        <Col span={2}><Text style={{ fontSize: 11 }}>Events</Text><InputNumber style={{ width: '100%' }} value={item.eventCount} onChange={val => { const updated = [...websiteTrafficUsersByCityList]; updated[idx].eventCount = val || 0; setWebsiteTrafficUsersByCityList(updated); }} /></Col>
+                        <Col span={2}><Text style={{ fontSize: 11 }}>Key Events</Text><InputNumber style={{ width: '100%' }} value={item.keyEvents} onChange={val => { const updated = [...websiteTrafficUsersByCityList]; updated[idx].keyEvents = val || 0; setWebsiteTrafficUsersByCityList(updated); }} /></Col>
+                        <Col span={1} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => {
+                          const updated = websiteTrafficUsersByCityList.filter((_, i) => i !== idx);
+                          setWebsiteTrafficUsersByCityList(updated);
+                          if ((cityPage - 1) * cityPageSize >= updated.length && cityPage > 1) {
+                            setCityPage(cityPage - 1);
+                          }
+                        }} /></Col>
+                      </Row>
+                    );
+                  })}
+                </div>
+                {websiteTrafficUsersByCityList.length > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      Showing {(cityPage - 1) * cityPageSize + 1}–{Math.min(cityPage * cityPageSize, websiteTrafficUsersByCityList.length)} of {websiteTrafficUsersByCityList.length} cities
+                    </Text>
+                    <Pagination
+                      size="small"
+                      current={cityPage}
+                      pageSize={cityPageSize}
+                      total={websiteTrafficUsersByCityList.length}
+                      onChange={(page, size) => {
+                        setCityPage(page);
+                        setCityPageSize(size);
+                      }}
+                      showSizeChanger
+                      pageSizeOptions={['5', '10', '20', '50']}
+                    />
+                  </div>
+                )}
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {/* 6. SOCIAL MEDIA POST INSIGHTS (POST INSIGHTS & YOUTUBE REPORT) */}
+        {(reportType === 'Social Media Post Insights' || reportType.includes('Social Media')) && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <div>
+              <div style={{ marginBottom: 16 }}>
+                <Title level={5} style={{ margin: 0, fontWeight: 700 }}>3.12 Social Media Post Insights</Title>
+                <Text type="secondary" style={{ fontSize: 12 }}>Purpose: Track the number of social media contents published during the month.</Text>
+              </div>
+
+              <Alert
+                message="Report Requirement Fields"
+                description="Type of Post: Video / Post | Number of Post: Number published | Total: Total content published"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>VIDEO POSTS PUBLISHED</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{socialMediaPostInsights.videoCount || 0}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>STANDARD POSTS PUBLISHED</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#8b5cf6', fontWeight: 800 }}>{socialMediaPostInsights.postCount || 0}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL CONTENT PUBLISHED</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{(socialMediaPostInsights.videoCount || 0) + (socialMediaPostInsights.postCount || 0)}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <Card size="small" style={{ borderRadius: 12, marginBottom: 16 }}>
+                <Row gutter={[16, 12]} align="middle" style={{ padding: '8px 6px' }}>
+                  <Col span={8}>
+                    <Text style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Video Posts Published</Text>
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      min={0}
+                      value={socialMediaPostInsights.videoCount}
+                      onChange={val => {
+                        const v = val || 0;
+                        setSocialMediaPostInsights(prev => ({
+                          ...prev,
+                          videoCount: v,
+                          totalCount: v + (prev.postCount || 0)
+                        }));
+                      }}
+                    />
+                  </Col>
+                  <Col span={8}>
+                    <Text style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Standard Posts Published</Text>
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      min={0}
+                      value={socialMediaPostInsights.postCount}
+                      onChange={val => {
+                        const p = val || 0;
+                        setSocialMediaPostInsights(prev => ({
+                          ...prev,
+                          postCount: p,
+                          totalCount: (prev.videoCount || 0) + p
+                        }));
+                      }}
+                    />
+                  </Col>
+                  <Col span={8}>
+                    <Text style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Total Content Published</Text>
+                    <InputNumber
+                      style={{ width: '100%' }}
+                      disabled
+                      value={(socialMediaPostInsights.videoCount || 0) + (socialMediaPostInsights.postCount || 0)}
+                    />
+                  </Col>
                 </Row>
-              ))}
-            </Card>
-          </div>
-        )}
+              </Card>
 
-        {/* 5. META INSIGHTS – INSTAGRAM */}
-        {reportType === 'Meta Insights – Instagram' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <div>
-                <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Meta Insights – Instagram</Title>
-                <Text type="secondary" style={{ fontSize: 12 }}>Show monthly Instagram performance (views, reach, and followers).</Text>
-              </div>
-              <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={() => setMetaInsightsInstagramList([...metaInsightsInstagramList, { month: selectedDate.format('MMM YYYY'), views: 0, reach: 0, followers: 0 }])}>
-                Add Month Row
-              </Button>
-            </div>
-            <Card size="small" style={{ borderRadius: 12 }}>
-              {metaInsightsInstagramList.map((item, idx) => (
-                <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
-                  <Col span={6}><Text style={{ fontSize: 11, fontWeight: 600 }}>Month</Text><Input value={item.month} onChange={e => { const updated = [...metaInsightsInstagramList]; updated[idx].month = e.target.value; setMetaInsightsInstagramList(updated); }} /></Col>
-                  <Col span={5}><Text style={{ fontSize: 11 }}>Views</Text><InputNumber style={{ width: '100%' }} value={item.views} onChange={val => { const updated = [...metaInsightsInstagramList]; updated[idx].views = val || 0; setMetaInsightsInstagramList(updated); }} /></Col>
-                  <Col span={5}><Text style={{ fontSize: 11 }}>Reach</Text><InputNumber style={{ width: '100%' }} value={item.reach} onChange={val => { const updated = [...metaInsightsInstagramList]; updated[idx].reach = val || 0; setMetaInsightsInstagramList(updated); }} /></Col>
-                  <Col span={5}><Text style={{ fontSize: 11 }}>Followers</Text><InputNumber style={{ width: '100%' }} value={item.followers} onChange={val => { const updated = [...metaInsightsInstagramList]; updated[idx].followers = val || 0; setMetaInsightsInstagramList(updated); }} /></Col>
-                  <Col span={3} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => setMetaInsightsInstagramList(metaInsightsInstagramList.filter((_, i) => i !== idx))} /></Col>
-                </Row>
-              ))}
-            </Card>
-          </div>
-        )}
-
-        {/* 6. META CAMPAIGN INSIGHTS – LEAD CAMPAIGN */}
-        {reportType === 'Meta Campaign Insights – Lead Campaign' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div>
-                <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Meta Campaign Insights – Lead Campaign</Title>
-                <Text type="secondary" style={{ fontSize: 12 }}>Connected real Meta Lead campaigns from Performance Ads.</Text>
-              </div>
-              <Button icon={<RefreshCw size={14} className={syncing ? 'spin' : ''} />} loading={syncing} onClick={handleSyncMetaAds} style={{ borderRadius: 8, fontWeight: 600 }}>
-                Sync Meta Ads
-              </Button>
+              <Table
+                columns={[
+                  { title: 'Type of Post', dataIndex: 'typeOfPost', key: 'typeOfPost', render: text => <strong style={{ color: 'var(--text-primary)' }}>{text}</strong> },
+                  { title: 'Number Published', dataIndex: 'numberPublished', key: 'numberPublished', align: 'center', render: (val, record) => <Tag color={record.key === 'total' ? 'purple' : 'blue'} style={{ fontSize: 13, padding: '3px 12px', fontWeight: 700 }}>{val || 0}</Tag> }
+                ]}
+                dataSource={[
+                  { key: 'video', typeOfPost: 'Video', numberPublished: socialMediaPostInsights.videoCount || 0 },
+                  { key: 'post', typeOfPost: 'Post', numberPublished: socialMediaPostInsights.postCount || 0 },
+                  { key: 'total', typeOfPost: 'Total Content Published', numberPublished: (socialMediaPostInsights.videoCount || 0) + (socialMediaPostInsights.postCount || 0) }
+                ]}
+                rowKey="key"
+                pagination={false}
+                size="middle"
+                bordered
+              />
             </div>
 
-            <Alert
-              message="Report Requirement Fields"
-              description="Campaign Name | Type of Campaign: Lead | Amount Spent: Campaign spend | No. of Leads: Leads generated | CPL: Cost per lead"
-              type="info"
-              showIcon
-              style={{ marginBottom: 16, borderRadius: 10 }}
-            />
-
-            <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-              <Col span={8}>
-                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>AMOUNT SPENT</Text>
-                  <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{metaReportData.summary?.totalAmountSpent || '₹0'}</Title>
-                </Card>
-              </Col>
-              <Col span={8}>
-                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>NO. OF LEADS</Text>
-                  <Title level={4} style={{ margin: '4px 0 0 0', fontWeight: 800 }}>{metaReportData.summary?.totalLeads ?? 0}</Title>
-                </Card>
-              </Col>
-              <Col span={8}>
-                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>BLENDED CPL</Text>
-                  <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{metaReportData.summary?.avgCpl || '₹0'}</Title>
-                </Card>
-              </Col>
-            </Row>
-
-            <Table
-              columns={metaColumns}
-              dataSource={metaReportData.campaigns || []}
-              rowKey="id"
-              pagination={false}
-              size="middle"
-              bordered
-            />
-          </div>
-        )}
-
-        {/* 7. META CAMPAIGN INSIGHTS – REACH CAMPAIGN */}
-        {reportType === 'Meta Campaign Insights – Reach Campaign' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div>
-                <Title level={5} style={{ margin: 0, fontWeight: 700 }}>Meta Campaign Insights – Reach Campaign</Title>
-                <Text type="secondary" style={{ fontSize: 12 }}>Connected real Meta Reach campaigns from Performance Ads.</Text>
+            {/* YouTube Report Section inside Social Media Post Insights */}
+            <div>
+              <div style={{ marginBottom: 16 }}>
+                <Title level={5} style={{ margin: 0, fontWeight: 700 }}>3.14 YouTube Report</Title>
+                <Text type="secondary" style={{ fontSize: 12 }}>Purpose: Simple monthly YouTube performance reporting.</Text>
               </div>
-              <Button icon={<RefreshCw size={14} className={syncing ? 'spin' : ''} />} loading={syncing} onClick={handleSyncMetaAds} style={{ borderRadius: 8, fontWeight: 600 }}>
-                Sync Meta Ads
-              </Button>
+
+              <Alert
+                message="Report Requirement Fields"
+                description="Month: Reporting month | Views: Views during the month | Last Month Subscribers: Subscriber count from previous month | Total Subscribers: Current total subscribers"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16, borderRadius: 10 }}
+              />
+
+              <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>MONTHLY VIEWS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{(youTubeReportList[0]?.views || 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>LAST MONTH SUBS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{(youTubeReportList[0]?.lastMonthSubscribers || 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL SUBSCRIBERS</Text>
+                    <Title level={4} style={{ margin: '4px 0 0 0', color: '#ec4899', fontWeight: 800 }}>{(youTubeReportList[0]?.totalSubscribers || 0).toLocaleString()}</Title>
+                  </Card>
+                </Col>
+              </Row>
+
+              <Card size="small" style={{ borderRadius: 12, marginBottom: 16 }}>
+                {youTubeReportList.map((item, idx) => (
+                  <Row key={idx} gutter={[16, 12]} align="middle" style={{ padding: '8px 6px' }}>
+                    <Col span={6}>
+                      <Text style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Reporting Month</Text>
+                      <Input
+                        value={item.month}
+                        onChange={e => handleYouTubeReportChange(idx, 'month', e.target.value)}
+                        placeholder="e.g. Sep 2026"
+                      />
+                    </Col>
+                    <Col span={6}>
+                      <Text style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Views during Month</Text>
+                      <InputNumber
+                        style={{ width: '100%' }}
+                        min={0}
+                        value={item.views}
+                        onChange={val => handleYouTubeReportChange(idx, 'views', val || 0)}
+                      />
+                    </Col>
+                    <Col span={6}>
+                      <Text style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Last Month Subscribers</Text>
+                      <InputNumber
+                        style={{ width: '100%' }}
+                        min={0}
+                        value={item.lastMonthSubscribers}
+                        onChange={val => handleYouTubeReportChange(idx, 'lastMonthSubscribers', val || 0)}
+                      />
+                    </Col>
+                    <Col span={6}>
+                      <Text style={{ fontSize: 12, fontWeight: 600, display: 'block', marginBottom: 4 }}>Total Subscribers</Text>
+                      <InputNumber
+                        style={{ width: '100%' }}
+                        min={0}
+                        value={item.totalSubscribers}
+                        onChange={val => handleYouTubeReportChange(idx, 'totalSubscribers', val || 0)}
+                      />
+                    </Col>
+                  </Row>
+                ))}
+              </Card>
+
+              <Table
+                columns={[
+                  { title: 'Field', dataIndex: 'field', key: 'field', render: text => <strong style={{ color: 'var(--text-primary)' }}>{text}</strong> },
+                  { title: 'Requirement', dataIndex: 'requirement', key: 'requirement', align: 'center', render: val => <Tag color="blue" style={{ fontSize: 13, padding: '3px 12px', fontWeight: 700 }}>{val}</Tag> }
+                ]}
+                dataSource={[
+                  { key: 'month', field: 'Month', requirement: youTubeReportList[0]?.month || 'Sep 2026' },
+                  { key: 'views', field: 'Views', requirement: (youTubeReportList[0]?.views || 0).toLocaleString() },
+                  { key: 'lastMonthSubscribers', field: 'Last Month Subscribers', requirement: (youTubeReportList[0]?.lastMonthSubscribers || 0).toLocaleString() },
+                  { key: 'totalSubscribers', field: 'Total Subscribers', requirement: (youTubeReportList[0]?.totalSubscribers || 0).toLocaleString() }
+                ]}
+                rowKey="key"
+                pagination={false}
+                size="middle"
+                bordered
+              />
             </div>
-
-            <Alert
-              message="Report Requirement Fields"
-              description="Campaign Name | Type of Campaign: Reach | Amount Spent: Campaign spend | Views: Views generated | Reach: People reached | Followers Gained: Followers gained"
-              type="info"
-              showIcon
-              style={{ marginBottom: 16, borderRadius: 10 }}
-            />
-
-            <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-              <Col span={6}>
-                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>SPENT (INCL. GST)</Text>
-                  <Title level={4} style={{ margin: '4px 0 0 0', color: '#10b981', fontWeight: 800 }}>{metaReachReportData.summary?.totalAmountSpentInclGst || '₹0'}</Title>
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL VIEWS</Text>
-                  <Title level={4} style={{ margin: '4px 0 0 0', fontWeight: 800 }}>{(metaReachReportData.summary?.totalViews ?? 0).toLocaleString('en-IN')}</Title>
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>TOTAL REACH</Text>
-                  <Title level={4} style={{ margin: '4px 0 0 0', color: '#3b82f6', fontWeight: 800 }}>{(metaReachReportData.summary?.totalReach ?? 0).toLocaleString('en-IN')}</Title>
-                </Card>
-              </Col>
-              <Col span={6}>
-                <Card bodyStyle={{ padding: '14px' }} style={{ borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
-                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 600 }}>FOLLOWERS GAINED</Text>
-                  <Title level={4} style={{ margin: '4px 0 0 0', color: '#ec4899', fontWeight: 800 }}>{(metaReachReportData.summary?.totalFollowersGained ?? 0).toLocaleString('en-IN')}</Title>
-                </Card>
-              </Col>
-            </Row>
-
-            <Table
-              columns={metaReachColumns}
-              dataSource={metaReachReportData.campaigns || []}
-              rowKey="id"
-              pagination={false}
-              size="middle"
-              bordered
-              summary={() => {
-                const summary = metaReachReportData.summary || {};
-                return (
-                  <Table.Summary fixed>
-                    <Table.Summary.Row style={{ background: 'var(--bg-secondary)', fontWeight: 800 }}>
-                      <Table.Summary.Cell index={0}><Text style={{ fontWeight: 800 }}>Total (Including GST)</Text></Table.Summary.Cell>
-                      <Table.Summary.Cell index={1} align="center"><Tag color="magenta" style={{ borderRadius: 12, padding: '2px 10px', fontWeight: 600, border: 'none' }}>Reach</Tag></Table.Summary.Cell>
-                      <Table.Summary.Cell index={2} align="right"><Text style={{ fontWeight: 800, color: '#10b981' }}>{summary.totalAmountSpentInclGst || '₹0'}</Text></Table.Summary.Cell>
-                      <Table.Summary.Cell index={3} align="right"><Text style={{ fontWeight: 800 }}>{(summary.totalViews ?? 0).toLocaleString('en-IN')}</Text></Table.Summary.Cell>
-                      <Table.Summary.Cell index={4} align="right"><Text style={{ fontWeight: 800, color: '#3b82f6' }}>{(summary.totalReach ?? 0).toLocaleString('en-IN')}</Text></Table.Summary.Cell>
-                      <Table.Summary.Cell index={5} align="right"><Text style={{ fontWeight: 800, color: '#ec4899' }}>{(summary.totalFollowersGained ?? 0).toLocaleString('en-IN')}</Text></Table.Summary.Cell>
-                    </Table.Summary.Row>
-                  </Table.Summary>
-                );
-              }}
-            />
           </div>
         )}
       </Spin>

@@ -158,7 +158,6 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
   });
 
   if (['brand_super_admin', 'brand_manager', 'user', 'brand_team_user', 'client_user'].includes(role)) {
-    workspaceChildren.push({ key: '/client/reports', icon: getIcon(FileText), label: 'Monthly Reports' });
     workspaceChildren.push({ key: '/client/workspace/strategy', icon: getIcon(GitMerge), label: 'Strategy', featureId: 'strategy', moduleGroup: 'Workspace', moduleId: 'Strategy' });
     workspaceChildren.push({ key: '/client/workspace/aistudio', icon: getIcon(Bot), label: 'Ai Studio', featureId: 'aistudio', moduleGroup: 'Workspace', moduleId: 'Ai Studio' });
     workspaceChildren.push({ key: '/client/workspace/social', icon: getIcon(MessageCircle), label: 'Social Media', featureId: 'social', moduleGroup: 'Workspace', moduleId: 'Social Media' });
@@ -175,7 +174,6 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
     workspaceChildren.push({ key: '/client/website', icon: getIcon(Globe), label: 'Websites', featureId: 'website', moduleGroup: 'Workspace', moduleId: 'Websites' });
     workspaceChildren.push(buildMarketplaceMenuItem());
   } else {
-    workspaceChildren.push({ key: '/client/reports', icon: getIcon(FileText), label: 'Monthly Reports' });
     workspaceChildren.push({ key: '/client/leads', icon: getIcon(Users), label: 'CRM & Leads', featureId: 'crm', moduleGroup: 'Workspace', moduleId: 'CRM & Leads' });
     workspaceChildren.push({ key: '/client/website', icon: getIcon(Globe), label: 'Websites', featureId: 'website', moduleGroup: 'Workspace', moduleId: 'Websites' });
   }
@@ -208,21 +206,18 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
   const intelligenceChildren = [];
   if (['brand_super_admin', 'brand_manager', 'user', 'brand_team_user', 'client_user'].includes(role)) {
     intelligenceChildren.push({ key: '/client/intelligence/analytics', icon: getIcon(TrendingUp), label: 'Google Analytics', featureId: 'analytics', moduleGroup: 'Intelligence', moduleId: 'Google Analytics' });
-    intelligenceChildren.push({ key: '/client/reports', icon: getIcon(FileText), label: 'Monthly Reports' });
     intelligenceChildren.push({ key: '/client/intelligence/chatgpt', icon: getIcon(MessageCircle), label: 'Chatgpt', featureId: 'chatgpt', moduleGroup: 'Intelligence', moduleId: 'ChatGPT' });
     intelligenceChildren.push({ key: '/client/intelligence/canva', icon: getIcon(Palette), label: 'Canva', featureId: 'canva', moduleGroup: 'Intelligence', moduleId: 'Canva' });
     intelligenceChildren.push({ key: '/client/intelligence/seo', icon: getIcon(Search), label: 'Seo Intelligence', featureId: 'seo', moduleGroup: 'Intelligence', moduleId: 'Seo Intelligence' });
     intelligenceChildren.push({ key: '/client/intelligence/seo-aeo-geo', icon: getIcon(Search), label: 'SEO/AEO/GEO', featureId: 'seo-aeo-geo', moduleGroup: 'Intelligence', moduleId: 'SEO/AEO/GEO' });
   } else if (role === 'agency_client') {
     intelligenceChildren.push({ key: '/client/intelligence/analytics', icon: getIcon(TrendingUp), label: 'Google Analytics', featureId: 'analytics', moduleGroup: 'Intelligence', moduleId: 'Google Analytics' });
-    intelligenceChildren.push({ key: '/client/reports', icon: getIcon(FileText), label: 'Monthly Reports' });
     intelligenceChildren.push({ key: '/client/intelligence/chatgpt', icon: getIcon(MessageCircle), label: 'Chatgpt', featureId: 'chatgpt', moduleGroup: 'Intelligence', moduleId: 'ChatGPT' });
     intelligenceChildren.push({ key: '/client/intelligence/canva', icon: getIcon(Palette), label: 'Canva', featureId: 'canva', moduleGroup: 'Intelligence', moduleId: 'Canva' });
     intelligenceChildren.push({ key: '/client/intelligence/seo', icon: getIcon(Search), label: 'Seo Intelligence', featureId: 'seo', moduleGroup: 'Intelligence', moduleId: 'Seo Intelligence' });
     intelligenceChildren.push({ key: '/client/intelligence/seo-aeo-geo', icon: getIcon(Search), label: 'SEO/AEO/GEO', featureId: 'seo-aeo-geo', moduleGroup: 'Intelligence', moduleId: 'SEO/AEO/GEO' });
   } else {
     intelligenceChildren.push({ key: '/client/intelligence/analytics', icon: getIcon(TrendingUp), label: 'Google Analytics', featureId: 'analytics', moduleGroup: 'Intelligence', moduleId: 'Google Analytics' });
-    intelligenceChildren.push({ key: '/client/reports', icon: getIcon(FileText), label: 'Monthly Reports' });
     intelligenceChildren.push({ key: '/client/intelligence/seo', icon: getIcon(Search), label: 'Seo Intelligence', featureId: 'seo', moduleGroup: 'Intelligence', moduleId: 'Seo Intelligence' });
     intelligenceChildren.push({ key: '/client/intelligence/seo-aeo-geo', icon: getIcon(Search), label: 'SEO/AEO/GEO', featureId: 'seo-aeo-geo', moduleGroup: 'Intelligence', moduleId: 'SEO/AEO/GEO' });
   }

@@ -8,10 +8,16 @@ import { exportToCSV } from '../../../utils/exportUtils';
 
 const { Title, Text } = Typography;
 
-const MonthlyHighlightsCard = ({ clientId, clientName }) => {
-    const [selectedDate, setSelectedDate] = useState(dayjs());
+const MonthlyHighlightsCard = ({ clientId, clientName, initialDate }) => {
+    const [selectedDate, setSelectedDate] = useState(initialDate || dayjs());
     const [loading, setLoading] = useState(false);
     const [reportData, setReportData] = useState(null);
+
+    useEffect(() => {
+        if (initialDate) {
+            setSelectedDate(initialDate);
+        }
+    }, [initialDate]);
 
     const fetchHighlights = async (cId, dateVal) => {
         try {
@@ -319,6 +325,214 @@ const MonthlyHighlightsCard = ({ clientId, clientName }) => {
         }
     ];
 
+    const socialMediaPostInsightsColumns = [
+        {
+            title: 'Type of Post',
+            dataIndex: 'typeOfPost',
+            key: 'typeOfPost',
+            width: '50%',
+            render: text => <strong style={{ color: 'var(--text-primary)', fontSize: 13.5 }}>{text}</strong>
+        },
+        {
+            title: 'Number of Post Published',
+            dataIndex: 'numberPublished',
+            key: 'numberPublished',
+            width: '50%',
+            align: 'center',
+            render: (val, record) => (
+                <Tag color={record.key === 'total' ? 'purple' : 'blue'} style={{ fontSize: 13, padding: '3px 12px', fontWeight: 700 }}>
+                    {val || 0}
+                </Tag>
+            )
+        }
+    ];
+
+    const websiteTrafficColumns = [
+        {
+            title: 'Month',
+            dataIndex: 'month',
+            key: 'month',
+            width: '34%',
+            render: text => <strong style={{ color: 'var(--text-primary)', fontSize: 13.5 }}>{text}</strong>
+        },
+        {
+            title: 'Users (Total users)',
+            dataIndex: 'users',
+            key: 'users',
+            width: '33%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 700, color: 'var(--accent-primary)' }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        },
+        {
+            title: 'New Users (New users)',
+            dataIndex: 'newUsers',
+            key: 'newUsers',
+            width: '33%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 700, color: '#0284c7' }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        }
+    ];
+
+    const websiteTrafficLandingPagesColumns = [
+        {
+            title: 'Page path / screen class',
+            dataIndex: 'pagePath',
+            key: 'pagePath',
+            width: '32%',
+            render: text => <strong style={{ color: 'var(--text-primary)', fontSize: 13 }}>{text}</strong>
+        },
+        {
+            title: 'Views',
+            dataIndex: 'views',
+            key: 'views',
+            width: '13%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        },
+        {
+            title: 'Active users',
+            dataIndex: 'activeUsers',
+            key: 'activeUsers',
+            width: '13%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 600, color: '#3b82f6' }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        },
+        {
+            title: 'Views / Active user',
+            dataIndex: 'viewsPerActiveUser',
+            key: 'viewsPerActiveUser',
+            width: '14%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 600 }}>{val !== undefined ? Number(val).toFixed(2) : '0.00'}</span>
+        },
+        {
+            title: 'Avg engagement time',
+            dataIndex: 'avgEngagementTime',
+            key: 'avgEngagementTime',
+            width: '15%',
+            align: 'right',
+            render: text => <span style={{ fontWeight: 600, color: '#10b981' }}>{text || '0s'}</span>
+        },
+        {
+            title: 'Event count',
+            dataIndex: 'eventCount',
+            key: 'eventCount',
+            width: '13%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 600, color: '#8b5cf6' }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        }
+    ];
+
+    const websiteTrafficUsersByCityColumns = [
+        {
+            title: 'City',
+            dataIndex: 'city',
+            key: 'city',
+            width: '18%',
+            render: text => <strong style={{ color: 'var(--text-primary)', fontSize: 13 }}>{text || '(not set)'}</strong>
+        },
+        {
+            title: 'Active users',
+            dataIndex: 'activeUsers',
+            key: 'activeUsers',
+            width: '10%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 600, color: '#3b82f6' }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        },
+        {
+            title: 'New users',
+            dataIndex: 'newUsers',
+            key: 'newUsers',
+            width: '9%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 600, color: '#0284c7' }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        },
+        {
+            title: 'Engaged sessions',
+            dataIndex: 'engagedSessions',
+            key: 'engagedSessions',
+            width: '10%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 600 }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        },
+        {
+            title: 'Engagement rate',
+            dataIndex: 'engagementRate',
+            key: 'engagementRate',
+            width: '10%',
+            align: 'right',
+            render: text => <span style={{ fontWeight: 600, color: '#10b981' }}>{text || '0.0%'}</span>
+        },
+        {
+            title: 'Engaged sessions / User',
+            dataIndex: 'engagedSessionsPerActiveUser',
+            key: 'engagedSessionsPerActiveUser',
+            width: '11%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 600 }}>{val !== undefined ? Number(val).toFixed(2) : '0.00'}</span>
+        },
+        {
+            title: 'Avg engagement time',
+            dataIndex: 'avgEngagementTime',
+            key: 'avgEngagementTime',
+            width: '11%',
+            align: 'right',
+            render: text => <span style={{ fontWeight: 600, color: '#0ea5e9' }}>{text || '0s'}</span>
+        },
+        {
+            title: 'Event count',
+            dataIndex: 'eventCount',
+            key: 'eventCount',
+            width: '9%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 600, color: '#8b5cf6' }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        },
+        {
+            title: 'Key events',
+            dataIndex: 'keyEvents',
+            key: 'keyEvents',
+            width: '8%',
+            align: 'right',
+            render: val => <span style={{ fontWeight: 700, color: '#ec4899' }}>{val ? Number(val).toLocaleString() : '0'}</span>
+        },
+        {
+            title: 'User key event rate',
+            dataIndex: 'userKeyEventRate',
+            key: 'userKeyEventRate',
+            width: '9%',
+            align: 'right',
+            render: text => <span style={{ fontWeight: 600, color: '#f59e0b' }}>{text || '0.0%'}</span>
+        }
+    ];
+
+    const isSectionPublished = (sectionName) => {
+        if (!reportData) return false;
+        const publishedList = reportData.publishedReportTypes || [];
+        if ((!reportData.publishedReportTypes || reportData.publishedReportTypes.length === 0) && 
+            (reportData.status === 'Sent' || reportData.status === 'Published' || reportData.isSentToClient)) {
+            return true;
+        }
+        return publishedList.some(t => {
+            const lower = (t || '').toLowerCase();
+            if (sectionName === 'Highlights of the Month') return lower.includes('highlight');
+            if (sectionName === 'Keywords') return lower.includes('keyword');
+            if (sectionName === 'Meta Insights') return lower.includes('meta insights') || lower.includes('facebook') || lower.includes('instagram');
+            if (sectionName === 'Social Media Post Insights') return lower.includes('social media') || lower.includes('youtube') || lower.includes('post insights');
+            if (sectionName === 'Website Traffic') return lower.includes('website traffic') || lower.includes('traffic');
+            if (sectionName === 'Meta Campaign') return lower.includes('meta campaign') || lower.includes('lead') || lower.includes('reach');
+            return false;
+        });
+    };
+
+    const hasAnyPublishedSection = reportData && (
+        isSectionPublished('Highlights of the Month') ||
+        isSectionPublished('Keywords') ||
+        isSectionPublished('Meta Insights') ||
+        isSectionPublished('Social Media Post Insights') ||
+        isSectionPublished('Website Traffic') ||
+        isSectionPublished('Meta Campaign')
+    );
+
     return (
         <Card
             className="glassmorphism"
@@ -332,14 +546,14 @@ const MonthlyHighlightsCard = ({ clientId, clientName }) => {
                         <Title level={4} style={{ margin: 0, fontWeight: 800, color: 'var(--accent-primary)' }}>
                             Monthly Performance & Highlights
                         </Title>
-                        {reportData && (
+                        {reportData && hasAnyPublishedSection && (
                             <Tag color="success" style={{ borderRadius: 12, border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', fontWeight: 600 }}>
                                 <CheckCircle2 size={12} style={{ marginRight: 4, display: 'inline' }} /> Published
                             </Tag>
                         )}
                     </div>
                     <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>
-                        Management-level summary of digital highlights and Month-on-Month organic keyword-ranking performance.
+                        Management-level summary of digital highlights and Month-on-Month organic performance.
                     </Text>
                 </div>
 
@@ -351,7 +565,7 @@ const MonthlyHighlightsCard = ({ clientId, clientName }) => {
                         allowClear={false}
                         style={{ borderRadius: 8 }}
                     />
-                    {reportData && (
+                    {reportData && hasAnyPublishedSection && (
                         <>
                             <Button
                                 icon={<Download size={14} />}
@@ -375,131 +589,321 @@ const MonthlyHighlightsCard = ({ clientId, clientName }) => {
 
             {/* TABLE CONTENT */}
             <Spin spinning={loading}>
-                {reportData ? (
+                {reportData && hasAnyPublishedSection ? (
                     <div>
                         {/* HIGHLIGHTS OF THE MONTH */}
-                        <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                                <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <Sparkles size={16} color="var(--accent-primary)" />
+                        {isSectionPublished('Highlights of the Month') && (
+                            <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                        <Sparkles size={16} color="var(--accent-primary)" />
+                                    </div>
+                                    <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Highlights of the Month</Title>
                                 </div>
-                                <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Highlights of the Month</Title>
+                                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 16, marginLeft: 38 }}>
+                                    Purpose: Short management-level summary of completed digital marketing activities and deliverables.
+                                </Text>
+                                <Table
+                                    columns={columns}
+                                    dataSource={dataSource}
+                                    pagination={false}
+                                    bordered
+                                    size="middle"
+                                    rowClassName={() => 'hover-bg'}
+                                    style={{ borderRadius: 10, overflow: 'hidden' }}
+                                />
                             </div>
-                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 16, marginLeft: 38 }}>
-                                Purpose: Short management-level summary of completed digital marketing activities and deliverables.
-                            </Text>
-                            <Table
-                                columns={columns}
-                                dataSource={dataSource}
-                                pagination={false}
-                                bordered
-                                size="middle"
-                                rowClassName={() => 'hover-bg'}
-                                style={{ borderRadius: 10, overflow: 'hidden' }}
-                            />
-                        </div>
+                        )}
 
                         {/* KEYWORD RANKING OVERVIEW */}
-                        <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-                            <div style={{ marginBottom: 16 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Sparkles size={16} color="#10b981" />
+                        {isSectionPublished('Keywords') && (
+                            <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Sparkles size={16} color="#10b981" />
+                                        </div>
+                                        <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Keyword Ranking Overview</Title>
                                     </div>
-                                    <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Keyword Ranking Overview</Title>
+                                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
+                                        Purpose: Show overall organic keyword-ranking performance for the selected month and compare it with previous months.
+                                    </Text>
                                 </div>
-                                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
-                                    Purpose: Show overall organic keyword-ranking performance for the selected month and compare it with previous months.
-                                </Text>
+                                <Table
+                                    columns={keywordColumns}
+                                    dataSource={reportData.keywordRankingOverview || []}
+                                    pagination={false}
+                                    bordered
+                                    size="middle"
+                                    rowKey="month"
+                                    style={{ borderRadius: 10, overflow: 'hidden' }}
+                                />
                             </div>
-                            <Table
-                                columns={keywordColumns}
-                                dataSource={reportData.keywordRankingOverview || []}
-                                pagination={false}
-                                bordered
-                                size="middle"
-                                rowKey="month"
-                                style={{ borderRadius: 10, overflow: 'hidden' }}
-                            />
-                        </div>
+                        )}
 
                         {/* KEYWORD RANKING DETAILS */}
-                        <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-                            <div style={{ marginBottom: 16 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(139, 92, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Sparkles size={16} color="#8b5cf6" />
+                        {isSectionPublished('Keywords') && (
+                            <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(139, 92, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Sparkles size={16} color="#8b5cf6" />
+                                        </div>
+                                        <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Keyword Ranking Details</Title>
                                     </div>
-                                    <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Keyword Ranking Details</Title>
+                                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
+                                        Purpose: Track organic keyword rankings, search volume, categories, and month-wise rank trends.
+                                    </Text>
                                 </div>
-                                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
-                                    Purpose: Track organic keyword rankings, search volume, categories, and month-wise rank trends.
-                                </Text>
+                                <Table
+                                    columns={keywordDetailsColumns}
+                                    dataSource={reportData.keywordRankingDetails || []}
+                                    pagination={{
+                                        pageSize: 10,
+                                        showSizeChanger: true,
+                                        pageSizeOptions: ['5', '10', '20', '50', '100'],
+                                        showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} keywords`
+                                    }}
+                                    bordered
+                                    size="middle"
+                                    rowKey="keyword"
+                                    style={{ borderRadius: 10, overflow: 'hidden' }}
+                                />
                             </div>
-                            <Table
-                                columns={keywordDetailsColumns}
-                                dataSource={reportData.keywordRankingDetails || []}
-                                pagination={false}
-                                bordered
-                                size="middle"
-                                rowKey="keyword"
-                                style={{ borderRadius: 10, overflow: 'hidden' }}
-                            />
-                        </div>
+                        )}
 
                         {/* META INSIGHTS – FACEBOOK */}
-                        <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-                            <div style={{ marginBottom: 16 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(24, 119, 242, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Sparkles size={16} color="#1877f2" />
+                        {isSectionPublished('Meta Insights') && (
+                            <div style={{ marginBottom: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(24, 119, 242, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Sparkles size={16} color="#1877f2" />
+                                        </div>
+                                        <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Meta Insights – Facebook</Title>
                                     </div>
-                                    <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Meta Insights – Facebook</Title>
+                                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
+                                        Purpose: Show monthly Facebook performance (views, reach, and followers).
+                                    </Text>
                                 </div>
-                                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
-                                    Purpose: Show monthly Facebook performance (views, reach, and followers).
-                                </Text>
+                                <Table
+                                    columns={metaFacebookColumns}
+                                    dataSource={reportData.metaInsightsFacebook || []}
+                                    pagination={false}
+                                    bordered
+                                    size="middle"
+                                    rowKey="month"
+                                    style={{ borderRadius: 10, overflow: 'hidden' }}
+                                />
                             </div>
-                            <Table
-                                columns={metaFacebookColumns}
-                                dataSource={reportData.metaInsightsFacebook || []}
-                                pagination={false}
-                                bordered
-                                size="middle"
-                                rowKey="month"
-                                style={{ borderRadius: 10, overflow: 'hidden' }}
-                            />
-                        </div>
+                        )}
 
                         {/* META INSIGHTS – INSTAGRAM */}
-                        <div style={{ padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
-                            <div style={{ marginBottom: 16 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                                    <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(225, 48, 108, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                        <Sparkles size={16} color="#e1306c" />
+                        {isSectionPublished('Meta Insights') && (
+                            <div style={{ padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(225, 48, 108, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Sparkles size={16} color="#e1306c" />
+                                        </div>
+                                        <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Meta Insights – Instagram</Title>
                                     </div>
-                                    <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Meta Insights – Instagram</Title>
+                                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
+                                        Purpose: Show monthly Instagram performance (views, reach, and followers).
+                                    </Text>
                                 </div>
-                                <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
-                                    Purpose: Show monthly Instagram performance (views, reach, and followers).
-                                </Text>
+                                <Table
+                                    columns={metaInstagramColumns}
+                                    dataSource={reportData.metaInsightsInstagram || []}
+                                    pagination={false}
+                                    bordered
+                                    size="middle"
+                                    rowKey="month"
+                                    style={{ borderRadius: 10, overflow: 'hidden' }}
+                                />
                             </div>
-                            <Table
-                                columns={metaInstagramColumns}
-                                dataSource={reportData.metaInsightsInstagram || []}
-                                pagination={false}
-                                bordered
-                                size="middle"
-                                rowKey="month"
-                                style={{ borderRadius: 10, overflow: 'hidden' }}
-                            />
-                        </div>
+                        )}
+
+                        {/* 3.12 SOCIAL MEDIA POST INSIGHTS */}
+                        {isSectionPublished('Social Media Post Insights') && (
+                            <div style={{ marginTop: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(236, 72, 153, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Sparkles size={16} color="#ec4899" />
+                                        </div>
+                                        <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>3.12 Social Media Post Insights</Title>
+                                    </div>
+                                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
+                                        Purpose: Track the number of social media contents published during the month.
+                                    </Text>
+                                </div>
+                                <Table
+                                    columns={socialMediaPostInsightsColumns}
+                                    dataSource={[
+                                        {
+                                            key: 'video',
+                                            typeOfPost: 'Video',
+                                            numberPublished: reportData.socialMediaPostInsights?.videoCount ?? reportData.brandCommunicationDesign?.videosCount ?? 0
+                                        },
+                                        {
+                                            key: 'post',
+                                            typeOfPost: 'Post',
+                                            numberPublished: reportData.socialMediaPostInsights?.postCount ?? reportData.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0
+                                        },
+                                        {
+                                            key: 'total',
+                                            typeOfPost: 'Total Content Published',
+                                            numberPublished: reportData.socialMediaPostInsights?.totalCount ?? (
+                                                (reportData.socialMediaPostInsights?.videoCount ?? reportData.brandCommunicationDesign?.videosCount ?? 0) +
+                                                (reportData.socialMediaPostInsights?.postCount ?? reportData.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0)
+                                            )
+                                        }
+                                    ]}
+                                    pagination={false}
+                                    bordered
+                                    size="middle"
+                                    rowKey="key"
+                                    style={{ borderRadius: 10, overflow: 'hidden' }}
+                                />
+                            </div>
+                        )}
+
+                        {/* 3.14 YOUTUBE REPORT */}
+                        {isSectionPublished('Social Media Post Insights') && (
+                            <div style={{ marginTop: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                <div style={{ marginBottom: 16 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(239, 68, 68, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <Sparkles size={16} color="#ef4444" />
+                                        </div>
+                                        <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>3.14 YouTube Report</Title>
+                                    </div>
+                                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
+                                        Purpose: Simple monthly YouTube performance reporting.
+                                    </Text>
+                                </div>
+                                <Table
+                                    columns={[
+                                        { title: 'Field', dataIndex: 'field', key: 'field', render: text => <strong style={{ color: 'var(--text-primary)' }}>{text}</strong> },
+                                        { title: 'Requirement', dataIndex: 'requirement', key: 'requirement', align: 'center', render: val => <Tag color="blue" style={{ fontSize: 13, padding: '3px 12px', fontWeight: 700 }}>{val}</Tag> }
+                                    ]}
+                                    dataSource={(() => {
+                                        const ytItem = Array.isArray(reportData.youTubeReport) && reportData.youTubeReport.length > 0 
+                                            ? reportData.youTubeReport[0] 
+                                            : (reportData.youTubeReport || {});
+                                        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                                        const monthStr = ytItem.month || `${monthNames[(selectedDate?.month() || 0)]} ${selectedDate?.year() || 2026}`;
+                                        const views = ytItem.views ?? 0;
+                                        const lastMonthSubs = ytItem.lastMonthSubscribers ?? 0;
+                                        const totalSubs = ytItem.totalSubscribers ?? 0;
+                                        return [
+                                            { key: 'month', field: 'Month', requirement: String(monthStr) },
+                                            { key: 'views', field: 'Views', requirement: typeof views === 'number' ? views.toLocaleString() : String(views) },
+                                            { key: 'lastMonthSubscribers', field: 'Last Month Subscribers', requirement: typeof lastMonthSubs === 'number' ? lastMonthSubs.toLocaleString() : String(lastMonthSubs) },
+                                            { key: 'totalSubscribers', field: 'Total Subscribers', requirement: typeof totalSubs === 'number' ? totalSubs.toLocaleString() : String(totalSubs) }
+                                        ];
+                                    })()}
+                                    pagination={false}
+                                    bordered
+                                    size="middle"
+                                    rowKey="key"
+                                    style={{ borderRadius: 10, overflow: 'hidden' }}
+                                />
+                            </div>
+                        )}
+
+                        {/* WEBSITE TRAFFIC */}
+                        {isSectionPublished('Website Traffic') && (
+                            <>
+                                {/* WEBSITE TRAFFIC – OVERVIEW */}
+                                {reportData.websiteTrafficOverview && reportData.websiteTrafficOverview.length > 0 && (
+                                    <div style={{ marginTop: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                        <div style={{ marginBottom: 16 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                                <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(2, 132, 199, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Sparkles size={16} color="#0284c7" />
+                                                </div>
+                                                <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Website Traffic – Overview</Title>
+                                            </div>
+                                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
+                                                Purpose: Show monthly website traffic trend (Users & New Users) from Google Analytics.
+                                            </Text>
+                                        </div>
+                                        <Table
+                                            columns={websiteTrafficColumns}
+                                            dataSource={reportData.websiteTrafficOverview}
+                                            pagination={{ pageSize: 5, showSizeChanger: true, pageSizeOptions: ['5', '10', '20', '50'] }}
+                                            scroll={{ x: 'max-content', y: 350 }}
+                                            bordered
+                                            size="middle"
+                                            rowKey={(record, index) => record.month || index}
+                                            style={{ borderRadius: 10, overflow: 'hidden' }}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* WEBSITE TRAFFIC – LANDING PAGE VIEWS */}
+                                {reportData.websiteTrafficLandingPages && reportData.websiteTrafficLandingPages.length > 0 && (
+                                    <div style={{ marginTop: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                        <div style={{ marginBottom: 16 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                                <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(14, 165, 233, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Sparkles size={16} color="#0ea5e9" />
+                                                </div>
+                                                <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Website Traffic – Landing Page Views</Title>
+                                            </div>
+                                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
+                                                Purpose: Show which website pages receive the most traffic and engagement from Google Analytics.
+                                            </Text>
+                                        </div>
+                                        <Table
+                                            columns={websiteTrafficLandingPagesColumns}
+                                            dataSource={reportData.websiteTrafficLandingPages}
+                                            pagination={{ pageSize: 5, showSizeChanger: true, pageSizeOptions: ['5', '10', '20', '50'] }}
+                                            scroll={{ x: 'max-content', y: 350 }}
+                                            bordered
+                                            size="middle"
+                                            rowKey={(record, index) => record.pagePath || index}
+                                            style={{ borderRadius: 10, overflow: 'hidden' }}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* WEBSITE TRAFFIC – USERS BY CITY */}
+                                {reportData.websiteTrafficUsersByCity && reportData.websiteTrafficUsersByCity.length > 0 && (
+                                    <div style={{ marginTop: 28, padding: 20, background: 'var(--bg-secondary)', borderRadius: 14, border: '1px solid var(--border-color)', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' }}>
+                                        <div style={{ marginBottom: 16 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                                                <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(2, 132, 199, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                    <Sparkles size={16} color="#0284c7" />
+                                                </div>
+                                                <Title level={5} style={{ margin: 0, color: 'var(--accent-primary)', fontWeight: 700 }}>Website Traffic – Users by City</Title>
+                                            </div>
+                                            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginLeft: 38 }}>
+                                                Purpose: Show website audience and engagement by city from Google Analytics.
+                                            </Text>
+                                        </div>
+                                        <Table
+                                            columns={websiteTrafficUsersByCityColumns}
+                                            dataSource={reportData.websiteTrafficUsersByCity}
+                                            pagination={{ pageSize: 5, showSizeChanger: true, pageSizeOptions: ['5', '10', '20', '50'] }}
+                                            scroll={{ x: 'max-content', y: 350 }}
+                                            bordered
+                                            size="middle"
+                                            rowKey={(record, index) => record.city || index}
+                                            style={{ borderRadius: 10, overflow: 'hidden' }}
+                                        />
+                                    </div>
+                                )}
+                            </>
+                        )}
                     </div>
                 ) : (
                     <div style={{ padding: '40px 0', textAlign: 'center', background: 'var(--bg-secondary)', borderRadius: 12, border: '1px border-dashed var(--border-color)' }}>
                         <Sparkles size={32} color="var(--text-tertiary)" style={{ marginBottom: 12 }} />
-                        <Title level={5} style={{ margin: 0, color: 'var(--text-secondary)' }}>No Monthly Highlights Report Available</Title>
-                        <Text type="secondary">There is no published management summary report for {selectedDate.format('MMMM YYYY')}.</Text>
+                        <Title level={5} style={{ margin: 0, color: 'var(--text-secondary)' }}>No Published Reports Available</Title>
+                        <Text type="secondary">No report has been sent or published for {selectedDate.format('MMMM YYYY')} yet.</Text>
                     </div>
                 )}
             </Spin>

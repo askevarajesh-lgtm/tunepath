@@ -197,9 +197,133 @@ async function getOrganicPageBreakdown(propertyId, startDate, endDate, limit = 1
   }
 }
 
+async function getLandingPagesReport(propertyId, startDate, endDate, limit = 20) {
+  const client = getClient();
+  if (!client || !propertyId) return { connected: false, rows: [] };
+
+  try {
+    const [response] = await client.runReport({
+      property: `properties/${propertyId}`,
+      dateRanges: [{ startDate, endDate }],
+      dimensions: [{ name: 'pagePath' }],
+      metrics: [
+        { name: 'screenPageViews' },
+        { name: 'activeUsers' },
+        { name: 'screenPageViewsPerUser' },
+        { name: 'userEngagementDuration' },
+        { name: 'eventCount' }
+      ],
+      orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+      limit
+    });
+
+    const rows = (response.rows || []).map(r => {
+      const views = num(r.metricValues[0].value);
+      const activeUsers = num(r.metricValues[1].value);
+      const viewsPerActiveUser = num(r.metricValues[2].value);
+      const totalEngagementSecs = num(r.metricValues[3].value);
+      const eventCount = num(r.metricValues[4].value);
+
+      const avgSecs = activeUsers > 0 ? Math.round(totalEngagementSecs / activeUsers) : 0;
+      const mins = Math.floor(avgSecs / 60);
+      const secs = avgSecs % 60;
+      const avgEngagementTime = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+      return {
+        pagePath: r.dimensionValues[0].value || '/',
+        views,
+        activeUsers,
+        viewsPerActiveUser: Number(viewsPerActiveUser.toFixed(2)),
+        avgEngagementTime,
+        eventCount
+      };
+    });
+
+    return { connected: true, rows };
+  } catch (error) {
+    logger.error('GA4', `Landing page report failed for property ${propertyId}`, error);
+    return { connected: false, error: error.message, rows: [] };
+  }
+}
+
+async function getCityTrafficReport(propertyIdOrOpts, startDate, endDate, limit = 15) {
+  let propertyId = propertyIdOrOpts;
+  let lim = limit;
+  if (typeof propertyIdOrOpts === 'object' && propertyIdOrOpts !== null) {
+    propertyId = propertyIdOrOpts.propertyId;
+    startDate = propertyIdOrOpts.startDate;
+    endDate = propertyIdOrOpts.endDate;
+    lim = propertyIdOrOpts.limit || 15;
+  }
+
+  const client = getClient();
+  if (!client || !propertyId) return { connected: false, rows: [] };
+
+  try {
+    const [response] = await client.runReport({
+      property: `properties/${propertyId}`,
+      dateRanges: [{ startDate, endDate }],
+      dimensions: [{ name: 'city' }],
+      metrics: [
+        { name: 'activeUsers' },
+        { name: 'newUsers' },
+        { name: 'engagedSessions' },
+        { name: 'engagementRate' },
+        { name: 'userEngagementDuration' },
+        { name: 'eventCount' },
+        { name: 'keyEvents' }
+      ],
+      orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
+      limit: lim
+    });
+
+    const rows = (response.rows || []).map(r => {
+      const city = r.dimensionValues[0].value || '(not set)';
+      const activeUsers = num(r.metricValues[0].value);
+      const newUsers = num(r.metricValues[1].value);
+      const engagedSessions = num(r.metricValues[2].value);
+      const rawEngagementRate = num(r.metricValues[3].value);
+      const totalEngagementSecs = num(r.metricValues[4].value);
+      const eventCount = num(r.metricValues[5].value);
+      const keyEvents = num(r.metricValues[6].value);
+
+      const engagementRate = `${(rawEngagementRate * 100).toFixed(1)}%`;
+      const engagedSessionsPerActiveUser = activeUsers > 0 ? Number((engagedSessions / activeUsers).toFixed(2)) : 0;
+      
+      const avgSecs = activeUsers > 0 ? Math.round(totalEngagementSecs / activeUsers) : 0;
+      const mins = Math.floor(avgSecs / 60);
+      const secs = avgSecs % 60;
+      const avgEngagementTime = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+      const rawUserKeyEventRate = activeUsers > 0 ? (keyEvents / activeUsers) * 100 : 0;
+      const userKeyEventRate = `${rawUserKeyEventRate.toFixed(1)}%`;
+
+      return {
+        city,
+        activeUsers,
+        newUsers,
+        engagedSessions,
+        engagementRate,
+        engagedSessionsPerActiveUser,
+        avgEngagementTime,
+        eventCount,
+        keyEvents,
+        userKeyEventRate
+      };
+    });
+
+    return { connected: true, rows };
+  } catch (error) {
+    logger.error('GA4', `City traffic report failed for property ${propertyId}`, error);
+    return { connected: false, error: error.message, rows: [] };
+  }
+}
+
 module.exports = {
   getOverviewMetrics,
   getBreakdown,
   getDailyTrafficBySourceBucket,
-  getOrganicPageBreakdown
+  getOrganicPageBreakdown,
+  getLandingPagesReport,
+  getCityTrafficReport
 };

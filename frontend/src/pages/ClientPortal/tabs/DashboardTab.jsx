@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Typography, Row, Col, Button, Tag, Empty, Table, Spin, DatePicker, Avatar } from 'antd';
 import { motion } from 'framer-motion';
-import { AlertTriangle, Calendar, CheckCircle2, FileText, Receipt, CheckSquare, TrendingUp, DollarSign } from 'lucide-react';
+import { AlertTriangle, Calendar, CheckCircle2, FileText, Receipt, CheckSquare, TrendingUp, DollarSign, Users } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useFeatures } from '../../../contexts/FeatureContext';
 import BubbleCard from '../../../components/BubbleCard';
@@ -33,6 +33,30 @@ const DashboardTab = () => {
   const [loading, setLoading] = useState(true);
   const [overviewData, setOverviewData] = useState(null);
   const [semrushProject, setSemrushProject] = useState(null);
+  
+  const hasValidProjectScores = React.useMemo(() => {
+    if (!semrushProject) return false;
+    const optScore = semrushProject.optimizationScore;
+    const snap = semrushProject.latestSnapshot;
+    
+    const hasOptScore = optScore && (
+      (optScore.seoScore && optScore.seoScore > 0) ||
+      (optScore.geoScore && optScore.geoScore > 0) ||
+      (optScore.aeoScore && optScore.aeoScore > 0) ||
+      (optScore.overallScore && optScore.overallScore > 0)
+    );
+
+    const hasSnapScore = snap && (
+      (snap.scores?.seo && snap.scores.seo > 0) ||
+      (snap.scores?.geo && snap.scores.geo > 0) ||
+      (snap.scores?.aeo && snap.scores.aeo > 0) ||
+      (snap.scores?.overall && snap.scores.overall > 0) ||
+      (snap.seo?.technicalScore?.value && snap.seo.technicalScore.value > 0) ||
+      (snap.seo?.authorityScore?.value && snap.seo.authorityScore.value > 0)
+    );
+
+    return Boolean(hasOptScore || hasSnapScore);
+  }, [semrushProject]);
   
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [selectedTaskDetails, setSelectedTaskDetails] = useState(null);
@@ -94,10 +118,10 @@ const DashboardTab = () => {
     const currentMonthName = selectedDate.format('MMMM YYYY');
 
     const kpis = [
-      { label: 'ACTIVE PROJECTS', value: stats.activeProjects, sub: `${stats.completedProjects} total completed`, color: 'var(--accent-primary)', icon: <CheckSquare size={20} /> },
+      { label: 'OPEN TASKS', value: stats.openTasksCount || 0, sub: 'In progress execution', color: 'var(--accent-primary)', icon: <CheckSquare size={20} /> },
       { label: 'PENDING APPROVALS', value: pendingApprovals?.length || 0, sub: 'Awaiting your review', color: 'var(--accent-info)', icon: <CheckCircle2 size={20} /> },
-      { label: 'MONTHLY SPEND', value: `₹${(stats.paidAmountThisMonth/100000).toFixed(1)}L`, sub: 'Paid this month', color: 'var(--accent-success)', icon: <DollarSign size={20} /> },
-      { label: 'OUTSTANDING AMOUNT', value: `₹${(stats.outstandingAmount/100000).toFixed(1)}L`, sub: `${stats.pendingInvoicesCount} pending invoices`, color: stats.outstandingAmount > 0 ? 'var(--accent-danger)' : 'var(--accent-success)', icon: <AlertTriangle size={20} /> },
+      { label: 'TASKS COMPLETED', value: stats.completedTasksThisMonth || 0, sub: `Out of ${stats.totalTasksThisMonth || 0} this month`, color: 'var(--accent-success)', icon: <TrendingUp size={20} /> },
+      { label: 'WORKSPACE TEAM', value: stats.totalTeamMembers || 0, sub: `${stats.activeTeamMembers || 0} active members`, color: 'var(--accent-warning)', icon: <Users size={20} /> },
     ];
 
     return (
@@ -156,6 +180,86 @@ const DashboardTab = () => {
           </Row>
         </motion.div>
 
+        {/* AI Optimization Intelligence Scores */}
+        {isSeoFeatureEnabled && (
+          <motion.div variants={itemVariants}>
+            <div style={{ marginBottom: 16 }}>
+              <Title level={2} style={{ margin: '0 0 4px 0', fontWeight: 800 }}>AI Optimization Intelligence</Title>
+              <Text type="secondary" style={{ fontSize: 15, fontWeight: 500 }}>Enterprise SEO, GEO, and AEO tracking and analysis.</Text>
+            </div>
+
+            {hasValidProjectScores ? (
+              <Row gutter={[24, 24]} style={{ marginBottom: 40, alignItems: 'stretch' }}>
+                <Col xs={24} md={12} xl={8}>
+                  <ScoreGaugeCard 
+                    title="SEO Score" 
+                    score={semrushProject.optimizationScore?.seoScore ?? semrushProject.latestSnapshot?.scores?.seo ?? 0} 
+                    previousScore={null} 
+                    color="var(--accent-secondary)"
+                    description="Traditional Search Engine Optimization score based on authority and technical health."
+                    delay={0.1}
+                    details={[
+                      { label: 'Authority Score', ...(semrushProject.latestSnapshot?.seo?.authorityScore || {}) },
+                      { label: 'Technical Health', ...(semrushProject.latestSnapshot?.seo?.technicalScore || {}) },
+                      { label: 'Core Web Vitals', ...(semrushProject.latestSnapshot?.seo?.coreWebVitals || {}) }
+                    ]}
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ScoreGaugeCard 
+                    title="GEO Score" 
+                    score={semrushProject.optimizationScore?.geoScore ?? semrushProject.latestSnapshot?.scores?.geo ?? 0} 
+                    previousScore={null} 
+                    color="var(--accent-warning)"
+                    description="Generative Engine Optimization readiness for AI summaries."
+                    delay={0.2}
+                    details={[
+                      { label: 'E-E-A-T Signals', ...(semrushProject.latestSnapshot?.geo?.eeatSignals || {}) },
+                      { label: 'AI Readability', ...(semrushProject.latestSnapshot?.geo?.aiReadability || {}) },
+                      { label: 'LLM Formatting', ...(semrushProject.latestSnapshot?.geo?.llmFormatting || {}) }
+                    ]}
+                  />
+                </Col>
+                <Col xs={24} md={12} xl={8}>
+                  <ScoreGaugeCard 
+                    title="AEO Score" 
+                    score={semrushProject.optimizationScore?.aeoScore ?? semrushProject.latestSnapshot?.scores?.aeo ?? 0} 
+                    previousScore={null} 
+                    color="var(--accent-info)"
+                    description="Answer Engine Optimization for voice and direct answers."
+                    delay={0.3}
+                    details={[
+                      { label: 'Answer Intent', ...(semrushProject.latestSnapshot?.aeo?.answerIntent || {}) },
+                      { label: 'Conversational', ...(semrushProject.latestSnapshot?.aeo?.conversationalContent || {}) },
+                      { label: 'FAQ Schema', ...(semrushProject.latestSnapshot?.aeo?.faqSchema || {}) }
+                    ]}
+                  />
+                </Col>
+              </Row>
+            ) : (
+              <BubbleCard large style={{ marginBottom: 40, textAlign: 'center', padding: '48px 24px' }}>
+                <div style={{ maxWidth: 500, margin: '0 auto' }}>
+                  <div style={{ background: 'var(--bg-secondary)', width: 80, height: 80, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', border: '1px solid var(--border-color)' }}>
+                    <TrendingUp size={36} style={{ color: 'var(--accent-primary)' }} />
+                  </div>
+                  <Title level={3} style={{ fontWeight: 800, marginBottom: 12 }}>No Optimization Project Found</Title>
+                  <Text type="secondary" style={{ fontSize: 16, display: 'block', marginBottom: 24, lineHeight: 1.6 }}>
+                    Create an SEO/AEO/GEO project in the Intelligence tab to unlock powerful search engine performance metrics and AI optimization insights.
+                  </Text>
+                  <Button 
+                    type="primary" 
+                    size="large" 
+                    style={{ borderRadius: 8, fontWeight: 600, padding: '0 24px' }}
+                    onClick={() => navigate('/client/intelligence/seo-aeo-geo')}
+                  >
+                    Create Project Now
+                  </Button>
+                </div>
+              </BubbleCard>
+            )}
+          </motion.div>
+        )}
+
         <motion.div variants={itemVariants}>
           <Row gutter={48}>
             <Col xs={24} lg={12}>
@@ -186,45 +290,39 @@ const DashboardTab = () => {
             </Col>
 
             <Col xs={24} lg={12} style={{ marginTop: { xs: 48, lg: 0 } }}>
-              <Title level={4} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Financial Overview</Title>
-              <Text type="secondary" style={{ fontSize: 14, display: 'block', marginBottom: 24, fontWeight: 500 }}>Billing & Spend</Text>
+              <Title level={4} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Workspace Operations</Title>
+              <Text type="secondary" style={{ fontSize: 14, display: 'block', marginBottom: 24, fontWeight: 500 }}>Team & Execution Overview</Text>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
                 <BubbleCard bodyStyle={{ padding: 24 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', gap: 16 }}>
-                      <div style={{ color: 'var(--text-secondary)', marginTop: 4, background: 'var(--bg-tertiary)', padding: 12, borderRadius: 12, border: '1px solid var(--border-color)' }}><FileText size={20} /></div>
+                      <div style={{ color: 'var(--accent-primary)', marginTop: 4, background: 'rgba(59, 130, 246, 0.1)', padding: 12, borderRadius: 12, border: '1px solid rgba(59, 130, 246, 0.2)' }}><Users size={20} /></div>
                       <div>
-                        <Text style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'block', fontWeight: 600, marginBottom: 4 }}>Next Invoice</Text>
-                        {upcomingInvoice ? (
-                          <>
-                            <Text style={{ fontSize: 18, fontWeight: 800, display: 'block', color: 'var(--text-primary)', marginBottom: 4 }}>₹{(upcomingInvoice.grandTotal || 0).toLocaleString()}</Text>
-                            <Text style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 500 }}>due {dayjs(upcomingInvoice.dueDate || upcomingInvoice.createdAt).format('D MMM YYYY')}</Text>
-                          </>
-                        ) : (
-                          <Text style={{ fontSize: 14, color: 'var(--text-tertiary)', fontWeight: 500 }}>No pending invoices</Text>
-                        )}
+                        <Text style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'block', fontWeight: 600, marginBottom: 4 }}>Workspace Team Seats</Text>
+                        <Text style={{ fontSize: 22, fontWeight: 800, display: 'block', color: 'var(--text-primary)', marginBottom: 4 }}>{stats.totalTeamMembers || 0} Members</Text>
+                        <Text style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 500, lineHeight: 1.6 }}>
+                          {stats.activeTeamMembers || 0} active team members in workspace
+                        </Text>
                       </div>
                     </div>
-                    {upcomingInvoice && (
-                      <Button type="link" style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-secondary)', padding: 0 }} onClick={() => navigate(`/client/workspace/invoices/${upcomingInvoice._id}/view`)}>View</Button>
-                    )}
+                    <Button type="link" style={{ padding: 0, fontWeight: 700, color: 'var(--accent-primary)', fontSize: 13 }} onClick={() => navigate('/client/users')}>Manage Team</Button>
                   </div>
                 </BubbleCard>
                 
                 <BubbleCard bodyStyle={{ padding: 24 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div style={{ display: 'flex', gap: 16 }}>
-                      <div style={{ color: 'var(--accent-secondary)', marginTop: 4, background: 'rgba(13,148,136,0.1)', padding: 12, borderRadius: 12, border: '1px solid rgba(13,148,136,0.2)' }}><Receipt size={20} /></div>
+                      <div style={{ color: 'var(--accent-secondary)', marginTop: 4, background: 'rgba(16, 185, 129, 0.1)', padding: 12, borderRadius: 12, border: '1px solid rgba(16, 185, 129, 0.2)' }}><CheckSquare size={20} /></div>
                       <div>
-                        <Text style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'block', fontWeight: 600, marginBottom: 4 }}>Total Invoices</Text>
-                        <Text style={{ fontSize: 22, fontWeight: 800, display: 'block', color: 'var(--text-primary)', marginBottom: 4 }}>{stats.totalInvoicesCount}</Text>
+                        <Text style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'block', fontWeight: 600, marginBottom: 4 }}>Active Tasks & Operations</Text>
+                        <Text style={{ fontSize: 22, fontWeight: 800, display: 'block', color: 'var(--text-primary)', marginBottom: 4 }}>{stats.openTasksCount || 0} Open Tasks</Text>
                         <Text style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 500, lineHeight: 1.6 }}>
-                          {stats.totalInvoicesCount - stats.pendingInvoicesCount} paid · {stats.pendingInvoicesCount} pending
+                          {stats.completedTasksThisMonth || 0} tasks completed this month
                         </Text>
                       </div>
                     </div>
-                    <Button type="link" style={{ padding: 0, fontWeight: 700, color: 'var(--accent-secondary)', fontSize: 13 }} onClick={() => navigate('/client/billing')}>View All</Button>
+                    <Button type="link" style={{ padding: 0, fontWeight: 700, color: 'var(--accent-secondary)', fontSize: 13 }} onClick={() => navigate('/client/workspace/tasks')}>View Tasks</Button>
                   </div>
                 </BubbleCard>
               </div>
@@ -321,7 +419,7 @@ const DashboardTab = () => {
               <Text type="secondary" style={{ fontSize: 15, fontWeight: 500 }}>Enterprise SEO, GEO, and AEO tracking and analysis.</Text>
             </div>
 
-            {semrushProject ? (
+            {hasValidProjectScores ? (
               <Row gutter={[24, 24]} style={{ marginBottom: 40, alignItems: 'stretch' }}>
                 <Col xs={24} md={12} xl={8}>
                   <ScoreGaugeCard 

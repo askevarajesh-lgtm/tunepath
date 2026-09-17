@@ -27,6 +27,9 @@ const monthlyHighlightsSchema = new mongoose.Schema({
         enum: ['Draft', 'Published'],
         default: 'Draft'
     },
+    publishedReportTypes: [
+        { type: String }
+    ],
     hasSocialMediaModule: {
         type: Boolean,
         default: false
@@ -38,6 +41,11 @@ const monthlyHighlightsSchema = new mongoose.Schema({
         instagramFollowersIncreased: { type: Number, default: 0 },
         instagramTotalFollowers: { type: Number, default: 0 },
         instagramReach: { type: Number, default: 0 }
+    },
+    socialMediaPostInsights: {
+        videoCount: { type: Number, default: 0 },
+        postCount: { type: Number, default: 0 },
+        totalCount: { type: Number, default: 0 }
     },
     blogs: {
         count: { type: Number, default: 0 },
@@ -99,6 +107,45 @@ const monthlyHighlightsSchema = new mongoose.Schema({
             views: { type: Number, default: 0 },
             reach: { type: Number, default: 0 },
             followers: { type: Number, default: 0 }
+        }
+    ],
+    youTubeReport: [
+        {
+            month: { type: String, required: true },
+            views: { type: Number, default: 0 },
+            lastMonthSubscribers: { type: Number, default: 0 },
+            totalSubscribers: { type: Number, default: 0 }
+        }
+    ],
+    websiteTrafficOverview: [
+        {
+            month: { type: String, required: true },
+            users: { type: Number, default: 0 },
+            newUsers: { type: Number, default: 0 }
+        }
+    ],
+    websiteTrafficLandingPages: [
+        {
+            pagePath: { type: String, required: true },
+            views: { type: Number, default: 0 },
+            activeUsers: { type: Number, default: 0 },
+            viewsPerActiveUser: { type: Number, default: 0 },
+            avgEngagementTime: { type: String, default: '0s' },
+            eventCount: { type: Number, default: 0 }
+        }
+    ],
+    websiteTrafficUsersByCity: [
+        {
+            city: { type: String, required: true },
+            activeUsers: { type: Number, default: 0 },
+            newUsers: { type: Number, default: 0 },
+            engagedSessions: { type: Number, default: 0 },
+            engagementRate: { type: String, default: '0.0%' },
+            engagedSessionsPerActiveUser: { type: Number, default: 0 },
+            avgEngagementTime: { type: String, default: '0s' },
+            eventCount: { type: Number, default: 0 },
+            keyEvents: { type: Number, default: 0 },
+            userKeyEventRate: { type: String, default: '0.0%' }
         }
     ],
     createdBy: {
