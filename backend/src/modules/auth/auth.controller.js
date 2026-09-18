@@ -161,10 +161,16 @@ exports.signin = async (req, res, next) => {
           features = agency.plan.features || [];
         }
 
-        if (agency.integrations && agency.integrations.length > 0) {
+        if (agency.plan) {
+          const planIntegrations = agency.plan.integrations || [];
+          const disabled = agency.disabledPackageIntegrations || [];
+          const additional = agency.additionalIntegrations || [];
+          integrations = Array.from(new Set([
+            ...planIntegrations.filter(i => !disabled.includes(i)),
+            ...additional
+          ]));
+        } else if (agency.integrations && agency.integrations.length > 0) {
           integrations = agency.integrations;
-        } else if (agency.plan) {
-          integrations = agency.plan.integrations || [];
         }
 
         if (agency.plan) {
@@ -298,10 +304,16 @@ exports.me = async (req, res, next) => {
           agencyFeatures = agency.plan.features || [];
         }
 
-        if (agency.integrations && agency.integrations.length > 0) {
+        if (agency.plan) {
+          const planIntegrations = agency.plan.integrations || [];
+          const disabled = agency.disabledPackageIntegrations || [];
+          const additional = agency.additionalIntegrations || [];
+          agencyIntegrations = Array.from(new Set([
+            ...planIntegrations.filter(i => !disabled.includes(i)),
+            ...additional
+          ]));
+        } else if (agency.integrations && agency.integrations.length > 0) {
           agencyIntegrations = agency.integrations;
-        } else if (agency.plan) {
-          agencyIntegrations = agency.plan.integrations || [];
         }
 
         if (user.role === 'agency_manager' || user.role === 'agency_super_admin') {

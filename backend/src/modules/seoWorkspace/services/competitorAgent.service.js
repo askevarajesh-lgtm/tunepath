@@ -19,13 +19,13 @@ const MAX_CANDIDATES = 100;
 const MAX_SUGGESTIONS = 8;
 const BACKLINK_ENRICHMENT_LIMIT = 5;
 
-// Generic/Platform domains that typically shouldn't be counted as direct competitors
-const GENERIC_DOMAINS = new Set([
-  'youtube.com', 'facebook.com', 'instagram.com', 'twitter.com', 'linkedin.com',
+// Global Platform domains that MUST unconditionally be excluded
+const GLOBAL_PLATFORM_DOMAINS = new Set([
+  'youtube.com', 'facebook.com', 'instagram.com', 'linkedin.com', 'twitter.com', 'x.com',
   'wikipedia.org', 'reddit.com', 'amazon.com', 'ebay.com', 'pinterest.com',
-  'tiktok.com', 'apple.com', 'microsoft.com', 'google.com', 'quora.com',
-  'yelp.com', 'medium.com', 'vimeo.com', 'github.com', 'etsy.com', 'walmart.com',
-  'tripadvisor.com', 'trustpilot.com', 'indeed.com', 'glassdoor.com', 'quora.com',
+  'tiktok.com', 'quora.com', 'medium.com', 'vimeo.com', 'github.com',
+  'apple.com', 'microsoft.com', 'google.com', 'yelp.com', 'etsy.com', 'walmart.com',
+  'tripadvisor.com', 'trustpilot.com', 'indeed.com', 'glassdoor.com',
   'play.google.com', 'apps.apple.com'
 ]);
 
@@ -62,8 +62,16 @@ function calculateCompetitiveScore(c, totalTargetKeywords) {
  */
 async function collectCompetitorCandidates(project, agencyId) {
   const domain = domainNormalizationEngine.normalizeDomain(project.domain);
-  const locationCode = project.targetLocations?.[0]?.location_code || 2840;
+  const locationCode = project.targetLocations?.[0]?.location_code;
   const languageCode = project.languages?.[0] || 'en';
+  
+  if (!locationCode) {
+    logger.warn(TAG, `No target location configured for project ${project._id}. Cannot perform reliable local SERP competitor discovery.`);
+    const err = new Error('No location configured.');
+    err.code = 'NO_LOCATION';
+    throw err;
+  }
+
   let candidatesMap = new Map();
 
   if (dataForSeoService.isConfigured) {
@@ -161,17 +169,20 @@ async function collectCompetitorCandidates(project, agencyId) {
       candidates.forEach(c => {
         c.averageCompetitorPosition = c.sumCompetitorPosition / c.commonKeywords;
         c.competitiveScore = calculateCompetitiveScore(c, totalTargetKeywords);
+        c.serviceOverlap = c.commonKeywords;
+        c.serviceRelevanceScore = c.competitiveScore; // Deterministic metric based on evidence
       });
 
       // Filter
       candidates = candidates.filter(c => {
-        const parts = c.domain.split('.');
-        const baseDomain = parts.length >= 2 ? parts.slice(-2).join('.') : c.domain;
+        let normalized = c.domain.replace(/^www\./, '');
+        const parts = normalized.split('.');
+        // Check for subdomains like m.youtube.com by taking the last two parts if length > 2
+        const baseDomain = parts.length >= 2 ? parts.slice(-2).join('.') : normalized;
         
-        // Safety filter for massive platforms
-        if (GENERIC_DOMAINS.has(baseDomain)) {
-           // A generic domain must have VERY high relevance to be included
-           if (c.competitiveScore < 50) return false;
+        // STRICT GLOBAL PLATFORM EXCLUSION
+        if (GLOBAL_PLATFORM_DOMAINS.has(baseDomain) || GLOBAL_PLATFORM_DOMAINS.has(normalized)) {
+           return false; 
         }
 
         // Must have at least SOME overlap
@@ -243,8 +254,8 @@ ${skillsBlock}
 ${memoryBlock}
 
 Provide a qualitative strategic summary of these verified competitors. 
-You MUST NOT invent new domains. You MUST NOT modify their quantitative metrics.
-Only analyze the exact domains provided above.
+You MUST NOT invent new domains. You MUST NOT invent any quantitative numbers.
+Only analyze the exact domains provided above based on their ranking evidence and service overlap.
 
 Respond with a JSON object of this exact shape:
 {
@@ -252,6 +263,8 @@ Respond with a JSON object of this exact shape:
   "competitors": [
     {
       "domain": "must exactly match one candidate above",
+      "competitorType": "hospital | clinic | directory | social | marketplace | publisher | aggregator | business | unknown",
+      "exclusionReason": "If this domain is a directory, aggregator, or non-direct competitor, provide a brief reason why it should be excluded. Otherwise null.",
       "strengths": ["short phrase", "..."],
       "weaknesses": ["short phrase", "..."],
       "contentGaps": ["short phrase", "..."],
@@ -295,10 +308,15 @@ Respond ONLY with valid JSON, no markdown formatting or commentary.`;
     else if (c.competitiveScore >= 20) threatLevel = 'low';
     else threatLevel = 'minimal';
 
+    const compType = aiInsight ? aiInsight.competitorType : 'unknown';
+    const exclReason = aiInsight ? aiInsight.exclusionReason : null;
+
     selected.push({
       ...c,
       threatLevel,
       confidence: c.competitiveScore, 
+      competitorType: compType,
+      exclusionReason: exclReason,
       strengths: aiInsight && Array.isArray(aiInsight.strengths) ? aiInsight.strengths.slice(0, 5).map(String) : [],
       weaknesses: aiInsight && Array.isArray(aiInsight.weaknesses) ? aiInsight.weaknesses.slice(0, 5).map(String) : [],
       contentGaps: aiInsight && Array.isArray(aiInsight.contentGaps) ? aiInsight.contentGaps.slice(0, 5).map(String) : [],
@@ -328,21 +346,46 @@ async function run(projectId, workspaceId) {
     logger.info(TAG, `Competitor Discovery Started (Exec ID: ${executionId})`);
 
     try {
-      const candidates = await collectCompetitorCandidates(project, agencyId);
+      let candidates = [];
+      try {
+        candidates = await collectCompetitorCandidates(project, agencyId);
+      } catch (err) {
+        if (err.code === 'NO_LOCATION') {
+           logger.logExecution({
+             executionId, source: 'competitorAgent', agentKey: AGENT_KEY, projectId,
+             status: 'succeeded', durationMs: Date.now() - startedAt,
+             meta: { candidateCount: 0, suggestedCount: 0 }
+           });
+           return { candidateCount: 0, suggestedCompetitors: [], summary: 'A target location must be configured for this project to enable reliable competitor discovery.' };
+        }
+        throw err;
+      }
+
       logger.info(TAG, `Candidates collected: ${candidates.length}`, { projectId });
       const { summary, selected } = await analyzeCompetitors(project, candidates, agencyId);
 
+      // Exclude directories, aggregators, social, and those with an exclusionReason
+      const filteredSelected = selected.filter(c => {
+        const type = (c.competitorType || '').toLowerCase();
+        const nonDirectTypes = ['directory', 'aggregator', 'social', 'marketplace', 'publisher'];
+        if (nonDirectTypes.includes(type) || c.exclusionReason) {
+          logger.info(TAG, `Excluding non-direct competitor: ${c.domain} (Type: ${c.competitorType}, Reason: ${c.exclusionReason})`);
+          return false; // Do not save to DB
+        }
+        return true;
+      });
+
       let suggestedCompetitors = [];
-      if (selected.length > 0) {
+      if (filteredSelected.length > 0) {
         
         const existing = await WorkspaceCompetitor.find({
           projectId: project._id,
-          domain: { $in: selected.map(c => c.domain) }
+          domain: { $in: filteredSelected.map(c => c.domain) }
         }).lean();
         
         const existingMap = new Map(existing.map(e => [e.domain, e]));
 
-        const bulkOps = selected.map((c) => {
+        const bulkOps = filteredSelected.map((c) => {
           const ex = existingMap.get(c.domain);
           const status = ex ? ex.status : 'Suggested';
           return {
@@ -360,6 +403,10 @@ async function run(projectId, workspaceId) {
                   'metrics.domainRank': c.domainRank,
                   competitiveScore: c.competitiveScore,
                   rankingEvidence: c.rankingEvidence || [],
+                  competitorType: c.competitorType,
+                  serviceRelevanceScore: c.serviceRelevanceScore,
+                  serviceOverlap: c.serviceOverlap,
+                  exclusionReason: c.exclusionReason,
                   dataSource: c.dataSource,
                   source: 'competitor-agent',
                   status: status,
@@ -381,7 +428,7 @@ async function run(projectId, workspaceId) {
 
         suggestedCompetitors = await WorkspaceCompetitor.find({
           projectId: project._id,
-          domain: { $in: selected.map((c) => c.domain) }
+          domain: { $in: filteredSelected.map((c) => c.domain) }
         }).lean();
       }
 
