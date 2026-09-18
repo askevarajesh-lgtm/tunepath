@@ -694,30 +694,26 @@ const reconcileProjectTaskCounts = async (
   const syncStandardCounts = (key, totalField, remainingField, completedField, approvedField) => {
     let currentTotal = Math.max(0, Number(project[totalField]) || 0);
     
-    // Recovery logic: Calculate total from categories if the current total is 0 or seems too low
-    const masterCats = Array.isArray(project.masterItemIds) && project.masterItemIds.length > 0 
-      ? project.masterItemIds[0].categories || [] 
-      : [];
     const projCats = Array.isArray(project.selectedCategories) ? project.selectedCategories : [];
     
     let sumFromProj = 0;
+    let hasProjCat = false;
     projCats.forEach(cat => {
       const name = (cat.name || cat.categoryName || '').toLowerCase();
       if (name.includes(key) && !name.includes("categories")) {
         sumFromProj += Math.max(0, Number(cat.quantity) || Number(cat.count) || 0);
+        hasProjCat = true;
       }
     });
 
-    let sumFromMaster = 0;
-    masterCats.forEach(cat => {
-      const name = (cat.name || cat.categoryName || '').toLowerCase();
-      if (name.includes(key) && !name.includes("categories")) {
-        sumFromMaster += Math.max(0, Number(cat.quantity) || Number(cat.count) || 0);
-      }
-    });
+    // If selectedCategories array is present and does NOT contain this deliverable, set total to 0
+    let total = currentTotal;
+    if (projCats.length > 0) {
+      total = sumFromProj;
+    } else if (sumFromProj > 0) {
+      total = Math.max(currentTotal, sumFromProj);
+    }
 
-    // Use the max of all found totals
-    const total = Math.max(currentTotal, sumFromProj, sumFromMaster);
     if (total !== currentTotal) {
       project[totalField] = total;
       changed = true;
@@ -838,6 +834,23 @@ const reconcileProjectTaskCounts = async (
   // Auto-check project completion status based on actual completed deliverables/tasks
   try {
     await checkAndMarkProjectCompleted(project._id, null, tenantCompanyId);
+    const updated = await Project.findById(project._id)
+      .populate("clientId", "name companyName email phone address status")
+      .populate("companyId", "name companyName email phone address status")
+      .populate("createdBy", "name email roleName")
+      .populate("invoiceId", "invoiceNumber type status")
+      .populate({
+        path: "masterItemId",
+        select:
+          "name description deliverables itemType pricingModel basePrice handlingAmount campaignAmount handlingDuration numberOfPosters completedPosters approvedPosters remainingPosters numberOfVideos completedVideos approvedVideos remainingVideos numberOfShoots completedShoots approvedShoots remainingShoots digitalMarketingPackages campaignPackages seoPackages websitePackages designingPackages selectedCategories isActive",
+      })
+      .populate({
+        path: "masterItemIds",
+        select: "name itemCode category price duration description",
+      });
+    if (updated) {
+      project = updated;
+    }
   } catch (compErr) {
     console.error("[Project Service] Failed to auto-check project completion:", compErr);
   }
@@ -1047,13 +1060,36 @@ const getAllProjects = async (
   ]);
 
   if (result && result.data) {
-    result.data = result.data.map(project => {
-      const projObj = project.toObject ? project.toObject() : project;
-      if (!projObj.masterItemId && projObj.masterItemIds && projObj.masterItemIds.length > 0) {
-        projObj.masterItemId = projObj.masterItemIds[0];
-      }
-      return projObj;
-    });
+    await Promise.all(
+      result.data.map(async (project) => {
+        if (project.status !== "completed" && project.status !== "cancelled") {
+          try {
+            await checkAndMarkProjectCompleted(project._id, null, tenantCompanyId);
+          } catch (e) {
+            // ignore
+          }
+        }
+      })
+    );
+
+    result.data = await Promise.all(
+      result.data.map(async (project) => {
+        const reloaded = await Project.findById(project._id)
+          .populate("clientId", "name companyName email phone address status")
+          .populate("companyId", "name companyName email phone address status")
+          .populate("createdBy", "name email roleName")
+          .populate("invoiceId", "invoiceNumber type status")
+          .populate("masterItemId", "name description deliverables itemType pricingModel basePrice handlingAmount campaignAmount handlingDuration numberOfPosters completedPosters approvedPosters remainingPosters numberOfVideos completedVideos approvedVideos remainingVideos numberOfShoots completedShoots approvedShoots remainingShoots digitalMarketingPackages campaignPackages seoPackages websitePackages designingPackages selectedCategories isActive")
+          .populate("masterItemIds", "name itemCode category price duration description")
+          .lean();
+
+        const projObj = reloaded || (project.toObject ? project.toObject() : project);
+        if (!projObj.masterItemId && projObj.masterItemIds && projObj.masterItemIds.length > 0) {
+          projObj.masterItemId = projObj.masterItemIds[0];
+        }
+        return projObj;
+      })
+    );
   }
 
   return result;
@@ -1250,7 +1286,8 @@ const getUnassignedDeliverablesSummary = async (
     overallUnassignedVideos += remainingVideos;
     overallUnassignedShoots += remainingShoots;
     overallUnassignedDynamic += remainingDynamic;
-    if (project.status === "in_progress") {
+    const is100Percent = remainingPosters === 0 && remainingVideos === 0 && remainingShoots === 0 && remainingDynamic === 0;
+    if (project.status === "in_progress" && !is100Percent) {
       overallInProgressProjects += 1;
       inProgressProjects.push({
         _id: project._id,
@@ -1838,6 +1875,9 @@ const updateProject = async (projectId, projectData, tenantCompanyId) => {
     "remainingPosters",
     "remainingVideos",
     "remainingShoots",
+    "completedPosters",
+    "completedVideos",
+    "completedShoots",
     "selectedCategories",
   ];
   // Note: billingType, invoiceType, invoiceDate, departments are read-only
@@ -2303,35 +2343,59 @@ const checkAndMarkProjectCompleted = async (
   const project = await Project.findById(projectId);
   if (!project) return;
 
-  const hasDynamicCategories = (project.selectedCategories || []).length > 0;
+  const dynamicCategories = Array.isArray(project.selectedCategories) ? project.selectedCategories : [];
+  const hasDynamicCategories = dynamicCategories.length > 0;
+
   const totalPosters = Math.max(0, Number(project.numberOfPosters) || 0);
   const totalVideos = Math.max(0, Number(project.numberOfVideos) || 0);
   const totalShoots = Math.max(0, Number(project.numberOfShoots) || 0);
+
+  const remainingPosters = project.remainingPosters !== undefined ? Math.max(0, Number(project.remainingPosters) || 0) : 0;
+  const remainingVideos = project.remainingVideos !== undefined ? Math.max(0, Number(project.remainingVideos) || 0) : 0;
+  const remainingShoots = project.remainingShoots !== undefined ? Math.max(0, Number(project.remainingShoots) || 0) : 0;
 
   const completedPosters = Math.max(0, Number(project.completedPosters) || 0);
   const completedVideos = Math.max(0, Number(project.completedVideos) || 0);
   const completedShoots = Math.max(0, Number(project.completedShoots) || 0);
 
-  const isDeliverablesCompletable =
-    totalPosters > 0 || totalVideos > 0 || totalShoots > 0 || hasDynamicCategories;
+  const hasStandardDeliverables = totalPosters > 0 || totalVideos > 0 || totalShoots > 0;
+  const isDeliverablesCompletable = hasDynamicCategories || hasStandardDeliverables;
 
-  // Check deliverable completion: completed >= total
-  const postersCompleted = totalPosters > 0 ? completedPosters >= totalPosters : true;
-  const videosCompleted = totalVideos > 0 ? completedVideos >= totalVideos : true;
-  const shootsCompleted = totalShoots > 0 ? completedShoots >= totalShoots : true;
+  let dynamicCompleted = true;
+  if (hasDynamicCategories) {
+    dynamicCompleted = dynamicCategories.every((cat) => {
+      const qty = Math.max(0, Number(cat.quantity || cat.count) || 0);
+      const rem = cat.remaining !== undefined && cat.remaining !== null ? Math.max(0, Number(cat.remaining) || 0) : null;
+      const comp = Math.max(0, Number(cat.completed) || 0);
+      if (qty <= 0) return true;
+      if (rem !== null) return rem === 0;
+      return comp >= qty;
+    });
+  }
 
-  const dynamicCompleted = (project.selectedCategories || []).every((cat) => {
-    const qty = Math.max(0, Number(cat.quantity || cat.count) || 0);
-    const comp = Math.max(0, Number(cat.completed) || 0);
-    return qty > 0 ? comp >= qty : true;
-  });
+  let standardCompleted = true;
+  if (hasStandardDeliverables) {
+    const postersDone = totalPosters > 0 ? (project.remainingPosters !== undefined ? remainingPosters === 0 : completedPosters >= totalPosters) : true;
+    const videosDone = totalVideos > 0 ? (project.remainingVideos !== undefined ? remainingVideos === 0 : completedVideos >= totalVideos) : true;
+    const shootsDone = totalShoots > 0 ? (project.remainingShoots !== undefined ? remainingShoots === 0 : completedShoots >= totalShoots) : true;
+    standardCompleted = postersDone && videosDone && shootsDone;
+  }
 
-  const allDeliverablesDone =
-    postersCompleted && videosCompleted && shootsCompleted && dynamicCompleted;
+  const allDeliverablesDone = hasDynamicCategories ? dynamicCompleted : standardCompleted;
 
   // Check project tasks if any exist
   const tasks = await Task.find({ projectId: project._id }).select("status");
-  const completedStatuses = ["done", "validated", "completed", "complete"];
+  const completedStatuses = [
+    "done",
+    "validated",
+    "completed",
+    "complete",
+    "review",
+    "in_review",
+    "approved",
+    "workflow_sent",
+    "sent_for_client_review",
+  ];
   const allTasksDone =
     tasks.length === 0 ||
     tasks.every((t) => completedStatuses.includes((t.status || "").toLowerCase()));

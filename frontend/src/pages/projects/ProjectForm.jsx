@@ -363,15 +363,18 @@ const ProjectForm = () => {
         const processedCategories = (values.selectedCategories || []).map((cat) => {
           const catName = cat.name || cat.categoryName || "";
           const qty = Math.max(0, Number(cat.quantity || cat.count || 0));
+          const rem =
+            cat.remaining !== undefined && cat.remaining !== null
+              ? Math.max(0, Number(cat.remaining) || 0)
+              : qty;
+          const comp = Math.max(0, qty - rem);
           return {
             ...cat,
             name: catName,
             categoryName: catName,
             quantity: qty,
-            remaining:
-              cat.remaining !== undefined && cat.remaining !== null
-                ? Math.max(0, Number(cat.remaining) || 0)
-                : qty,
+            remaining: rem,
+            completed: comp,
           };
         });
 
@@ -398,17 +401,21 @@ const ProjectForm = () => {
             ? values.renewalDate.toISOString()
             : null,
           isActive: values.isActive !== false,
-          numberOfPosters: posterCat ? posterCat.quantity : (values.numberOfPosters || 0),
-          remainingPosters: posterCat ? posterCat.remaining : (values.remainingPosters || 0),
-          numberOfVideos: videoCat ? videoCat.quantity : (values.numberOfVideos || 0),
-          remainingVideos: videoCat ? videoCat.remaining : (values.remainingVideos || 0),
-          numberOfShoots: shootCat ? shootCat.quantity : (values.numberOfShoots || 0),
-          remainingShoots: shootCat ? shootCat.remaining : (values.remainingShoots || 0),
+          numberOfPosters: posterCat ? posterCat.quantity : 0,
+          remainingPosters: posterCat ? posterCat.remaining : 0,
+          completedPosters: posterCat ? posterCat.completed : 0,
+          numberOfVideos: videoCat ? videoCat.quantity : 0,
+          remainingVideos: videoCat ? videoCat.remaining : 0,
+          completedVideos: videoCat ? videoCat.completed : 0,
+          numberOfShoots: shootCat ? shootCat.quantity : 0,
+          remainingShoots: shootCat ? shootCat.remaining : 0,
+          completedShoots: shootCat ? shootCat.completed : 0,
           selectedCategories: processedCategories,
         };
         const result = await updateProject({ id, ...projectData });
         if (result.error) throw result.error;
         message.success("Project updated successfully");
+        navigate(`${getBaseRoute()}/projects/${id}`);
       } else {
         // For create, require invoice
         if (

@@ -130,31 +130,70 @@ const runSlaCheck = async () => {
       if (project.remainingVideos > 0) remainingServices.push(`${project.remainingVideos} Videos`);
       if (project.remainingShoots > 0) remainingServices.push(`${project.remainingShoots} Shoots`);
       
-      if (project.selectedCategories && Array.isArray(project.selectedCategories)) {
+      if (project.selectedCategories && Array.isArray(project.selectedCategories) && project.selectedCategories.length > 0) {
+        // Reset counts for dynamic categories calculation
+        totalDeliverables = 0;
+        completedDeliverables = 0;
+        remainingServices = [];
         project.selectedCategories.forEach(cat => {
           const rawName = cat.name || cat.categoryName || "";
-          const isStandard = ["poster", "video", "shoot"].some(k => rawName.toLowerCase().includes(k));
-          if (!isStandard) {
-            const qty = cat.quantity || 0;
-            const completed = cat.completed || 0;
-            totalDeliverables += qty;
-            completedDeliverables += completed;
-            
-            const pendingCount = cat.remaining !== undefined ? cat.remaining : (qty > completed ? qty - completed : 0);
-            if (pendingCount > 0) {
-              remainingServices.push(`${pendingCount} ${rawName}`);
-            }
+          const qty = Math.max(0, Number(cat.quantity || cat.count) || 0);
+          const completed = Math.max(0, Number(cat.completed) || 0);
+          const pendingCount = cat.remaining !== undefined && cat.remaining !== null 
+            ? Math.max(0, Number(cat.remaining) || 0) 
+            : Math.max(0, qty - completed);
+
+          totalDeliverables += qty;
+          completedDeliverables += Math.min(qty, completed);
+          
+          if (pendingCount > 0) {
+            remainingServices.push(`${pendingCount} ${rawName}`);
           }
         });
       }
       
       let completionPercentage = 0;
       if (totalDeliverables > 0) {
-        completionPercentage = Math.round((completedDeliverables / totalDeliverables) * 100);
+        completionPercentage = Math.min(100, Math.round((completedDeliverables / totalDeliverables) * 100));
       } else if (remainingServices.length === 0) {
         completionPercentage = 100;
       }
       let remainingPercentage = 100 - completionPercentage;
+
+      // If project is 100% complete, mark as completed and resolve SLA record
+      if (completionPercentage === 100 || (totalDeliverables > 0 && remainingServices.length === 0)) {
+        if (project.status !== 'completed') {
+          project.status = 'completed';
+          project.completedAt = project.completedAt || new Date();
+          await project.save();
+        }
+
+        const existingSla = await SlaRecord.findOne({ entityId: project._id, entityType: 'Project' });
+        await SlaRecord.findOneAndUpdate(
+          { entityId: project._id, entityType: 'Project' },
+          {
+            $set: {
+              clientId: project.clientId,
+              agencyId: project.companyId,
+              clientType: 'Direct User Client',
+              triggerType: 'Completion',
+              entityId: project._id,
+              entityType: 'Project',
+              title: `Project: ${project.name}`,
+              description: `Project "${project.name}" is 100% complete.`,
+              dueDate: project.endDate,
+              priority: 'Medium',
+              status: 'Resolved',
+              resolvedAt: new Date()
+            },
+            $setOnInsert: {
+              slaId: existingSla ? existingSla.slaId : `SLA-PRJ-${project._id.toString().slice(-8).toUpperCase()}`
+            }
+          },
+          { upsert: true, returnDocument: 'after' }
+        );
+        continue;
+      }
       
       let triggerType = 'Completion';
       let description = `Project is ${completionPercentage}% complete. Remaining completion is ${remainingPercentage}%. Pending: ${remainingServices.length > 0 ? remainingServices.join(', ') : 'None'}`;

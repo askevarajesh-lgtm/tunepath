@@ -346,8 +346,10 @@ const ProjectList = () => {
         
         const categoryMap = new Map();
 
+        const hasSelectedCategories = Array.isArray(record?.selectedCategories);
+
         // 1. Process selectedCategories (Dynamic / custom deliverables, as shown in project form)
-        if (record?.selectedCategories && Array.isArray(record.selectedCategories)) {
+        if (hasSelectedCategories) {
           record.selectedCategories.forEach(cat => {
             const rawName = (cat.name || cat.categoryName || "").toLowerCase().trim();
             if (!rawName) return;
@@ -370,26 +372,28 @@ const ProjectList = () => {
           return Array.from(categoryMap.keys()).some((key) => key.includes(keyword));
         };
 
-        // 3. Process standard fields if not already present in categoryMap
-        const stdPosters = Math.max(0, Number(record?.numberOfPosters) || 0);
-        if (stdPosters > 0 && !hasCategoryKey("poster") && !hasCategoryKey("paster")) {
-          const rem = record?.remainingPosters !== undefined ? Math.max(0, Number(record.remainingPosters) || 0) : null;
-          const comp = record?.completedPosters !== undefined ? Math.max(0, Number(record.completedPosters) || 0) : (rem !== null ? Math.max(0, stdPosters - rem) : 0);
-          categoryMap.set("poster", { quantity: stdPosters, remaining: rem !== null ? rem : Math.max(0, stdPosters - comp), completed: comp });
-        }
+        // 3. Process standard fields ONLY IF selectedCategories is not present (legacy fallback)
+        if (!hasSelectedCategories) {
+          const stdPosters = Math.max(0, Number(record?.numberOfPosters) || 0);
+          if (stdPosters > 0 && !hasCategoryKey("poster") && !hasCategoryKey("paster")) {
+            const rem = record?.remainingPosters !== undefined ? Math.max(0, Number(record.remainingPosters) || 0) : null;
+            const comp = record?.completedPosters !== undefined ? Math.max(0, Number(record.completedPosters) || 0) : (rem !== null ? Math.max(0, stdPosters - rem) : 0);
+            categoryMap.set("poster", { quantity: stdPosters, remaining: rem !== null ? rem : Math.max(0, stdPosters - comp), completed: comp });
+          }
 
-        const stdVideos = Math.max(0, Number(record?.numberOfVideos) || 0);
-        if (stdVideos > 0 && !hasCategoryKey("video")) {
-          const rem = record?.remainingVideos !== undefined ? Math.max(0, Number(record.remainingVideos) || 0) : null;
-          const comp = record?.completedVideos !== undefined ? Math.max(0, Number(record.completedVideos) || 0) : (rem !== null ? Math.max(0, stdVideos - rem) : 0);
-          categoryMap.set("video", { quantity: stdVideos, remaining: rem !== null ? rem : Math.max(0, stdVideos - comp), completed: comp });
-        }
+          const stdVideos = Math.max(0, Number(record?.numberOfVideos) || 0);
+          if (stdVideos > 0 && !hasCategoryKey("video")) {
+            const rem = record?.remainingVideos !== undefined ? Math.max(0, Number(record.remainingVideos) || 0) : null;
+            const comp = record?.completedVideos !== undefined ? Math.max(0, Number(record.completedVideos) || 0) : (rem !== null ? Math.max(0, stdVideos - rem) : 0);
+            categoryMap.set("video", { quantity: stdVideos, remaining: rem !== null ? rem : Math.max(0, stdVideos - comp), completed: comp });
+          }
 
-        const stdShoots = Math.max(0, Number(record?.numberOfShoots) || 0);
-        if (stdShoots > 0 && !hasCategoryKey("shoot")) {
-          const rem = record?.remainingShoots !== undefined ? Math.max(0, Number(record.remainingShoots) || 0) : null;
-          const comp = record?.completedShoots !== undefined ? Math.max(0, Number(record.completedShoots) || 0) : (rem !== null ? Math.max(0, stdShoots - rem) : 0);
-          categoryMap.set("shoot", { quantity: stdShoots, remaining: rem !== null ? rem : Math.max(0, stdShoots - comp), completed: comp });
+          const stdShoots = Math.max(0, Number(record?.numberOfShoots) || 0);
+          if (stdShoots > 0 && !hasCategoryKey("shoot")) {
+            const rem = record?.remainingShoots !== undefined ? Math.max(0, Number(record.remainingShoots) || 0) : null;
+            const comp = record?.completedShoots !== undefined ? Math.max(0, Number(record.completedShoots) || 0) : (rem !== null ? Math.max(0, stdShoots - rem) : 0);
+            categoryMap.set("shoot", { quantity: stdShoots, remaining: rem !== null ? rem : Math.max(0, stdShoots - comp), completed: comp });
+          }
         }
 
         let totalDeliverables = 0;
@@ -413,9 +417,15 @@ const ProjectList = () => {
           showPercentage = true;
         }
 
+        let effectiveStatus = status;
+        if (completionPercentage >= 100 && (status || "").toLowerCase() !== "cancelled") {
+          effectiveStatus = "completed";
+          displayStatus = "COMPLETED";
+        }
+
         return (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px' }}>
-            <Tag color={getStatusColor(status)}>
+            <Tag color={getStatusColor(effectiveStatus)}>
               {displayStatus}
             </Tag>
             {showPercentage && (

@@ -268,8 +268,10 @@ const ProjectDetail = () => {
     
     const categoryMap = new Map();
 
+    const hasSelectedCategories = Array.isArray(project.selectedCategories);
+
     // 1. Process selectedCategories (Dynamic / custom deliverables)
-    if (project.selectedCategories && Array.isArray(project.selectedCategories)) {
+    if (hasSelectedCategories) {
       project.selectedCategories.forEach((cat) => {
         const rawName = (cat.name || cat.categoryName || "").toLowerCase().trim();
         if (!rawName) return;
@@ -292,26 +294,28 @@ const ProjectDetail = () => {
       return Array.from(categoryMap.keys()).some((key) => key.includes(keyword));
     };
 
-    // 3. Standard fields if not present in selectedCategories
-    const stdPosters = Math.max(0, Number(project.numberOfPosters) || 0);
-    if (stdPosters > 0 && !hasCategoryKey("poster") && !hasCategoryKey("paster")) {
-      const rem = project.remainingPosters !== undefined ? Math.max(0, Number(project.remainingPosters) || 0) : null;
-      const comp = project.completedPosters !== undefined ? Math.max(0, Number(project.completedPosters) || 0) : (rem !== null ? Math.max(0, stdPosters - rem) : 0);
-      categoryMap.set("poster", { quantity: stdPosters, remaining: rem !== null ? rem : Math.max(0, stdPosters - comp), completed: comp });
-    }
+    // 3. Standard fields ONLY if selectedCategories is not present (legacy fallback)
+    if (!hasSelectedCategories) {
+      const stdPosters = Math.max(0, Number(project.numberOfPosters) || 0);
+      if (stdPosters > 0 && !hasCategoryKey("poster") && !hasCategoryKey("paster")) {
+        const rem = project.remainingPosters !== undefined ? Math.max(0, Number(project.remainingPosters) || 0) : null;
+        const comp = project.completedPosters !== undefined ? Math.max(0, Number(project.completedPosters) || 0) : (rem !== null ? Math.max(0, stdPosters - rem) : 0);
+        categoryMap.set("poster", { quantity: stdPosters, remaining: rem !== null ? rem : Math.max(0, stdPosters - comp), completed: comp });
+      }
 
-    const stdVideos = Math.max(0, Number(project.numberOfVideos) || 0);
-    if (stdVideos > 0 && !hasCategoryKey("video")) {
-      const rem = project.remainingVideos !== undefined ? Math.max(0, Number(project.remainingVideos) || 0) : null;
-      const comp = project.completedVideos !== undefined ? Math.max(0, Number(project.completedVideos) || 0) : (rem !== null ? Math.max(0, stdVideos - rem) : 0);
-      categoryMap.set("video", { quantity: stdVideos, remaining: rem !== null ? rem : Math.max(0, stdVideos - comp), completed: comp });
-    }
+      const stdVideos = Math.max(0, Number(project.numberOfVideos) || 0);
+      if (stdVideos > 0 && !hasCategoryKey("video")) {
+        const rem = project.remainingVideos !== undefined ? Math.max(0, Number(project.remainingVideos) || 0) : null;
+        const comp = project.completedVideos !== undefined ? Math.max(0, Number(project.completedVideos) || 0) : (rem !== null ? Math.max(0, stdVideos - rem) : 0);
+        categoryMap.set("video", { quantity: stdVideos, remaining: rem !== null ? rem : Math.max(0, stdVideos - comp), completed: comp });
+      }
 
-    const stdShoots = Math.max(0, Number(project.numberOfShoots) || 0);
-    if (stdShoots > 0 && !hasCategoryKey("shoot")) {
-      const rem = project.remainingShoots !== undefined ? Math.max(0, Number(project.remainingShoots) || 0) : null;
-      const comp = project.completedShoots !== undefined ? Math.max(0, Number(project.completedShoots) || 0) : (rem !== null ? Math.max(0, stdShoots - rem) : 0);
-      categoryMap.set("shoot", { quantity: stdShoots, remaining: rem !== null ? rem : Math.max(0, stdShoots - comp), completed: comp });
+      const stdShoots = Math.max(0, Number(project.numberOfShoots) || 0);
+      if (stdShoots > 0 && !hasCategoryKey("shoot")) {
+        const rem = project.remainingShoots !== undefined ? Math.max(0, Number(project.remainingShoots) || 0) : null;
+        const comp = project.completedShoots !== undefined ? Math.max(0, Number(project.completedShoots) || 0) : (rem !== null ? Math.max(0, stdShoots - rem) : 0);
+        categoryMap.set("shoot", { quantity: stdShoots, remaining: rem !== null ? rem : Math.max(0, stdShoots - comp), completed: comp });
+      }
     }
 
     let totalDeliverables = 0;
@@ -338,6 +342,14 @@ const ProjectDetail = () => {
       remaining: totalRemaining
     };
   }, [project]);
+
+  const effectiveProjectStatus = useMemo(() => {
+    const rawStatus = project?.status || "created";
+    if (deliverablesProgressStats.percentage >= 100 && rawStatus.toLowerCase() !== "cancelled") {
+      return "completed";
+    }
+    return rawStatus;
+  }, [project?.status, deliverablesProgressStats.percentage]);
 
   const handleRenewProject = () => {
     const clientId = project.clientId?._id || project.clientId;
@@ -411,7 +423,7 @@ const ProjectDetail = () => {
   const getStatusSteps = () => {
     // Removed 'sent_for_client_review' and 'approved' from status bar as requested
     const statusOrder = ["created", "in_progress", "completed"];
-    const currentIndex = statusOrder.indexOf(project?.status || "created");
+    const currentIndex = statusOrder.indexOf(effectiveProjectStatus);
     return statusOrder.map((status, index) => ({
       title: status.replace(/_/g, " ").toUpperCase(),
       status:
@@ -922,10 +934,10 @@ const ProjectDetail = () => {
             }}
           >
             <Tag
-              color={getStatusColor(project.status)}
+              color={getStatusColor(effectiveProjectStatus)}
               style={{ fontSize: 14, padding: "4px 12px" }}
             >
-              {project.status?.replace(/_/g, " ").toUpperCase()}
+              {effectiveProjectStatus?.replace(/_/g, " ").toUpperCase()}
             </Tag>
             <Tag
               color={project.isActive !== false ? "green" : "red"}
@@ -994,10 +1006,10 @@ const ProjectDetail = () => {
                 </Descriptions.Item>
                 <Descriptions.Item label="Status">
                   <Tag
-                    color={getStatusColor(project.status)}
+                    color={getStatusColor(effectiveProjectStatus)}
                     style={{ fontSize: 14, padding: "4px 12px" }}
                   >
-                    {project.status?.replace(/_/g, " ").toUpperCase()}
+                    {effectiveProjectStatus?.replace(/_/g, " ").toUpperCase()}
                   </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="Active Status">

@@ -236,15 +236,21 @@ const DeliverablesPage = () => {
         title: 'Status',
         dataIndex: 'status',
         key: 'status',
-        render: (status) => {
+        render: (status, pRecord) => {
+          const percent = pRecord?.projectTotal > 0 ? Math.round((pRecord.projectCompleted / pRecord.projectTotal) * 100) : 0;
+          let effectiveStatus = status;
+          if ((percent >= 100 || (pRecord?.projectRemaining === 0 && pRecord?.projectTotal > 0)) && (status || '').toLowerCase() !== 'cancelled') {
+            effectiveStatus = 'completed';
+          }
+
           let color = 'default';
-          if (status === 'completed' || status === 'approved') color = 'success';
-          else if (status === 'in_progress') color = 'processing';
-          else if (status === 'workflow_sent' || status === 'sent_for_client_review' || status === 'project_near_due_date') color = 'warning';
+          if (effectiveStatus === 'completed' || effectiveStatus === 'approved') color = 'success';
+          else if (effectiveStatus === 'in_progress') color = 'processing';
+          else if (effectiveStatus === 'workflow_sent' || effectiveStatus === 'sent_for_client_review' || effectiveStatus === 'project_near_due_date') color = 'warning';
 
           return (
             <Tag color={color}>
-              {status?.replace(/_/g, ' ')?.toUpperCase() || 'UNKNOWN'}
+              {effectiveStatus?.replace(/_/g, ' ')?.toUpperCase() || 'UNKNOWN'}
             </Tag>
           );
         }

@@ -205,7 +205,18 @@ const ClientDetailContent = ({
       title: 'Status',
       dataIndex: 'status',
       key: 'status',
-      render: (s) => <Tag color={getStatusTagColor(s)} style={{ borderRadius: 8, fontWeight: 600 }}>{typeof s === 'string' ? s : 'Active'}</Tag>,
+      render: (s, record) => {
+        let rawStatus = typeof s === 'string' ? s : 'Active';
+        let effectiveStatus = rawStatus;
+        if (record?.selectedCategories && Array.isArray(record.selectedCategories) && record.selectedCategories.length > 0) {
+          const total = record.selectedCategories.reduce((sum, c) => sum + Math.max(0, Number(c.quantity || c.count) || 0), 0);
+          const rem = record.selectedCategories.reduce((sum, c) => sum + Math.max(0, Number(c.remaining) || 0), 0);
+          if (total > 0 && rem === 0 && rawStatus.toLowerCase() !== 'cancelled') {
+            effectiveStatus = 'Completed';
+          }
+        }
+        return <Tag color={getStatusTagColor(effectiveStatus)} style={{ borderRadius: 8, fontWeight: 600 }}>{effectiveStatus}</Tag>;
+      },
     },
   ];
 

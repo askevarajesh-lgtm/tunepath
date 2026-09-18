@@ -53,29 +53,31 @@ const MasterItemDetailsCard = ({
     return rawName.includes("shoot");
   });
 
+  const hasCategoriesProp = Array.isArray(selectedCategories);
+
   const effectivePosters = posterCat 
     ? Math.max(0, Number(posterCat.quantity ?? posterCat.count ?? 0))
-    : (numberOfPosters !== undefined && numberOfPosters !== null ? numberOfPosters : service.numberOfPosters);
+    : (hasCategoriesProp ? 0 : (numberOfPosters !== undefined && numberOfPosters !== null ? numberOfPosters : (service.numberOfPosters || 0)));
     
   const effectiveRemainingPosters = posterCat
     ? (posterCat.remaining !== undefined && posterCat.remaining !== null ? Math.max(0, Number(posterCat.remaining) || 0) : effectivePosters)
-    : remainingPosters;
+    : (hasCategoriesProp ? 0 : remainingPosters);
 
   const effectiveVideos = videoCat 
     ? Math.max(0, Number(videoCat.quantity ?? videoCat.count ?? 0))
-    : (numberOfVideos !== undefined && numberOfVideos !== null ? numberOfVideos : service.numberOfVideos);
+    : (hasCategoriesProp ? 0 : (numberOfVideos !== undefined && numberOfVideos !== null ? numberOfVideos : (service.numberOfVideos || 0)));
     
   const effectiveRemainingVideos = videoCat
     ? (videoCat.remaining !== undefined && videoCat.remaining !== null ? Math.max(0, Number(videoCat.remaining) || 0) : effectiveVideos)
-    : remainingVideos;
+    : (hasCategoriesProp ? 0 : remainingVideos);
 
   const effectiveShoots = shootCat 
     ? Math.max(0, Number(shootCat.quantity ?? shootCat.count ?? 0))
-    : (numberOfShoots !== undefined && numberOfShoots !== null ? numberOfShoots : service.numberOfShoots);
+    : (hasCategoriesProp ? 0 : (numberOfShoots !== undefined && numberOfShoots !== null ? numberOfShoots : (service.numberOfShoots || 0)));
     
   const effectiveRemainingShoots = shootCat
     ? (shootCat.remaining !== undefined && shootCat.remaining !== null ? Math.max(0, Number(shootCat.remaining) || 0) : effectiveShoots)
-    : remainingShoots;
+    : (hasCategoriesProp ? 0 : remainingShoots);
 
   const campaignAmt = overriddenCampaignAmount ?? (service.isCampaign ? service.campaignDetails?.campaignAmount : service.campaignAmount);
   const basePrice = overriddenBasePrice ?? service.basePrice ?? service.price ?? service.rate;
