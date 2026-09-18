@@ -52,7 +52,6 @@ const DirectPackagesTab = () => {
     { type: 'sms', name: 'SMS' },
     { type: 'email', name: 'Email (SendPulse)' },
     { type: 'website', name: 'Lead Management Integration' },
-    { type: 'payment', name: 'Payment Integration' },
     { type: 'ekta', name: 'Ekta HR Integration' },
   ];
 
