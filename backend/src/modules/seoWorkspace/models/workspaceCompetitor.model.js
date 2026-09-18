@@ -45,6 +45,12 @@ const WorkspaceCompetitorSchema = new mongoose.Schema({
   competitiveScore: { type: Number, default: 0, min: 0, max: 100 }, // deterministic relevance score
   rankingEvidence: [{ type: Object }], // stores real SERP overlap evidence
 
+  // ── Service Relevance (Deterministic & AI Classified) ───────────────
+  competitorType: { type: String, enum: ['business', 'hospital', 'clinic', 'directory', 'social', 'marketplace', 'publisher', 'government', 'educational', 'aggregator', 'unknown'], default: 'unknown' },
+  serviceRelevanceScore: { type: Number, default: 0, min: 0, max: 100 },
+  serviceOverlap: { type: Number, default: 0 },
+  exclusionReason: { type: String, default: null },
+
 
   agent: {
     agentKey:   { type: String, default: null },

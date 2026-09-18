@@ -276,7 +276,7 @@ const DashboardTab = () => {
               <Card size="small" bordered={false} style={{ background: isDark ? 'linear-gradient(135deg, rgba(82, 196, 26, 0.18) 0%, rgba(82, 196, 26, 0.05) 100%)' : 'linear-gradient(135deg, #f6ffed 0%, #d9f7be 100%)', border: isDark ? '1px solid rgba(82, 196, 26, 0.3)' : undefined, borderRadius: 8 }}>
                 <Statistic
                   title="SEO Score"
-                  value={data.avgSeoScore || 82}
+                  value={data.avgSeoScore || 0}
                   suffix="/ 100"
                   prefix={<ActivitySquare size={16} />}
                   valueStyle={{ color: isDark ? '#73d13d' : '#389e0d', fontWeight: 700 }}
@@ -287,7 +287,7 @@ const DashboardTab = () => {
               <Card size="small" bordered={false} style={{ background: isDark ? 'linear-gradient(135deg, rgba(24, 144, 255, 0.18) 0%, rgba(24, 144, 255, 0.05) 100%)' : 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)', border: isDark ? '1px solid rgba(24, 144, 255, 0.3)' : undefined, borderRadius: 8 }}>
                 <Statistic
                   title="Health Index"
-                  value={data.avgHealthScore || 85}
+                  value={data.avgHealthScore || 0}
                   suffix="/ 100"
                   prefix={<ShieldCheck size={16} />}
                   valueStyle={{ color: isDark ? '#40a9ff' : '#096dd9', fontWeight: 700 }}
@@ -298,7 +298,7 @@ const DashboardTab = () => {
               <Card size="small" bordered={false} style={{ background: isDark ? 'linear-gradient(135deg, rgba(114, 46, 209, 0.18) 0%, rgba(114, 46, 209, 0.05) 100%)' : 'linear-gradient(135deg, #f9f0ff 0%, #efdbff 100%)', border: isDark ? '1px solid rgba(114, 46, 209, 0.3)' : undefined, borderRadius: 8 }}>
                 <Statistic
                   title="AEO Answer Score"
-                  value={data.aeoScore || 78}
+                  value={data.aeoScore || 0}
                   suffix="/ 100"
                   prefix={<MessageCircle size={16} />}
                   valueStyle={{ color: isDark ? '#9254de' : '#531dab', fontWeight: 700 }}
@@ -309,7 +309,7 @@ const DashboardTab = () => {
               <Card size="small" bordered={false} style={{ background: isDark ? 'linear-gradient(135deg, rgba(250, 140, 22, 0.18) 0%, rgba(250, 140, 22, 0.05) 100%)' : 'linear-gradient(135deg, #fff7e6 0%, #ffe7ba 100%)', border: isDark ? '1px solid rgba(250, 140, 22, 0.3)' : undefined, borderRadius: 8 }}>
                 <Statistic
                   title="GEO Visibility"
-                  value={data.geoScore || 84}
+                  value={data.geoScore || 0}
                   suffix="/ 100"
                   prefix={<Globe size={16} />}
                   valueStyle={{ color: isDark ? '#ffc069' : '#d46b08', fontWeight: 700 }}
@@ -330,7 +330,7 @@ const DashboardTab = () => {
               <Card size="small" bordered={false} style={{ background: isDark ? 'linear-gradient(135deg, rgba(235, 47, 150, 0.18) 0%, rgba(235, 47, 150, 0.05) 100%)' : 'linear-gradient(135deg, #fff0f6 0%, #ffd8e4 100%)', border: isDark ? '1px solid rgba(235, 47, 150, 0.3)' : undefined, borderRadius: 8 }}>
                 <Statistic
                   title="Active Projects"
-                  value={data.totalProjects || 1}
+                  value={data.totalProjects || 0}
                   prefix={<Globe size={16} />}
                   valueStyle={{ color: isDark ? '#ff85c0' : '#c41d7f', fontWeight: 700 }}
                 />
