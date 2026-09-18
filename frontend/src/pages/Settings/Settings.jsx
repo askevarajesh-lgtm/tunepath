@@ -17,12 +17,27 @@ import ClientPackagesTab from '../AgencyPortal/tabs/ClientPackagesTab';
 import UserSettingsTab from '../UserPortal/SettingsTab';
 import TaxSettingsTab from './tabs/TaxSettingsTab';
 import { useAuth } from '../../contexts/AuthContext';
+import api from '../../services/api';
 
 const { Title, Text } = Typography;
 
 const SettingsPage = () => {
-  const { role, user } = useAuth();
+  const { role, user, login } = useAuth();
   const location = useLocation();
+
+  useEffect(() => {
+    const fetchLatestProfile = async () => {
+      try {
+        const res = await api.get('/auth/me');
+        if (res.data?.success && res.data?.user) {
+          login(res.data.user);
+        }
+      } catch (err) {
+        console.error("Failed to fetch latest profile in settings", err);
+      }
+    };
+    fetchLatestProfile();
+  }, []);
 
   const hasFullCrmAccess = () => {
     if (['commander_admin', 'agency_super_admin', 'agency_manager', 'brand_super_admin', 'brand_manager'].includes(role)) return true;
@@ -41,9 +56,22 @@ const SettingsPage = () => {
     return false;
   };
 
+  const hasAnyIntegrationAccess = () => {
+    if (['commander_admin', 'super_admin', 'supreme_super_admin'].includes(role)) return true;
+    
+    if (user?.integrations && user.integrations.length > 0) return true;
+
+    if (user?.permissions?.['Workspace-Lead Management Integration']?.Read) return true;
+    if (user?.permissions?.['HRMS-Ekta HR Integration']?.Read) return true;
+    
+    return false;
+  };
+
+  const showIntegrationsTab = hasFullCrmAccess() && hasAnyIntegrationAccess();
+
   const [activeTab, setActiveTab] = useState(() => {
     const params = new URLSearchParams(location.search);
-    if (params.get('tab') === 'integrations' && hasFullCrmAccess()) return '2';
+    if (params.get('tab') === 'integrations' && showIntegrationsTab) return '2';
     if (location.state?.activeTab) return location.state.activeTab;
     if (['commander_admin', 'agency_super_admin', 'brand_super_admin'].includes(role)) return '1';
     if (['agency_manager', 'brand_manager'].includes(role)) return '7';
@@ -52,7 +80,7 @@ const SettingsPage = () => {
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
-    if (params.get('tab') === 'integrations' && hasFullCrmAccess()) {
+    if (params.get('tab') === 'integrations' && showIntegrationsTab) {
       setActiveTab('2');
     } else if (location.state?.activeTab) {
       setActiveTab(location.state.activeTab);
@@ -113,11 +141,14 @@ const SettingsPage = () => {
   let allowedKeys = [];
   if (['commander_admin', 'agency_super_admin', 'brand_super_admin'].includes(role)) {
     allowedKeys = allTabs.map(t => t.key);
+    if (!showIntegrationsTab) {
+      allowedKeys = allowedKeys.filter(key => key !== '2');
+    }
   } else if (['agency_manager', 'brand_manager'].includes(role)) {
-    allowedKeys = [hasFullCrmAccess() ? '2' : null, '4', '7', '12', '9', '11'].filter(Boolean);
+    allowedKeys = [showIntegrationsTab ? '2' : null, '4', '7', '12', '9', '11'].filter(Boolean);
   } else {
     // agency_user, brand_team_user, client, agency_client
-    allowedKeys = [hasFullCrmAccess() ? '2' : null, '4', '9'].filter(Boolean);
+    allowedKeys = [showIntegrationsTab ? '2' : null, '4', '9'].filter(Boolean);
   }
 
   const tabItems = allTabs.filter(t => allowedKeys.includes(t.key));
