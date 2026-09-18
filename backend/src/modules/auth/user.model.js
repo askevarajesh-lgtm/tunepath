@@ -44,6 +44,7 @@ const UserSchema = new mongoose.Schema({
   
   modules: {
     chatgpt: { type: Boolean, default: false },
+    claude: { type: Boolean, default: false },
     canva: { type: Boolean, default: false }
   },
 

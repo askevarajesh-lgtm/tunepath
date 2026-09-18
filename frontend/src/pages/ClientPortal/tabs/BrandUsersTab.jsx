@@ -29,6 +29,7 @@ const BrandUsersTab = ({ user }) => {
     { id: 'ads', label: 'Performance Ads' },
     { id: 'analytics', label: 'Google Analytics' },
     { id: 'chatgpt', label: 'Chatgpt' },
+    { id: 'claude', label: 'Claude AI' },
     { id: 'canva', label: 'Canva' },
     { id: 'seo-aeo-geo', label: 'SEO/AEO/GEO' },
     // { id: 'benchmark', label: 'Benchmark' },

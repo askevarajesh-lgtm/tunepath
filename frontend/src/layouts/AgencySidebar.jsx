@@ -20,6 +20,7 @@ import {
   Settings,
   Share2,
   Shield,
+  Sparkles,
   Store,
   Target,
   TrendingUp,
@@ -176,6 +177,8 @@ const AgencySidebar = ({ collapsed, setCollapsed }) => {
     intelligenceChildren.push({ key: '/agency/reports', icon: getIcon(FileText), label: 'Monthly Reports' });
     // ChatGPT: hidden when a specific client is selected
     if (!isClientSelected && feats.includes('chatgpt')) intelligenceChildren.push({ key: '/agency/chatgpt', icon: getIcon(HelpCircle), label: 'ChatGPT' });
+    // Claude Chat: hidden when a specific client is selected
+    if (!isClientSelected && feats.includes('claude')) intelligenceChildren.push({ key: '/agency/claude', icon: getIcon(Sparkles), label: 'Claude Chat' });
     // Canva: hidden when a specific client is selected
     if (!isClientSelected && feats.includes('canva')) intelligenceChildren.push({ key: '/agency/canva', icon: getIcon(PenTool), label: 'Canva' });
     if (feats.includes('seo-aeo-geo')) intelligenceChildren.push({ key: '/agency/seo-aeo-geo', icon: getIcon(Search), label: 'SEO/AEO/GEO' });

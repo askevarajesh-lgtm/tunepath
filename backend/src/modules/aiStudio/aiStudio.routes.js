@@ -29,6 +29,7 @@ router.get('/chat/history', aiStudioController.getConversations);
 router.get('/chat/session/:id', aiStudioController.getConversation);
 router.delete('/chat/session/:id', aiStudioController.deleteConversation);
 router.post('/chat/message', aiStudioController.sendMessage);
+router.post('/chat/stream', aiStudioController.streamMessage);
 
 
 module.exports = router;

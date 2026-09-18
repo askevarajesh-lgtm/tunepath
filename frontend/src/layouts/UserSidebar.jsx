@@ -2,7 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   CheckSquare, LayoutDashboard, Settings, FileText, Palette, GitMerge, 
-  Target, Search, BarChart2, Globe, LineChart, MessageCircle, TrendingUp, Briefcase, Users, Activity
+  Target, Search, BarChart2, Globe, LineChart, MessageCircle, TrendingUp, Briefcase, Users, Activity, Sparkles
 } from 'lucide-react';
 import PortalSidebar from './PortalSidebar';
 import { useAuth } from '../contexts/AuthContext';
@@ -82,6 +82,7 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   if (hasPerm('Intelligence-Google Analytics')) intelligenceChildren.push({ key: '/user/intelligence/analytics', icon: getIcon(TrendingUp), label: 'Analytics' });
   if (hasPerm('Intelligence-MOS Score')) intelligenceChildren.push({ key: '/user/intelligence/mos', icon: getIcon(BarChart2), label: 'MOS Score' });
   if (hasPerm('Intelligence-ChatGPT')) intelligenceChildren.push({ key: '/user/intelligence/chatgpt', icon: getIcon(MessageCircle), label: 'ChatGPT' });
+  if (hasPerm('Intelligence-Claude Chat') || hasPerm('Intelligence-Claude')) intelligenceChildren.push({ key: '/user/intelligence/claude', icon: getIcon(Sparkles), label: 'Claude Chat' });
   if (hasPerm('Intelligence-Canva')) intelligenceChildren.push({ key: '/user/intelligence/canva', icon: getIcon(Palette), label: 'Canva' });
   if (hasPerm('Intelligence-AI Agent')) intelligenceChildren.push({ key: '/user/intelligence/agents', icon: getIcon(Target), label: 'AI Agent' });
   // if (hasPerm('Intelligence-Benchmarks')) intelligenceChildren.push({ key: '/user/intelligence/benchmarks', icon: getIcon(TrendingUp), label: 'Benchmarks' });

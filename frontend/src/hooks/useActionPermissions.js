@@ -38,6 +38,7 @@ export function useActionPermissions(path) {
   if (path === '/analytics') moduleName = 'Intelligence-Google Analytics';
   if (path === '/mos') moduleName = 'Intelligence-MOS Score';
   if (path === '/chatgpt') moduleName = 'Intelligence-ChatGPT';
+  if (path === '/claude' || path === '/intelligence/claude') moduleName = 'Intelligence-Claude Chat';
   if (path === '/canva') moduleName = 'Intelligence-Canva';
   if (path === '/agents') moduleName = 'Intelligence-AI Agent';
   if (path === '/benchmarks') moduleName = 'Intelligence-Benchmarks';

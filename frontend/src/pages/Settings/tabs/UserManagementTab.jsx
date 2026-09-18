@@ -82,7 +82,7 @@ const UserManagementTab = () => {
           'Task Management', 'Websites', 'Task Analytics', 'Coordinator Tasks'
         ],
         'Intelligence': [
-          'Google Analytics', 'ChatGPT', 'Canva'
+          'Google Analytics', 'ChatGPT', 'Claude Chat', 'Canva'
           // 'Benchmarks', 
         ],
         'Agency Ops': [
@@ -115,6 +115,7 @@ const UserManagementTab = () => {
       // Intelligence
       if (hasF('analytics')) groups.Intelligence.push('Google Analytics');
       if (hasF('chatgpt')) groups.Intelligence.push('ChatGPT');
+      if (hasF('claude')) groups.Intelligence.push('Claude Chat');
       if (hasF('canva')) groups.Intelligence.push('Canva');
       // if (hasF('benchmark')) groups.Intelligence.push('Benchmarks');
       if (currentRole === 'agency_super_admin') {
@@ -151,6 +152,7 @@ const UserManagementTab = () => {
       // Intelligence conditional modules
       if (hasF('analytics')) groups.Intelligence.push('Google Analytics');
       if (hasF('chatgpt')) groups.Intelligence.push('ChatGPT');
+      if (hasF('claude')) groups.Intelligence.push('Claude Chat');
       if (hasF('canva')) groups.Intelligence.push('Canva');
       // if (hasF('benchmark')) groups.Intelligence.push('Benchmarks');
 
@@ -805,7 +807,7 @@ const UserManagementTab = () => {
 
             const isFieldApplicable = (module, field) => {
               if (field === 'All' && module !== 'Accounts') return false;
-              if (['Google Analytics', 'ChatGPT', 'Canva', 'Performance', 'Calendar'].includes(module) && field !== 'Read') return false;
+              if (['Google Analytics', 'ChatGPT', 'Claude Chat', 'Canva', 'Performance', 'Calendar'].includes(module) && field !== 'Read') return false;
               if (module === 'Performance Ads' && ['Create', 'Edit', 'Delete'].includes(field)) return false;
               if (module === 'Task Analytics' && ['Create', 'Edit', 'Delete'].includes(field)) return false;
               if (module === 'Deliverables' && !['Read', 'Create', 'Edit'].includes(field)) return false;
@@ -910,7 +912,7 @@ const UserManagementTab = () => {
                         align: 'center',
                         render: (_, record) => {
                           if (field === 'All' && record.module !== 'Accounts') return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
-                          if (['Google Analytics', 'ChatGPT', 'Canva', 'Performance', 'Calendar'].includes(record.module) && field !== 'Read') return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
+                          if (['Google Analytics', 'ChatGPT', 'Claude Chat', 'Canva', 'Performance', 'Calendar'].includes(record.module) && field !== 'Read') return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
                           if (record.module === 'Performance Ads' && ['Create', 'Edit', 'Delete'].includes(field)) return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
                           if (record.module === 'Task Analytics' && ['Create', 'Edit', 'Delete'].includes(field)) return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
                           if (record.module === 'Deliverables' && !['Read', 'Create', 'Edit'].includes(field)) return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;

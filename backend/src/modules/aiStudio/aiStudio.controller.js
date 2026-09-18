@@ -8,15 +8,27 @@ const { DEFAULT_AI_PROVIDER, DEFAULT_AI_MODEL } = require('../aiCore/config/aiDe
 const getAiWorkspaceId = (req) => {
   const user = req.user;
   if (!user) return req.companyId || req.workspaceId;
-  
+
+  // Prioritize active selected client / panel context if provided
+  const selectedClientId = req.headers['x-selected-client-id'] ||
+                           req.selectedClientId ||
+                           req.query?.clientId ||
+                           req.query?.companyId ||
+                           req.body?.clientId;
+
+  if (selectedClientId &&
+      selectedClientId !== 'all' &&
+      selectedClientId !== 'null' &&
+      selectedClientId !== 'undefined') {
+    return selectedClientId.toString();
+  }
+
   const clientRoles = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'];
   if (clientRoles.includes(user.role)) {
-    // For clients, they act as their own workspace for AI settings
-    return user.brandId || user._id;
+    return (user.brandId || user._id).toString();
   }
-  
-  // For agency employees and admins
-  return user.agencyId || user._id;
+
+  return (user.agencyId || user._id).toString();
 };
 
 // --- Settings Endpoints ---
@@ -303,8 +315,13 @@ const getConversations = async (req, res) => {
     const workspaceId = getAiWorkspaceId(req);
     if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized: No workspace context' });
 
-    const conversations = await AiConversation.find({ workspaceId, isDeleted: false })
-      .select('title updatedAt')
+    const query = { workspaceId, isDeleted: false };
+    if (req.query.provider) {
+      query.provider = req.query.provider;
+    }
+
+    const conversations = await AiConversation.find(query)
+      .select('title updatedAt provider model')
       .sort({ updatedAt: -1 });
 
     return res.status(200).json({ success: true, data: { conversations } });
@@ -347,7 +364,7 @@ const deleteConversation = async (req, res) => {
 
 const sendMessage = async (req, res) => {
   try {
-    const { sessionId, content, attachment } = req.body;
+    const { sessionId, content, attachment, provider = 'openai', model } = req.body;
     const workspaceId = getAiWorkspaceId(req);
     const createdBy = req.user?._id;
 
@@ -360,6 +377,93 @@ const sendMessage = async (req, res) => {
       return res.status(403).json({ success: false, message: 'AI Assistant is currently disabled' });
     }
 
+    if (provider === 'anthropic') {
+      let apiKey = null;
+      if (settings && settings.anthropicApiKey) {
+        apiKey = cryptoUtils.decrypt(settings.anthropicApiKey);
+      }
+      if (!apiKey) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Claude API Key is not configured for your workspace. Please add your Anthropic API Key in settings.' 
+        });
+      }
+
+      const selectedModel = model || settings?.model || 'claude-3-5-sonnet-latest';
+
+      // Fetch or create conversation
+      let conversation;
+      if (sessionId) {
+        conversation = await AiConversation.findOne({ _id: sessionId, workspaceId, isDeleted: false });
+        if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
+      } else {
+        let title = content.substring(0, 35);
+        if (content.length > 35) title += '...';
+        conversation = new AiConversation({
+          workspaceId,
+          title,
+          provider: 'anthropic',
+          model: selectedModel,
+          createdBy,
+          messages: []
+        });
+      }
+
+      // Append user message
+      const userMessage = { role: 'user', content, timestamp: new Date() };
+      if (attachment) userMessage.attachment = attachment;
+      conversation.messages.push(userMessage);
+
+      // Prepare Anthropic prompt messages
+      const AiClientWrapper = require('../../utils/aiClientWrapper');
+      const clientWrapper = new AiClientWrapper(apiKey, 'anthropic');
+
+      const anthropicMessages = conversation.messages.map(msg => {
+        let msgContent = msg.content;
+        if (msg.role === 'user' && msg.attachment) {
+          msgContent += `\n[Attached File: ${msg.attachment.name} (${msg.attachment.url})]`;
+        }
+        return { role: msg.role === 'assistant' ? 'assistant' : 'user', content: msgContent };
+      });
+
+      anthropicMessages.unshift({
+        role: 'system',
+        content: 'You are Claude, an intelligent, helpful, and precise AI assistant integrated into the Tunepath CRM workspace. Provide comprehensive answers, code snippets, project plans, and content directly in well-formatted markdown. Note: You operate as a conversational assistant in a web application and do not execute terminal/CLI commands. Respond directly with full answers, analysis, and code solutions.'
+      });
+
+      console.log(`[Claude Chat] Calling Anthropic API via AiClientWrapper with key prefix: ${apiKey.substring(0, 12)}... (length: ${apiKey.length})`);
+
+      let aiContent = '';
+      try {
+        const response = await clientWrapper.chat.completions.create({
+          model: selectedModel || 'claude-sonnet-5',
+          messages: anthropicMessages
+        });
+        aiContent = response.choices[0]?.message?.content || 'No response generated.';
+      } catch (err) {
+        console.error('[Claude Chat] AiClientWrapper Error:', err.message || err);
+        throw new Error(err.response?.data?.error?.message || err.message || 'Failed to generate response from Anthropic API.');
+      }
+
+      const aiMessage = { role: 'assistant', content: aiContent, timestamp: new Date() };
+      conversation.messages.push(aiMessage);
+      await conversation.save();
+
+      const savedUserMessage = conversation.messages[conversation.messages.length - 2];
+      const savedAiMessage = conversation.messages[conversation.messages.length - 1];
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          sessionId: conversation._id,
+          title: conversation.title,
+          userMessage: savedUserMessage,
+          aiMessage: savedAiMessage
+        }
+      });
+    }
+
+    // Default OpenAI flow
     let apiKey = null;
     if (settings && settings.openaiApiKey) {
       apiKey = cryptoUtils.decrypt(settings.openaiApiKey);
@@ -369,7 +473,7 @@ const sendMessage = async (req, res) => {
       return res.status(400).json({ success: false, message: 'ChatGPT has been enabled for your organization, but no API key has been configured yet. Please add a valid API key in the integration settings to start using this feature.' });
     }
 
-    const openAiModel = settings.model || 'gpt-4o-mini';
+    const openAiModel = model || settings?.model || 'gpt-4o-mini';
 
     // 2. Fetch or create conversation
     let conversation;
@@ -383,6 +487,8 @@ const sendMessage = async (req, res) => {
       conversation = new AiConversation({
         workspaceId,
         title,
+        provider: 'openai',
+        model: openAiModel,
         createdBy,
         messages: []
       });
@@ -470,7 +576,6 @@ const sendMessage = async (req, res) => {
           } catch (fallbackErr) {
             console.error('OpenAI Image Generation Error:', fallbackErr.response?.data || fallbackErr.message);
             aiContent = `Failed to generate image.\n\nGPT-Image-2 Error: ${dallE3Error}\n\nGPT-Image-1 Error: ${fallbackErr.response?.data?.error?.message || fallbackErr.message}`;
-            // Let the aiContent contain the error message, and no image will be returned
           }
         }
       } else {
@@ -491,8 +596,6 @@ const sendMessage = async (req, res) => {
     conversation.messages.push(aiMessage);
     await conversation.save();
 
-    // 6. Return new messages to frontend
-    // Get the actually inserted messages (with _id generated by mongoose)
     const savedUserMessage = conversation.messages[conversation.messages.length - 2];
     const savedAiMessage = conversation.messages[conversation.messages.length - 1];
 
@@ -511,6 +614,118 @@ const sendMessage = async (req, res) => {
   }
 };
 
+const streamMessage = async (req, res) => {
+  try {
+    const { sessionId, content, attachment, provider = 'anthropic', model } = req.body;
+    const workspaceId = getAiWorkspaceId(req);
+    const createdBy = req.user?._id;
+
+    if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized: No workspace context' });
+    if (!content) return res.status(400).json({ success: false, message: 'Message content is required' });
+
+    const settings = await AiSettings.findOne({ workspaceId });
+    if (settings && settings.isEnabled === false) {
+      return res.status(403).json({ success: false, message: 'AI Assistant is currently disabled' });
+    }
+
+    if (provider === 'anthropic') {
+      let apiKey = null;
+      if (settings && settings.anthropicApiKey) {
+        apiKey = cryptoUtils.decrypt(settings.anthropicApiKey);
+      }
+
+      if (!apiKey) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'Claude API key has not been configured yet. Please add your Anthropic API Key in Settings.' 
+        });
+      }
+
+      const selectedModel = model || settings?.model || 'claude-3-5-sonnet-latest';
+
+      let conversation;
+      if (sessionId) {
+        conversation = await AiConversation.findOne({ _id: sessionId, workspaceId, isDeleted: false });
+        if (!conversation) return res.status(404).json({ success: false, message: 'Conversation not found' });
+      } else {
+        let title = content.substring(0, 35);
+        if (content.length > 35) title += '...';
+        conversation = new AiConversation({
+          workspaceId,
+          title,
+          provider: 'anthropic',
+          model: selectedModel,
+          createdBy,
+          messages: []
+        });
+      }
+
+      const userMessage = { role: 'user', content, timestamp: new Date() };
+      if (attachment) userMessage.attachment = attachment;
+      conversation.messages.push(userMessage);
+
+      const Anthropic = require('@anthropic-ai/sdk');
+      const anthropic = new Anthropic({ apiKey });
+
+      const anthropicMessages = conversation.messages.map(msg => {
+        let msgContent = msg.content;
+        if (msg.role === 'user' && msg.attachment) {
+          msgContent += `\n[Attached File: ${msg.attachment.name} (${msg.attachment.url})]`;
+        }
+        return { role: msg.role === 'assistant' ? 'assistant' : 'user', content: msgContent };
+      });
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+
+      let accumulatedText = '';
+      const stream = anthropic.messages.stream({
+        model: selectedModel,
+        max_tokens: 4096,
+        messages: anthropicMessages,
+        system: 'You are Claude, a helpful, precise, and thoughtful AI assistant integrated into a CRM workspace. Output response in well-formatted markdown when helpful.'
+      });
+
+      stream.on('text', (textChunk) => {
+        accumulatedText += textChunk;
+        res.write(`data: ${JSON.stringify({ type: 'chunk', text: textChunk })}\n\n`);
+      });
+
+      stream.on('finalMessage', async () => {
+        const aiMessage = { role: 'assistant', content: accumulatedText, timestamp: new Date() };
+        conversation.messages.push(aiMessage);
+        await conversation.save();
+
+        const savedUserMessage = conversation.messages[conversation.messages.length - 2];
+        const savedAiMessage = conversation.messages[conversation.messages.length - 1];
+
+        res.write(`data: ${JSON.stringify({ 
+          type: 'done', 
+          sessionId: conversation._id, 
+          title: conversation.title,
+          userMessage: savedUserMessage, 
+          aiMessage: savedAiMessage 
+        })}\n\n`);
+        res.end();
+      });
+
+      stream.on('error', (err) => {
+        console.error('Claude Stream Error:', err);
+        res.write(`data: ${JSON.stringify({ type: 'error', message: err.message || 'Stream failed' })}\n\n`);
+        res.end();
+      });
+
+      return;
+    }
+
+    return res.status(400).json({ success: false, message: 'Streaming is supported for provider: anthropic' });
+
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 module.exports = {
   generateImage,
   generateVideo,
@@ -523,5 +738,6 @@ module.exports = {
   getConversation,
   deleteConversation,
   sendMessage,
+  streamMessage,
   uploadAiFile
 };

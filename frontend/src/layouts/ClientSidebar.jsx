@@ -207,12 +207,14 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
   if (['brand_super_admin', 'brand_manager', 'user', 'brand_team_user', 'client_user'].includes(role)) {
     intelligenceChildren.push({ key: '/client/intelligence/analytics', icon: getIcon(TrendingUp), label: 'Google Analytics', featureId: 'analytics', moduleGroup: 'Intelligence', moduleId: 'Google Analytics' });
     intelligenceChildren.push({ key: '/client/intelligence/chatgpt', icon: getIcon(MessageCircle), label: 'Chatgpt', featureId: 'chatgpt', moduleGroup: 'Intelligence', moduleId: 'ChatGPT' });
+    intelligenceChildren.push({ key: '/client/intelligence/claude', icon: getIcon(Sparkles), label: 'Claude Chat', featureId: 'claude', moduleGroup: 'Intelligence', moduleId: 'Claude Chat' });
     intelligenceChildren.push({ key: '/client/intelligence/canva', icon: getIcon(Palette), label: 'Canva', featureId: 'canva', moduleGroup: 'Intelligence', moduleId: 'Canva' });
     intelligenceChildren.push({ key: '/client/intelligence/seo', icon: getIcon(Search), label: 'Seo Intelligence', featureId: 'seo', moduleGroup: 'Intelligence', moduleId: 'Seo Intelligence' });
     intelligenceChildren.push({ key: '/client/intelligence/seo-aeo-geo', icon: getIcon(Search), label: 'SEO/AEO/GEO', featureId: 'seo-aeo-geo', moduleGroup: 'Intelligence', moduleId: 'SEO/AEO/GEO' });
   } else if (role === 'agency_client') {
     intelligenceChildren.push({ key: '/client/intelligence/analytics', icon: getIcon(TrendingUp), label: 'Google Analytics', featureId: 'analytics', moduleGroup: 'Intelligence', moduleId: 'Google Analytics' });
     intelligenceChildren.push({ key: '/client/intelligence/chatgpt', icon: getIcon(MessageCircle), label: 'Chatgpt', featureId: 'chatgpt', moduleGroup: 'Intelligence', moduleId: 'ChatGPT' });
+    intelligenceChildren.push({ key: '/client/intelligence/claude', icon: getIcon(Sparkles), label: 'Claude Chat', featureId: 'claude', moduleGroup: 'Intelligence', moduleId: 'Claude Chat' });
     intelligenceChildren.push({ key: '/client/intelligence/canva', icon: getIcon(Palette), label: 'Canva', featureId: 'canva', moduleGroup: 'Intelligence', moduleId: 'Canva' });
     intelligenceChildren.push({ key: '/client/intelligence/seo', icon: getIcon(Search), label: 'Seo Intelligence', featureId: 'seo', moduleGroup: 'Intelligence', moduleId: 'Seo Intelligence' });
     intelligenceChildren.push({ key: '/client/intelligence/seo-aeo-geo', icon: getIcon(Search), label: 'SEO/AEO/GEO', featureId: 'seo-aeo-geo', moduleGroup: 'Intelligence', moduleId: 'SEO/AEO/GEO' });

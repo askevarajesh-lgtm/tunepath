@@ -98,6 +98,7 @@ import Benchmarks from './pages/Benchmarks/Benchmarks';
 import Marketplace from './pages/Marketplace/Marketplace';
 import MarketplaceSEO from './pages/Marketplace/SEO/MarketplaceSEO';
 import ClientChatGPTPage from './pages/ClientChatGPTPage/ClientChatGPTPage';
+import ClaudeChatPage from './pages/ClaudeChatPage/ClaudeChatPage';
 import ClientCanvaPage from './pages/ClientCanvaPage/ClientCanvaPage';
 
 // Agency Portal Tabs
@@ -345,6 +346,7 @@ const AppRoutes = () => {
           <Route path="intelligence/mos" element={<MOSScore />} />
           <Route path="intelligence/copilot" element={<AICopilot />} />
           <Route path="intelligence/chatgpt" element={<ClientChatGPTPage />} />
+          <Route path="intelligence/claude" element={<ClaudeChatPage />} />
           <Route path="intelligence/canva" element={<ClientCanvaPage />} />
           <Route path="intelligence/agents" element={<AIAgents />} />
           {/* <Route path="intelligence/benchmarks" element={<Benchmarks />} /> */}
@@ -448,6 +450,7 @@ const AppRoutes = () => {
           <Route path="website/:websiteId/pages/:pageId/edit" element={<BuilderRouteWrapper />} />
           <Route path="website/:websiteId/blogs/:blogId/posts/:postId/edit" element={<BlogPostBuilderRouteWrapper />} />
           <Route path="chatgpt" element={<ClientChatGPTPage />} />
+          <Route path="claude" element={<ClaudeChatPage />} />
           <Route path="canva" element={<ClientCanvaPage />} />
           {/* <Route path="benchmarks" element={<Benchmarks />} /> */}
           <Route path="analytics" element={<Analytics />} />
@@ -563,6 +566,7 @@ const AppRoutes = () => {
           <Route path="intelligence/mos" element={<MOSScore />} />
           <Route path="intelligence/copilot" element={<AICopilot />} />
           <Route path="intelligence/chatgpt" element={<ClientChatGPTPage />} />
+          <Route path="intelligence/claude" element={<ClaudeChatPage />} />
           <Route path="intelligence/canva" element={<ClientCanvaPage />} />
           <Route path="intelligence/agents" element={<AIAgents />} />
           {/* <Route path="intelligence/benchmarks" element={<Benchmarks />} /> */}
@@ -696,6 +700,7 @@ const AppRoutes = () => {
           <Route path="performance/self-assessment" element={<SelfAssessmentForm />} />
           <Route path="intelligence/analytics" element={<Analytics />} />
           <Route path="intelligence/chatgpt" element={<ClientChatGPTPage />} />
+          <Route path="intelligence/claude" element={<ClaudeChatPage />} />
           <Route path="intelligence/canva" element={<ClientCanvaPage />} />
           <Route path="intelligence/seo-aeo-geo" element={<SemrushDashboard />} />
           <Route path="intelligence/seo-aeo-geo/:projectId" element={<Semrush />}>
