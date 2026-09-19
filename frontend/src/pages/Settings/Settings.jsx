@@ -30,7 +30,7 @@ const SettingsPage = () => {
       try {
         const res = await api.get('/auth/me');
         if (res.data?.success && res.data?.user) {
-          login(res.data.user);
+          login(res.data.user, true);
         }
       } catch (err) {
         console.error("Failed to fetch latest profile in settings", err);

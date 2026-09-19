@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, [role]);
 
-  const login = (user) => {
+  const login = (user, skipNavigate = false) => {
     setUser(user);
     setRole(user.role);
     setFeatures(user.features || []);
@@ -62,20 +62,22 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('user', JSON.stringify(user));
     window.dispatchEvent(new Event('user-updated'));
     
-    if (user.role === 'supreme_super_admin') {
-      navigate('/superadmin/dashboard');
-    } else if (user.role === 'commander_admin') {
-      navigate('/dashboard');
-    } else if (['agency_super_admin', 'agency_manager'].includes(user.role)) {
-      navigate('/agency/overview');
-    } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'].includes(user.role) || (user.role === 'user' && user.brandId)) {
-      navigate('/client/dashboard');
-    } else {
-      // Fallback for custom roles (like developer, seo, etc)
-      if (user.role === 'superadmin') navigate('/superadmin/dashboard');
-      else if (user.role === 'agency') navigate('/agency/overview');
-      else if (user.role === 'client') navigate('/client/dashboard');
-      else navigate('/user/dashboard');
+    if (!skipNavigate) {
+      if (user.role === 'supreme_super_admin') {
+        navigate('/superadmin/dashboard');
+      } else if (user.role === 'commander_admin') {
+        navigate('/dashboard');
+      } else if (['agency_super_admin', 'agency_manager'].includes(user.role)) {
+        navigate('/agency/overview');
+      } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'].includes(user.role) || (user.role === 'user' && user.brandId)) {
+        navigate('/client/dashboard');
+      } else {
+        // Fallback for custom roles (like developer, seo, etc)
+        if (user.role === 'superadmin') navigate('/superadmin/dashboard');
+        else if (user.role === 'agency') navigate('/agency/overview');
+        else if (user.role === 'client') navigate('/client/dashboard');
+        else navigate('/user/dashboard');
+      }
     }
   };
 
