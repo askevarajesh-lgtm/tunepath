@@ -676,6 +676,9 @@ const CampaignForm = () => {
                               ]}
                             >
                               <Select placeholder="Select platform">
+                                <Select.Option value="facebook_instagram_both">
+                                  Facebook & Instagram Both
+                                </Select.Option>
                                 <Select.Option value="instagram">
                                   Instagram
                                 </Select.Option>

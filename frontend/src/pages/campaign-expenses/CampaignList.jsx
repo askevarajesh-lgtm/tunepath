@@ -56,6 +56,22 @@ import { useActionPermissions } from "../../hooks/useActionPermissions";
 
 const { Title } = Typography;
 
+export const formatPlatformName = (platform) => {
+  if (!platform) return "-";
+  if (
+    platform === "facebook_instagram_both" ||
+    platform === "facebook_and_instagram"
+  ) {
+    return "Facebook & Instagram Both";
+  }
+  if (platform === "meta_ads") return "Meta Ads";
+  if (platform === "google_ads") return "Google Ads";
+  if (platform === "facebook") return "Facebook";
+  if (platform === "instagram") return "Instagram";
+  if (platform === "other") return "Other";
+  return platform.replace(/_/g, " ").toUpperCase();
+};
+
 // Helper component for dynamic Client Amount in recharge modal
 const ClientAmountField = ({ clientId, form, rechargeAmount }) => {
   const { data, isLoading } = useGetClientCampaignSummaryQuery(clientId, {
@@ -597,7 +613,7 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
       title: "Platform",
       dataIndex: "platform",
       key: "platform",
-      render: (platform) => platform?.replace("_", " ").toUpperCase(),
+      render: (platform) => formatPlatformName(platform),
     },
     {
       title: "Client",
@@ -757,7 +773,7 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
             >
               {uniquePlatforms.map((platform) => (
                 <Select.Option key={platform} value={platform}>
-                  {platform.replace("_", " ").toUpperCase()}
+                  {formatPlatformName(platform)}
                 </Select.Option>
               ))}
             </Select>
@@ -809,10 +825,10 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
           defaultActiveKey={defaultTab}
           items={[
             {
-              key: "recharge",
+              key: "recharges",
               label: (
                 <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <Icon icon="mdi:flash" width="22" height="22" />
+                  <ThunderboltOutlined style={{ fontSize: 16 }} />
                   Recharge Campaign Details
                 </span>
               ),
@@ -824,7 +840,7 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
                         title: "Platform",
                         dataIndex: "platform",
                         key: "platform",
-                        render: (text) => text || "-",
+                        render: (text) => formatPlatformName(text),
                       },
                       {
                         title: "Date",
@@ -1079,6 +1095,9 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
                   rules={[{ required: true, message: "Please select platform" }]}
                 >
                   <Select placeholder="Select platform" size="large">
+                    <Select.Option value="facebook_instagram_both">
+                      Facebook & Instagram Both
+                    </Select.Option>
                     <Select.Option value="instagram">Instagram</Select.Option>
                     <Select.Option value="facebook">Facebook</Select.Option>
                     <Select.Option value="meta_ads">Meta Ads</Select.Option>
