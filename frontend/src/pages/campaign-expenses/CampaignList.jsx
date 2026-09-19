@@ -262,58 +262,79 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
 
     if (proj.isCampaign || proj.hasCampaigns) return true;
     if (proj.campaignAmount && Number(proj.campaignAmount) > 0) return true;
-    if (proj.masterItemId?.isCampaign || (proj.masterItemId?.campaignDetails?.campaignAmount > 0)) return true;
+
+    // Check master items
+    if (proj.masterItemId?.isCampaign || (proj.masterItemId?.campaignDetails?.campaignAmount > 0) || (proj.masterItemId?.campaignAmount > 0)) return true;
+    if (Array.isArray(proj.masterItemIds) && proj.masterItemIds.some(m => m?.isCampaign || (m?.campaignDetails?.campaignAmount > 0) || (m?.campaignAmount > 0))) return true;
+
+    // Check invoice / proposal
     if (proj.invoiceId?.campaignAmount && Number(proj.invoiceId.campaignAmount) > 0) return true;
+    if (proj.proposalId?.masterItems?.some(m => m?.isCampaign || (m?.campaignDetails?.campaignAmount > 0) || (m?.campaignAmount > 0))) return true;
 
     const depts = Array.isArray(proj.departments)
       ? proj.departments
       : [proj.department || ""];
     const hasCampaignDept = depts.some((d) => {
       const s = String(d || "").toLowerCase();
-      return s.includes("digital-marketing") || s.includes("campaign") || s.includes("performance-ads");
+      return s.includes("digital-marketing") || s.includes("campaign") || s.includes("performance-ads") || s.includes("marketing");
     });
     if (hasCampaignDept) return true;
 
-    if (proj.milestoneWorkflowType && ["campaign", "ads", "performance_ads"].includes(String(proj.milestoneWorkflowType).toLowerCase())) {
+    if (proj.milestoneWorkflowType && ["campaign", "ads", "performance_ads", "digital-marketing", "digital_marketing"].includes(String(proj.milestoneWorkflowType).toLowerCase())) {
       return true;
     }
 
     const name = String(proj.name || "").toLowerCase();
-    if (name.includes("campaign") || name.includes("meta ad") || name.includes("google ad") || name.includes("performance ad")) {
+    if (name.includes("campaign") || name.includes("meta ad") || name.includes("google ad") || name.includes("performance ad") || name.includes(" ad") || name.includes("ads")) {
       return true;
     }
 
     const cats = Array.isArray(proj.selectedCategories) ? proj.selectedCategories : [];
     const hasCampaignCat = cats.some((c) => {
       const catName = (typeof c === "string" ? c : c.name || c.categoryName || "").toLowerCase();
-      return catName.includes("campaign") || catName.includes("meta ad") || catName.includes("google ad") || catName.includes("performance ad");
+      return catName.includes("campaign") || catName.includes("meta ad") || catName.includes("google ad") || catName.includes("performance ad") || catName.includes("ads");
     });
     if (hasCampaignCat) return true;
 
     return false;
   }, [campaignsDropdown]);
 
-  const campaignClientIds = useMemo(() => {
-    const set = new Set();
+  // Clients who have existing campaigns created in Campaign Create
+  const rechargeClientsDropdown = useMemo(() => {
+    const map = new Map();
+
     (campaignsDropdown || []).forEach((c) => {
-      const cId = c.clientCompanyId?._id || c.clientCompanyId || c.clientId?._id || c.clientId;
-      if (cId) set.add(cId.toString());
-    });
-    (allProjects || []).forEach((p) => {
-      if (isCampaignProject(p)) {
-        const cId = p.clientId?._id || p.clientId;
-        if (cId) set.add(cId.toString());
+      const clientObj = c.clientCompanyId || c.clientId;
+      const cId = (clientObj?._id || clientObj || "").toString();
+      if (cId) {
+        let name = "";
+        let email = "";
+
+        if (typeof clientObj === "object" && clientObj.name) {
+          name = clientObj.name;
+          email = clientObj.email || "";
+        } else {
+          const found = (rawClientsDropdown || []).find(
+            (rc) => (rc._id || rc.id || "").toString() === cId,
+          );
+          if (found) {
+            name = found.name;
+            email = found.email || "";
+          }
+        }
+
+        if (name && !map.has(cId)) {
+          map.set(cId, {
+            _id: cId,
+            name,
+            email,
+          });
+        }
       }
     });
-    return set;
-  }, [campaignsDropdown, allProjects, isCampaignProject]);
 
-  const clientsDropdown = useMemo(() => {
-    return rawClientsDropdown.filter((client) => {
-      const cId = (client._id || client.id || "").toString();
-      return campaignClientIds.has(cId);
-    });
-  }, [rawClientsDropdown, campaignClientIds]);
+    return Array.from(map.values());
+  }, [campaignsDropdown, rawClientsDropdown]);
 
   const canViewAmounts = canRead;
   const canManageClientAmountValue = canEdit;
@@ -548,6 +569,24 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
     }
   }, [selectedCampaign, selectedCampaignId, rechargeForm]);
 
+  // Auto-fill dailyBudget for selected clients from their existing campaigns if available
+  useEffect(() => {
+    if (selectedClientIds && selectedClientIds.length > 0 && campaignsDropdown?.length > 0) {
+      selectedClientIds.forEach((clientId) => {
+        const currentBudget = rechargeForm.getFieldValue(["clientDetails", clientId, "dailyBudget"]);
+        if (currentBudget === undefined || currentBudget === null) {
+          const clientCampaign = campaignsDropdown.find((c) => {
+            const cId = (c.clientCompanyId?._id || c.clientCompanyId || c.clientId?._id || c.clientId || "").toString();
+            return cId === clientId.toString() && c.dailyBudget;
+          });
+          if (clientCampaign?.dailyBudget) {
+            rechargeForm.setFieldValue(["clientDetails", clientId, "dailyBudget"], clientCampaign.dailyBudget);
+          }
+        }
+      });
+    }
+  }, [selectedClientIds, campaignsDropdown, rechargeForm]);
+
   // Handle form values change
   const handleFormValuesChange = (changedValues, allValues) => {
     // This can be used for future auto-calculations if needed
@@ -739,7 +778,7 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
                     .toLowerCase()
                     .includes(input.toLowerCase())
                 }
-                options={clientsDropdown.map((client) => ({
+                options={rechargeClientsDropdown.map((client) => ({
                   value: client._id,
                   label: `${client.name}${client.email ? ` (${client.email})` : ""}`,
                 }))}
@@ -1095,7 +1134,7 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
               showSearch
               size="large"
               optionFilterProp="label"
-              options={clientsDropdown.map((client) => ({
+              options={rechargeClientsDropdown.map((client) => ({
                 value: client._id,
                 label: `${client.name}${client.email ? ` (${client.email})` : ""}`,
               }))}
@@ -1123,8 +1162,8 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
                     key: "clientName",
                     width: "20%",
                     render: (clientId) => {
-                      const client = clientsDropdown.find(c => c.value === clientId || c._id === clientId);
-                      return <b>{client?.label || client?.name || "Client"}</b>;
+                      const client = rechargeClientsDropdown.find(c => (c.value || c._id) === clientId);
+                      return <b>{client?.name || client?.label || "Client"}</b>;
                     }
                   },
                   {

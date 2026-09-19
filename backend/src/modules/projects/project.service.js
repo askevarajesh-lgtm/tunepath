@@ -1408,14 +1408,49 @@ const getProjectsDropdown = async (tenantCompanyId, reqQuery = {}) => {
       const existingCampaignProjIds = await Campaign.distinct("projectId");
       const validProjIds = (existingCampaignProjIds || []).filter(Boolean);
 
+      const MasterItem = require("../masterItems/masterItem.model");
+      const campaignMasterItems = await MasterItem.find({
+        $or: [
+          { isCampaign: true },
+          { "campaignDetails.campaignAmount": { $gt: 0 } },
+          { campaignAmount: { $gt: 0 } },
+        ],
+      }).select("_id");
+      const campaignMasterItemIds = campaignMasterItems.map((m) => m._id);
+
       campaignFilter = {
         $or: [
           ...(validProjIds.length > 0 ? [{ _id: { $in: validProjIds } }] : []),
+          ...(campaignMasterItemIds.length > 0
+            ? [
+                { masterItemId: { $in: campaignMasterItemIds } },
+                { masterItemIds: { $in: campaignMasterItemIds } },
+              ]
+            : []),
           { isCampaign: true },
           { campaignAmount: { $gt: 0 } },
-          { departments: { $in: ["digital-marketing", "performance-ads", "campaigns"] } },
-          { milestoneWorkflowType: { $in: ["campaign", "ads", "performance_ads"] } },
-          { name: { $regex: /campaign|ad|meta|google/i } },
+          {
+            departments: {
+              $in: [
+                "digital-marketing",
+                "performance-ads",
+                "campaigns",
+                "marketing",
+              ],
+            },
+          },
+          {
+            milestoneWorkflowType: {
+              $in: [
+                "campaign",
+                "ads",
+                "performance_ads",
+                "digital-marketing",
+                "digital_marketing",
+              ],
+            },
+          },
+          { name: { $regex: /campaign|ad|meta|google|performance|marketing/i } },
         ],
       };
     } catch (e) {
@@ -1447,8 +1482,32 @@ const getProjectsDropdown = async (tenantCompanyId, reqQuery = {}) => {
   return await executeDropdownQuery(
     Project,
     queryOptions,
-    { path: "clientId", select: "name status" },
-    "name status clientId milestoneWorkflowType departments numberOfPosters numberOfVideos numberOfShoots remainingPosters remainingVideos remainingShoots selectedCategories",
+    [
+      { path: "clientId", select: "name status email" },
+      {
+        path: "masterItemId",
+        select:
+          "name isCampaign campaignAmount campaignDetails department category",
+      },
+      {
+        path: "masterItemIds",
+        select:
+          "name isCampaign campaignAmount campaignDetails department category",
+      },
+      {
+        path: "invoiceId",
+        select: "invoiceNumber campaignAmount grandTotal proposalId",
+      },
+      {
+        path: "proposalId",
+        select: "proposalNumber name masterItems",
+        populate: {
+          path: "masterItems",
+          select: "name isCampaign campaignDetails campaignAmount department",
+        },
+      },
+    ],
+    "name status clientId invoiceId masterItemId masterItemIds proposalId isCampaign campaignAmount milestoneWorkflowType departments numberOfPosters numberOfVideos numberOfShoots remainingPosters remainingVideos remainingShoots selectedCategories",
   );
 };
 
@@ -1471,16 +1530,40 @@ const getProjectById = async (
     .populate("clientId", "name email phone address status")
     .populate("companyId", "name email phone address status")
     .populate("createdBy", "name email")
-    .populate("invoiceId", "invoiceNumber type status paymentStatus grandTotal createdAt")
-    .populate("proposalId", "proposalNumber name status grandTotal")
+    .populate({
+      path: "invoiceId",
+      select:
+        "invoiceNumber type status paymentStatus grandTotal createdAt proposalId campaignAmount",
+      populate: {
+        path: "proposalId",
+        select: "proposalNumber name masterItems",
+        populate: {
+          path: "masterItems",
+          select:
+            "name itemCode category price isCampaign campaignDetails campaignAmount department",
+        },
+      },
+    })
+    .populate({
+      path: "proposalId",
+      select: "proposalNumber name status grandTotal masterItems",
+      populate: {
+        path: "masterItems",
+        select:
+          "name itemCode category price isCampaign campaignDetails campaignAmount department",
+      },
+    })
     .populate("workflowSentBy", "name email")
     .populate("workflowApprovedBy", "name email")
     .populate("workflowRevisionRequestedBy", "name email")
     .populate(
       "masterItemId",
-      "name description deliverables itemType pricingModel basePrice handlingAmount campaignAmount handlingDuration numberOfPosters numberOfVideos numberOfShoots digitalMarketingPackages campaignPackages seoPackages websitePackages designingPackages selectedCategories categories applicableAccess isActive",
+      "name description deliverables itemType pricingModel basePrice handlingAmount campaignAmount handlingDuration isCampaign campaignDetails numberOfPosters numberOfVideos numberOfShoots digitalMarketingPackages campaignPackages seoPackages websitePackages designingPackages selectedCategories categories applicableAccess isActive",
     )
-    .populate("masterItemIds", "name itemCode category categories applicableAccess price duration description isCampaign campaignDetails")
+    .populate(
+      "masterItemIds",
+      "name itemCode category categories applicableAccess price duration description isCampaign campaignDetails campaignAmount department",
+    )
     .populate("planId", "name")
     .populate("milestones.completedBy", "name email");
 
