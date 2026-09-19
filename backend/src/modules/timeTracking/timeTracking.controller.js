@@ -230,7 +230,7 @@ exports.getRecentEntries = async (req, res) => {
     const entries = await TimeEntry.find(matchQuery)
       .populate('employee', 'name departmentId departmentName')
       .populate('client', 'name companyName')
-      .populate('task', 'title department')
+      .populate('task', 'title department status')
       .populate('department', 'name')
       .sort({ date: -1, createdAt: -1 })
       .limit(20);
@@ -249,6 +249,7 @@ exports.getRecentEntries = async (req, res) => {
       client: e.client?.companyName || e.client?.name || null,
       module: e.moduleName || 'Other',
       task: e.description || e.task?.title || 'General Work',
+      taskStatus: e.task?.status,
       rawDescription: e.description,
       hours: e.hours,
       billable: e.isBillable,
@@ -327,27 +328,56 @@ exports.getDashboardData = async (req, res) => {
         { tenantCompanyId: { $in: companyIdList } },
         { companyId: { $in: companyIdList } }
       ],
-      status: 'in_progress',
       workStartedAt: { $ne: null }
-    }).populate('assignedTo', 'name departmentName');
+    }).populate('assignedTo', 'name departmentId departmentName')
+      .populate('companyId', 'companyName name');
 
     const now = new Date();
-    // Active timers represent tasks running right now.
-    // If the selected date range does NOT include today ('now'), active timers for that selected range is 0.
-    const isTodayInRange = now >= startOfWeek && now <= endOfWeek;
+    
+    // Calculate overlap with the selected week and month
+    const weekStartMs = startOfWeek.getTime();
+    const weekEndMs = endOfWeek.getTime();
+    const monthStartMs = startOfMonth.getTime();
+    const monthEndMs = endOfMonth.getTime();
+    const nowMs = now.getTime();
 
-    const filteredActiveTasks = isTodayInRange
-      ? activeTasks.filter(t => t.workStartedAt && new Date(t.workStartedAt) <= endOfWeek)
-      : [];
+    let activeTimersRunningTimeMin = 0; // for the Active Timers card (total running)
+    let activeWeekHours = 0; // to add to kpi.totalHours
 
-    let activeTimersRunningTimeMin = 0;
-    filteredActiveTasks.forEach(t => {
-      const elapsedMin = Math.max(0, Math.round((now - new Date(t.workStartedAt)) / 60000));
-      // Cap running time per timer to 12 hours (720 min) to handle unstopped stale timers
-      activeTimersRunningTimeMin += Math.min(elapsedMin, 720);
+    const activeTasksData = activeTasks.map(t => {
+      const startedAt = new Date(t.workStartedAt);
+      const startedMs = startedAt.getTime();
+      
+      const totalElapsedMin = Math.max(0, (nowMs - startedMs) / 60000);
+      activeTimersRunningTimeMin += totalElapsedMin;
+
+      const overlapWeekStart = Math.max(startedMs, weekStartMs);
+      const overlapWeekEnd = Math.min(nowMs, weekEndMs);
+      const elapsedWeekMin = overlapWeekStart < overlapWeekEnd ? (overlapWeekEnd - overlapWeekStart) / 60000 : 0;
+      const elapsedWeekHours = elapsedWeekMin / 60;
+      activeWeekHours += elapsedWeekHours;
+
+      const overlapMonthStart = Math.max(startedMs, monthStartMs);
+      const overlapMonthEnd = Math.min(nowMs, monthEndMs);
+      const elapsedMonthMin = overlapMonthStart < overlapMonthEnd ? (overlapMonthEnd - overlapMonthStart) / 60000 : 0;
+      const elapsedMonthHours = elapsedMonthMin / 60;
+
+      return {
+        ...t.toObject(),
+        employeeId: t.assignedTo?._id?.toString(),
+        departmentId: t.assignedTo?.departmentId?.toString(),
+        departmentName: t.assignedTo?.departmentName || t.department || '—',
+        elapsedWeekHours,
+        elapsedMonthHours,
+        startedMs
+      };
     });
 
-    const activeTimersList = filteredActiveTasks.map(t => ({
+    // Add active week hours to KPIs
+    kpi.totalHours += activeWeekHours;
+    kpi.billableHours += activeWeekHours; // assuming active timers are billable
+
+    const activeTimersList = activeTasks.map(t => ({
       taskId: t._id,
       taskTitle: t.title,
       memberName: t.assignedTo?.name || 'Unknown',
@@ -356,7 +386,7 @@ exports.getDashboardData = async (req, res) => {
     }));
 
     // ── Missing timesheets: employees who haven't logged today ───────────────
-    const eligibleUsers = await getEligibleUsers(companyIdList);
+    let eligibleUsers = await getEligibleUsers(companyIdList);
 
     const todayStart = new Date(dateParam); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(dateParam); todayEnd.setHours(23, 59, 59, 999);
@@ -380,7 +410,7 @@ exports.getDashboardData = async (req, res) => {
       billablePercent: kpi.totalHours > 0 ? Math.round((kpi.billableHours / kpi.totalHours) * 100) : 0,
       nonBillablePercent: kpi.totalHours > 0 ? Math.round((kpi.nonBillableHours / kpi.totalHours) * 100) : 0,
       utilizationRate: utilizationRate > 100 ? 100 : utilizationRate,
-      activeTimersCount: filteredActiveTasks.length,
+      activeTimersCount: activeTasks.length,
       activeTimersRunningTime: parseFloat((activeTimersRunningTimeMin / 60).toFixed(2)),
       activeTimersList,
       missingTimesheetsCount: missingCount,
@@ -394,12 +424,40 @@ exports.getDashboardData = async (req, res) => {
     };
 
     // ── Weekly timesheet: hours per member per day ───────────────────────────
-    const weekEntries = await TimeEntry.find(weekMatch).lean();
+    const weekEntries = await TimeEntry.find(weekMatch)
+      .populate('task', 'title status companyId')
+      .populate('client', 'companyName name')
+      .populate('department', 'name')
+      .lean();
 
     // Fetch departments in this tenant/company for enriching data
     const departments = await getDepartments(companyIdList);
     const deptMap = {};
     departments.forEach(d => { deptMap[d._id.toString()] = d.name; });
+    
+    // Add missing users who have time entries or active tasks but are not in eligibleUsers
+    const activeEmployeeIds = activeTasksData.map(t => t.employeeId).filter(Boolean);
+    const timeEntryEmployeeIds = weekEntries.map(e => e.employee?.toString()).filter(Boolean);
+    const allRelevantEmployeeIds = [...new Set([...activeEmployeeIds, ...timeEntryEmployeeIds])];
+    
+    const missingIds = allRelevantEmployeeIds.filter(id => !eligibleUsers.some(u => u._id.toString() === id));
+    if (missingIds.length > 0) {
+      const missingUsers = await User.find({ _id: { $in: missingIds } }).select('_id name role departmentId departmentName').lean();
+      eligibleUsers.push(...missingUsers);
+    }
+    
+    // Add "Unassigned" row if there are tasks with no assigned user
+    if (activeTasksData.some(t => !t.employeeId && t.elapsedWeekHours > 0) || weekEntries.some(e => !e.employee)) {
+      if (!eligibleUsers.some(u => u._id.toString() === 'unassigned')) {
+        eligibleUsers.push({
+          _id: 'unassigned',
+          name: 'Unassigned Tasks',
+          role: 'N/A',
+          departmentId: null,
+          departmentName: '—'
+        });
+      }
+    }
 
     const getIsoDayOfWeek = (dateInput) => {
       if (!dateInput) return 0;
@@ -420,13 +478,63 @@ exports.getDashboardData = async (req, res) => {
       const empEntries = weekEntries.filter(e => e.employee && e.employee.toString() === u._id.toString());
       
       const daysArr = [1, 2, 3, 4, 5, 6, 7].map(isoDay => {
-        const dayHours = empEntries
-          .filter(e => getIsoDayOfWeek(e.date) === isoDay)
-          .reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
-        return dayHours === 0 ? '-' : parseFloat(dayHours.toFixed(2));
+        const dayEntries = empEntries.filter(e => getIsoDayOfWeek(e.date) === isoDay);
+        const dayHours = dayEntries.reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
+        
+        const entries = dayEntries.map(e => ({
+          taskId: e.task?._id,
+          taskTitle: e.description || e.task?.title || 'General Work',
+          client: e.client?.companyName || e.client?.name || null,
+          department: e.department?.name || e.moduleName || null,
+          status: e.task?.status,
+          hours: Number(e.hours) || 0,
+          isBillable: e.isBillable !== false,
+          isRunning: false,
+          startedAt: e.createdAt,
+          description: e.description
+        }));
+
+        return {
+          total: parseFloat(dayHours.toFixed(2)),
+          entries
+        };
       });
 
-      const visualTotal = daysArr.reduce((s, v) => s + (v === '-' ? 0 : v), 0);
+      const visualTotal = daysArr.reduce((s, v) => s + v.total, 0);
+      
+      // Distribute active timer hours across the week days
+      let finalTotal = visualTotal;
+      const daysArrWithActive = [...daysArr];
+      
+      const empActiveTasks = activeTasksData.filter(t => t.employeeId === u._id.toString());
+      empActiveTasks.forEach(t => {
+        if (t.elapsedWeekHours > 0) {
+          finalTotal += t.elapsedWeekHours;
+          // Split elapsed time by day
+          for (let isoDay = 1; isoDay <= 7; isoDay++) {
+            const dayStartMs = weekStartMs + (isoDay - 1) * 86400000;
+            const dayEndMs = dayStartMs + 86400000 - 1;
+            const overlapDayStart = Math.max(t.startedMs, dayStartMs);
+            const overlapDayEnd = Math.min(nowMs, dayEndMs);
+            if (overlapDayStart < overlapDayEnd) {
+              const dayElapsed = (overlapDayEnd - overlapDayStart) / 3600000;
+              daysArrWithActive[isoDay - 1].total = parseFloat((daysArrWithActive[isoDay - 1].total + dayElapsed).toFixed(2));
+              daysArrWithActive[isoDay - 1].entries.push({
+                taskId: t._id,
+                taskTitle: t.title || 'General Work',
+                client: t.companyId?.companyName || t.companyId?.name || null,
+                department: t.department || null,
+                status: t.status,
+                hours: parseFloat(dayElapsed.toFixed(2)),
+                isBillable: true,
+                isRunning: true,
+                startedAt: new Date(overlapDayStart)
+              });
+            }
+          }
+        }
+      });
+
       const deptName = u.departmentId ? (deptMap[u.departmentId.toString()] || u.departmentName || '—') : (u.departmentName || '—');
 
       return {
@@ -435,9 +543,9 @@ exports.getDashboardData = async (req, res) => {
         department: deptName,
         initials: u.name ? u.name.substring(0, 2).toUpperCase() : 'UN',
         color: colors[i % colors.length],
-        mon: daysArr[0], tue: daysArr[1], wed: daysArr[2],
-        thu: daysArr[3], fri: daysArr[4], sat: daysArr[5], sun: daysArr[6],
-        total: parseFloat(visualTotal.toFixed(2))
+        mon: daysArrWithActive[0], tue: daysArrWithActive[1], wed: daysArrWithActive[2],
+        thu: daysArrWithActive[3], fri: daysArrWithActive[4], sat: daysArrWithActive[5], sun: daysArrWithActive[6],
+        total: parseFloat(finalTotal.toFixed(2))
       };
     });
 
@@ -457,6 +565,34 @@ exports.getDashboardData = async (req, res) => {
       if (!c._id) return { client: 'Internal / No Client', billable: parseFloat(c.billable.toFixed(1)), nonBillable: parseFloat(c.nonBillable.toFixed(1)) };
       const cInfo = clientsInfo.find(u => u._id.toString() === c._id.toString());
       return { client: cInfo ? (cInfo.companyName || cInfo.name) : 'Unknown Client', billable: parseFloat(c.billable.toFixed(1)), nonBillable: parseFloat(c.nonBillable.toFixed(1)) };
+    });
+
+    // Add active time to timeByClient
+    activeTasksData.forEach(t => {
+      if (t.elapsedMonthHours > 0) {
+        const cId = t.companyId ? t.companyId.toString() : null;
+        let cInfo = cId ? clientsInfo.find(u => u._id.toString() === cId) : null;
+        if (cId && !cInfo) {
+          // If not in pre-fetched clientsInfo, handle it
+          cInfo = { companyName: 'Unknown Client' }; 
+        }
+        const clientName = cId ? (cInfo.companyName || cInfo.name || 'Unknown Client') : 'Internal / No Client';
+        
+        const existing = timeByClient.find(c => c.client === clientName);
+        if (existing) {
+          existing.billable += t.elapsedMonthHours;
+        } else {
+          timeByClient.push({
+            client: clientName,
+            billable: t.elapsedMonthHours,
+            nonBillable: 0
+          });
+        }
+      }
+    });
+
+    timeByClient.forEach(c => {
+      c.billable = parseFloat(c.billable.toFixed(1));
     });
 
     // ── Department breakdown: hours per department this week ──────────────────
@@ -486,11 +622,40 @@ exports.getDashboardData = async (req, res) => {
     // Enrich with dept names from Department collection
     const timeByDepartment = deptTimeAgg.map(d => ({
       department: d._id && d._id !== 'no-dept' ? (deptMap[d._id.toString()] || d.deptName || 'No Department') : 'No Department',
-      totalHours: parseFloat(d.totalHours.toFixed(1)),
-      billable: parseFloat(d.billableHours.toFixed(1)),
-      nonBillable: parseFloat((d.totalHours - d.billableHours).toFixed(1)),
+      totalHours: d.totalHours,
+      billable: d.billableHours,
+      nonBillable: d.totalHours - d.billableHours,
       members: d.memberCount
     }));
+
+    // Add active time to timeByDepartment
+    activeTasksData.forEach(t => {
+      if (t.elapsedWeekHours > 0) {
+        const dId = t.departmentId;
+        const deptName = dId ? (deptMap[dId] || t.departmentName) : t.departmentName;
+        
+        let existing = timeByDepartment.find(d => d.department === deptName);
+        if (existing) {
+          existing.totalHours += t.elapsedWeekHours;
+          existing.billable += t.elapsedWeekHours;
+          // Note: not incrementing members if employee already counted, to prevent double counting
+        } else {
+          timeByDepartment.push({
+            department: deptName,
+            totalHours: t.elapsedWeekHours,
+            billable: t.elapsedWeekHours,
+            nonBillable: 0,
+            members: 1
+          });
+        }
+      }
+    });
+
+    timeByDepartment.forEach(d => {
+      d.totalHours = parseFloat(d.totalHours.toFixed(1));
+      d.billable = parseFloat(d.billable.toFixed(1));
+      d.nonBillable = parseFloat(d.nonBillable.toFixed(1));
+    });
 
     res.status(200).json({
       success: true,
@@ -595,12 +760,47 @@ exports.getTeamTaskPerformance = async (req, res) => {
     ]);
 
     // Fetch ALL active trackable users for this tenant
-    const users = await getEligibleUsers(companyIdList);
+    let users = await getEligibleUsers(companyIdList);
 
     // Fetch departments for label mapping
     const departments = await getDepartments(companyIdList);
     const deptMap = {};
     departments.forEach(d => { deptMap[d._id.toString()] = d.name; });
+
+    // Fetch active tasks to get their active time
+    const activeTasks = await Task.find({
+      $or: [{ tenantCompanyId: { $in: companyIdList } }, { companyId: { $in: companyIdList } }],
+      workStartedAt: { $ne: null }
+    }).populate('assignedTo', 'name departmentId departmentName');
+
+    const now = new Date();
+    const nowMs = now.getTime();
+    const weekStartMs = startOfWeek.getTime();
+    const weekEndMs = endOfWeek.getTime();
+
+    // Ensure active users are included in `users` list
+    const activeEmployeeIds = activeTasks.map(t => t.assignedTo?._id?.toString()).filter(Boolean);
+    const timeEntryEmployeeIds = timeSpentAgg.map(t => t._id?.toString()).filter(Boolean);
+    const completedTasksEmployeeIds = tasksCompletedAgg.map(t => t._id?.toString()).filter(Boolean);
+    const allRelevantIds = [...new Set([...activeEmployeeIds, ...timeEntryEmployeeIds, ...completedTasksEmployeeIds])];
+    
+    const missingUserIds = allRelevantIds.filter(id => !users.some(u => u._id.toString() === id));
+    if (missingUserIds.length > 0) {
+      const missingUsers = await User.find({ _id: { $in: missingUserIds } }).select('_id name role departmentId departmentName').lean();
+      users.push(...missingUsers);
+    }
+    
+    if (activeTasks.some(t => !t.assignedTo) || timeSpentAgg.some(t => !t._id) || tasksCompletedAgg.some(t => !t._id)) {
+      if (!users.some(u => u._id.toString() === 'unassigned')) {
+        users.push({
+          _id: 'unassigned',
+          name: 'Unassigned Tasks',
+          role: 'N/A',
+          departmentId: null,
+          departmentName: '—'
+        });
+      }
+    }
 
     const performanceData = users.map(u => {
       const tc = tasksCompletedAgg.find(t => t._id && t._id.toString() === u._id.toString());
@@ -612,8 +812,27 @@ exports.getTeamTaskPerformance = async (req, res) => {
         role: u.role,
         department: deptName,
         tasksCompleted: tc ? tc.tasksCompleted : 0,
-        totalTimeSpent: ts ? parseFloat(ts.totalTimeSpentHours.toFixed(1)) : 0
+        totalTimeSpent: ts ? ts.totalTimeSpentHours : 0
       };
+    });
+
+    activeTasks.forEach(t => {
+      const startedMs = new Date(t.workStartedAt).getTime();
+      const overlapStart = Math.max(startedMs, weekStartMs);
+      const overlapEnd = Math.min(nowMs, weekEndMs);
+      
+      if (overlapStart < overlapEnd) {
+        const elapsedHours = (overlapEnd - overlapStart) / 3600000;
+        const uId = t.assignedTo ? t.assignedTo._id.toString() : 'unassigned';
+        const pData = performanceData.find(p => p.userId.toString() === uId);
+        if (pData) {
+          pData.totalTimeSpent += elapsedHours;
+        }
+      }
+    });
+
+    performanceData.forEach(p => {
+      p.totalTimeSpent = parseFloat(p.totalTimeSpent.toFixed(1));
     });
 
     // Also return department-level rollup initialized with active departments

@@ -7,13 +7,14 @@ exports.recordTimerStop = async (task, diffMinutes, userId) => {
   
   try {
     const employeeId = task.assignedTo || userId;
-    const employee = await User.findById(employeeId).select('agencyId');
+    const employee = await User.findById(employeeId).select('agencyId departmentId');
     const tenantCompanyId = employee ? employee.agencyId : (task.tenantCompanyId || task.companyId);
 
     const timeEntry = new TimeEntry({
       employee: employeeId,
       client: task.companyId,
       task: task._id,
+      department: employee ? employee.departmentId : undefined,
       date: new Date(),
       hours: diffHours,
       isBillable: true,
