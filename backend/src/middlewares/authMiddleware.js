@@ -19,14 +19,19 @@ const authMiddleware = async (req, res, next) => {
         workspaceId = workspaceId || decoded.workspaceId;
         req.companyId = decoded.agencyId || decoded.brandId || decoded.workspaceId || decoded.adminId;
 
-        if (!req.companyId && decoded._id) {
+        if (decoded._id) {
           try {
             const User = mongoose.model('User');
             const dbUser = await User.findById(decoded._id).lean();
             if (dbUser) {
-              req.companyId = dbUser.agencyId || dbUser.brandId || dbUser.workspaceId || dbUser.adminId;
-              if (!req.companyId && ['agency', 'agency_manager', 'agency_super_admin', 'brand_super_admin', 'brand_manager', 'client', 'commander_admin', 'supreme_super_admin'].includes(dbUser.role)) {
-                req.companyId = dbUser._id;
+              if (!req.user.name) req.user.name = dbUser.name;
+              if (!req.user.roleName) req.user.roleName = dbUser.roleName;
+              if (!req.user.customRoleId) req.user.customRoleId = dbUser.customRoleId;
+              if (!req.companyId) {
+                req.companyId = dbUser.agencyId || dbUser.brandId || dbUser.workspaceId || dbUser.adminId;
+                if (!req.companyId && ['agency', 'agency_manager', 'agency_super_admin', 'brand_super_admin', 'brand_manager', 'client', 'commander_admin', 'supreme_super_admin'].includes(dbUser.role)) {
+                  req.companyId = dbUser._id;
+                }
               }
               req.user.adminId = dbUser.adminId;
             }

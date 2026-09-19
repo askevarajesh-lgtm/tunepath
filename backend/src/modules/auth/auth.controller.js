@@ -162,6 +162,8 @@ exports.signin = async (req, res, next) => {
     const token = jwt.sign(
       {
         _id: user._id,
+        name: user.name,
+        roleName: user.roleName,
         email: user.email,
         role: user.role,
         agencyId: user.agencyId ? user.agencyId._id : null,
@@ -470,6 +472,8 @@ exports.impersonate = async (req, res, next) => {
     const token = jwt.sign(
       {
         _id: user._id,
+        name: user.name,
+        roleName: user.roleName,
         email: user.email,
         role: user.role,
         agencyId: user.agencyId ? user.agencyId._id : null,

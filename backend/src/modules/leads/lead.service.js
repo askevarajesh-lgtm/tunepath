@@ -9,24 +9,67 @@ const {
   normalizeStatus,
 } = require("./leadCsv.util");
 
+const escapeRegex = (string) => {
+  return string.replace(/[/\-\\^$*+?.()|[\]{}]/g, "\\$&");
+};
+
+const ensureCurrentUserData = async (currentUser) => {
+  if (currentUser && (!currentUser.name || !currentUser.role) && currentUser._id) {
+    try {
+      const dbUser = await User.findById(currentUser._id).select("name email role customRoleId roleName brandId agencyId").lean();
+      if (dbUser) {
+        if (!currentUser.name) currentUser.name = dbUser.name;
+        if (!currentUser.email) currentUser.email = dbUser.email;
+        if (!currentUser.role) currentUser.role = dbUser.role;
+        if (currentUser.brandId === undefined) currentUser.brandId = dbUser.brandId;
+        if (currentUser.agencyId === undefined) currentUser.agencyId = dbUser.agencyId;
+      }
+    } catch (e) {
+      console.error("Error fetching user data in lead service:", e);
+    }
+  }
+};
+
 const buildLeadAccessFilter = (companyId, currentUser) => {
   const baseFilter = { companyId };
   if (!currentUser) return baseFilter;
 
   const userRole = String(currentUser.role || "").toLowerCase();
+
+  // 1. Sub-users of Agency Client / Brand only see leads specifically assigned to them or owned by them
   if (userRole === "user" && currentUser.brandId) {
-    // Sub-users of Agency Client only see leads specifically assigned to them or owned by them
     const userName = String(currentUser.name || "").trim();
+    const userEmail = String(currentUser.email || "").trim();
+    const userMatch = [];
+    if (userName) {
+      userMatch.push(
+        { assignedTo: userName },
+        { assignedTo: new RegExp(`^\\s*${escapeRegex(userName)}\\s*$`, "i") }
+      );
+    }
+    if (userEmail) {
+      userMatch.push(
+        { assignedTo: userEmail },
+        { assignedTo: new RegExp(`^\\s*${escapeRegex(userEmail)}\\s*$`, "i") }
+      );
+    }
+    if (currentUser._id) {
+      userMatch.push(
+        { ownerId: currentUser._id },
+        { createdBy: currentUser._id }
+      );
+    }
+
     return {
       ...baseFilter,
       isClientLead: true,
       clientId: currentUser.clientUserId,
-      $or: [{ assignedTo: userName }, { ownerId: currentUser._id }],
+      $or: userMatch.length > 0 ? userMatch : [{ assignedTo: "__NO_ACCESS__" }],
     };
   }
 
+  // 2. Client / Brand Admins and Managers see only leads belonging to their client company
   if (currentUser.isClientRole) {
-    // Client sees only leads belonging to their client company
     return {
       ...baseFilter,
       isClientLead: true,
@@ -34,45 +77,77 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
     };
   }
 
-  if (userRole === "bde") {
-    const userName = String(currentUser.name || "").trim();
-    // BDEs see assigned leads that are NOT created by clients
-    return {
-      ...baseFilter,
-      isClientLead: { $ne: true },
-      $or: [{ assignedTo: userName }],
-    };
+  // 3. Platform & Agency Management roles (commander_admin, supreme_super_admin, agency_super_admin, agency_manager, agency)
+  // They see all agency prospecting leads by default (or client leads if query.companyId is passed)
+  const isAgencyAdminOrManager = [
+    "supreme_super_admin",
+    "commander_admin",
+    "agency_super_admin",
+    "agency_manager",
+    "agency",
+  ].includes(userRole);
+
+  if (isAgencyAdminOrManager) {
+    return { ...baseFilter, isClientLead: { $ne: true } };
   }
 
-  // Default for all other agency-level roles (agency_manager, agency_super_admin, commander_admin)
-  // They see only agency-created leads (prospecting leads) by default.
-  // If they want to view a specific client's leads, the controller passes query.companyId,
-  // which overrides this default behavior below.
-  return { ...baseFilter, isClientLead: { $ne: true } };
+  // 4. Agency Employees / Team Members (e.g. role === "user" without brandId, role === "bde", or any custom role like Video Editor, Designer, etc.)
+  // They ONLY see leads assigned to them or created/owned by them
+  const userName = String(currentUser.name || "").trim();
+  const userEmail = String(currentUser.email || "").trim();
+  const userMatch = [];
+  if (userName) {
+    userMatch.push(
+      { assignedTo: userName },
+      { assignedTo: new RegExp(`^\\s*${escapeRegex(userName)}\\s*$`, "i") }
+    );
+  }
+  if (userEmail) {
+    userMatch.push(
+      { assignedTo: userEmail },
+      { assignedTo: new RegExp(`^\\s*${escapeRegex(userEmail)}\\s*$`, "i") }
+    );
+  }
+  if (currentUser._id) {
+    userMatch.push(
+      { ownerId: currentUser._id },
+      { createdBy: currentUser._id }
+    );
+  }
+
+  return {
+    ...baseFilter,
+    $or: userMatch.length > 0 ? userMatch : [{ assignedTo: "__NO_ACCESS__" }],
+  };
 };
 
 const getLeads = async (companyId, currentUser, query = {}) => {
-
+  await ensureCurrentUserData(currentUser);
   const accessFilter = buildLeadAccessFilter(companyId, currentUser);
   if (query.companyId) {
     // If a client is selected, remove the isClientLead restriction to see their leads
     delete accessFilter.isClientLead;
     accessFilter.clientId = query.companyId;
   }
-  console.log("getLeads accessFilter:", JSON.stringify(accessFilter), "for user:", currentUser.role, currentUser.name);
+  console.log("getLeads accessFilter:", JSON.stringify(accessFilter), "for user:", currentUser?.role, currentUser?.name);
   return Lead.find(accessFilter).sort({ createdAt: -1 }).lean();
 };
 
 /** Active BDE users in the tenant company (for lead assignment dropdown). */
 const getAssignableBdeUsers = async (companyId) => {
   if (!companyId) return [];
-  return User.find({ companyId, role: "bde", isActive: true })
+  return User.find({
+    $or: [{ agencyId: companyId }, { brandId: companyId }, { companyId }],
+    role: "bde",
+    isActive: true,
+  })
     .select("name _id")
     .sort({ name: 1 })
     .lean();
 };
 
 const createLead = async (leadData, companyId, userId, currentUser) => {
+  await ensureCurrentUserData(currentUser);
   const {
     fullName,
     companyName,
@@ -86,13 +161,20 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
     customData,
   } = leadData;
 
-  const defaultAssignee =
-    String(currentUser?.role || "").toLowerCase() === "bde"
-      ? String(currentUser?.name || "").trim()
-      : "";
+  const userRole = String(currentUser?.role || "").toLowerCase();
+  const isAgencyAdminOrManager = [
+    "supreme_super_admin",
+    "commander_admin",
+    "agency_super_admin",
+    "agency_manager",
+    "agency",
+  ].includes(userRole);
+
+  const defaultAssignee = !isAgencyAdminOrManager
+    ? String(currentUser?.name || "").trim()
+    : "";
   const assignedToValue = String(assignedTo || "").trim() || defaultAssignee;
 
-  const userRole = String(currentUser?.role || "").toLowerCase();
   const isClientLead = leadData.isClientLead || currentUser?.isClientRole;
 
   const lead = await Lead.create({
@@ -108,7 +190,7 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
     source: String(source || "").trim(),
     status: status || "new",
     assignedTo: assignedToValue,
-    ownerId: (userRole === "user" && currentUser.brandId) ? currentUser._id : null,
+    ownerId: (userRole === "user" && currentUser?.brandId) ? currentUser._id : null,
     notes: String(notes || "").trim(),
     customData: customData || {},
     activityLogs: [{ message: "Lead created" }],
@@ -118,6 +200,7 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
 };
 
 const updateLead = async (leadId, updateData, companyId, currentUser) => {
+  await ensureCurrentUserData(currentUser);
   const lead = await Lead.findOne({
     _id: leadId,
     ...buildLeadAccessFilter(companyId, currentUser),
@@ -146,11 +229,20 @@ const updateLead = async (leadId, updateData, companyId, currentUser) => {
   lead.projectType = String(projectType || "").trim();
   lead.source = String(source || "").trim();
   lead.status = status || lead.status;
-  const defaultAssignee =
-    String(currentUser?.role || "").toLowerCase() === "bde"
-      ? String(currentUser?.name || "").trim()
-      : "";
-  lead.assignedTo = String(assignedTo || "").trim() || defaultAssignee;
+  
+  const userRole = String(currentUser?.role || "").toLowerCase();
+  const isAgencyAdminOrManager = [
+    "supreme_super_admin",
+    "commander_admin",
+    "agency_super_admin",
+    "agency_manager",
+    "agency",
+  ].includes(userRole);
+  const defaultAssignee = !isAgencyAdminOrManager
+    ? String(currentUser?.name || "").trim()
+    : "";
+
+  lead.assignedTo = String(assignedTo || "").trim() || (isAgencyAdminOrManager ? lead.assignedTo : defaultAssignee);
   lead.notes = String(notes || "").trim();
   lead.lastInteractionAt = new Date();
 
@@ -167,6 +259,7 @@ const updateLead = async (leadId, updateData, companyId, currentUser) => {
 };
 
 const deleteLead = async (leadId, companyId, currentUser) => {
+  await ensureCurrentUserData(currentUser);
   const lead = await Lead.findOneAndDelete({
     _id: leadId,
     ...buildLeadAccessFilter(companyId, currentUser),
@@ -178,6 +271,7 @@ const deleteLead = async (leadId, companyId, currentUser) => {
 };
 
 const getLeadNotes = async (leadId, companyId, currentUser) => {
+  await ensureCurrentUserData(currentUser);
   const lead = await Lead.findOne({
     _id: leadId,
     ...buildLeadAccessFilter(companyId, currentUser),
@@ -200,6 +294,7 @@ const addLeadNote = async (
   noteData,
   currentUser,
 ) => {
+  await ensureCurrentUserData(currentUser);
   const lead = await Lead.findOne({
     _id: leadId,
     ...buildLeadAccessFilter(companyId, currentUser),
@@ -250,6 +345,7 @@ const addLeadNote = async (
 };
 
 const deleteLeadNote = async (leadId, noteId, companyId, currentUser) => {
+  await ensureCurrentUserData(currentUser);
   const lead = await Lead.findOne({
     _id: leadId,
     ...buildLeadAccessFilter(companyId, currentUser),
@@ -285,7 +381,7 @@ const getLeadsForExport = async (
   currentUser,
   query = {},
 ) => {
-
+  await ensureCurrentUserData(currentUser);
   const accessFilter = buildLeadAccessFilter(companyId, currentUser);
   if (query.companyId) {
     // If a client is selected, remove the isClientLead restriction to see their leads
@@ -329,7 +425,11 @@ const getLeadsForExport = async (
 };
 
 const addLeadReminder = async (leadId, companyId, currentUser, payload) => {
-  const lead = await Lead.findOne({ _id: leadId, companyId });
+  await ensureCurrentUserData(currentUser);
+  const lead = await Lead.findOne({
+    _id: leadId,
+    ...buildLeadAccessFilter(companyId, currentUser),
+  });
   if (!lead) throw new Error("Lead not found");
 
   lead.reminders.push(payload);
@@ -348,6 +448,7 @@ const buildLeadsCsvExport = async (
   currentUser,
   query = {},
 ) => {
+  await ensureCurrentUserData(currentUser);
   let leads;
   let filename;
 
@@ -389,6 +490,7 @@ const buildLeadsCsvExport = async (
 };
 
 const bulkDeleteLeads = async (leadIds, companyId, currentUser) => {
+  await ensureCurrentUserData(currentUser);
   if (!Array.isArray(leadIds) || leadIds.length === 0) {
     throw new Error("No lead IDs provided");
   }
