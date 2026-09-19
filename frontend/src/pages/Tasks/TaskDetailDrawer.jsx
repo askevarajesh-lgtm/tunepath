@@ -50,6 +50,7 @@ import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
 import dayjs from "dayjs";
 import { isDurationTrackingTask, isCompletedTask, isTaskTimerRunning, getTaskLiveDurationMinutes } from "./taskDuration";
 import TaskReopenModal from "./TaskReopenModal";
+import { getCloudinaryOriginalDeliveryUrl, getCloudinaryDownloadUrl } from "../../utils/cloudinaryUrl";
 
 const { TextArea } = Input;
 
