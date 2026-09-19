@@ -20,22 +20,20 @@ export function taskMatchesKanbanDay(task, day) {
     const validatedAt = d(task.validatedAt);
     const updatedAt = d(task.updatedAt);
 
-    const hasStart =
-        ok(startDate) && task.startDate !== null && task.startDate !== undefined;
-
-    if (hasStart) {
-        if (startDate.valueOf() >= s && startDate.valueOf() <= e) return true;
+    // 1. Check startDate
+    if (ok(startDate) && startDate.valueOf() >= s && startDate.valueOf() <= e) {
+        return true;
     }
 
-    const noStart =
-        !hasStart || task.startDate === null || task.startDate === undefined;
-
-    if (noStart && ok(dueDate)) {
-        if (dueDate.valueOf() >= s && dueDate.valueOf() <= e) return true;
+    // 2. Check dueDate
+    if (ok(dueDate) && dueDate.valueOf() >= s && dueDate.valueOf() <= e) {
+        return true;
     }
 
-    if (noStart && !ok(dueDate) && ok(createdAt)) {
-        if (createdAt.valueOf() >= s && createdAt.valueOf() <= e) return true;
+    // 3. Fallback to createdAt if no dates set
+    const noDates = (!ok(startDate) || task.startDate === null) && (!ok(dueDate) || task.dueDate === null);
+    if (noDates && ok(createdAt) && createdAt.valueOf() >= s && createdAt.valueOf() <= e) {
+        return true;
     }
 
     if (ok(actualCompletionDate)) {
@@ -62,21 +60,16 @@ export function taskScheduledForKanbanDay(task, day) {
     const dueDate = d(task.dueDate);
     const createdAt = d(task.createdAt);
 
-    const hasStart =
-        ok(startDate) && task.startDate !== null && task.startDate !== undefined;
-
-    if (hasStart) {
-        return startDate.valueOf() >= s && startDate.valueOf() <= e;
+    if (ok(startDate) && startDate.valueOf() >= s && startDate.valueOf() <= e) {
+        return true;
     }
 
-    const noStart =
-        !hasStart || task.startDate === null || task.startDate === undefined;
-
-    if (noStart && ok(dueDate)) {
-        return dueDate.valueOf() >= s && dueDate.valueOf() <= e;
+    if (ok(dueDate) && dueDate.valueOf() >= s && dueDate.valueOf() <= e) {
+        return true;
     }
 
-    if (noStart && !ok(dueDate) && ok(createdAt)) {
+    const noDates = (!ok(startDate) || task.startDate === null) && (!ok(dueDate) || task.dueDate === null);
+    if (noDates && ok(createdAt)) {
         return createdAt.valueOf() >= s && createdAt.valueOf() <= e;
     }
 

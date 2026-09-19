@@ -363,6 +363,20 @@ const taskSchema = new mongoose.Schema(
     serviceSequenceNumber: {
       type: Number,
     },
+    parentTaskId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Task",
+      default: null,
+    },
+    reopenedToTaskId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Task",
+      default: null,
+    },
+    isReopened: {
+      type: Boolean,
+      default: false,
+    },
   },
   {
     timestamps: true,
@@ -378,6 +392,8 @@ taskSchema.index({ assignedTo: 1 });
 taskSchema.index({ status: 1 });
 taskSchema.index({ validationStatus: 1 });
 taskSchema.index({ dueDate: 1 });
+taskSchema.index({ parentTaskId: 1 });
+taskSchema.index({ isReopened: 1 });
 taskSchema.index({ projectId: 1, status: 1, order: 1 }); // For Kanban queries
 taskSchema.index({ watchers: 1 }); // For notification queries
 

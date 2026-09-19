@@ -46,6 +46,7 @@ const TaskActivity = TaskInteraction.discriminator(
         "watcher_added",
         "watcher_removed",
         "reminder_sent",
+        "reopened",
       ],
     },
     oldValue: {

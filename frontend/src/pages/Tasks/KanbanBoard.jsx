@@ -938,11 +938,10 @@ const TaskCardInner = ({
             </>
           )}
 
-          {/* Reopen button — only for completed tasks when user has edit permission */}
-          {isCompleted &&
-            canEdit &&
+          {/* Reopen button */}
+          {canEdit &&
             onReopen && (
-              <Tooltip title="Reopen as Correction Task">
+              <Tooltip title={isCompleted ? "Reopen as Correction Task" : "Reopen / Create New Task"}>
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -2266,7 +2265,13 @@ const KanbanBoard = ({
       "agency_super_admin",
     ];
     const canApproveReview = reviewApproverRoles.includes(userRole);
-    const isDigitalMarketing = draggedTask.department === "digital-marketing";
+    const isSourceReview = ["review", "in_review", "reviewing", "sent_for_client_review"].includes(sourceStatus?.toLowerCase());
+    const isTargetHold = ["hold", "backlog"].includes(targetStatusId?.toLowerCase());
+    if (isSourceReview && isTargetHold) {
+      notifyError('move', taskId, "Tasks in Review cannot be moved to Hold.");
+      return;
+    }
+
     // 1. Mandatory In Progress move (Applies to all)
     if (
       sourceStatus === "to_do" &&

@@ -1724,79 +1724,100 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
  */
 const reopenTask = async (
   taskId,
-  reopenData,
+  reopenData = {},
   tenantCompanyId,
   reopenedByUserId,
 ) => {
-  const { reopenCategory, correctionDetails, dueDate } = reopenData;
-
-  if (!reopenCategory) throw new Error("Correction category is required");
-  if (!correctionDetails || !String(correctionDetails).trim()) {
-    throw new Error("Correction details are required");
-  }
-  if (!dueDate) throw new Error("Due date is required");
+  const { reopenCategory, correctionDetails, dueDate, startDate, assignedTo } = reopenData;
 
   const validCategories = [
+    "Reopen",
+    "Reopened",
     "Correction",
     "Redesign",
+    "Internal Correction",
+    "Client Correction",
+    "Hosting",
+    "Overdue Reopen",
   ];
-  if (!validCategories.includes(reopenCategory)) {
-    throw new Error(
-      `Invalid category. Must be one of: ${validCategories.join(", ")}`,
-    );
-  }
+
+  const categoryToUse = reopenCategory && validCategories.includes(reopenCategory)
+    ? reopenCategory
+    : (reopenCategory || "Reopen");
 
   // Load the original task
   const clientCompanyIds = await getClientCompanyIds(tenantCompanyId);
   const original = await Task.findOne({
     _id: taskId,
     tenantCompanyId: { $in: [tenantCompanyId, ...clientCompanyIds] },
-    companyId: { $in: clientCompanyIds },
   });
   if (!original) throw new Error("Task not found");
 
-
-
-  const completedStatuses = ["review", "in_review", "in review", "reviewing", "completed", "validated", "done", "complete"];
-  if (!completedStatuses.includes(original.status)) {
-    throw new Error("Only completed, validated, or review tasks can be reopened");
-  }
-
   // Build new task data from original
-  const newTaskTitle = `${reopenCategory}: ${original.title}`;
+  const cleanOriginalTitle = (original.title || "")
+    .replace(/^(Correction|Redesign|Reopened|Reopen|Internal Correction|Client Correction):\s*/i, "")
+    .trim();
+  const newTaskTitle = categoryToUse ? `${categoryToUse}: ${cleanOriginalTitle}` : `Reopened: ${cleanOriginalTitle}`;
+
+  const assignedToUser = assignedTo || original.assignedTo;
 
   const newTask = await Task.create({
     tenantCompanyId,
-    companyId: original.companyId,
+    companyId: original.companyId || undefined,
     projectId: original.projectId || undefined,
+    serviceType: original.serviceType || undefined,
+    serviceSequenceNumber: original.serviceSequenceNumber || undefined,
+    taskType: original.taskType || undefined,
     title: newTaskTitle,
-    description: String(correctionDetails).trim(),
+    description: correctionDetails && String(correctionDetails).trim()
+      ? String(correctionDetails).trim()
+      : (original.description || `Reopened task for ${cleanOriginalTitle}`),
     department: original.department,
     priority: original.priority || "medium",
-    assignedTo: original.assignedTo || undefined,
+    assignedTo: assignedToUser || undefined,
     assignedBy: reopenedByUserId,
     createdBy: reopenedByUserId,
     watchers: original.watchers || [],
     labels: original.labels || [],
-    taskCategory: reopenCategory, // Use specific correction type (Internal/Client/Hosting)
-    status: original.assignedTo ? "assigned" : "created",
-    startDate: new Date(),
-    dueDate: new Date(dueDate),
-    // Do NOT copy timing fields — fresh task
+    taskCategory: categoryToUse,
+    status: assignedToUser ? "assigned" : "created",
+    startDate: startDate ? new Date(startDate) : new Date(),
+    dueDate: dueDate ? new Date(dueDate) : new Date(Date.now() + 24 * 60 * 60 * 1000),
     parentTaskId: original._id,
   });
 
+  // Mark original task as reopened to preserve historical record without inflating project counts
+  original.isReopened = true;
+  original.reopenedToTaskId = newTask._id;
+  await original.save();
+
   // Log activity on new task
   await logTaskActivity(newTask._id, reopenedByUserId, "created", {
-    description: `Correction task created from original task "${original.title}"`,
+    description: `Reopened task created from original task "${original.title}"`,
+  });
+
+  // Log activity on original task
+  await logTaskActivity(original._id, reopenedByUserId, "reopened", {
+    description: `Task reopened. New task created: "${newTask.title}" (Due: ${newTask.dueDate ? new Date(newTask.dueDate).toLocaleDateString() : 'N/A'})`,
   });
 
   // Add a comment on the original task noting it was reopened
   await TaskComment.create({
     taskId: original._id,
     userId: reopenedByUserId,
-    content: `🔁 Task reopened as a correction. Category: **${reopenCategory}**. Details: ${String(correctionDetails).trim()}`,
+    content: `🔁 Task reopened on ${new Date().toLocaleDateString()}. Category: **${categoryToUse}**. Details: ${String(correctionDetails || 'Incomplete task reopened for completion').trim()}`,
   });
+
+  // Reconcile project deliverable counts if linked to a project
+  if (newTask.projectId && newTask.serviceType) {
+    try {
+      const { reconcileProjectTaskCounts } = require('./shimProjectService');
+      const projectId = newTask.projectId._id || newTask.projectId;
+      await reconcileProjectTaskCounts(projectId, tenantCompanyId);
+    } catch (projErr) {
+      logger.error("Error reconciling project task counts after reopen:", projErr);
+    }
+  }
 
   return await getTaskById(newTask._id, tenantCompanyId);
 };
@@ -2612,6 +2633,20 @@ const holdTask = async (taskId, holdReason, userId, userRole, tenantCompanyId) =
     throw new Error("Task is already on hold");
   }
 
+  const reviewStatuses = [
+    "review",
+    "in_review",
+    "reviewing",
+    "sent_for_client_review",
+    "done",
+    "completed",
+    "complete",
+    "validated",
+  ];
+  if (reviewStatuses.includes(String(task.status).toLowerCase())) {
+    throw new Error("A task in Review or Completed cannot be placed on hold");
+  }
+
   if (!holdReason || !String(holdReason).trim()) {
     throw new Error("Hold reason is required");
   }
@@ -3171,24 +3206,13 @@ const getTasksForKanban = async (
       const dateOrFilter = [
         {
           $or: [
-            // Option A: Task has a defined startDate -> match ONLY on startDate
+            // Option A: Task has startDate in range
             {
-              $and: [
-                { startDate: { $ne: null, $exists: true } },
-                { startDate: { $gte: start, $lte: end } },
-              ],
+              startDate: { $gte: start, $lte: end },
             },
-            // Option B: Task only has dueDate (no explicit startDate -> matches on dueDate)
+            // Option B: Task has dueDate in range
             {
-              $and: [
-                {
-                  $or: [
-                    { startDate: { $eq: null } },
-                    { startDate: { $exists: false } },
-                  ],
-                },
-                { dueDate: { $gte: start, $lte: end } },
-              ],
+              dueDate: { $gte: start, $lte: end },
             },
             // Option C: Task was actually completed/validated in this range (regardless of scheduled dates)
             { actualCompletionDate: { $gte: start, $lte: end } },
@@ -3702,6 +3726,21 @@ const updateTaskStatusAndOrder = async (
 
   // ── [CUMULATIVE TIMING LOGIC] ──────────────────────────────────────────────
   const now = new Date();
+
+  const isOldStatusReview = [
+    "review",
+    "in_review",
+    "reviewing",
+    "sent_for_client_review",
+    "done",
+    "completed",
+    "complete",
+    "validated",
+  ].includes(oldStatus?.toLowerCase());
+  const isFinalHold = ["hold", "backlog"].includes(finalStatus?.toLowerCase());
+  if (isOldStatusReview && isFinalHold) {
+    throw new Error("A task in Review cannot be moved to Hold.");
+  }
 
   const wasCompletedStatus = ["completed", "validated", "done", "complete", "review", "in_review", "sent_for_client_review"].includes(oldStatus);
   if (wasCompletedStatus && finalStatus === "in_progress") {

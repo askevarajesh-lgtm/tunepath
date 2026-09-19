@@ -584,6 +584,13 @@ const TaskAnalyticsPage = () => {
 
         const filterStart = dateRange[0].startOf("day");
         const filterEnd = dateRange[1].endOf("day");
+
+        const completedInRange =
+          isCompleted(t.status) &&
+          completedAt &&
+          dayjs(completedAt).isBetween(filterStart, filterEnd, "day", "[]");
+        if (completedInRange) return true;
+
         // Overlap: task.start <= filterEnd AND task.effectiveEnd >= filterStart
         if (start.isAfter(filterEnd) || effectiveEnd.isBefore(filterStart))
           return false;
@@ -612,6 +619,13 @@ const TaskAnalyticsPage = () => {
 
         const filterStart = dateRange[0].startOf("day");
         const filterEnd = dateRange[1].endOf("day");
+
+        const completedInRange =
+          isCompleted(t.status) &&
+          completedAt &&
+          dayjs(completedAt).isBetween(filterStart, filterEnd, "day", "[]");
+        if (completedInRange) return true;
+
         if (start.isAfter(filterEnd) || effectiveEnd.isBefore(filterStart))
           return false;
       }

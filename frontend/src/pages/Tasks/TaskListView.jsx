@@ -530,17 +530,15 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
               });
             },
           },
-          canEdit &&
-            isCompletedTask(record.status) &&
-            record.department === "website_designing" && {
-              key: "reopen",
-              label: "Reopen",
-              icon: <ReloadOutlined />,
-              onClick: () => {
-                setTaskToReopen(record);
-                setIsReopenModalVisible(true);
-              },
+          canEdit && {
+            key: "reopen",
+            label: "Reopen",
+            icon: <ReloadOutlined />,
+            onClick: () => {
+              setTaskToReopen(record);
+              setIsReopenModalVisible(true);
             },
+          },
         ].filter(Boolean);
 
         return (

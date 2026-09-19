@@ -438,6 +438,13 @@ const summarizeProjectTasksByDeliverable = (tasks = []) => {
   const completedCounts = new Map();
   const approvedCounts = new Map();
 
+  // Find set of parent task IDs to know if any task was superseded
+  const parentTaskIds = new Set(
+    tasks
+      .map((t) => (t.parentTaskId ? t.parentTaskId.toString() : null))
+      .filter(Boolean),
+  );
+
   for (const task of tasks) {
     const key = normalizeDeliverableKey(task?.serviceType);
     if (!key) continue;
@@ -446,7 +453,13 @@ const summarizeProjectTasksByDeliverable = (tasks = []) => {
       .trim()
       .toLowerCase();
 
-    if (status !== "rejected") {
+    const isSuperseded =
+      task.isReopened === true ||
+      parentTaskIds.has(task._id ? task._id.toString() : "");
+
+    // If this task was reopened and replaced by a new task, don't count it towards assigned counts
+    // so it doesn't double-count the project deliverable quota
+    if (status !== "rejected" && !isSuperseded) {
       assignedCounts.set(key, (assignedCounts.get(key) || 0) + 1);
     }
 
@@ -596,7 +609,7 @@ const getProjectServiceCapacity = async (
     ? tasksInput
     : await Task.find({
         projectId: project._id,
-      }).select("serviceType status clientReviewStatus");
+      }).select("serviceType status clientReviewStatus isReopened parentTaskId serviceSequenceNumber");
 
   const { assignedCounts, completedCounts } = summarizeProjectTasksByDeliverable(tasks);
   const target = getProjectServiceTarget(project, serviceType);
@@ -675,7 +688,7 @@ const reconcileProjectTaskCounts = async (
     ? tasksInput
     : await Task.find({
         projectId: project._id,
-      }).select("serviceType status clientReviewStatus");
+      }).select("serviceType status clientReviewStatus isReopened parentTaskId serviceSequenceNumber");
 
   const { assignedCounts, completedCounts, approvedCounts } =
     summarizeProjectTasksByDeliverable(tasks);

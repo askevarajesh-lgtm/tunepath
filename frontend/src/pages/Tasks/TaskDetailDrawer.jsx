@@ -832,7 +832,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
                 !hideHoldAndReopen &&
                 (canEditTaskDetails || (task.assignedTo && (task.assignedTo._id === user._id || task.assignedTo === user._id))) &&
                 task.status !== "hold" &&
-                !["done", "validated", "completed", "complete"].includes(task.status) && (
+                !["done", "validated", "completed", "complete", "review", "in_review", "reviewing", "sent_for_client_review"].includes(task.status?.toLowerCase()) && (
                   <Button
                     style={{ background: "#d97706", color: "white", border: "none" }}
                     onClick={() => setIsHoldModalVisible(true)}
@@ -869,8 +869,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
               )}
               {task &&
                 !hideHoldAndReopen &&
-                canEdit &&
-                isCompletedTask(task.status) && (
+                canEdit && (
                   <Button
                     icon={<ReloadOutlined />}
                     onClick={() => {
