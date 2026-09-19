@@ -172,7 +172,9 @@ const UserDashboard = () => {
         <motion.div variants={containerVariants} initial="hidden" animate="visible" style={{ paddingBottom: 40 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
                 <motion.div variants={itemVariants}>
-                    <Title level={2} style={{ margin: '0 0 4px 0', fontWeight: 800 }}>Developer Dashboard</Title>
+                    <Title level={2} style={{ margin: '0 0 4px 0', fontWeight: 800 }}>
+                        {user?.roleName ? `${user.roleName} Dashboard` : 'Employee Dashboard'}
+                    </Title>
                 </motion.div>
 
                 <motion.div variants={itemVariants} style={{ display: 'flex', gap: 16, alignItems: 'center' }}>

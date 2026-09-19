@@ -162,7 +162,7 @@ function ScrollToTop() {
 
 function OAuthRedirectHandler() {
   const { search } = useLocation();
-  const { role, user } = useAuth();
+  const { role } = useAuth();
   
   if (!role) {
     return <Navigate to="/signin" replace />;
@@ -173,7 +173,7 @@ function OAuthRedirectHandler() {
       target = "/workspace/social";
   } else if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
       target = "/agency/social-media";
-  } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'].includes(role) || (role === 'user' && user?.brandId)) {
+  } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role)) {
       target = "/client/workspace/social";
   } else {
       target = "/user/workspace/social";
@@ -184,21 +184,18 @@ function OAuthRedirectHandler() {
 
 // Protected Route Component
 const ProtectedRoute = ({ allowedRoles }) => {
-  const { role, user } = useAuth();
+  const { role } = useAuth();
   
   if (!role) {
     return <Navigate to="/signin" replace />;
   }
-  
-  const isClientUser = role === 'user' && user?.brandId;
-  const matchRole = isClientUser ? 'client_user' : role;
 
-  if (allowedRoles && !allowedRoles.includes(matchRole) && !allowedRoles.includes(role)) {
+  if (allowedRoles && !allowedRoles.includes(role)) {
     if (['supreme_super_admin', 'superadmin'].includes(role)) return <Navigate to="/superadmin/dashboard" replace />;
     if (role === 'commander_admin') return <Navigate to="/dashboard" replace />;
     if (role === 'agency_super_admin') return <Navigate to="/agency/admin-overview" replace />;
     if (['agency_manager', 'agency'].includes(role)) return <Navigate to="/agency/overview" replace />;
-    if (['brand_super_admin', 'brand_manager', 'agency_client', 'brand_team_user', 'client'].includes(role) || isClientUser) return <Navigate to="/client/dashboard" replace />;
+    if (['brand_super_admin', 'brand_manager', 'brand_admin', 'agency_client', 'brand_team_user', 'client'].includes(role)) return <Navigate to="/client/dashboard" replace />;
     return <Navigate to="/user/dashboard" replace />;
   }
   
@@ -213,7 +210,7 @@ const SeoRedirect = () => {
   if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
     return <Navigate to={`/agency/marketplace/seo/${sub}`} replace />;
   }
-  if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'].includes(role) || (role === 'user' && user?.brandId)) {
+  if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role)) {
     return <Navigate to={`/client/marketplace/seo/${sub}`} replace />;
   }
   if (['supreme_super_admin', 'superadmin', 'commander_admin'].includes(role)) {
@@ -229,8 +226,7 @@ const AgencySeoRedirect = () => {
 };
 
 const ReportsRedirect = () => {
-  const { role, user } = useAuth();
-  const isClientUser = role === 'user' && user?.brandId;
+  const { role } = useAuth();
 
   if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
     return <Navigate to="/agency/reports" replace />;
@@ -238,23 +234,22 @@ const ReportsRedirect = () => {
   if (role === 'agency_client') {
     return <Navigate to="/client/reports" replace />;
   }
-  if (['brand_super_admin', 'brand_manager', 'brand_team_user', 'client_user'].includes(role) || isClientUser) {
+  if (['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role)) {
     return <Navigate to="/client/dashboard" replace />;
   }
   return <Navigate to="/intelligence/reporting" replace />;
 };
 
 const ClientReportsRouteGuard = () => {
-  const { role, user } = useAuth();
-  const isClientUser = role === 'user' && user?.brandId;
-  if (['brand_super_admin', 'brand_manager', 'brand_team_user', 'client_user'].includes(role) || isClientUser) {
+  const { role } = useAuth();
+  if (['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user'].includes(role)) {
     return <Navigate to="/client/dashboard" replace />;
   }
   return <ClientReportsTab />;
 };
 
 const AppRoutes = () => {
-  const { role, user } = useAuth();
+  const { role } = useAuth();
   
   return (
     <Routes>
@@ -270,7 +265,7 @@ const AppRoutes = () => {
           role === 'commander_admin' ? '/dashboard' : 
           role === 'agency_super_admin' ? '/agency/admin-overview' :
           ['agency_manager', 'agency'].includes(role) ? '/agency/overview' : 
-          (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'].includes(role) || (role === 'user' && user?.brandId)) ? '/client/dashboard' :
+          ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) ? '/client/dashboard' :
           '/user/dashboard'
         } replace />
       ) : <SignIn />} />
@@ -514,7 +509,7 @@ const AppRoutes = () => {
       </Route>
 
       {/* Client Routes */}
-      <Route element={<ProtectedRoute allowedRoles={['supreme_super_admin', 'superadmin', 'agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client', 'client_user']} />}>
+      <Route element={<ProtectedRoute allowedRoles={['supreme_super_admin', 'superadmin', 'agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client']} />}>
         <Route path="/client" element={<ClientLayout />}>
           <Route index element={<Navigate to="/client/dashboard" replace />} />
           <Route path="users" element={<BrandUsersTab />} />
@@ -664,6 +659,7 @@ const AppRoutes = () => {
           <Route path="workspace/social" element={<CampaignScheduledPage />} />
           <Route path="workspace/ads" element={<PerformanceAds />} />
           <Route path="workspace/crm" element={<CRM />} />
+          <Route path="workspace/automation" element={<Automation />} />
           <Route path="workspace/master-items" element={<MasterItemsList />} />
           <Route path="workspace/master-items/new" element={<MasterItemForm />} />
           <Route path="workspace/master-items/:id" element={<MasterItemForm />} />
@@ -686,6 +682,8 @@ const AppRoutes = () => {
           <Route path="workspace/calendar" element={<CalendarPage />} />
           <Route path="workspace/deliverables" element={<DeliverablesPage />} />
           <Route path="workspace/salespipeline" element={<SalesPipeline />} />
+          <Route path="time" element={<TimeTracking />} />
+          <Route path="ops/time" element={<TimeTracking />} />
           
           {/* HRMS Modules for Employees */}
           <Route path="hrms/performance" element={<PerformancePage />} />
@@ -699,6 +697,10 @@ const AppRoutes = () => {
           <Route path="performance/history/:userId?" element={<PerformancePage />} />
           <Route path="performance/self-assessment" element={<SelfAssessmentForm />} />
           <Route path="intelligence/analytics" element={<Analytics />} />
+          <Route path="intelligence/mos" element={<MOSScore />} />
+          <Route path="intelligence/agents" element={<AIAgents />} />
+          <Route path="intelligence/reports" element={<Reports />} />
+          <Route path="workspace/reports" element={<Reports />} />
           <Route path="intelligence/chatgpt" element={<ClientChatGPTPage />} />
           <Route path="intelligence/claude" element={<ClaudeChatPage />} />
           <Route path="intelligence/canva" element={<ClientCanvaPage />} />

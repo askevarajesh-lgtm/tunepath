@@ -29,7 +29,7 @@ import { useGetUsersDropdownQuery } from "../../api/userApi";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
 import dayjs from "dayjs";
-import { isDurationTrackingTask, isCompletedTask } from "./taskDuration";
+import { isDurationTrackingTask, isCompletedTask, isTaskTimerRunning, getTaskLiveDurationMinutes, getTaskDueDeadline } from "./taskDuration";
 import TaskReopenModal from "./TaskReopenModal";
 
 const { Option } = Select;
@@ -408,14 +408,12 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
           record.status,
         );
 
-        const isRunning = workStartedAt && record.status === "in_progress";
+        const isRunning = isTaskTimerRunning(record);
+        const liveDurationMinutes = getTaskLiveDurationMinutes(record);
 
-        // 1. If it's currently running (In Progress), show live cumulative duration
+        // 1. If it's currently running (In Progress and within due date), show live cumulative duration
         if (isRunning) {
-          const runningMins = Math.round(
-            (Date.now() - new Date(workStartedAt)) / 60000,
-          );
-          const totalMins = (workDurationMinutes || 0) + runningMins;
+          const totalMins = liveDurationMinutes;
           const h = Math.floor(totalMins / 60);
           const m = totalMins % 60;
           const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
@@ -442,10 +440,11 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
           );
         }
 
-        // 2. If we have a calculated cumulative duration, show it
-        if (workDurationMinutes != null) {
-          const h = Math.floor(workDurationMinutes / 60);
-          const m = workDurationMinutes % 60;
+        // 2. If we have a calculated cumulative duration (or stopped at due date cutoff), show it
+        if (liveDurationMinutes > 0 || workDurationMinutes != null) {
+          const totalMins = liveDurationMinutes || workDurationMinutes || 0;
+          const h = Math.floor(totalMins / 60);
+          const m = totalMins % 60;
           const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
 
           let startDisp = workStartedAt || record.startDate;
@@ -455,7 +454,13 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
               new Date(workCompletedAt) - workDurationMinutes * 60 * 1000,
             );
           }
-          const endDisp = workCompletedAt || (isFinished ? updatedAt : null);
+          let endDisp = workCompletedAt || (isFinished ? updatedAt : null);
+          if (!endDisp && record.status === "in_progress" && record.dueDate) {
+            const deadline = getTaskDueDeadline(record.dueDate);
+            if (deadline && Date.now() > deadline.getTime()) {
+              endDisp = deadline;
+            }
+          }
 
           return (
             <div style={{ lineHeight: "1.4" }}>
