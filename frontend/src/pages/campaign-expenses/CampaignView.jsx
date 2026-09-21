@@ -400,7 +400,15 @@ const CampaignView = ({ isClientView: propIsClientView = false }) => {
         >
           <Descriptions.Item label={campaign.isInternal ? "Brand / Entity" : "Client"}>
             <Space>
-              <span>{campaign.ownBrandName || campaign.clientCompanyId?.name || campaign.clientId?.name || "Agency Own Brand"}</span>
+              <span>
+                {campaign.isInternal
+                  ? (
+                      (campaign.ownBrandName && campaign.ownBrandName.toLowerCase() !== (currentUser?.name || "").toLowerCase())
+                        ? campaign.ownBrandName
+                        : (campaign.clientCompanyId?.companyName || campaign.clientCompanyId?.agencyName || (campaign.clientCompanyId?.name !== currentUser?.name ? campaign.clientCompanyId?.name : null) || currentUser?.agencyName || currentUser?.companyName || "Tunepath")
+                    )
+                  : (campaign.clientCompanyId?.companyName || campaign.clientCompanyId?.name || campaign.clientId?.name || "N/A")}
+              </span>
               {campaign.isInternal && (
                 <Tag color="purple" style={{ fontWeight: 600, fontSize: 11 }}>
                   Own Brand

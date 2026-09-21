@@ -318,11 +318,15 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
   // Clients and individual Own Brands who have existing campaigns created in Campaign Create
   const rechargeClientsDropdown = useMemo(() => {
     const map = new Map();
+    const agencyName = currentUser?.agencyName || currentUser?.companyName || currentUser?.agencyId?.name || currentUser?.agencyId?.companyName || "Tunepath";
 
     (campaignsDropdown || []).forEach((c) => {
       const isInternal = Boolean(c.isInternal);
       if (isInternal) {
-        const brandName = (c.ownBrandName || "").trim() || "Agency Own Brand";
+        let brandName = (c.ownBrandName || "").trim();
+        if (!brandName || brandName.toLowerCase() === (currentUser?.name || "").toLowerCase()) {
+          brandName = c.clientCompanyId?.companyName || c.clientCompanyId?.agencyName || agencyName;
+        }
         const internalKey = `internal_${brandName}`;
         if (!map.has(internalKey)) {
           map.set(internalKey, {
@@ -339,15 +343,15 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
           let name = "";
           let email = "";
 
-          if (typeof clientObj === "object" && clientObj.name) {
-            name = clientObj.name;
+          if (typeof clientObj === "object" && (clientObj.companyName || clientObj.name)) {
+            name = clientObj.companyName || clientObj.name;
             email = clientObj.email || "";
           } else {
             const found = (rawClientsDropdown || []).find(
               (rc) => (rc._id || rc.id || "").toString() === cId,
             );
             if (found) {
-              name = found.name;
+              name = found.companyName || found.name;
               email = found.email || "";
             }
           }
@@ -365,8 +369,7 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
     });
 
     // Also ensure agency's own company is included for internal recharges if no internal brands yet
-    const agencyId = (currentUser?.companyId?._id || currentUser?.companyId || currentUser?._id || "").toString();
-    const agencyName = currentUser?.companyName || currentUser?.name || "Agency Own Brand";
+    const agencyId = (currentUser?.companyId?._id || currentUser?.companyId || currentUser?.agencyId?._id || currentUser?.agencyId || currentUser?._id || "").toString();
     if (agencyId && !Array.from(map.values()).some((item) => item.isInternal) && !isClientView) {
       map.set(`internal_${agencyName}`, {
         _id: agencyId,
@@ -650,9 +653,15 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
       render: (client, record) => {
         // Support both clientCompanyId and clientId (legacy)
         const clientData = client || record.clientId;
+        const clientName = clientData?.companyName || clientData?.agencyName || clientData?.name;
+        const agencyName = currentUser?.agencyName || currentUser?.companyName || currentUser?.agencyId?.name || currentUser?.agencyId?.companyName || "Tunepath";
         const name = record.isInternal
-          ? (record.ownBrandName || clientData?.name || "Own Brand")
-          : (clientData?.name || "N/A");
+          ? (
+              (record.ownBrandName && record.ownBrandName.toLowerCase() !== (currentUser?.name || "").toLowerCase())
+                ? record.ownBrandName
+                : (clientData?.companyName || clientData?.agencyName || (clientData?.name !== currentUser?.name ? clientData?.name : null) || agencyName)
+            )
+          : (clientName || "N/A");
         return (
           <Space>
             <span>{name}</span>

@@ -139,12 +139,13 @@ const getAllCampaigns = async (
 
   // Execute paginated query with populate
   const result = await executePaginatedQuery(Campaign, queryOptions, [
-    { path: "clientCompanyId", select: "name email phone address" },
+    { path: "clientCompanyId", select: "name email phone address companyName agencyName" },
+    { path: "companyId", select: "name email companyName agencyName" },
     { path: "projectId", select: "name status invoiceId" },
     { path: "createdBy", select: "name email" },
     { path: "managedBy", select: "name email" },
-    { path: "rechargeHistory.clientCompanyIds", select: "name email" },
-    { path: "rechargeHistory.clientCompanyId", select: "name email" },
+    { path: "rechargeHistory.clientCompanyIds", select: "name email companyName" },
+    { path: "rechargeHistory.clientCompanyId", select: "name email companyName" },
     { path: "rechargeHistory.rechargedBy", select: "name email" },
   ]);
 
@@ -204,11 +205,12 @@ const getCampaignsDropdown = async (
     Campaign,
     queryOptions,
     [
-      { path: "clientCompanyId", select: "name email phone" },
-      { path: "clientId", select: "name email phone" },
+      { path: "clientCompanyId", select: "name email phone companyName agencyName" },
+      { path: "clientId", select: "name email phone companyName agencyName" },
+      { path: "companyId", select: "name email companyName agencyName" },
       { path: "projectId", select: "name status departments invoiceId" },
     ],
-    "platform startDate endDate status clientCompanyId clientId projectId dailyBudget campaignDays totalCampaignValue campaignAmount isInternal ownBrandName",
+    "platform startDate endDate status clientCompanyId clientId companyId projectId dailyBudget campaignDays totalCampaignValue campaignAmount isInternal ownBrandName",
   );
 };
 const getCampaignById = async (
@@ -238,7 +240,11 @@ const getCampaignById = async (
   let campaign = await Campaign.findOne(filter)
     .populate({
       path: "clientCompanyId",
-      select: "name email phone address companyName",
+      select: "name email phone address companyName agencyName",
+    })
+    .populate({
+      path: "companyId",
+      select: "name email companyName agencyName",
     })
     .populate({
       path: "projectId",
@@ -291,6 +297,16 @@ const createCampaign = async (campaignData, companyId, performedByUserId) => {
     campaignData.isInternal = true;
     if (!campaignData.clientCompanyId && companyId) {
       campaignData.clientCompanyId = companyId;
+    }
+
+    if (!campaignData.ownBrandName) {
+      const companyUser = await User.findById(companyId).select("name companyName agencyName");
+      campaignData.ownBrandName = (
+        companyUser?.companyName ||
+        companyUser?.agencyName ||
+        companyUser?.name ||
+        "Agency Own Brand"
+      );
     }
   }
 

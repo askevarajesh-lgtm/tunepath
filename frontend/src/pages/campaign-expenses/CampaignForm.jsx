@@ -143,8 +143,8 @@ const CampaignForm = () => {
   const [campaignScope, setCampaignScope] = useState("client"); // "client" | "internal"
   const isInternal = campaignScope === "internal";
 
-  const agencyBrandId = user?.companyId?._id || user?.companyId || user?._id;
-  const agencyBrandName = user?.companyName || user?.name || "Agency Own Brand";
+  const agencyBrandId = user?.companyId?._id || user?.companyId || user?.agencyId?._id || user?.agencyId || user?._id;
+  const agencyBrandName = user?.agencyName || user?.companyName || user?.agencyId?.name || user?.agencyId?.companyName || "Tunepath";
 
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
@@ -234,12 +234,15 @@ const CampaignForm = () => {
     const list = [];
     (allCampaigns || []).forEach((c) => {
       const name = (c.ownBrandName || "").trim();
-      if (name && !list.includes(name)) {
+      if (name && !list.includes(name) && name.toLowerCase() !== (user?.name || "").toLowerCase()) {
         list.push(name);
       }
     });
+    if (!list.includes(agencyBrandName)) {
+      list.unshift(agencyBrandName);
+    }
     return list;
-  }, [allCampaigns]);
+  }, [allCampaigns, agencyBrandName, user?.name]);
 
   const campaignClientIds = React.useMemo(() => {
     const set = new Set();
@@ -445,8 +448,8 @@ const CampaignForm = () => {
       let resolvedBrandName = null;
       if (isInternal) {
         resolvedBrandName = (values.ownBrandName || "").trim();
-        if (!resolvedBrandName) {
-          resolvedBrandName = agencyBrandName || "Agency Own Brand";
+        if (!resolvedBrandName || resolvedBrandName.toLowerCase() === (user?.name || "").toLowerCase()) {
+          resolvedBrandName = agencyBrandName || "Tunepath";
         }
       }
 
@@ -1212,15 +1215,26 @@ const CampaignForm = () => {
               render: (platform) => platform?.replace("_", " ").toUpperCase(),
             },
             {
-              title: "Client",
+              title: "Client / Brand",
               dataIndex: "clientCompanyId",
               key: "clientCompanyId",
               render: (client, record) => {
                 const clientData = client || record.clientId;
+                const clientName = clientData?.companyName || clientData?.agencyName || clientData?.name;
+                const name = record.isInternal
+                  ? (record.ownBrandName || (clientName !== user?.name ? clientName : null) || agencyBrandName)
+                  : (clientName || "N/A");
                 return (
-                  <span style={{ fontWeight: "bold", color: "var(--accent-primary)" }}>
-                    {clientData?.name || "N/A"}
-                  </span>
+                  <Space>
+                    <span style={{ fontWeight: "bold", color: "var(--accent-primary)" }}>
+                      {name}
+                    </span>
+                    {record.isInternal && (
+                      <Tag color="purple" style={{ fontSize: 11, fontWeight: 600 }}>
+                        Own Brand
+                      </Tag>
+                    )}
+                  </Space>
                 );
               },
             },
