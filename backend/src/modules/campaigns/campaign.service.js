@@ -702,6 +702,7 @@ const addGlobalRecharge = async (
   performedByUserId,
   userRole = null,
 ) => {
+  const mongoose = require("mongoose");
   // Handle batch details if provided
   const clientRecharges = [];
   let totalSpent = 0;
@@ -715,8 +716,18 @@ const addGlobalRecharge = async (
       const budget = Number(details.dailyBudget || 0);
       const recharge = Number(details.rechargeAmount || 0);
 
+      const isInternal = typeof clientId === "string" && clientId.startsWith("internal_");
+      const ownBrandName = isInternal
+        ? clientId.replace(/^internal_/, "")
+        : (details.ownBrandName || null);
+      const validClientId = mongoose.Types.ObjectId.isValid(clientId)
+        ? clientId
+        : companyId;
+
       clientRecharges.push({
-        clientId,
+        clientId: validClientId,
+        ownBrandName,
+        isInternal,
         dailyAmountSpent: spent,
         dailyBudget: budget,
         rechargeAmount: recharge,
@@ -739,14 +750,24 @@ const addGlobalRecharge = async (
     ) {
       const cId =
         rechargeData.clientCompanyId || rechargeData.clientCompanyIds[0];
+      const isInternal = typeof cId === "string" && cId.startsWith("internal_");
+      const ownBrandName = isInternal ? cId.replace(/^internal_/, "") : null;
+      const validClientId = mongoose.Types.ObjectId.isValid(cId) ? cId : companyId;
+
       clientRecharges.push({
-        clientId: cId,
+        clientId: validClientId,
+        ownBrandName,
+        isInternal,
         dailyAmountSpent: totalSpent,
         dailyBudget: totalBudget,
         rechargeAmount: totalRecharge,
       });
     }
   }
+
+  const validClientCompanyIds = (rechargeData.clientCompanyIds || []).map((id) =>
+    mongoose.Types.ObjectId.isValid(id) ? id : companyId
+  );
 
   // Create recharge record
   const rechargeRecord = new CampaignRecharge({
@@ -756,9 +777,9 @@ const addGlobalRecharge = async (
       ? new Date(rechargeData.rechargeDate)
       : new Date(),
     activeCampaignsCount: rechargeData.activeCampaignsCount || 0,
-    clientCompanyIds: rechargeData.clientCompanyIds || [],
+    clientCompanyIds: validClientCompanyIds,
     clientRecharges: clientRecharges,
-    clientCompanyId: rechargeData.clientCompanyId, // Supporting legacy if provided
+    clientCompanyId: mongoose.Types.ObjectId.isValid(rechargeData.clientCompanyId) ? rechargeData.clientCompanyId : undefined,
     dailyAmountSpent: Number(totalSpent.toFixed(2)),
     dailyBudget: Number(totalBudget.toFixed(2)),
     rechargeAmount: Number(totalRecharge.toFixed(2)),
@@ -949,6 +970,7 @@ const updateGlobalRecharge = async (
 
   // Handle clientRecharges breakdown and aggregation if clientDetails is provided
   if (updateData.clientDetails && updateData.clientCompanyIds) {
+    const mongoose = require("mongoose");
     const clientRecharges = [];
     let totalSpent = 0;
     let totalBudget = 0;
@@ -960,8 +982,18 @@ const updateGlobalRecharge = async (
       const budget = Number(details.dailyBudget || 0);
       const recharge = Number(details.rechargeAmount || 0);
 
+      const isInternal = typeof clientId === "string" && clientId.startsWith("internal_");
+      const ownBrandName = isInternal
+        ? clientId.replace(/^internal_/, "")
+        : (details.ownBrandName || null);
+      const validClientId = mongoose.Types.ObjectId.isValid(clientId)
+        ? clientId
+        : companyId;
+
       clientRecharges.push({
-        clientId,
+        clientId: validClientId,
+        ownBrandName,
+        isInternal,
         dailyAmountSpent: spent,
         dailyBudget: budget,
         rechargeAmount: recharge,
@@ -973,11 +1005,15 @@ const updateGlobalRecharge = async (
     });
 
     recharge.clientRecharges = clientRecharges;
+    recharge.clientCompanyIds = (updateData.clientCompanyIds || []).map((id) =>
+      mongoose.Types.ObjectId.isValid(id) ? id : companyId
+    );
     recharge.dailyAmountSpent = Number(totalSpent.toFixed(2));
     recharge.dailyBudget = Number(totalBudget.toFixed(2));
     recharge.rechargeAmount = Number(totalRecharge.toFixed(2));
     changes.push(
       "clientRecharges",
+      "clientCompanyIds",
       "dailyAmountSpent",
       "dailyBudget",
       "rechargeAmount",

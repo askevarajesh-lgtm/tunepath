@@ -10,30 +10,77 @@ exports.createSchedule = async (scheduleData) => {
     return schedule;
 };
 
-exports.getSchedules = async (agencyId) => {
+exports.getSchedules = async (agencyId, user = null) => {
+    const isClient = user && ['agency_client', 'brand_super_admin', 'brand_manager', 'client', 'client_user'].includes(user.role);
+    if (isClient) {
+        return await ReportSchedule.find({ clientId: user._id })
+            .populate('clientId', 'name companyName')
+            .sort({ createdAt: -1 });
+    }
     return await ReportSchedule.find({ agencyId })
         .populate('clientId', 'name companyName')
         .sort({ createdAt: -1 });
 };
 
-exports.updateScheduleStatus = async (scheduleId, status) => {
-    return await ReportSchedule.findByIdAndUpdate(scheduleId, { status }, { returnDocument: 'after' });
+exports.updateScheduleStatus = async (scheduleId, status, agencyId = null) => {
+    const filter = { _id: scheduleId };
+    if (agencyId) filter.agencyId = agencyId;
+    return await ReportSchedule.findOneAndUpdate(filter, { status }, { returnDocument: 'after' });
 };
 
-exports.deleteSchedule = async (scheduleId) => {
-    return await ReportSchedule.findByIdAndDelete(scheduleId);
+exports.deleteSchedule = async (scheduleId, agencyId = null) => {
+    const filter = { _id: scheduleId };
+    if (agencyId) filter.agencyId = agencyId;
+    return await ReportSchedule.findOneAndDelete(filter);
 };
 
-exports.getRecentSentReports = async (agencyId) => {
+exports.getRecentSentReports = async (agencyId, user = null) => {
     const MonthlyHighlights = require('./monthlyHighlights.model');
+    const User = require('../auth/user.model');
 
-    const sentReports = await SentReport.find({})
+    const isClient = user && ['agency_client', 'brand_super_admin', 'brand_manager', 'client', 'client_user'].includes(user.role);
+    const isSuperAdmin = user && ['supreme_super_admin', 'commander_admin'].includes(user.role);
+
+    let sentFilter = {};
+    let monthlyFilter = { status: 'Published' };
+
+    if (isClient) {
+        sentFilter = { clientId: user._id };
+        monthlyFilter.clientId = user._id;
+    } else if (agencyId && !isSuperAdmin) {
+        // Fetch all client IDs belonging to this agency
+        const clientDocs = await User.find({
+            $or: [
+                { agencyId: agencyId },
+                { adminId: agencyId },
+                { companyId: agencyId }
+            ],
+            role: { $in: ['brand_super_admin', 'brand_manager', 'agency_client', 'client', 'client_user', 'user'] }
+        }).select('_id').lean();
+
+        const clientIds = clientDocs.map(c => c._id);
+        const agencyAndClientIds = [...clientIds, agencyId];
+
+        sentFilter = {
+            $or: [
+                { agencyId: agencyId },
+                { clientId: { $in: agencyAndClientIds } }
+            ]
+        };
+
+        monthlyFilter.$or = [
+            { agencyId: agencyId },
+            { clientId: { $in: clientIds } }
+        ];
+    }
+
+    const sentReports = await SentReport.find(sentFilter)
         .populate('clientId', 'name companyName email')
         .sort({ sentAt: -1 })
         .limit(50)
         .lean();
 
-    const monthlyReports = await MonthlyHighlights.find({ status: 'Published' })
+    const monthlyReports = await MonthlyHighlights.find(monthlyFilter)
         .populate('clientId', 'name companyName email')
         .sort({ publishedAt: -1, updatedAt: -1 })
         .limit(50)
@@ -69,8 +116,36 @@ exports.getRecentSentReports = async (agencyId) => {
     return sentReports.slice(0, 50);
 };
 
-exports.getReportAnalytics = async (agencyId) => {
-    const reports = await SentReport.find({ agencyId });
+exports.getReportAnalytics = async (agencyId, user = null) => {
+    const User = require('../auth/user.model');
+    const isClient = user && ['agency_client', 'brand_super_admin', 'brand_manager', 'client', 'client_user'].includes(user.role);
+    const isSuperAdmin = user && ['supreme_super_admin', 'commander_admin'].includes(user.role);
+
+    let filter = {};
+    if (isClient) {
+        filter = { clientId: user._id };
+    } else if (agencyId && !isSuperAdmin) {
+        const clientDocs = await User.find({
+            $or: [
+                { agencyId: agencyId },
+                { adminId: agencyId },
+                { companyId: agencyId }
+            ],
+            role: { $in: ['brand_super_admin', 'brand_manager', 'agency_client', 'client', 'client_user', 'user'] }
+        }).select('_id').lean();
+
+        const clientIds = clientDocs.map(c => c._id);
+        const agencyAndClientIds = [...clientIds, agencyId];
+
+        filter = {
+            $or: [
+                { agencyId: agencyId },
+                { clientId: { $in: agencyAndClientIds } }
+            ]
+        };
+    }
+
+    const reports = await SentReport.find(filter);
     
     const totalReports = reports.length;
     let totalPages = 0;
@@ -108,9 +183,6 @@ exports.getMetaLeadCampaigns = async (targetId) => {
         if (!dashboard) {
             dashboard = await PerformanceAd.findOne({ clientId: queryId }).lean();
         }
-    }
-    if (!dashboard) {
-        dashboard = await PerformanceAd.findOne({}).sort({ updatedAt: -1 }).lean();
     }
 
     const rawCampaigns = dashboard?.activeCampaigns || [];
@@ -178,9 +250,6 @@ exports.getMetaReachCampaigns = async (targetId) => {
         if (!dashboard) {
             dashboard = await PerformanceAd.findOne({ clientId: queryId }).lean();
         }
-    }
-    if (!dashboard) {
-        dashboard = await PerformanceAd.findOne({}).sort({ updatedAt: -1 }).lean();
     }
 
     const rawCampaigns = dashboard?.activeCampaigns || [];

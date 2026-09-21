@@ -4,7 +4,7 @@ export const useGetCampaignsQuery = createQueryHook((params) => ({ url: '/campai
 
 export const useGetCampaignsDropdownQuery = createQueryHook((params) => ({ 
   url: '/campaign-expenses/dropdown', 
-  params: { ...params, limit: params?.limit || 20 } 
+  params: { limit: 1000, ...params } 
 }));
 
 export const useGetCampaignByIdQuery = createQueryHook((id) => `/campaign-expenses/${id}`);

@@ -96,6 +96,14 @@ const campaignRechargeSchema = new mongoose.Schema(
           type: mongoose.Schema.Types.ObjectId,
           ref: "User",
         },
+        ownBrandName: {
+          type: String,
+          default: null,
+        },
+        isInternal: {
+          type: Boolean,
+          default: false,
+        },
         dailyAmountSpent: Number,
         dailyBudget: Number,
         rechargeAmount: Number,

@@ -74,10 +74,11 @@ export const formatPlatformName = (platform) => {
 
 // Helper component for dynamic Client Amount in recharge modal
 const ClientAmountField = ({ clientId, form, rechargeAmount }) => {
+  const isInternalKey = typeof clientId === "string" && clientId.startsWith("internal_");
   const { data, isLoading } = useGetClientCampaignSummaryQuery(clientId, {
-    skip: !clientId,
+    skip: !clientId || isInternalKey,
   });
-  const balance = data?.data?.remainingBalance || 0;
+  const balance = isInternalKey ? 0 : (data?.data?.remainingBalance || 0);
 
   useEffect(() => {
     if (data?.data) {
@@ -192,7 +193,7 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
   const { data, isLoading, refetch } = useGetCampaignsQuery(
     queryParamsWithFilters,
   );
-  const { data: campaignsDropdownData } = useGetCampaignsDropdownQuery({});
+  const { data: campaignsDropdownData } = useGetCampaignsDropdownQuery({ limit: 1000 });
   const { data: allProjectsData } = useGetProjectsDropdownQuery({ hasCampaigns: true });
   const { data: clientsData } = useGetCompaniesQuery();
   const { data: clientsDropdownData } = useGetCompaniesDropdownQuery({
@@ -320,7 +321,13 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
     const map = new Map();
     const agencyName = currentUser?.agencyName || currentUser?.companyName || currentUser?.agencyId?.name || currentUser?.agencyId?.companyName || "Tunepath";
 
-    (campaignsDropdown || []).forEach((c) => {
+    // Collect campaigns from ALL available sources (dropdown query AND current table campaigns)
+    const allCampaignsList = [
+      ...(Array.isArray(campaignsDropdown) ? campaignsDropdown : []),
+      ...(Array.isArray(campaigns) ? campaigns : []),
+    ];
+
+    allCampaignsList.forEach((c) => {
       const isInternal = Boolean(c.isInternal);
       if (isInternal) {
         let brandName = (c.ownBrandName || "").trim();
@@ -329,8 +336,10 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
         }
         const internalKey = `internal_${brandName}`;
         if (!map.has(internalKey)) {
+          const rawId = c.clientCompanyId?._id || c.clientCompanyId || c.clientId?._id || c.clientId;
           map.set(internalKey, {
-            _id: c.clientCompanyId?._id || c.clientCompanyId || c.clientId?._id || c.clientId || internalKey,
+            _id: internalKey,
+            rawClientId: rawId,
             name: `${brandName} (Own Brand)`,
             ownBrandName: brandName,
             isInternal: true,
@@ -368,11 +377,26 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
       }
     });
 
-    // Also ensure agency's own company is included for internal recharges if no internal brands yet
-    const agencyId = (currentUser?.companyId?._id || currentUser?.companyId || currentUser?.agencyId?._id || currentUser?.agencyId || currentUser?._id || "").toString();
-    if (agencyId && !Array.from(map.values()).some((item) => item.isInternal) && !isClientView) {
-      map.set(`internal_${agencyName}`, {
-        _id: agencyId,
+    // Also include all client companies from rawClientsDropdown
+    (rawClientsDropdown || []).forEach((client) => {
+      const cId = (client._id || client.id || "").toString();
+      if (cId && !map.has(cId)) {
+        map.set(cId, {
+          _id: cId,
+          name: client.companyName || client.name || "Client",
+          email: client.email || "",
+          isInternal: false,
+        });
+      }
+    });
+
+    // Also ensure agency's own company is included for internal recharges
+    const agencyKey = `internal_${agencyName}`;
+    if (!map.has(agencyKey) && !isClientView) {
+      const agencyId = (currentUser?.companyId?._id || currentUser?.companyId || currentUser?.agencyId?._id || currentUser?.agencyId || currentUser?._id || "").toString();
+      map.set(agencyKey, {
+        _id: agencyKey,
+        rawClientId: agencyId,
         name: `${agencyName} (Own Brand)`,
         ownBrandName: agencyName,
         email: currentUser?.email || "",
@@ -381,7 +405,7 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
     }
 
     return Array.from(map.values());
-  }, [campaignsDropdown, rawClientsDropdown, currentUser, isClientView]);
+  }, [campaignsDropdown, campaigns, rawClientsDropdown, currentUser, isClientView]);
 
   const canViewAmounts = canRead;
   const canManageClientAmountValue = canEdit;
@@ -454,21 +478,18 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
   const handleEditRecharge = (record) => {
     setEditingRecharge(record);
 
-    const clientIds =
-      record.clientCompanyIds?.map((c) => c._id || c) ||
-      (record.clientCompanyId?._id
-        ? [record.clientCompanyId._id]
-        : record.clientCompanyId
-          ? [record.clientCompanyId]
-          : []);
-
-    // Prepare details object for the form
+    const clientIds = [];
     const details = {};
+
     if (record.clientRecharges?.length > 0) {
       record.clientRecharges.forEach((cr) => {
-        const id = cr.clientId?._id || cr.clientId;
+        const id = cr.ownBrandName
+          ? `internal_${cr.ownBrandName}`
+          : (cr.clientId?._id || cr.clientId);
         if (id) {
-          details[id] = {
+          const strId = id.toString();
+          clientIds.push(strId);
+          details[strId] = {
             dailyAmountSpent: cr.dailyAmountSpent,
             dailyBudget: cr.dailyBudget,
             rechargeAmount: cr.rechargeAmount,
@@ -476,8 +497,17 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
         }
       });
     } else {
-      clientIds.forEach((id) => {
-        details[id] = {
+      const rawIds =
+        record.clientCompanyIds?.map((c) => c._id || c) ||
+        (record.clientCompanyId?._id
+          ? [record.clientCompanyId._id]
+          : record.clientCompanyId
+            ? [record.clientCompanyId]
+            : []);
+      rawIds.forEach((id) => {
+        const strId = id.toString();
+        clientIds.push(strId);
+        details[strId] = {
           dailyAmountSpent: record.dailyAmountSpent,
           dailyBudget: record.dailyBudget,
           rechargeAmount: record.rechargeAmount,
@@ -500,21 +530,18 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
   const handleViewRecharge = (record) => {
     setEditingRecharge(record);
 
-    const clientIds =
-      record.clientCompanyIds?.map((c) => c._id || c) ||
-      (record.clientCompanyId?._id
-        ? [record.clientCompanyId._id]
-        : record.clientCompanyId
-          ? [record.clientCompanyId]
-          : []);
-
-    // Prepare details object for the form
+    const clientIds = [];
     const details = {};
+
     if (record.clientRecharges?.length > 0) {
       record.clientRecharges.forEach((cr) => {
-        const id = cr.clientId?._id || cr.clientId;
+        const id = cr.ownBrandName
+          ? `internal_${cr.ownBrandName}`
+          : (cr.clientId?._id || cr.clientId);
         if (id) {
-          details[id] = {
+          const strId = id.toString();
+          clientIds.push(strId);
+          details[strId] = {
             dailyAmountSpent: cr.dailyAmountSpent,
             dailyBudget: cr.dailyBudget,
             rechargeAmount: cr.rechargeAmount,
@@ -522,8 +549,17 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
         }
       });
     } else {
-      clientIds.forEach((id) => {
-        details[id] = {
+      const rawIds =
+        record.clientCompanyIds?.map((c) => c._id || c) ||
+        (record.clientCompanyId?._id
+          ? [record.clientCompanyId._id]
+          : record.clientCompanyId
+            ? [record.clientCompanyId]
+            : []);
+      rawIds.forEach((id) => {
+        const strId = id.toString();
+        clientIds.push(strId);
+        details[strId] = {
           dailyAmountSpent: record.dailyAmountSpent,
           dailyBudget: record.dailyBudget,
           rechargeAmount: record.rechargeAmount,
@@ -618,21 +654,32 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
 
   // Auto-fill dailyBudget for selected clients from their existing campaigns if available
   useEffect(() => {
-    if (selectedClientIds && selectedClientIds.length > 0 && campaignsDropdown?.length > 0) {
-      selectedClientIds.forEach((clientId) => {
-        const currentBudget = rechargeForm.getFieldValue(["clientDetails", clientId, "dailyBudget"]);
-        if (currentBudget === undefined || currentBudget === null) {
-          const clientCampaign = campaignsDropdown.find((c) => {
-            const cId = (c.clientCompanyId?._id || c.clientCompanyId || c.clientId?._id || c.clientId || "").toString();
-            return cId === clientId.toString() && c.dailyBudget;
-          });
-          if (clientCampaign?.dailyBudget) {
-            rechargeForm.setFieldValue(["clientDetails", clientId, "dailyBudget"], clientCampaign.dailyBudget);
+    if (selectedClientIds && selectedClientIds.length > 0) {
+      const allCampaignsList = [
+        ...(Array.isArray(campaignsDropdown) ? campaignsDropdown : []),
+        ...(Array.isArray(campaigns) ? campaigns : []),
+      ];
+      if (allCampaignsList.length > 0) {
+        selectedClientIds.forEach((clientId) => {
+          const currentBudget = rechargeForm.getFieldValue(["clientDetails", clientId, "dailyBudget"]);
+          if (currentBudget === undefined || currentBudget === null) {
+            const clientCampaign = allCampaignsList.find((c) => {
+              if (typeof clientId === "string" && clientId.startsWith("internal_")) {
+                const targetBrand = clientId.replace(/^internal_/, "").toLowerCase();
+                const cBrand = (c.ownBrandName || "").trim().toLowerCase();
+                return Boolean(c.isInternal) && cBrand === targetBrand && c.dailyBudget;
+              }
+              const cId = (c.clientCompanyId?._id || c.clientCompanyId || c.clientId?._id || c.clientId || "").toString();
+              return cId === clientId.toString() && c.dailyBudget;
+            });
+            if (clientCampaign?.dailyBudget) {
+              rechargeForm.setFieldValue(["clientDetails", clientId, "dailyBudget"], clientCampaign.dailyBudget);
+            }
           }
-        }
-      });
+        });
+      }
     }
-  }, [selectedClientIds, campaignsDropdown, rechargeForm]);
+  }, [selectedClientIds, campaignsDropdown, campaigns, rechargeForm]);
 
   // Handle form values change
   const handleFormValuesChange = (changedValues, allValues) => {
@@ -908,10 +955,27 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
                         align: "center",
                       },
                       {
-                        title: "Clients",
+                        title: "Clients / Brands",
                         key: "clients",
                         width: 350,
                         render: (_, record) => {
+                          const clientRecharges = record.clientRecharges || [];
+                          if (clientRecharges.length > 0) {
+                            return (
+                              <Space wrap>
+                                {clientRecharges.map((cr, idx) => {
+                                  const name = cr.ownBrandName
+                                    ? `${cr.ownBrandName}`
+                                    : (cr.clientId?.companyName || cr.clientId?.name || (clients.find((c) => c._id === (cr.clientId?._id || cr.clientId))?.name) || "Client");
+                                  return (
+                                    <Tag key={cr.clientId?._id || idx} color={cr.ownBrandName || cr.isInternal ? "purple" : "blue"}>
+                                      {name} {cr.ownBrandName || cr.isInternal ? "(Own Brand)" : ""}
+                                    </Tag>
+                                  );
+                                })}
+                              </Space>
+                            );
+                          }
                           const clientIds = record.clientCompanyIds || [];
                           if (clientIds.length === 0 && record.clientCompanyId) {
                             // Handle legacy single client

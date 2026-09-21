@@ -14,7 +14,7 @@ exports.createSchedule = async (req, res, next) => {
 exports.getSchedules = async (req, res, next) => {
     try {
         const agencyId = req.user.agencyId || req.user._id;
-        const schedules = await reportService.getSchedules(agencyId);
+        const schedules = await reportService.getSchedules(agencyId, req.user);
         res.status(200).json({ status: 'success', data: schedules });
     } catch (error) {
         next(error);
@@ -25,7 +25,8 @@ exports.updateScheduleStatus = async (req, res, next) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
-        const schedule = await reportService.updateScheduleStatus(id, status);
+        const agencyId = req.user.agencyId || req.user._id;
+        const schedule = await reportService.updateScheduleStatus(id, status, agencyId);
         res.status(200).json({ status: 'success', data: schedule });
     } catch (error) {
         next(error);
@@ -35,7 +36,8 @@ exports.updateScheduleStatus = async (req, res, next) => {
 exports.deleteSchedule = async (req, res, next) => {
     try {
         const { id } = req.params;
-        await reportService.deleteSchedule(id);
+        const agencyId = req.user.agencyId || req.user._id;
+        await reportService.deleteSchedule(id, agencyId);
         res.status(200).json({ status: 'success', message: 'Schedule deleted' });
     } catch (error) {
         next(error);
@@ -45,7 +47,7 @@ exports.deleteSchedule = async (req, res, next) => {
 exports.getRecentSentReports = async (req, res, next) => {
     try {
         const agencyId = req.user.agencyId || req.user._id;
-        const reports = await reportService.getRecentSentReports(agencyId);
+        const reports = await reportService.getRecentSentReports(agencyId, req.user);
         res.status(200).json({ status: 'success', data: reports });
     } catch (error) {
         next(error);
@@ -55,7 +57,7 @@ exports.getRecentSentReports = async (req, res, next) => {
 exports.getAnalytics = async (req, res, next) => {
     try {
         const agencyId = req.user.agencyId || req.user._id;
-        const analytics = await reportService.getReportAnalytics(agencyId);
+        const analytics = await reportService.getReportAnalytics(agencyId, req.user);
         res.status(200).json({ status: 'success', data: analytics });
     } catch (error) {
         next(error);
