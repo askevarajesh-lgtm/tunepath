@@ -31,7 +31,7 @@ import {
 } from "@ant-design/icons";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useGetDepartmentsDynamicQuery, useGetRolesQuery } from "../../api/accessControlApi";
-import { resolveUserDepartmentSlug } from "../../utils/departmentUtils";
+import { resolveUserDepartmentSlug, getDepartmentIdentifier } from "../../utils/departmentUtils";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
 import KanbanBoard from "./KanbanBoard";
@@ -384,7 +384,7 @@ const TasksPage = () => {
         return true;
       })
       .map((d) => ({
-        value: d.slug || (d.name ? d.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") : d._id),
+        value: getDepartmentIdentifier(d) || d.slug || (d.name ? d.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") : d._id),
         label: d.name,
       }));
     return [...base, ...dynamicItems];

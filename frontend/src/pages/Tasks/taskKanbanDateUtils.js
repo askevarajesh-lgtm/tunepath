@@ -19,6 +19,23 @@ export function taskMatchesKanbanDay(task, day) {
     const actualCompletionDate = d(task.actualCompletionDate);
     const validatedAt = d(task.validatedAt);
     const updatedAt = d(task.updatedAt);
+    const workStartedAt = d(task.workStartedAt);
+
+    // Active in progress tasks or tasks started on this day
+    const statusNorm = (task?.status || "").toLowerCase();
+    if (statusNorm === "in_progress" || statusNorm === "inprogress") {
+        if (ok(workStartedAt) && workStartedAt.valueOf() >= s && workStartedAt.valueOf() <= e) {
+            return true;
+        }
+        // If viewing today, active in-progress tasks are always visible
+        if (day.isSame(dayjs(), "day")) {
+            return true;
+        }
+    }
+
+    if (ok(workStartedAt) && workStartedAt.valueOf() >= s && workStartedAt.valueOf() <= e) {
+        return true;
+    }
 
     // 1. Check startDate
     if (ok(startDate) && startDate.valueOf() >= s && startDate.valueOf() <= e) {

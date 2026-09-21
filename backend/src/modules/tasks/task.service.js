@@ -3229,6 +3229,9 @@ const getTasksForKanban = async (
                 },
               ],
             },
+            // Option E: Task was started or active in this range, or is currently in progress
+            { workStartedAt: { $gte: start, $lte: end } },
+            { status: { $in: ["in_progress", "inprogress"] } },
           ],
         },
       ];
@@ -3305,27 +3308,30 @@ const getTasksForKanban = async (
     }
   }
 
+  // Execute query
   const tasks = await Task.find(query)
     .populate("companyId", "name email")
     .populate(
       "projectId",
-      "name status color departments packageName numberOfPosters remainingPosters completedPosters numberOfVideos remainingVideos completedVideos numberOfShoots remainingShoots completedShoots selectedCategories",
+      "name code status clientCompanyId color departments defaultAssignee",
     )
     .populate("assignedTo", "name email role avatar")
     .populate("assignedBy", "name email")
     .populate("createdBy", "name email profileImage")
     .populate("watchers", "name email avatar")
-    .sort({ createdAt: -1 });
+    .sort({ order: 1, createdAt: -1 })
+    .lean();
 
-  // Get start of today for sorting logic
-  const todayStart = new Date();
-  todayStart.setUTCHours(0, 0, 0, 0);
-
-  // Custom sort to prioritize tasks added today, then by order, then by createdAt desc
+  // Sort tasks in memory to ensure perfect chronological stacking
   tasks.sort((a, b) => {
-    const aIsToday = a.createdAt >= todayStart;
-    const bIsToday = b.createdAt >= todayStart;
+    const aDate = a.createdAt ? new Date(a.createdAt) : null;
+    const bDate = b.createdAt ? new Date(b.createdAt) : null;
+    const now = new Date();
 
+    const aIsToday = aDate && aDate.toDateString() === now.toDateString();
+    const bIsToday = bDate && bDate.toDateString() === now.toDateString();
+
+    // Put Today's tasks first
     if (aIsToday && !bIsToday) return -1;
     if (!aIsToday && bIsToday) return 1;
 
@@ -3335,7 +3341,7 @@ const getTasksForKanban = async (
     }
 
     // Default to newest first
-    return new Date(b.createdAt) - new Date(a.createdAt);
+    return (bDate ? bDate.getTime() : 0) - (aDate ? aDate.getTime() : 0);
   });
 
   // Group by status using workflow configs
@@ -3369,10 +3375,18 @@ const getTasksForKanban = async (
       workflowConfig.statuses &&
       workflowConfig.statuses.length > 0
     ) {
-      // Find the status in workflow that matches task status
-      const workflowStatus = workflowConfig.statuses.find(
-        (s) => s.id === taskStatus || s.id?.toLowerCase() === taskStatus?.toLowerCase(),
-      );
+      // Find the status in workflow that matches task status or aliases
+      const lower = String(taskStatus).toLowerCase().trim();
+      const workflowStatus = workflowConfig.statuses.find((s) => {
+        const sId = String(s.id).toLowerCase().trim();
+        if (sId === lower) return true;
+        if ((lower === "assigned" || lower === "to_do") && (sId === "to_do" || sId === "assigned")) return true;
+        if ((lower === "created" || lower === "backlog" || lower === "hold") && (sId === "backlog" || sId === "hold" || sId === "created")) return true;
+        if (["complete", "completed", "done", "validated"].includes(lower) && ["complete", "completed", "done", "validated"].includes(sId)) return true;
+        if (["review", "submitted", "in_review"].includes(lower) && ["review", "submitted", "in_review"].includes(sId)) return true;
+        if (lower === "rejected" && sId === "rejected") return true;
+        return false;
+      });
       if (workflowStatus) {
         const statusId = workflowStatus.id;
         if (!grouped[statusId]) {
@@ -3469,19 +3483,33 @@ const validateStatusTransition = async (task, newStatusId, tenantCompanyId) => {
     (a, b) => a.order - b.order,
   );
 
+  // Helper to match status or alias
+  const matchWorkflowStatus = (statusId) => {
+    if (!statusId) return null;
+    const lower = String(statusId).toLowerCase().trim();
+    return sortedStatuses.find((s) => {
+      const sId = String(s.id).toLowerCase().trim();
+      if (sId === lower) return true;
+      if ((lower === "assigned" || lower === "to_do") && (sId === "to_do" || sId === "assigned")) return true;
+      if ((lower === "created" || lower === "backlog" || lower === "hold") && (sId === "backlog" || sId === "hold" || sId === "created")) return true;
+      if (["complete", "completed", "done", "validated"].includes(lower) && ["complete", "completed", "done", "validated"].includes(sId)) return true;
+      if (["review", "submitted", "in_review"].includes(lower) && ["review", "submitted", "in_review"].includes(sId)) return true;
+      if (lower === "rejected" && sId === "rejected") return true;
+      return false;
+    });
+  };
+
   // Find current status in workflow
-  const currentStatusInWorkflow = sortedStatuses.find(
-    (s) => s.id === task.status,
-  );
-  const newStatusInWorkflow = sortedStatuses.find((s) => s.id === newStatusId);
+  const currentStatusInWorkflow = matchWorkflowStatus(task.status);
+  const newStatusInWorkflow = matchWorkflowStatus(newStatusId);
 
   // Allow transitioning from backlog (Hold) or hold ONLY to in_progress (resuming task)
   const currentStatusId = currentStatusInWorkflow ? currentStatusInWorkflow.id : task.status;
-  if (currentStatusId === "backlog" || currentStatusId === "hold") {
+  if (currentStatusId === "backlog" || currentStatusId === "hold" || currentStatusId === "created") {
     if (newStatusId === "in_progress") {
       return { valid: true, workflowStatus: newStatusInWorkflow };
     }
-    if (newStatusId !== "backlog" && newStatusId !== "hold") {
+    if (newStatusId !== "backlog" && newStatusId !== "hold" && newStatusId !== "created") {
       return {
         valid: false,
         message: "Tasks on Hold can only be moved to In Progress.",

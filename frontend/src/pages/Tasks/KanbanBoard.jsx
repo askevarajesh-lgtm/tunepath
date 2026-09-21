@@ -234,11 +234,12 @@ const TaskCardInner = ({
     <div
       ref={setNodeRef}
       {...attributes}
+      {...listeners}
       onClick={handleCardClick}
       style={{
         ...dndStyle,
         marginBottom: 12,
-        cursor: "pointer",
+        cursor: "grab",
         position: "relative",
         borderRadius: 16,
         overflow: "hidden",
@@ -310,7 +311,6 @@ const TaskCardInner = ({
         {/* Drag handle */}
         {((!isOverdue && !isCompleted) || canDragHandle) && (
           <div
-            {...listeners}
             className="drag-handle"
             style={{
               position: "absolute",
@@ -335,8 +335,6 @@ const TaskCardInner = ({
               e.currentTarget.style.background = "transparent";
               e.currentTarget.style.color = `${projectColor}80`;
             }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => e.stopPropagation()}
           >
             <span
               style={{
@@ -1544,7 +1542,11 @@ const KanbanBoard = ({
   const canUseClientScope = true; // Default-Allow model
 
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
@@ -2101,6 +2103,14 @@ const KanbanBoard = ({
     if (currentStatusId === "done") validStatusIds.add("complete");
     if (currentStatusId === "complete") validStatusIds.add("done");
 
+    // Add adjacent workflow steps (next step and previous step)
+    if (currentStatusIndex + 1 < sortedStatuses.length) {
+      validStatusIds.add(sortedStatuses[currentStatusIndex + 1].id);
+    }
+    if (currentStatusIndex - 1 >= 0) {
+      validStatusIds.add(sortedStatuses[currentStatusIndex - 1].id);
+    }
+
     // Allow in_progress to move to complete/done/completed/validated
     if (currentStatusId === "in_progress") {
       validStatusIds.add("complete");
@@ -2115,6 +2125,11 @@ const KanbanBoard = ({
       validStatusIds.add("to_do");
     }
 
+    // Allow to_do to move to in_progress
+    if (currentStatusId === "to_do" || currentStatusId === "assigned") {
+      validStatusIds.add("in_progress");
+    }
+
     // Ensure all completion status aliases are consistently included if any completion status is valid
     const hasCompletionStatus = Array.from(validStatusIds).some((id) =>
       ["done", "complete", "completed", "validated"].includes(String(id).toLowerCase())
@@ -2126,10 +2141,11 @@ const KanbanBoard = ({
       validStatusIds.add("validated");
     }
 
-    const isAssigned = task.assignedTo &&
-      ((task.assignedTo._id || task.assignedTo)?.toString() === user?._id?.toString());
-    const isCreator = task.createdBy &&
-      ((task.createdBy._id || task.createdBy)?.toString() === user?._id?.toString());
+    const currentUserId = user?._id || user?.id;
+    const taskAssignedId = task.assignedTo?._id || task.assignedTo?.id || task.assignedTo;
+    const taskCreatedById = task.createdBy?._id || task.createdBy?.id || task.createdBy;
+    const isAssigned = taskAssignedId && (String(taskAssignedId) === String(currentUserId));
+    const isCreator = taskCreatedById && (String(taskCreatedById) === String(currentUserId));
     const canBypassWorkflow = isCreator || isAssigned || isAdmin;
 
     // For authorized users (creator/assignee/admin), ensure all visible board columns are allowed
@@ -2248,6 +2264,10 @@ const KanbanBoard = ({
     targetStatusId,
   ) => {
     if (sourceStatus === targetStatusId) return;
+
+    const isDigitalMarketing =
+      draggedTask?.department === "digital-marketing" ||
+      activeDepartmentSlug === "digital-marketing";
 
     const canAccessRejected = isAdmin || isCoordinatorRole;
     if (targetStatusId === "Rejected" && !canAccessRejected) {
@@ -2431,8 +2451,8 @@ const KanbanBoard = ({
       notifyError('move', draggedTask._id, "Completed tasks cannot be moved. Only admins can modify completed tasks.");
       return;
     }
-    const targetStatusId = over.data.current?.statusId;
-    const isColumn = over.data.current?.type === "column";
+    const targetStatusId = over.data.current?.statusId || (typeof overId === "string" && overId.startsWith("column-") ? overId.replace("column-", "") : null);
+    const isColumn = over.data.current?.type === "column" || (typeof overId === "string" && overId.startsWith("column-"));
     if (isColumn && targetStatusId) {
       if (sourceStatus !== targetStatusId) {
         await initiateColumnMove(

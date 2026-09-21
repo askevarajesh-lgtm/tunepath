@@ -1,4 +1,23 @@
 /**
+ * Helper to get a stable, normalized identifier for a department
+ * (prefers slug, falls back to sanitized name, then _id string).
+ */
+export const getDepartmentIdentifier = (d) => {
+  if (!d) return null;
+  if (d.slug && String(d.slug).trim()) {
+    return String(d.slug).trim().toLowerCase();
+  }
+  if (d.name && String(d.name).trim()) {
+    return String(d.name)
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+  return d._id ? String(d._id) : null;
+};
+
+/**
  * Utility to reliably resolve a user's department slug across all roles,
  * dynamic departments, display names, and user attributes.
  * Handles both new dynamic slugs (digital-marketing, projects, seo) and legacy aliases (dm, project).
@@ -34,31 +53,45 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
           dNameSanitized === normSanitized
         );
       });
-      if (exactMatch?.slug) return exactMatch.slug;
+      if (exactMatch) {
+        const iden = getDepartmentIdentifier(exactMatch);
+        if (iden) return iden;
+      }
 
       // Step B: Match by group aliases against active fetched departments
       // SEO group
       const isSeoTerm = ["seo", "seo_specialist", "seo_manager", "seo_lead", "seo_executive", "seo_analyst"].includes(normSanitized) || normSanitized.includes("seo");
       if (isSeoTerm) {
         const seoDept = departments.find(d => (d.slug || "").toLowerCase().includes("seo") || (d.name || "").toLowerCase().includes("seo"));
-        if (seoDept?.slug) return seoDept.slug;
+        if (seoDept) {
+          const iden = getDepartmentIdentifier(seoDept);
+          if (iden) return iden;
+        }
       }
 
-      // Video Editor & Designer group (maps to digital-marketing unless specific video/design department exists)
+      // Video Editor & Designer group (maps to specific video/design department if exists, else fallback to digital-marketing)
       const isVideoOrDesignerTerm = ["video-editor", "video_editor", "video-edit", "video", "designer", "graphic-designer", "ui-ux", "design"].some((alias) => normSanitized.includes(alias));
       if (isVideoOrDesignerTerm) {
         const specificDept = departments.find(d => {
           const s = (d.slug || "").toLowerCase();
           const n = (d.name || "").toLowerCase();
+          if (normSanitized.includes("video")) return s.includes("video") || n.includes("video");
+          if (normSanitized.includes("design")) return s.includes("design") || n.includes("design");
           return s.includes("video") || n.includes("video") || s.includes("design") || n.includes("design");
         });
-        if (specificDept?.slug) return specificDept.slug;
+        if (specificDept) {
+          const iden = getDepartmentIdentifier(specificDept);
+          if (iden) return iden;
+        }
         const dmDept = departments.find(d => {
           const s = (d.slug || "").toLowerCase();
           const n = (d.name || "").toLowerCase();
           return s === "digital-marketing" || s === "dm" || n.includes("digital marketing") || n.includes("marketing");
         });
-        if (dmDept?.slug) return dmDept.slug;
+        if (dmDept) {
+          const iden = getDepartmentIdentifier(dmDept);
+          if (iden) return iden;
+        }
       }
 
       // Digital Marketing group
@@ -71,7 +104,10 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
           const n = (d.name || "").toLowerCase();
           return s === "digital-marketing" || s === "dm" || n.includes("digital marketing") || n.includes("marketing");
         });
-        if (dmDept?.slug) return dmDept.slug;
+        if (dmDept) {
+          const iden = getDepartmentIdentifier(dmDept);
+          if (iden) return iden;
+        }
       }
 
       // Project / Development group
@@ -84,7 +120,10 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
           const n = (d.name || "").toLowerCase();
           return s === "projects" || s === "project" || n.includes("project") || n.includes("dev");
         });
-        if (projDept?.slug) return projDept.slug;
+        if (projDept) {
+          const iden = getDepartmentIdentifier(projDept);
+          if (iden) return iden;
+        }
       }
     }
 
@@ -92,11 +131,13 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
     if (["seo", "seo_specialist", "seo_manager", "seo_lead", "seo_executive", "seo_analyst"].includes(normSanitized) || normSanitized.includes("seo")) {
       return "seo";
     }
-    if (
-      ["video-editor", "video_editor", "video-edit", "video", "designer", "graphic-designer", "ui-ux", "design", "dm", "digital-marketing", "digital_marketing", "marketing"].some(
-        (alias) => normSanitized.includes(alias)
-      )
-    ) {
+    if (["video-editor", "video_editor", "video-edit", "video"].some((alias) => normSanitized.includes(alias))) {
+      return "video-editor";
+    }
+    if (["designer", "graphic-designer", "ui-ux", "design"].some((alias) => normSanitized.includes(alias))) {
+      return "designer";
+    }
+    if (["dm", "digital-marketing", "digital_marketing", "marketing"].some((alias) => normSanitized.includes(alias))) {
       return "digital-marketing";
     }
     if (
@@ -174,17 +215,17 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
     seo_executive: "seo",
     seo_analyst: "seo",
 
-    // Video Editor (belongs to Digital Marketing department)
-    video_editor: "digital-marketing",
-    video_editing: "digital-marketing",
+    // Video Editor
+    video_editor: "video-editor",
+    video_editing: "video-editor",
 
-    // Design (belongs to Digital Marketing department)
-    designer: "digital-marketing",
-    graphic_designer: "digital-marketing",
-    ui_ux_designer: "digital-marketing",
-    ui_designer: "digital-marketing",
-    ux_designer: "digital-marketing",
-    creative_designer: "digital-marketing",
+    // Design
+    designer: "designer",
+    graphic_designer: "designer",
+    ui_ux_designer: "designer",
+    ui_designer: "designer",
+    ux_designer: "designer",
+    creative_designer: "designer",
 
     // Digital Marketing
     content_writer: "digital-marketing",
@@ -226,7 +267,10 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
       if (!d?.name) return false;
       return fullName.toLowerCase().includes(d.name.toLowerCase());
     });
-    if (match?.slug) return match.slug;
+    if (match) {
+      const iden = getDepartmentIdentifier(match);
+      if (iden) return iden;
+    }
   }
 
   return null;
