@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Row, Col, Card, Button, Table, Tag, Progress, Spin, List, Avatar } from 'antd';
+import { Typography, Row, Col, Card, Button, Table, Tag, Progress, Spin, List, Avatar, Modal, DatePicker } from 'antd';
 import { motion } from 'framer-motion';
 import { TrendingUp, Users, Activity, ArrowUpRight, ArrowDownRight, Briefcase, FileText, CheckCircle, Clock } from 'lucide-react';
 import SlabCard from '../../../components/SlabCard';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useNavigate } from 'react-router-dom';
+import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
 const AgencyAdminDashboardTab = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [modalVisible, setModalVisible] = useState(false);
+  const [modalType, setModalType] = useState(null);
+  const [modalTitle, setModalTitle] = useState('');
   const [dashboardData, setDashboardData] = useState({
     agencyMrr: '₹0',
     grossMargin: 'N/A',
@@ -28,7 +33,11 @@ const AgencyAdminDashboardTab = () => {
     const fetchStats = async () => {
       try {
         const token = localStorage.getItem('token');
-        const res = await fetch('/api/agencies/dashboard-stats', {
+        let url = '/api/agencies/dashboard-stats';
+        if (selectedDate) {
+          url += `?month=${selectedDate.month()}&year=${selectedDate.year()}`;
+        }
+        const res = await fetch(url, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         const data = await res.json();
@@ -42,11 +51,60 @@ const AgencyAdminDashboardTab = () => {
       }
     };
     fetchStats();
-  }, []);
+  }, [selectedDate]);
 
   const containerVariants = {
     hidden: { opacity: 0 },
     visible: { opacity: 1, transition: { staggerChildren: 0.1 } }
+  };
+
+  const handleStatClick = (stat) => {
+    setModalType(stat.label);
+    setModalTitle(`${stat.label} Details`);
+    setModalVisible(true);
+  };
+
+  const renderModalContent = () => {
+    if (!dashboardData) return null;
+
+    if (modalType === 'ACTIVE CLIENTS') {
+      const clientColumns = [
+        { title: 'Client Name', dataIndex: 'name', key: 'name' },
+        { title: 'Email', dataIndex: 'email', key: 'email' },
+        { title: 'MRR', dataIndex: 'mrr', key: 'mrr', render: val => `₹${val || 0}` },
+        { title: 'Status', dataIndex: 'status', key: 'status', render: text => <Tag color={text === 'active' ? 'green' : 'red'}>{text}</Tag> }
+      ];
+      return <Table columns={clientColumns} dataSource={dashboardData.clientsList || []} rowKey="id" pagination={false} scroll={{ y: 400 }} />;
+    }
+    if (modalType === 'TEAM MEMBERS') {
+      const teamColumns = [
+        { title: 'Name', dataIndex: 'name', key: 'name' },
+        { title: 'Email', dataIndex: 'email', key: 'email' },
+        { title: 'Role', dataIndex: 'role', key: 'role', render: text => text === 'agency_manager' ? 'Agency Manager' : text },
+        { title: 'Status', dataIndex: 'status', key: 'status', render: text => <Tag color={text === 'active' ? 'green' : 'red'}>{text}</Tag> }
+      ];
+      return <Table columns={teamColumns} dataSource={dashboardData.teamMembersList || []} rowKey="id" pagination={false} scroll={{ y: 400 }} />;
+    }
+    if (['REVENUE', 'PENDING AMOUNT', 'TOTAL INVOICED'].includes(modalType)) {
+      const invoiceColumns = [
+        { title: 'Invoice Number', dataIndex: 'invoiceNumber', key: 'invoiceNumber' },
+        { title: 'Grand Total', dataIndex: 'grandTotal', key: 'grandTotal', render: val => `₹${val || 0}` },
+        { title: 'Total Paid', dataIndex: 'totalPaid', key: 'totalPaid', render: val => `₹${val || 0}` },
+        { title: 'Pending Amount', dataIndex: 'pendingAmount', key: 'pendingAmount', render: val => `₹${val || 0}` },
+        { title: 'Status', dataIndex: 'status', key: 'status', render: text => <Tag color={text === 'Paid' ? 'green' : text === 'Pending' ? 'orange' : 'red'}>{text}</Tag> },
+        { title: 'Date', dataIndex: 'createdAt', key: 'createdAt', render: date => date ? new Date(date).toLocaleDateString() : 'N/A' }
+      ];
+      return <Table columns={invoiceColumns} dataSource={dashboardData.invoicesList || []} rowKey="id" pagination={false} scroll={{ y: 400 }} />;
+    }
+    if (modalType === 'AGENCY MRR') {
+      const clientColumns = [
+        { title: 'Client Name', dataIndex: 'name', key: 'name' },
+        { title: 'MRR', dataIndex: 'mrr', key: 'mrr', render: val => `₹${val || 0}` },
+        { title: 'Status', dataIndex: 'status', key: 'status', render: text => <Tag color={text === 'active' ? 'green' : 'red'}>{text}</Tag> }
+      ];
+      return <Table columns={clientColumns} dataSource={dashboardData.clientsList || []} rowKey="id" pagination={false} scroll={{ y: 400 }} />;
+    }
+    return <Text>No details available.</Text>;
   };
 
   const itemVariants = {
@@ -86,17 +144,31 @@ const AgencyAdminDashboardTab = () => {
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" >
-      <motion.div variants={itemVariants} style={{ marginBottom: 32 }}>
-        <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.5 }}>AGENCY OWNER VIEW</Text>
-        <Title level={2} style={{ margin: '4px 0 8px 0', fontWeight: 800 }}>Agency Administration</Title>
-        <Text type="secondary" style={{ fontSize: 14, fontWeight: 500 }}>High-level overview of your agency's financial health, operations, and team performance.</Text>
+      <motion.div variants={itemVariants} style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1.5 }}>AGENCY OWNER VIEW</Text>
+          <Title level={2} style={{ margin: '4px 0 8px 0', fontWeight: 800 }}>Agency Administration</Title>
+          <Text type="secondary" style={{ fontSize: 14, fontWeight: 500 }}>High-level overview of your agency's financial health, operations, and team performance.</Text>
+        </div>
+        <DatePicker 
+          picker="month" 
+          value={selectedDate} 
+          onChange={(date) => setSelectedDate(date)} 
+          placeholder="All Time"
+          style={{ borderRadius: 8, padding: '8px 16px', fontWeight: 600 }}
+          allowClear
+        />
       </motion.div>
 
       <motion.div variants={itemVariants}>
         <Row gutter={[24, 24]} style={{ marginBottom: 40 }}>
           {stats.map((stat, idx) => (
             <Col xs={24} sm={12} lg={8} xl={4} key={idx}>
-              <SlabCard bodyStyle={{ padding: '24px 16px', height: '100%' }}>
+              <SlabCard 
+                bodyStyle={{ padding: '24px 16px', height: '100%', cursor: 'pointer' }}
+                onClick={() => handleStatClick(stat)}
+                className="hover-scale"
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
                   <div style={{ background: 'var(--bg-tertiary)', padding: 10, borderRadius: 12, border: '1px solid var(--border-color)', color: stat.color }}>{stat.icon}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: `${stat.color}15`, color: stat.color, padding: '4px 8px', borderRadius: 8, fontWeight: 700, fontSize: 12 }}>
@@ -199,6 +271,20 @@ const AgencyAdminDashboardTab = () => {
           <Table columns={columns} dataSource={dashboardData.teamPerformance} pagination={false}  />
         </Card>
       </motion.div>
+
+      <Modal
+        title={<span style={{ fontWeight: 800, fontSize: 18, color: 'var(--text-primary)' }}>{modalTitle}</span>}
+        open={modalVisible}
+        onCancel={() => setModalVisible(false)}
+        footer={null}
+        width={800}
+        styles={{ 
+          body: { padding: '24px 0 0 0' },
+          content: { borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-primary)' }
+        }}
+      >
+        {renderModalContent()}
+      </Modal>
     </motion.div>
   );
 };

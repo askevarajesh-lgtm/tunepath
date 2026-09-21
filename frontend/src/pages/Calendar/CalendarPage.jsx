@@ -550,17 +550,7 @@ const CalendarPage = () => {
             Centralized schedule system monitoring Tasks, Client reviews, Campaigns, and Meetings.
           </p>
         </div>
-        {['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager'].includes(userRole) && (
-          <Button
-            type="primary"
-            size="large"
-            icon={<PlusOutlined />}
-            onClick={openCreateDrawer}
-            style={{ borderRadius: '8px', background: 'linear-gradient(135deg, var(--accent-primary) 0%, var(--accent-primary) 100%)', border: 'none' }}
-          >
-            Create Event
-          </Button>
-        )}
+        {/* Create Event button removed as requested */}
       </div>
 
       {/* KPI Stats Cards */}
@@ -626,7 +616,7 @@ const CalendarPage = () => {
                   />
                   <Select
                     placeholder="Filter by Type"
-                    value={typeFilter}
+                    value={typeFilter || undefined}
                     onChange={setTypeFilter}
                     style={{ width: 180 }}
                     allowClear
@@ -645,7 +635,7 @@ const CalendarPage = () => {
                   </Select>
                   <Select
                     placeholder="Filter by Client"
-                    value={clientFilter}
+                    value={clientFilter || undefined}
                     onChange={setClientFilter}
                     style={{ width: 200 }}
                     allowClear
@@ -669,6 +659,27 @@ const CalendarPage = () => {
             label: <span><UnorderedListOutlined />Agenda View</span>,
             children: (
               <Card style={{ borderRadius: '12px', padding: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                  <Select
+                    placeholder="Filter by Event Type"
+                    value={typeFilter || undefined}
+                    onChange={setTypeFilter}
+                    style={{ width: 180 }}
+                    allowClear
+                  >
+                    <Option value="client_review">Client Review</Option>
+                    <Option value="strategy_call">Strategy Call</Option>
+                    <Option value="campaign_launch">Campaign Launch</Option>
+                    <Option value="content_approval">Content Approval</Option>
+                    <Option value="internal_sync">Internal Sync</Option>
+                    <Option value="sales_call">Sales Call</Option>
+                    <Option value="client_creation">Client Creation</Option>
+                    <Option value="proposal_review">Proposal Review</Option>
+                    <Option value="retainer_renewal">Retainer Renewal</Option>
+                    <Option value="performance_review">Performance Review</Option>
+                    <Option value="team_meeting">Team Meeting</Option>
+                  </Select>
+                </div>
                 <Table
                   columns={columns}
                   dataSource={events}

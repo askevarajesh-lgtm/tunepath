@@ -22,6 +22,8 @@ import {
   Radio,
   Divider,
   Checkbox,
+  Upload,
+  Image,
 } from "antd";
 import {
   PlusOutlined,
@@ -29,6 +31,8 @@ import {
   DeleteOutlined,
   DollarOutlined,
   HistoryOutlined,
+  UploadOutlined,
+  DownloadOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import {
@@ -52,6 +56,14 @@ const { Title } = Typography;
 const { TabPane } = Tabs;
 const { Option } = Select;
 const { RangePicker, MonthPicker } = DatePicker;
+
+const getBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = (error) => reject(error);
+  });
 
 const ExpenseManagementPage = () => {
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -392,6 +404,14 @@ const ExpenseManagementPage = () => {
       render: (remarks) => remarks || "N/A",
     },
     {
+      title: "Screenshot",
+      dataIndex: "paymentScreenshot",
+      key: "paymentScreenshot",
+      width: 120,
+      responsive: ["lg"],
+      render: (url) => url ? <Image src={url} width={40} height={40} style={{ objectFit: 'cover', borderRadius: '4px' }} preview={true} /> : "N/A",
+    },
+    {
       title: "Created By",
       dataIndex: "createdBy",
       key: "createdBy",
@@ -580,6 +600,14 @@ const ExpenseManagementPage = () => {
       render: (remarks) => remarks || "N/A",
     },
     {
+      title: "Screenshot",
+      dataIndex: "paymentScreenshot",
+      key: "paymentScreenshot",
+      width: 120,
+      responsive: ["lg"],
+      render: (url) => url ? <Image src={url} width={40} height={40} style={{ objectFit: 'cover', borderRadius: '4px' }} preview={true} /> : "N/A",
+    },
+    {
       title: "Created By",
       dataIndex: "createdBy",
       key: "createdBy",
@@ -692,6 +720,18 @@ const ExpenseManagementPage = () => {
       formValues.date = dayjs(record.date);
     }
 
+    // Set paymentScreenshot for Upload component
+    if (record.paymentScreenshot) {
+      formValues.paymentScreenshot = [
+        {
+          uid: '-1',
+          name: 'Screenshot',
+          status: 'done',
+          url: record.paymentScreenshot,
+        },
+      ];
+    }
+
     form.setFieldsValue(formValues);
     setIsModalVisible(true);
   };
@@ -721,6 +761,18 @@ const ExpenseManagementPage = () => {
       const isToolExpense =
         values.expenseType === "variable" && values.staffId === "tool_expenses";
 
+      let paymentScreenshot = null;
+      if (values.paymentScreenshot && values.paymentScreenshot.length > 0) {
+        const file = values.paymentScreenshot[0].originFileObj;
+        if (file) {
+          paymentScreenshot = await getBase64(file);
+        } else if (values.paymentScreenshot[0].url) {
+          paymentScreenshot = values.paymentScreenshot[0].url;
+        } else if (values.paymentScreenshot[0].thumbUrl) {
+          paymentScreenshot = values.paymentScreenshot[0].thumbUrl;
+        }
+      }
+
       // Build expense data with all fields
       const expenseData = {
         expenseType: values.expenseType,
@@ -745,6 +797,7 @@ const ExpenseManagementPage = () => {
         paymentMethod: values.paymentMethod || null,
         notes: values.notes || null,
         remarks: values.remarks || null,
+        paymentScreenshot,
         // Tool Expense specific fields
         toolName: isToolExpense ? values.toolName || null : null,
         websiteUrl: isToolExpense ? values.websiteUrl || null : null,
@@ -879,6 +932,40 @@ const ExpenseManagementPage = () => {
   const handleVariableDuplicateModalCancel = () => {
     setShowVariableDuplicateModal(false);
     variableDuplicateForm.resetFields();
+  };
+
+  const exportToCSV = (data, filename) => {
+    if (!data || data.length === 0) {
+      message.warning("No data to export");
+      return;
+    }
+
+    const headers = ["Category/Department", "Type", "Amount", "Date", "Payment Method", "Remarks", "Created By"];
+    
+    const csvContent = [
+      headers.join(","),
+      ...data.map(item => {
+        const category = item.expenseType === 'fixed' ? (item.category || "N/A") : ((item.staffId?.name || item.department) || "N/A");
+        const type = item.type || "N/A";
+        const amount = item.amount || 0;
+        const date = item.date ? dayjs(item.date).format("DD MMM YYYY") : "N/A";
+        const paymentMethod = item.paymentMethod || "N/A";
+        const remarks = `"${(item.remarks || "N/A").replace(/"/g, '""')}"`;
+        const createdBy = item.createdBy?.name || "N/A";
+
+        return [category, type, amount, date, paymentMethod, remarks, createdBy].join(",");
+      })
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${filename}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const handleDateFilterChange = (e) => {
@@ -1266,6 +1353,13 @@ const ExpenseManagementPage = () => {
                   >
                     Duplicate from Previous Month
                   </Button>
+                  <Button
+                    icon={<DownloadOutlined />}
+                    onClick={() => exportToCSV(filteredExpenses, "fixed_expenses")}
+                    style={{ borderRadius: 8, fontWeight: 600 }}
+                  >
+                    Export CSV
+                  </Button>
                 </div>
                 <Table
                   columns={fixedExpenseColumns}
@@ -1315,6 +1409,13 @@ const ExpenseManagementPage = () => {
                       style={{ borderRadius: 8, fontWeight: 600 }}
                     >
                       Duplicate from Previous Month
+                    </Button>
+                    <Button
+                      icon={<DownloadOutlined />}
+                      onClick={() => exportToCSV(filteredExpenses, "variable_expenses")}
+                      style={{ borderRadius: 8, fontWeight: 600 }}
+                    >
+                      Export CSV
                     </Button>
                     <Button
                       onClick={() => setShowDepartmentWise(!showDepartmentWise)}
@@ -1907,6 +2008,22 @@ const ExpenseManagementPage = () => {
                 </>
               );
             }}
+          </Form.Item>
+
+          <Form.Item 
+            name="paymentScreenshot" 
+            label="Payment Screenshot (Optional)"
+            valuePropName="fileList"
+            getValueFromEvent={(e) => {
+              if (Array.isArray(e)) {
+                return e;
+              }
+              return e?.fileList;
+            }}
+          >
+            <Upload maxCount={1} beforeUpload={() => false} listType="picture" accept="image/*">
+              <Button icon={<UploadOutlined />}>Click to Upload</Button>
+            </Upload>
           </Form.Item>
         </Form>
       </Modal>

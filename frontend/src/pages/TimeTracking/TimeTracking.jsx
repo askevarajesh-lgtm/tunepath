@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Typography, Row, Col, Card, Button, Table, Tag, Avatar,
   message, Spin, Modal, Form, Select, InputNumber, Switch,
-  Input, Popconfirm, Tabs, DatePicker
+  Input, Popconfirm, Tabs, DatePicker, Popover
 } from 'antd';
 import { motion } from 'framer-motion';
 import {
@@ -41,8 +41,8 @@ const TimeTracking = () => {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
-  const fetchData = async (dateStr) => {
-    setLoading(true);
+  const fetchData = async (dateStr, isSilentRefresh = false) => {
+    if (!isSilentRefresh) setLoading(true);
     try {
       const targetDate = dateStr || selectedDate;
       const queryParams = {};
@@ -81,6 +81,14 @@ const TimeTracking = () => {
   };
 
   useEffect(() => { fetchData(); }, [selectedDate, dateRange]);
+
+  // Lightweight refresh for active timers every 60 seconds
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchData(null, true);
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [selectedDate, dateRange]);
 
   const handlePrevWeek = () => {
     const d = new Date(selectedDate);
@@ -155,6 +163,59 @@ const TimeTracking = () => {
     return <Tag style={{ margin: 0, borderRadius: 16, color, border: `1px solid ${color}`, background: 'transparent', fontWeight: 600 }}>{formatted}</Tag>;
   };
 
+  const renderDayCell = (dayObj) => {
+    const total = (typeof dayObj === 'object' && dayObj !== null) ? dayObj.total : dayObj;
+    if (total === '-' || total === 0) return <span style={{ color: 'var(--text-tertiary)', fontWeight: 600 }}>—</span>;
+    
+    const formatted = formatTime(total);
+    const color = total >= 7 && total <= 8 ? 'var(--accent-primary)' : total < 7 ? 'var(--accent-warning)' : 'var(--accent-danger)';
+    const tag = <Tag style={{ margin: 0, borderRadius: 16, color, border: `1px solid ${color}`, background: 'transparent', fontWeight: 600, cursor: (typeof dayObj === 'object' && dayObj.entries?.length > 0) ? 'pointer' : 'default' }}>{formatted}</Tag>;
+
+    if (typeof dayObj === 'object' && dayObj.entries && dayObj.entries.length > 0) {
+      const content = (
+        <div style={{ maxWidth: 300, maxHeight: 300, overflowY: 'auto', paddingRight: 8 }}>
+          {dayObj.entries.map((e, idx) => (
+            <div key={idx} style={{ marginBottom: idx === dayObj.entries.length - 1 ? 0 : 12, paddingBottom: idx === dayObj.entries.length - 1 ? 0 : 12, borderBottom: idx === dayObj.entries.length - 1 ? 'none' : '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+                <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>{e.taskTitle}</strong>
+                <strong style={{ fontSize: 13, color: 'var(--text-primary)' }}>{formatTime(e.hours)}</strong>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8, alignItems: 'center' }}>
+                {e.client && <Text style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{e.client}</Text>}
+                {e.department && <Text style={{ fontSize: 11, color: 'var(--text-secondary)' }}>• {e.department}</Text>}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                {e.status && (
+                  <Tag style={{ margin: 0, borderRadius: 12, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)', fontSize: 10 }}>
+                    {String(e.status).replace(/_/g, ' ').toUpperCase()}
+                  </Tag>
+                )}
+                {e.isBillable ? (
+                  <span style={{ fontSize: 11, color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: 4 }}><CheckCircle2 size={12}/> Billable</span>
+                ) : (
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', gap: 4 }}><AlertCircle size={12}/> Non-billable</span>
+                )}
+                {e.isRunning && (
+                  <Tag style={{ margin: 0, borderRadius: 12, border: '1px solid #52c41a', background: 'transparent', color: '#52c41a', fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#52c41a' }} />
+                    Running
+                  </Tag>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+      return (
+        <Popover content={content} title={null} trigger="click" placement="right">
+          {tag}
+        </Popover>
+      );
+    }
+
+    return tag;
+  };
+
   const deptTag = (dept) => dept && dept !== '—'
     ? <Tag icon={<Building2 size={10} style={{ marginRight: 3 }} />} style={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', color: 'var(--accent-info)', fontSize: 11, fontWeight: 600, display: 'inline-flex', alignItems: 'center' }}>{dept}</Tag>
     : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
@@ -174,13 +235,13 @@ const TimeTracking = () => {
         </div>
       )
     },
-    { title: 'MON', dataIndex: 'mon', key: 'mon', render: getHourTag },
-    { title: 'TUE', dataIndex: 'tue', key: 'tue', render: getHourTag },
-    { title: 'WED', dataIndex: 'wed', key: 'wed', render: getHourTag },
-    { title: 'THU', dataIndex: 'thu', key: 'thu', render: getHourTag },
-    { title: 'FRI', dataIndex: 'fri', key: 'fri', render: getHourTag },
-    { title: 'SAT', dataIndex: 'sat', key: 'sat', render: getHourTag },
-    { title: 'SUN', dataIndex: 'sun', key: 'sun', render: getHourTag },
+    { title: 'MON', dataIndex: 'mon', key: 'mon', render: renderDayCell },
+    { title: 'TUE', dataIndex: 'tue', key: 'tue', render: renderDayCell },
+    { title: 'WED', dataIndex: 'wed', key: 'wed', render: renderDayCell },
+    { title: 'THU', dataIndex: 'thu', key: 'thu', render: renderDayCell },
+    { title: 'FRI', dataIndex: 'fri', key: 'fri', render: renderDayCell },
+    { title: 'SAT', dataIndex: 'sat', key: 'sat', render: renderDayCell },
+    { title: 'SUN', dataIndex: 'sun', key: 'sun', render: renderDayCell },
     { title: 'TOTAL', dataIndex: 'total', key: 'total', render: val => <strong style={{ color: 'var(--text-primary)' }}>{formatTime(val)}</strong> },
   ];
 
@@ -200,7 +261,16 @@ const TimeTracking = () => {
     },
     { title: 'CLIENT', dataIndex: 'client', key: 'client', render: text => text ? <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{text}</Text> : <Text type="secondary">—</Text> },
     { title: 'MODULE', dataIndex: 'module', key: 'module', render: text => <Tag style={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', color: 'var(--accent-info)', fontSize: 10, fontWeight: 600 }}>{text}</Tag> },
-    { title: 'TASK/DESC', dataIndex: 'task', key: 'task', render: text => <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{text}</Text> },
+    { title: 'TASK/DESC', dataIndex: 'task', key: 'task', render: (text, r) => (
+      <div>
+        <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{text}</Text>
+        {r.taskStatus && (
+          <Tag style={{ marginLeft: 8, fontSize: 9, borderRadius: 12, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+            {String(r.taskStatus).replace(/_/g, ' ').toUpperCase()}
+          </Tag>
+        )}
+      </div>
+    ) },
     { title: 'HOURS', dataIndex: 'hours', key: 'hours', render: text => <strong style={{ color: 'var(--text-primary)' }}>{formatTime(text)}</strong> },
     { title: 'BILLABLE', dataIndex: 'billable', key: 'billable', render: val => val ? <CheckCircle2 size={18} color="var(--accent-primary)" /> : <AlertCircle size={18} color="var(--text-tertiary)" /> },
     {

@@ -195,6 +195,11 @@ const expenseSchema = new mongoose.Schema(
       default: null,
       comment: "Remarks/notes for the expense",
     },
+    paymentScreenshot: {
+      type: String,
+      default: null,
+      comment: "Base64 or URL of the payment screenshot",
+    },
     // Tool Expenses specific fields (used when type = 'tool_expenses')
     toolName: {
       type: String,

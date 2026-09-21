@@ -30,6 +30,7 @@ exports.recordTimerStop = async (task, diffMinutes, userId) => {
       employee: employeeId,
       client: task.companyId,
       task: task._id,
+      department: employee ? employee.departmentId : undefined,
       date: new Date(),
       hours: diffHours,
       isBillable: true,
