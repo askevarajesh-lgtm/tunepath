@@ -2,7 +2,7 @@ const SlaRecord = require('../sla/sla.model');
 const User = require('../auth/user.model');
 
 const getRoleAllowedAssignees = (userRole) => {
-  if (['agency_super_admin', 'brand_super_admin'].includes(userRole)) {
+  if (['agency_super_admin'].includes(userRole)) {
     // Agency Admin panel: Tickets can ONLY be raised to Commander Admin
     return ['commander_admin'];
   }
@@ -10,14 +10,11 @@ const getRoleAllowedAssignees = (userRole) => {
     // Agency Manager panel: Tickets can be raised to Agency Admin or Commander Admin
     return ['agency_super_admin', 'commander_admin'];
   }
-  if (['agency_client', 'client'].includes(userRole)) {
-    // Client panel: Tickets can be raised to Agency Admin or Agency Manager
+  if (['agency_client', 'client', 'user', 'brand_manager', 'brand_super_admin', 'brand_team_user'].includes(userRole)) {
+    // Client panel: Tickets can ONLY be assigned to Agency Manager or Agency Admin
     return ['agency_super_admin', 'agency_manager'];
   }
-  if (userRole === 'brand_manager') {
-    return ['brand_super_admin', 'commander_admin'];
-  }
-  return ['commander_admin', 'agency_super_admin'];
+  return ['agency_super_admin', 'agency_manager'];
 };
 
 exports.createSupportTicket = async (req, res, next) => {
@@ -32,9 +29,17 @@ exports.createSupportTicket = async (req, res, next) => {
     }
 
     // Role validation based on user role
-    const allowedRoles = getRoleAllowedAssignees(effectiveRole);
+    const isClientRole = ['agency_client', 'client', 'user', 'brand_manager', 'brand_team_user', 'brand_super_admin'].includes(effectiveRole) || Boolean(req.user?.agencyId) || Boolean(req.user?.brandId);
+    
+    let allowedRoles;
+    if (isClientRole && !['agency_super_admin', 'agency_manager', 'commander_admin', 'supreme_super_admin'].includes(effectiveRole)) {
+      allowedRoles = ['agency_super_admin', 'agency_manager'];
+    } else {
+      allowedRoles = getRoleAllowedAssignees(effectiveRole);
+    }
+
     if (!allowedRoles.includes(assignee.role)) {
-      return res.status(403).json({ success: false, message: 'Cannot assign ticket to this role' });
+      return res.status(403).json({ success: false, message: 'Support ticket can only be assigned to Agency Manager or Agency Admin' });
     }
 
     // Create a support ticket in SLA module directly since Support acts as the SLA trigger.
@@ -47,10 +52,13 @@ exports.createSupportTicket = async (req, res, next) => {
     else if (priority === 'High') dueDate.setHours(dueDate.getHours() + 8);
     else dueDate.setHours(dueDate.getHours() + 24);
 
+    const clientBrandId = req.user?.brandId || req.user?.companyId || req.user?._id;
+    const effectiveAgencyId = assignee.agencyId || assignee.companyId || req.user?.agencyId || (assignee.role === 'agency_super_admin' ? assignee._id : assignee._id);
+
     const newSla = new SlaRecord({
       slaId,
-      clientId: req.user?.brandId || req.user?.companyId || req.user?._id, 
-      agencyId: assignee.agencyId || assignee.companyId || req.user?.agencyId || req.user?.companyId || assignee._id,
+      clientId: clientBrandId,
+      agencyId: effectiveAgencyId,
       assignedTo: assignee._id,
       clientType: 'Direct User Client',
       triggerType: 'Client Issue',
@@ -62,7 +70,7 @@ exports.createSupportTicket = async (req, res, next) => {
       status: 'Normal',
       activityTimeline: [{
         action: 'Ticket Assigned',
-        details: `Support ticket assigned from ${req.user ? req.user.name : 'User'}`,
+        details: `Support ticket assigned from ${req.user ? req.user.name : 'User'} to ${assignee.name} (${assignee.role === 'agency_super_admin' ? 'Agency Admin' : 'Agency Manager'})`,
         createdBy: req.user ? req.user._id : null
       }]
     });
@@ -84,21 +92,66 @@ exports.createSupportTicket = async (req, res, next) => {
 exports.getAssignableUsers = async (req, res, next) => {
   try {
     const effectiveRole = req.user ? (req.user.originalRole || req.user.role) : null;
-    let allowedRoles = getRoleAllowedAssignees(effectiveRole);
+    const isClientRole = ['agency_client', 'client', 'user', 'brand_manager', 'brand_team_user', 'brand_super_admin'].includes(effectiveRole) || Boolean(req.user?.agencyId) || Boolean(req.user?.brandId);
+    
     let matchQuery = {};
 
-    if (['agency_client', 'client'].includes(effectiveRole)) {
-      if (req.user && req.user.agencyId) matchQuery.agencyId = req.user.agencyId;
-    } else if (effectiveRole === 'brand_manager') {
-      if (req.user && req.user.brandId) matchQuery.brandId = req.user.brandId;
+    if (isClientRole && !['agency_super_admin', 'agency_manager', 'commander_admin', 'supreme_super_admin'].includes(effectiveRole)) {
+      // Client panel: strictly assignable ONLY to Agency Manager or Agency Admin
+      let agencyId = req.user?.agencyId;
+      if (!agencyId && req.user?.brandId) {
+        const parent = await User.findById(req.user.brandId).select('agencyId');
+        if (parent && parent.agencyId) {
+          agencyId = parent.agencyId;
+        }
+      }
+
+      if (agencyId) {
+        matchQuery = {
+          $and: [
+            { _id: { $ne: req.user._id } },
+            {
+              $or: [
+                { _id: agencyId, role: { $in: ['agency_super_admin', 'agency_manager'] } },
+                { agencyId: agencyId, role: { $in: ['agency_super_admin', 'agency_manager'] } }
+              ]
+            }
+          ]
+        };
+      } else {
+        matchQuery = {
+          _id: { $ne: req.user._id },
+          role: { $in: ['agency_super_admin', 'agency_manager'] }
+        };
+      }
+    } else if (['agency_super_admin', 'brand_super_admin'].includes(effectiveRole)) {
+      matchQuery = {
+        _id: { $ne: req.user._id },
+        role: 'commander_admin'
+      };
+    } else if (['agency_manager', 'agency'].includes(effectiveRole)) {
+      if (req.user?.agencyId) {
+        matchQuery = {
+          _id: { $ne: req.user._id },
+          $or: [
+            { _id: req.user.agencyId, role: 'agency_super_admin' },
+            { role: 'commander_admin' }
+          ]
+        };
+      } else {
+        matchQuery = {
+          _id: { $ne: req.user._id },
+          role: { $in: ['agency_super_admin', 'commander_admin'] }
+        };
+      }
+    } else {
+      matchQuery = {
+        _id: { $ne: req.user._id },
+        role: { $in: ['agency_super_admin', 'agency_manager'] }
+      };
     }
 
-    matchQuery.role = { $in: allowedRoles };
-    if (req.user?._id) {
-      matchQuery._id = { $ne: req.user._id };
-    }
-    
-    const users = await User.find(matchQuery).select('name role email brandId agencyId companyId');
+    const users = await User.find(matchQuery).select('name role roleName email brandId agencyId companyId');
     
     res.status(200).json({ success: true, data: users });
   } catch (error) {

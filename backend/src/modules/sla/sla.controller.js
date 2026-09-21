@@ -9,15 +9,25 @@ const notifySlaEvent = async (sla, type, title, message, excludeUserId = null) =
   try {
     const notifyUserIds = new Set();
     
-    // Notify assignee
-    if (sla.assignedTo) notifyUserIds.add(sla.assignedTo.toString());
+    // Notify strictly the single assigned user only
+    if (sla.assignedTo) {
+      const assigneeId = typeof sla.assignedTo === 'object' && sla.assignedTo._id
+        ? sla.assignedTo._id.toString()
+        : sla.assignedTo.toString();
+      notifyUserIds.add(assigneeId);
+    }
     
-    // Don't notify the person who triggered the event
+    // Don't notify if the creator assigned it to themselves
     if (excludeUserId) {
       notifyUserIds.delete(excludeUserId.toString());
     }
 
     if (notifyUserIds.size === 0) return;
+
+    let socketIO = null;
+    try {
+      socketIO = require('../tasks/socketIO');
+    } catch (e) {}
 
     const notifications = Array.from(notifyUserIds).map(userId => ({
       userId,
@@ -28,7 +38,13 @@ const notifySlaEvent = async (sla, type, title, message, excludeUserId = null) =
       channels: { inApp: true, email: false }
     }));
 
-    await Notification.insertMany(notifications);
+    const createdNotifications = await Notification.insertMany(notifications);
+
+    if (socketIO && socketIO.emitNotification) {
+      createdNotifications.forEach(notif => {
+        socketIO.emitNotification(notif.userId.toString(), notif);
+      });
+    }
   } catch (err) {
     console.error("Failed to send SLA notification", err);
   }
@@ -98,7 +114,7 @@ const buildSlaMatchFilter = async (req) => {
       { clientId: { $in: [tenantId, userId, ...clientIds].filter(Boolean) } },
       { assignedTo: userId }
     ];
-  } else if (role === 'client' || role === 'agency_client' || role === 'brand_manager' || role === 'brand_super_admin') {
+  } else if (role === 'client' || role === 'agency_client' || role === 'brand_manager' || role === 'brand_super_admin' || userBrandId) {
     query.$or = [
       { clientId: userBrandId || userId },
       { clientId: userId },

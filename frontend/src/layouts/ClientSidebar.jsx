@@ -263,12 +263,15 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
       settingsChildren.push({ key: '/client/users', icon: getIcon(Users), label: 'Managers' });
       settingsChildren.push({ key: '/client/billing', icon: getIcon(CreditCard), label: 'Billing' });
     }
+    settingsChildren.push({ key: '/client/support', icon: getIcon(HelpCircle), label: 'Support' });
     settingsChildren.push({ key: '/client/settings/company', icon: getIcon(SettingsIcon), label: 'Settings' });
   } else if (role === 'agency_client') {
     settingsChildren.push({ key: '/client/billing', icon: getIcon(CreditCard), label: 'Billing' });
+    settingsChildren.push({ key: '/client/support', icon: getIcon(HelpCircle), label: 'Support' });
     settingsChildren.push({ key: '/client/settings/company', icon: getIcon(SettingsIcon), label: 'Settings' });
   } else {
     // Agency Client team member
+    settingsChildren.push({ key: '/client/support', icon: getIcon(HelpCircle), label: 'Support' });
     settingsChildren.push({ key: '/client/settings/company', icon: getIcon(SettingsIcon), label: 'Settings' });
   }
 

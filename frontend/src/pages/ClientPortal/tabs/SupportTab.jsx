@@ -82,6 +82,8 @@ const SupportTab = () => {
       message.error('Failed to add note');
     }
   };
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [loadingTickets, setLoadingTickets] = useState(false);
   const [assignableUsers, setAssignableUsers] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
@@ -89,6 +91,7 @@ const SupportTab = () => {
 
   useEffect(() => {
     const fetchUsers = async () => {
+      setLoadingUsers(true);
       try {
         const res = await supportApi.getAssignableUsers();
         if (res && res.data) {
@@ -96,12 +99,15 @@ const SupportTab = () => {
         }
       } catch (err) {
         console.error('Failed to fetch assignable users', err);
+      } finally {
+        setLoadingUsers(false);
       }
     };
     fetchUsers();
   }, []);
 
   const fetchSupportTickets = async () => {
+    setLoadingTickets(true);
     try {
       const res = await slaApi.getSlas({ triggerType: 'Client Issue' });
       if (res && res.data) {
@@ -131,6 +137,8 @@ const SupportTab = () => {
       }
     } catch (error) {
       console.error('Failed to fetch support tickets', error);
+    } finally {
+      setLoadingTickets(false);
     }
   };
 
@@ -153,7 +161,7 @@ const SupportTab = () => {
       form.resetFields();
       fetchSupportTickets();
     } catch (err) {
-      message.error('Failed to raise ticket');
+      message.error(err.response?.data?.message || 'Failed to raise ticket');
     } finally {
       setSubmitting(false);
     }
@@ -212,7 +220,7 @@ const SupportTab = () => {
       <motion.div variants={itemVariants} style={{ marginBottom: 40, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Support</Title>
-          <Text type="secondary" style={{ fontSize: 15, fontWeight: 500 }}>Raise a request, track your tickets, or contact your team directly.</Text>
+          <Text type="secondary" style={{ fontSize: 15, fontWeight: 500 }}>Raise a request, track your tickets, or contact your agency team directly.</Text>
         </div>
         <Button 
           type="primary" 
@@ -233,9 +241,10 @@ const SupportTab = () => {
             dataSource={tickets} 
             columns={columns} 
             pagination={false} 
+            loading={loadingTickets}
             rowKey="id"
             style={{ width: '100%' }}
-            
+            locale={{ emptyText: 'No open support tickets found' }}
           />
         </SlabCard>
       </motion.div>
@@ -248,35 +257,27 @@ const SupportTab = () => {
         destroyOnClose
       >
         <Form form={form} layout="vertical" onFinish={handleSubmitTicket} style={{ marginTop: 24 }}>
-          <Form.Item name="subject" label={<span style={{ fontWeight: 600 }}>Subject</span>} rules={[{ required: true }]}>
-            <Input placeholder="E.g., Need help with billing..." size="large" style={{ borderRadius: 8 }} />
+          <Form.Item name="subject" label={<span style={{ fontWeight: 600 }}>Subject</span>} rules={[{ required: true, message: 'Please enter a subject' }]}>
+            <Input placeholder="E.g., Need help with billing or campaign..." size="large" style={{ borderRadius: 8 }} />
           </Form.Item>
 
           <Row gutter={16}>
             <Col xs={24} md={12}>
-              <Form.Item name="typeOfRequest" label={<span style={{ fontWeight: 600 }}>Type of Request</span>} rules={[{ required: true }]}>
-                <Select size="large" style={{ borderRadius: 8 }}>
-                  {role === 'brand_super_admin' ? (
-                    <>
-                      <Select.Option value="Plan Expiry">Plan Expiry</Select.Option>
-                      <Select.Option value="Subscription Expiry">Subscription Expiry</Select.Option>
-                      <Select.Option value="Account Event">Account-related Event</Select.Option>
-                      <Select.Option value="Other">Other</Select.Option>
-                    </>
-                  ) : (
-                    <>
-                      <Select.Option value="Task Due Dates">Task Due Dates</Select.Option>
-                      <Select.Option value="User Issue">User-related Issues</Select.Option>
-                      <Select.Option value="Day-to-day">Day-to-day Activities</Select.Option>
-                      <Select.Option value="Other">Other</Select.Option>
-                    </>
-                  )}
+              <Form.Item name="typeOfRequest" label={<span style={{ fontWeight: 600 }}>Type of Request</span>} rules={[{ required: true, message: 'Please select type of request' }]}>
+                <Select size="large" style={{ borderRadius: 8 }} placeholder="Select request type">
+                  <Select.Option value="Task Due Dates">Task Due Dates</Select.Option>
+                  <Select.Option value="User Issue">User-related Issues</Select.Option>
+                  <Select.Option value="Billing / Invoices">Billing / Invoices</Select.Option>
+                  <Select.Option value="Campaign / Deliverables">Campaign / Deliverables</Select.Option>
+                  <Select.Option value="Technical Support">Technical Support</Select.Option>
+                  <Select.Option value="Day-to-day">Day-to-day Activities</Select.Option>
+                  <Select.Option value="Other">Other</Select.Option>
                 </Select>
               </Form.Item>
             </Col>
             <Col xs={24} md={12}>
-              <Form.Item name="priority" label={<span style={{ fontWeight: 600 }}>Priority Level</span>} rules={[{ required: true }]}>
-                <Select size="large" style={{ borderRadius: 8 }}>
+              <Form.Item name="priority" label={<span style={{ fontWeight: 600 }}>Priority Level</span>} rules={[{ required: true, message: 'Please select priority' }]}>
+                <Select size="large" style={{ borderRadius: 8 }} placeholder="Select priority">
                   <Select.Option value="Medium">Normal (24h SLA)</Select.Option>
                   <Select.Option value="High">High (8h SLA)</Select.Option>
                   <Select.Option value="Critical">Critical (1h SLA)</Select.Option>
@@ -295,17 +296,26 @@ const SupportTab = () => {
             </Form.Item>
           )}
 
-          <Form.Item name="assignedToUserId" label={<span style={{ fontWeight: 600 }}>Assign To</span>} rules={[{ required: true, message: 'Please select an assignee' }]}>
-            <Select size="large" placeholder="Select a manager or admin" loading={assignableUsers.length === 0} style={{ borderRadius: 8 }}>
-              {assignableUsers.map(user => (
-                <Select.Option key={user._id} value={user._id}>
-                  {user.name} ({user.role})
-                </Select.Option>
-              ))}
+          <Form.Item name="assignedToUserId" label={<span style={{ fontWeight: 600 }}>Assign To (Agency Manager / Agency Admin)</span>} rules={[{ required: true, message: 'Please select an assignee' }]}>
+            <Select 
+              size="large" 
+              placeholder="Select Agency Manager or Agency Admin" 
+              loading={loadingUsers} 
+              style={{ borderRadius: 8 }}
+              notFoundContent={loadingUsers ? 'Loading assignees...' : 'No Agency Manager or Admin available'}
+            >
+              {assignableUsers.map(u => {
+                const roleLabel = u.role === 'agency_super_admin' ? 'Agency Admin' : u.role === 'agency_manager' ? 'Agency Manager' : (u.roleName || u.role);
+                return (
+                  <Select.Option key={u._id} value={u._id}>
+                    {u.name} ({roleLabel})
+                  </Select.Option>
+                );
+              })}
             </Select>
           </Form.Item>
 
-          <Form.Item name="details" label={<span style={{ fontWeight: 600 }}>Details</span>} rules={[{ required: true }]}>
+          <Form.Item name="details" label={<span style={{ fontWeight: 600 }}>Details</span>} rules={[{ required: true, message: 'Please describe your issue in detail' }]}>
             <TextArea rows={4} placeholder="Please describe your issue in detail..." style={{ borderRadius: 8 }} />
           </Form.Item>
 
