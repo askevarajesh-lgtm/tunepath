@@ -4,10 +4,14 @@ import { motion } from 'framer-motion';
 import { Users, CheckCircle2, UserPlus, Edit2, Trash2, LogIn } from 'lucide-react';
 import PhoneInput from '../../../components/common/PhoneInput';
 import { isValidPhoneNumber } from 'libphonenumber-js';
+import { useAuth } from '../../../contexts/AuthContext';
 
 const { Title, Text } = Typography;
 
 const BrandUsersTab = ({ user }) => {
+  const { user: authUser } = useAuth();
+  const activeUser = user || authUser;
+
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -20,7 +24,7 @@ const BrandUsersTab = ({ user }) => {
   const [userCountryCode, setUserCountryCode] = useState('91');
   const [userCountryIso, setUserCountryIso] = useState('IN');
 
-  const parentFeatures = user?.features || [];
+  const parentFeatures = activeUser?.features || [];
   const availableFeatures = [
     { id: 'hrms', label: 'HRMS' },
     { id: 'crm', label: 'CRM & Leads' },
@@ -43,8 +47,7 @@ const BrandUsersTab = ({ user }) => {
       });
       const data = await res.json();
       if (data.success) {
-        const managerRoles = ['brand_manager', 'brand_super_admin', 'brand_admin'];
-        setUsers(data.data.filter(u => managerRoles.includes(u.role) && !u.customRoleId));
+        setUsers((data.data || []).filter(u => u._id !== (activeUser?._id || activeUser?.id) && u.role !== 'supreme_super_admin' && u.role !== 'commander_admin'));
       }
     } catch (error) {
       console.error('Failed to fetch users', error);
@@ -56,11 +59,12 @@ const BrandUsersTab = ({ user }) => {
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [activeUser?._id]);
 
   const handleCreateUser = async (values) => {
     try {
       setSubmitLoading(true);
+      const isAgencyFlow = (activeUser?.role === 'agency_client') || (!activeUser?.isDirect && activeUser?.agencyId);
       const res = await fetch('/api/users', {
         method: 'POST',
         headers: {
@@ -73,14 +77,15 @@ const BrandUsersTab = ({ user }) => {
           phone: values.phone,
           countryCode: userCountryCode,
           password: values.password,
-          role: 'brand_manager',
+          role: isAgencyFlow ? 'user' : 'brand_manager',
+          roleName: isAgencyFlow ? 'Team Member' : 'Brand Manager',
           features: values.features || []
         })
       });
 
       const data = await res.json();
       if (data.success) {
-        message.success('User created successfully');
+        message.success('Team member created successfully');
         setIsModalOpen(false);
         form.resetFields();
         setUserCountryCode('91');
@@ -181,7 +186,19 @@ const BrandUsersTab = ({ user }) => {
 
   const columns = [
     { title: 'Name', dataIndex: 'name', key: 'name', render: (text) => <strong style={{ color: 'var(--text-primary)' }}>{text}</strong> },
-    { title: 'Role', dataIndex: 'role', key: 'role', render: (text) => <Tag style={{ borderRadius: 12, background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>{(text || '').replace(/_/g, ' ').toUpperCase()}</Tag> },
+    { 
+      title: 'Role', 
+      dataIndex: 'role', 
+      key: 'role', 
+      render: (text, record) => {
+        const displayRole = record.roleName || (record.role === 'user' ? 'Team Member' : record.role) || '';
+        return (
+          <Tag style={{ borderRadius: 12, background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', color: 'var(--text-secondary)' }}>
+            {displayRole.replace(/_/g, ' ').toUpperCase()}
+          </Tag>
+        );
+      }
+    },
     { title: 'Email', dataIndex: 'email', key: 'email', render: (text) => <Text type="secondary">{text}</Text> },
     { title: 'Status', dataIndex: 'status', key: 'status', render: (status) => {
       const displayStatus = status === 'active' ? 'Active' : 'Pending Invite';
@@ -193,7 +210,7 @@ const BrandUsersTab = ({ user }) => {
       );
     }},
     { title: 'Actions', key: 'actions', align: 'right', render: (_, record) => {
-      if (record._id === user?._id || record.role === 'agency_client') return <Text type="secondary">-</Text>;
+      if (record._id === activeUser?._id || record.role === 'agency_client') return <Text type="secondary">-</Text>;
       
       return (
         <Space>
@@ -246,7 +263,7 @@ const BrandUsersTab = ({ user }) => {
       <motion.div variants={itemVariants} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <div>
           <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Team Members</Title>
-          <Text type="secondary" style={{ fontSize: 14, fontWeight: 500 }}>Manage your brand's team members.</Text>
+          <Text type="secondary" style={{ fontSize: 14, fontWeight: 500 }}>Manage your team members and permissions.</Text>
         </div>
         <Button 
           type="primary" 

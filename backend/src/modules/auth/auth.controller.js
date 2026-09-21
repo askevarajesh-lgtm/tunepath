@@ -158,6 +158,16 @@ exports.signin = async (req, res, next) => {
       return res.status(401).json({ success: false, error: 'Invalid password' });
     }
 
+    // Auto-heal agency client team users if erroneously assigned brand_manager role
+    if (user.brandId && (user.brandId.role === 'agency_client' || (!user.brandId.isDirect && user.agencyId))) {
+      if (user.role === 'brand_manager' || user.isDirect) {
+        user.role = 'user';
+        user.roleName = (user.roleName === 'Brand Manager' || !user.roleName) ? 'Team Member' : user.roleName;
+        user.isDirect = false;
+        await user.save();
+      }
+    }
+
     // Sign JWT token containing user role and mapping IDs
     const token = jwt.sign(
       {
@@ -309,6 +319,16 @@ exports.me = async (req, res, next) => {
       (user.adminId && isBlocked(user.adminId.status))
     ) {
       return res.status(403).json({ success: false, error: 'Your account or organization has been suspended or is inactive. Please contact your Administrator for further assistance.' });
+    }
+
+    // Auto-heal agency client team users if erroneously assigned brand_manager role
+    if (user.brandId && (user.brandId.role === 'agency_client' || (!user.brandId.isDirect && user.agencyId))) {
+      if (user.role === 'brand_manager' || user.isDirect) {
+        user.role = 'user';
+        user.roleName = (user.roleName === 'Brand Manager' || !user.roleName) ? 'Team Member' : user.roleName;
+        user.isDirect = false;
+        await user.save();
+      }
     }
 
     let features = user.features || [];
@@ -467,6 +487,16 @@ exports.impersonate = async (req, res, next) => {
       (user.brandId && checkSubscriptionExpired(user.brandId))
     ) {
       return res.status(403).json({ success: false, error: 'Your subscription has expired. Please renew your package to continue access.' });
+    }
+
+    // Auto-heal agency client team users if erroneously assigned brand_manager role
+    if (user.brandId && (user.brandId.role === 'agency_client' || (!user.brandId.isDirect && user.agencyId))) {
+      if (user.role === 'brand_manager' || user.isDirect) {
+        user.role = 'user';
+        user.roleName = (user.roleName === 'Brand Manager' || !user.roleName) ? 'Team Member' : user.roleName;
+        user.isDirect = false;
+        await user.save();
+      }
     }
 
     const token = jwt.sign(

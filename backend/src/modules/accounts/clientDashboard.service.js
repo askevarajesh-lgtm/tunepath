@@ -1,6 +1,94 @@
+const mongoose = require('mongoose');
 const Task = require('../tasks/task.model');
 const Project = require('../projects/project.model');
 const Invoice = require('../invoices/invoice.model');
+const User = require('../auth/user.model');
+
+const resolveClientScope = async (reqUser, clientId, companyId) => {
+  const isAgencyClient = reqUser?.role === 'agency_client' || (reqUser?.isDirect === false && Boolean(reqUser?.agencyId));
+  
+  let effectiveClientId = null;
+  if (reqUser?.role === 'agency_client') {
+    effectiveClientId = reqUser._id;
+  } else if (reqUser?.brandId) {
+    effectiveClientId = reqUser.brandId;
+  } else if (reqUser?.clientId) {
+    effectiveClientId = reqUser.clientId;
+  } else if (clientId) {
+    effectiveClientId = clientId;
+  } else if (companyId) {
+    effectiveClientId = companyId;
+  } else if (reqUser?._id) {
+    effectiveClientId = reqUser._id;
+  }
+
+  // Find all team members belonging to this client/brand
+  const relatedUsers = await User.find({
+    $or: [
+      { brandId: effectiveClientId },
+      { clientId: effectiveClientId },
+      { _id: effectiveClientId }
+    ]
+  }).select('_id name email role status isActive avatar').catch(() => []);
+
+  const relatedUserIds = relatedUsers.map(u => u._id);
+
+  const allClientIds = Array.from(new Set([
+    effectiveClientId?.toString(),
+    reqUser?._id?.toString(),
+    ...relatedUserIds.map(id => id.toString())
+  ].filter(Boolean))).map(id => (mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(id) : id));
+
+  let taskFilter;
+  let projectFilter;
+
+  if (isAgencyClient) {
+    // Agency Client flow: Strictly isolate to tasks associated with this specific client
+    taskFilter = {
+      $or: [
+        { companyId: { $in: allClientIds } },
+        { createdBy: { $in: allClientIds } },
+        { assignedTo: { $in: allClientIds } },
+        { watchers: { $in: allClientIds } }
+      ]
+    };
+
+    projectFilter = {
+      $or: [
+        { clientId: { $in: allClientIds } },
+        { companyId: { $in: allClientIds } }
+      ]
+    };
+  } else {
+    // Direct Brand flow: May match tenantCompanyId or companyId
+    taskFilter = {
+      $or: [
+        { tenantCompanyId: { $in: allClientIds } },
+        { companyId: { $in: allClientIds } },
+        { createdBy: { $in: allClientIds } },
+        { assignedTo: { $in: allClientIds } },
+        { watchers: { $in: allClientIds } }
+      ]
+    };
+
+    projectFilter = {
+      $or: [
+        { tenantCompanyId: { $in: allClientIds } },
+        { clientId: { $in: allClientIds } },
+        { companyId: { $in: allClientIds } }
+      ]
+    };
+  }
+
+  return {
+    effectiveClientId,
+    allClientIds,
+    relatedUsers,
+    taskFilter,
+    projectFilter,
+    isAgencyClient
+  };
+};
 
 exports.getClientExecutiveDashboard = async (clientId, companyId, queryMonth, queryYear, reqUser = null) => {
   const hasMonthYear = queryMonth !== undefined && queryMonth !== null && queryMonth !== '' && queryYear !== undefined && queryYear !== null && queryYear !== '';
@@ -8,26 +96,16 @@ exports.getClientExecutiveDashboard = async (clientId, companyId, queryMonth, qu
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-  const companyIdSet = new Set(
-    [clientId, companyId, reqUser?.clientId, reqUser?.companyId, reqUser?.brandId, reqUser?.tenantCompanyId, reqUser?._id]
-      .filter(Boolean)
-      .map(id => id.toString())
-  );
-  const companyIdList = Array.from(companyIdSet);
+  const { effectiveClientId, allClientIds, relatedUsers, taskFilter, projectFilter } = await resolveClientScope(reqUser, clientId, companyId);
 
   // Projects
-  const allProjects = await Project.find({
-    $or: [
-      { clientId: { $in: companyIdList } },
-      { companyId: { $in: companyIdList } }
-    ]
-  }).catch(() => []);
+  const allProjects = await Project.find(projectFilter).catch(() => []);
   const activeProjectsCount = allProjects.filter(p => p.status !== 'completed').length;
   const completedProjectsCount = allProjects.filter(p => p.status === 'completed').length;
 
   // Approvals (Tasks waiting for review created on or before selected month)
   const pendingApprovalTasks = await Task.find({ 
-    $or: [{ companyId: { $in: companyIdList } }, { tenantCompanyId: { $in: companyIdList } }, { clientId: { $in: companyIdList } }], 
+    ...taskFilter,
     status: { $in: ['sent_for_client_review', 'review', 'in_review'] },
     clientReviewStatus: { $nin: ['approved', 'client_approved'] },
     clientApproved: { $ne: true },
@@ -35,12 +113,7 @@ exports.getClientExecutiveDashboard = async (clientId, companyId, queryMonth, qu
   }).limit(5).catch(() => []);
 
   // Tasks Execution Stats
-  const allTasks = await Task.find({ 
-    $or: [
-      { companyId: { $in: companyIdList } },
-      { tenantCompanyId: { $in: companyIdList } }
-    ]
-  }).catch(() => []);
+  const allTasks = await Task.find(taskFilter).catch(() => []);
 
   const completedStatuses = ['done', 'complete', 'completed', 'validated', 'approved', 'approved_by_client', 'client_approved', 'closed'];
 
@@ -72,15 +145,7 @@ exports.getClientExecutiveDashboard = async (clientId, companyId, queryMonth, qu
   }).length;
 
   // Workspace Team Members
-  const User = require('../auth/user.model');
-  const teamMembers = await User.find({
-    $or: [
-      { companyId: { $in: companyIdList } },
-      { tenantCompanyId: { $in: companyIdList } },
-      { brandId: { $in: companyIdList } }
-    ]
-  }).select('name email role status isActive avatar').catch(() => []);
-
+  const teamMembers = relatedUsers || [];
   const activeTeamMembers = teamMembers.filter(u => u.status === 'active' || u.isActive !== false).length;
 
   const openTasksCount = allTasks.filter(t => !isTaskCompleted(t)).length;
@@ -107,20 +172,10 @@ exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, q
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
 
-  const companyIdSet = new Set(
-    [clientId, companyId, reqUser?.clientId, reqUser?.companyId, reqUser?.brandId, reqUser?.tenantCompanyId, reqUser?._id]
-      .filter(Boolean)
-      .map(id => id.toString())
-  );
-  const companyIdList = Array.from(companyIdSet);
+  const { effectiveClientId, allClientIds, taskFilter } = await resolveClientScope(reqUser, clientId, companyId);
 
   // Tasks
-  const allTasks = await Task.find({ 
-    $or: [
-      { companyId: { $in: companyIdList } },
-      { tenantCompanyId: { $in: companyIdList } }
-    ]
-  });
+  const allTasks = await Task.find(taskFilter).catch(() => []);
 
   const completedStatuses = ['done', 'complete', 'completed', 'validated', 'approved', 'approved_by_client', 'client_approved', 'closed'];
 
@@ -190,3 +245,4 @@ exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, q
     actionItems: overdueTasks.slice(0, 5)
   };
 };
+

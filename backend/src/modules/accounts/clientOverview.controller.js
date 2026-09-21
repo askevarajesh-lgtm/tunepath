@@ -2,15 +2,17 @@ const clientDashboardService = require('./clientDashboard.service');
 
 exports.getClientOverviewData = async (req, res, next) => {
   try {
-    const clientId = req.user._id; 
-    const companyId = req.companyId || req.user.companyId || req.user.brandId || req.user.agencyId || req.user._id;
+    const isAgencyClient = req.user.role === 'agency_client' || (req.user.isDirect === false && req.user.agencyId);
+    const effectiveClientId = req.user.role === 'agency_client' 
+      ? req.user._id 
+      : (req.user.brandId || req.user.clientId || req.user._id);
     const { month, year } = req.query;
 
     let data = {};
     if (req.user.role === 'brand_super_admin') {
-      data = await clientDashboardService.getClientExecutiveDashboard(clientId, companyId, month, year, req.user);
+      data = await clientDashboardService.getClientExecutiveDashboard(effectiveClientId, effectiveClientId, month, year, req.user);
     } else {
-      data = await clientDashboardService.getClientOperationsDashboard(clientId, companyId, month, year, req.user);
+      data = await clientDashboardService.getClientOperationsDashboard(effectiveClientId, effectiveClientId, month, year, req.user);
     }
 
     res.status(200).json({
@@ -28,3 +30,4 @@ exports.getClientOverviewData = async (req, res, next) => {
     next(error);
   }
 };
+

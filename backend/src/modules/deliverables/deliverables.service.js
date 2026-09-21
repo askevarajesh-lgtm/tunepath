@@ -45,17 +45,23 @@ const syncLinkedTask = async (taskId, deliverableStatus, userId) => {
 };
 
 // Scoping query builder based on user role
-const buildScopingFilter = (userRole, userId, companyId) => {
+const buildScopingFilter = (userRole, userId, companyId, reqUser = null) => {
   const filter = {};
+
+  const isAgencyClient = userRole === 'agency_client' || userRole === 'client' || (reqUser && (reqUser.brandId || reqUser.isDirect === false));
+  const effectiveClientId = reqUser?.role === 'agency_client' 
+    ? (reqUser?._id || userId) 
+    : (reqUser?.brandId || reqUser?.clientId || (userRole === 'client' ? userId : null));
 
   if (['supreme_super_admin', 'commander_admin'].includes(userRole)) {
     if (companyId) filter.companyId = companyId;
   } else if (['agency_super_admin', 'agency_manager'].includes(userRole)) {
     filter.companyId = companyId;
   } else if (['brand_super_admin', 'brand_manager'].includes(userRole)) {
-    filter.$or = [{ companyId }, { clientId: companyId }];
-  } else if (userRole === 'agency_client' || userRole === 'client') {
-    filter.clientId = companyId;
+    const brandTarget = effectiveClientId || companyId;
+    filter.$or = [{ companyId: brandTarget }, { clientId: brandTarget }];
+  } else if (isAgencyClient && effectiveClientId) {
+    filter.clientId = effectiveClientId;
   } else {
     // Employee/Staff
     filter.companyId = companyId;
@@ -94,9 +100,9 @@ const deliverablesService = {
     return saved;
   },
 
-  getAllDeliverables: async (companyId, query, userRole, userId) => {
+  getAllDeliverables: async (companyId, query, userRole, userId, reqUser = null) => {
     const { status, deliverableType, priority, search, assignee, clientId, overdue } = query;
-    const baseFilter = buildScopingFilter(userRole, userId, companyId);
+    const baseFilter = buildScopingFilter(userRole, userId, companyId, reqUser);
     const filter = { ...baseFilter };
 
     if (status) filter.status = status;
@@ -125,8 +131,8 @@ const deliverablesService = {
     return deliverables;
   },
 
-  getDeliverableById: async (deliverableId, companyId, userRole, userId) => {
-    const baseFilter = buildScopingFilter(userRole, userId, companyId);
+  getDeliverableById: async (deliverableId, companyId, userRole, userId, reqUser = null) => {
+    const baseFilter = buildScopingFilter(userRole, userId, companyId, reqUser);
     const deliverable = await Deliverable.findOne({ _id: deliverableId, ...baseFilter })
       .populate('clientId', 'name companyName logo')
       .populate('projectId', 'name')

@@ -184,18 +184,24 @@ function OAuthRedirectHandler() {
 
 // Protected Route Component
 const ProtectedRoute = ({ allowedRoles }) => {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   
   if (!role) {
     return <Navigate to="/signin" replace />;
   }
 
+  const isClientUser = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) || Boolean(user?.brandId);
+
   if (allowedRoles && !allowedRoles.includes(role)) {
+    if (isClientUser && (allowedRoles.includes('agency_client') || allowedRoles.includes('brand_team_user') || allowedRoles.includes('client') || allowedRoles.includes('brand_super_admin') || allowedRoles.includes('user'))) {
+      return <Outlet />;
+    }
+
     if (['supreme_super_admin', 'superadmin'].includes(role)) return <Navigate to="/superadmin/dashboard" replace />;
     if (role === 'commander_admin') return <Navigate to="/dashboard" replace />;
     if (role === 'agency_super_admin') return <Navigate to="/agency/admin-overview" replace />;
     if (['agency_manager', 'agency'].includes(role)) return <Navigate to="/agency/overview" replace />;
-    if (['brand_super_admin', 'brand_manager', 'brand_admin', 'agency_client', 'brand_team_user', 'client'].includes(role)) return <Navigate to="/client/dashboard" replace />;
+    if (isClientUser) return <Navigate to="/client/dashboard" replace />;
     return <Navigate to="/user/dashboard" replace />;
   }
   
@@ -249,7 +255,7 @@ const ClientReportsRouteGuard = () => {
 };
 
 const AppRoutes = () => {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   
   return (
     <Routes>
@@ -265,7 +271,7 @@ const AppRoutes = () => {
           role === 'commander_admin' ? '/dashboard' : 
           role === 'agency_super_admin' ? '/agency/admin-overview' :
           ['agency_manager', 'agency'].includes(role) ? '/agency/overview' : 
-          ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) ? '/client/dashboard' :
+          (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) || Boolean(user?.brandId)) ? '/client/dashboard' :
           '/user/dashboard'
         } replace />
       ) : <SignIn />} />
@@ -509,7 +515,7 @@ const AppRoutes = () => {
       </Route>
 
       {/* Client Routes */}
-      <Route element={<ProtectedRoute allowedRoles={['supreme_super_admin', 'superadmin', 'agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client']} />}>
+      <Route element={<ProtectedRoute allowedRoles={['supreme_super_admin', 'superadmin', 'agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client', 'user']} />}>
         <Route path="/client" element={<ClientLayout />}>
           <Route index element={<Navigate to="/client/dashboard" replace />} />
           <Route path="users" element={<BrandUsersTab />} />
@@ -592,11 +598,11 @@ const AppRoutes = () => {
 
           <Route path="settings/company" element={
             role === 'brand_super_admin' ? <BrandSettingsTab /> : 
-            role === 'agency_client' ? <ClientSettingsTab /> : 
+            (role === 'agency_client' || Boolean(user?.brandId)) ? <ClientSettingsTab /> : 
             <SettingsPage />
           } />
           
-          <Route element={<ProtectedRoute allowedRoles={['agency_client']} />}>
+          <Route element={<ProtectedRoute allowedRoles={['agency_client', 'user', 'client']} />}>
             <Route path="marketplace" element={<Marketplace />} />
             <Route path="marketplace/seo/*" element={<Marketplace />} />
             <Route path="marketplace/*" element={<Marketplace />} />

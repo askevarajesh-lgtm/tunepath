@@ -21,7 +21,8 @@ const getAllDeliverables = async (req, res) => {
       req.companyId,
       req.query,
       req.user?.role,
-      req.user?._id
+      req.user?._id,
+      req.user
     );
     return sendSuccess(res, 'Deliverables retrieved successfully', { deliverables });
   } catch (error) {
@@ -35,7 +36,8 @@ const getDeliverableById = async (req, res) => {
       req.params.id,
       req.companyId,
       req.user?.role,
-      req.user?._id
+      req.user?._id,
+      req.user
     );
     return sendSuccess(res, 'Deliverable details retrieved successfully', result);
   } catch (error) {

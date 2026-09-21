@@ -15,7 +15,9 @@ exports.getBrands = async (req, res, next) => {
       const brandId = req.companyId || req.user.tenantCompanyId || req.user.brandId || req.user._id;
       filter._id = brandId;
     } else if (isAgencyAdmin || isEmployee) {
-      filter.role = { $in: ['brand_super_admin', 'brand_manager', 'agency_client'] };
+      filter.role = 'agency_client';
+      filter.isDirect = false;
+      filter.$or = [{ brandId: null }, { brandId: { $exists: false } }, { $expr: { $eq: ['$_id', '$brandId'] } }];
       // For agency admins and their employees, companyId represents the agency.
       const agencyId = req.user.agencyId || req.user.adminId || req.companyId || (isAgencyAdmin ? req.user._id : null);
       if (!agencyId) {

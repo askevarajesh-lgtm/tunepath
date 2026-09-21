@@ -719,7 +719,12 @@ const getAllTasks = async (
       additionalFilters.createdBy = { $in: allowedCreatorIds };
     }
   }
-  // ----------------------------------------------------
+  let clientUserDoc = null;
+  if (userId) {
+    clientUserDoc = await User.findById(userId).select("role clientId brandId isDirect agencyId");
+  }
+  const isClientScopedUser = ['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) || Boolean(clientUserDoc?.brandId);
+
   if (userRole === "website_coordinator") {
     additionalFilters.$or = [
       { department: { $in: WEBSITE_COORDINATOR_DEPARTMENTS } },
@@ -727,9 +732,9 @@ const getAllTasks = async (
       { createdBy: userObjId },
       { watchers: userObjId },
     ];
-  } else if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) && userId) {
-    // Strict isolation for clients: include companyId and tasks created/assigned by brand managers/admins
-    const user = await User.findById(userId).select("clientId brandId");
+  } else if (isClientScopedUser && userId) {
+    // Strict isolation for clients & client team users: include companyId and tasks created/assigned/watched by brand users
+    const user = clientUserDoc || await User.findById(userId).select("clientId brandId");
     const activeBrandId = user?.brandId || user?.clientId || userObjId;
 
     const brandUserIds = await User.find({
@@ -751,7 +756,9 @@ const getAllTasks = async (
     additionalFilters.$or = [
       { companyId: { $in: allCompanyIds } },
       { createdBy: { $in: allCompanyIds } },
-      { assignedBy: { $in: allCompanyIds } }
+      { assignedBy: { $in: allCompanyIds } },
+      { assignedTo: { $in: allCompanyIds } },
+      { watchers: { $in: allCompanyIds } }
     ];
   } else if (restrictToOwnAssignedTasks) {
     // Regular assignee roles should only see tasks explicitly assigned to them, created by them, or watched by them.
@@ -1052,43 +1059,46 @@ const getTaskById = async (
   }
 
   // Apply role-based data filtering: Strict isolation for clients & brand users
-  if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) && userId) {
-    const user = await User.findById(userId).select("clientId brandId");
-    const activeBrandId = user?.brandId || user?.clientId || userId;
+  if (userId) {
+    const user = await User.findById(userId).select("role clientId brandId");
+    const isClientRole = ['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) || Boolean(user?.brandId);
+    if (isClientRole) {
+      const activeBrandId = user?.brandId || user?.clientId || userId;
 
-    const brandUserIds = await User.find({
-      $or: [
-        { brandId: activeBrandId },
-        { clientId: activeBrandId },
-        { _id: activeBrandId }
-      ]
-    }).distinct("_id");
+      const brandUserIds = await User.find({
+        $or: [
+          { brandId: activeBrandId },
+          { clientId: activeBrandId },
+          { _id: activeBrandId }
+        ]
+      }).distinct("_id");
 
-    const allowedCompanyIds = new Set([
-      activeBrandId.toString(),
-      userId.toString(),
-      ...(user?.clientId ? [user.clientId.toString()] : []),
-      ...(user?.brandId ? [user.brandId.toString()] : []),
-      ...brandUserIds.map(id => id.toString())
-    ]);
+      const allowedCompanyIds = new Set([
+        activeBrandId.toString(),
+        userId.toString(),
+        ...(user?.clientId ? [user.clientId.toString()] : []),
+        ...(user?.brandId ? [user.brandId.toString()] : []),
+        ...brandUserIds.map(id => id.toString())
+      ]);
 
-    const taskClientRef = task.companyId?._id || task.companyId;
-    const taskClientIdLegacy = task.clientId?._id || task.clientId;
-    const taskCreatedBy = task.createdBy?._id || task.createdBy;
-    const taskAssignedBy = task.assignedBy?._id || task.assignedBy;
-    const taskAssignedTo = task.assignedTo?._id || task.assignedTo;
+      const taskClientRef = task.companyId?._id || task.companyId;
+      const taskClientIdLegacy = task.clientId?._id || task.clientId;
+      const taskCreatedBy = task.createdBy?._id || task.createdBy;
+      const taskAssignedBy = task.assignedBy?._id || task.assignedBy;
+      const taskAssignedTo = task.assignedTo?._id || task.assignedTo;
 
-    const isAuthorized =
-      (taskClientRef && allowedCompanyIds.has(taskClientRef.toString())) ||
-      (taskClientIdLegacy && allowedCompanyIds.has(taskClientIdLegacy.toString())) ||
-      (taskCreatedBy && allowedCompanyIds.has(taskCreatedBy.toString())) ||
-      (taskAssignedBy && allowedCompanyIds.has(taskAssignedBy.toString())) ||
-      (taskAssignedTo && allowedCompanyIds.has(taskAssignedTo.toString()));
+      const isAuthorized =
+        (taskClientRef && allowedCompanyIds.has(taskClientRef.toString())) ||
+        (taskClientIdLegacy && allowedCompanyIds.has(taskClientIdLegacy.toString())) ||
+        (taskCreatedBy && allowedCompanyIds.has(taskCreatedBy.toString())) ||
+        (taskAssignedBy && allowedCompanyIds.has(taskAssignedBy.toString())) ||
+        (taskAssignedTo && allowedCompanyIds.has(taskAssignedTo.toString()));
 
-    if (!isAuthorized) {
-      throw new Error(
-        "Access denied: You can only view tasks for your own company",
-      );
+      if (!isAuthorized) {
+        throw new Error(
+          "Access denied: You can only view tasks for your own company",
+        );
+      }
     }
   }
 

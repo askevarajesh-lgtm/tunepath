@@ -69,7 +69,7 @@ export const AuthProvider = ({ children }) => {
         navigate('/dashboard');
       } else if (['agency_super_admin', 'agency_manager', 'agency'].includes(user.role)) {
         navigate('/agency/overview');
-      } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(user.role)) {
+      } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(user.role) || Boolean(user.brandId)) {
         navigate('/client/dashboard');
       } else {
         navigate('/user/dashboard');

@@ -298,12 +298,12 @@ const ClientSettingsTab = () => {
   };
 
   const tabItems = [
+    {
+      key: '1',
+      label: <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><User size={16} /> Profile</span>,
+      children: <ProfileContent user={user} setUser={setUser} />,
+    },
     ...(user?.role === 'agency_client' ? [
-      {
-        key: '1',
-        label: <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><User size={16} /> Profile</span>,
-        children: <ProfileContent user={user} setUser={setUser} />,
-      },
       {
         key: '3',
         label: <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><Shield size={16} /> Subscription</span>,
@@ -315,7 +315,7 @@ const ClientSettingsTab = () => {
       label: <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><Link size={16} /> Integrations</span>,
       children: <ClientIntegrationsTab user={freshUser} />,
     },
-    ...(['agency_client'].includes(user?.role) ? [
+    ...(user?.role === 'agency_client' ? [
       {
         key: '4',
         label: <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><Users size={16} /> Team</span>,

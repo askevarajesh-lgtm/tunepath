@@ -207,20 +207,39 @@ exports.createUser = async (req, res, next) => {
       userData.brandId = null;
       if (!SYSTEM_ROLES.includes(incomingRole)) userData.role = 'user';
     } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
-      userData.brandId = req.user.brandId || (['agency_client', 'brand_super_admin', 'brand_manager'].includes(req.user.role) ? req.user._id : null);
+      const parentBrandId = req.user.brandId || (['agency_client', 'brand_super_admin', 'brand_manager'].includes(req.user.role) ? req.user._id : null);
+      userData.brandId = parentBrandId;
       userData.agencyId = req.user.agencyId || null;
       if (req.user.adminId) userData.adminId = req.user.adminId;
       
-      if (incomingRole === 'brand_manager' || incomingRole === 'brand_admin' || incomingRole === 'brand_super_admin') {
-        userData.role = incomingRole;
-      } else {
+      let isAgencyFlow = req.user.role === 'agency_client' || (!req.user.isDirect && req.user.agencyId);
+      if (parentBrandId) {
+        const parentUser = await User.findById(parentBrandId);
+        if (parentUser && (parentUser.role === 'agency_client' || (!parentUser.isDirect && parentUser.agencyId))) {
+          isAgencyFlow = true;
+        }
+      }
+
+      if (isAgencyFlow) {
         userData.role = 'user';
+        userData.isDirect = false;
+        userData.roleName = userData.roleName || 'Team Member';
+      } else {
+        userData.isDirect = true;
+        if (incomingRole === 'brand_manager' || incomingRole === 'brand_admin' || incomingRole === 'brand_super_admin') {
+          userData.role = incomingRole;
+          userData.roleName = incomingRole.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        } else {
+          userData.role = 'user';
+          userData.roleName = userData.roleName || 'Team Member';
+        }
       }
 
       // Ensure features are a subset of the creator's features
+      const parentFeatures = req.user.features || [];
       if (['agency_client', 'user'].includes(req.user.role)) {
         if (userData.features && Array.isArray(userData.features)) {
-          userData.features = userData.features.filter(f => (req.user.features || []).includes(f));
+          userData.features = userData.features.filter(f => parentFeatures.includes(f));
         }
       }
     } else {
