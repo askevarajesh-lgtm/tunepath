@@ -45,6 +45,7 @@ import {
   canManageClientAmount,
 } from "../../utils/roleAccess";
 import dayjs from "dayjs";
+import { formatPlatformName } from "./CampaignList";
 
 const { TextArea } = Input;
 const { Text, Title } = Typography;
@@ -382,7 +383,7 @@ const CampaignView = ({ isClientView: propIsClientView = false }) => {
             level={2}
             style={{ margin: 0, fontWeight: "bold", fontSize: "24px" }}
           >
-            Campaign: {campaign.platform?.replace("_", " ").toUpperCase()}
+            Campaign: {formatPlatformName(campaign.platform)}
           </Title>
         </Space>
       </div>
@@ -396,7 +397,7 @@ const CampaignView = ({ isClientView: propIsClientView = false }) => {
             {campaign.clientCompanyId?.name || campaign.clientId?.name}
           </Descriptions.Item>
           <Descriptions.Item label="Platform">
-            {campaign.platform}
+            {formatPlatformName(campaign.platform)}
           </Descriptions.Item>
           <Descriptions.Item label="Start Date">
             {new Date(campaign.startDate).toLocaleDateString()}
@@ -938,7 +939,7 @@ const CampaignView = ({ isClientView: propIsClientView = false }) => {
         >
           <Form.Item label="Platform">
             <Input
-              value={campaign.platform?.replace("_", " ").toUpperCase()}
+              value={formatPlatformName(campaign.platform)}
               disabled
             />
           </Form.Item>

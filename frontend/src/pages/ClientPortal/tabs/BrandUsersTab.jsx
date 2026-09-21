@@ -168,7 +168,8 @@ const BrandUsersTab = ({ user }) => {
         localStorage.setItem('user', JSON.stringify(data.user));
         
         message.success(`Logged in as ${data.user.name}`);
-        window.location.href = '/client/dashboard';
+        const clientAdminRoles = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'];
+        window.location.href = clientAdminRoles.includes(data.user.role) ? '/client/dashboard' : '/user/dashboard';
       } else {
         message.error(data.error || 'Failed to login as user');
       }
@@ -244,7 +245,7 @@ const BrandUsersTab = ({ user }) => {
     <motion.div variants={containerVariants} initial="hidden" animate="visible" >
       <motion.div variants={itemVariants} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32 }}>
         <div>
-          <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Managers</Title>
+          <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Team Members</Title>
           <Text type="secondary" style={{ fontSize: 14, fontWeight: 500 }}>Manage your brand's team members.</Text>
         </div>
         <Button 

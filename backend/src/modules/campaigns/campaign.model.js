@@ -173,7 +173,15 @@ const campaignSchema = new mongoose.Schema(
     // Platform
     platform: {
       type: String,
-      enum: ["instagram", "facebook", "meta_ads", "google_ads", "other"],
+      enum: [
+        "instagram",
+        "facebook",
+        "facebook_instagram_both",
+        "facebook_and_instagram",
+        "meta_ads",
+        "google_ads",
+        "other",
+      ],
       required: true,
     },
 

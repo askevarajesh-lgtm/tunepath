@@ -203,8 +203,12 @@ const getCampaignsDropdown = async (
   return await executeDropdownQuery(
     Campaign,
     queryOptions,
-    { path: "clientCompanyId", select: "name" },
-    "platform startDate endDate status clientCompanyId",
+    [
+      { path: "clientCompanyId", select: "name email phone" },
+      { path: "clientId", select: "name email phone" },
+      { path: "projectId", select: "name status departments invoiceId" },
+    ],
+    "platform startDate endDate status clientCompanyId clientId projectId dailyBudget campaignDays totalCampaignValue campaignAmount",
   );
 };
 const getCampaignById = async (
@@ -1095,19 +1099,28 @@ const getClientCampaignSummary = async (clientId, companyId) => {
   // 1. Get all campaigns for this client
   const campaigns = await Campaign.find({
     $or: [{ clientId: clientId }, { clientCompanyId: clientId }],
-    companyId,
+    ...(companyId ? { companyId } : {}),
     status: { $ne: "cancelled" },
   });
 
   const totalCampaignValue = campaigns.reduce(
-    (sum, c) => sum + (c.totalCampaignValue || 0),
+    (sum, c) =>
+      sum +
+      (c.totalCampaignValue ||
+        c.campaignAmount ||
+        (c.dailyBudget && c.campaignDays ? c.dailyBudget * c.campaignDays : 0) ||
+        0),
     0,
   );
 
   // 2. Get all recharges for this client from GlobalRecharges
   const globalRecharges = await CampaignRecharge.find({
-    $or: [{ clientCompanyId: clientId }, { clientCompanyIds: clientId }],
-    companyId,
+    $or: [
+      { clientCompanyId: clientId },
+      { clientCompanyIds: clientId },
+      { "clientRecharges.clientId": clientId },
+    ],
+    ...(companyId ? { companyId } : {}),
   });
 
   const totalGlobalRechargeAmount = globalRecharges.reduce((sum, r) => {

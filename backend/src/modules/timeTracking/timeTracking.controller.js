@@ -6,10 +6,24 @@ const mongoose = require('mongoose');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const EXCLUDED_SYSTEM_ROLES = ['supreme_super_admin', 'commander_admin', 'agency_super_admin'];
+const EXCLUDED_SYSTEM_ROLES = [
+  'supreme_super_admin',
+  'superadmin',
+  'super_admin',
+  'commander_admin',
+  'admin',
+  'agency_super_admin',
+  'agency_manager',
+  'brand_super_admin',
+  'brand_manager',
+  'brand_admin',
+  'manager',
+  'agency_client',
+  'client'
+];
 
 /** Roles that are considered clients */
-const CLIENT_ROLES = ['brand_super_admin', 'brand_manager', 'agency_client'];
+const CLIENT_ROLES = ['brand_super_admin', 'brand_manager', 'brand_admin', 'agency_client', 'client'];
 
 function getCompanyIdList(req, tenantObjectId) {
   const ids = [
@@ -27,15 +41,48 @@ function getCompanyIdList(req, tenantObjectId) {
   return Array.from(new Set(ids)).map(id => new mongoose.Types.ObjectId(id));
 }
 
-async function getEligibleUsers(companyIdList) {
-  return await User.find({
-    $or: [
-      { agencyId: { $in: companyIdList } },
-      { brandId: { $in: companyIdList } },
-      { companyId: { $in: companyIdList } }
-    ],
-    role: { $nin: EXCLUDED_SYSTEM_ROLES }
-  }).select('_id name role departmentId departmentName').lean();
+async function getEligibleUsers(req, companyIdList) {
+  let query = {};
+  
+  if (req?.user?.role === 'commander_admin') {
+    query = {
+      adminId: req.user._id,
+      agencyId: null,
+      brandId: null,
+      role: { $nin: EXCLUDED_SYSTEM_ROLES }
+    };
+  } else if (['brand_super_admin', 'brand_manager', 'brand_admin', 'agency_client'].includes(req?.user?.role) || (req?.user?.role === 'user' && req?.user?.brandId) || (req?.companyId && req?.user?.role?.startsWith('brand'))) {
+    const brandId = req.user.brandId || req.companyId || (['brand_super_admin', 'brand_manager', 'brand_admin', 'agency_client'].includes(req.user.role) ? req.user._id : null);
+    query = {
+      brandId: brandId ? new mongoose.Types.ObjectId(brandId) : { $in: companyIdList },
+      _id: { $ne: brandId ? new mongoose.Types.ObjectId(brandId) : req.user._id },
+      $and: [
+        {
+          $or: [
+            { customRoleId: { $ne: null } },
+            { role: { $nin: EXCLUDED_SYSTEM_ROLES } }
+          ]
+        },
+        { role: { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_client', 'brand_super_admin'] } }
+      ]
+    };
+  } else {
+    const agencyId = req?.companyId || req?.user?.agencyId || req?.user?._id;
+    query = {
+      agencyId: agencyId ? new mongoose.Types.ObjectId(agencyId) : { $in: companyIdList },
+      brandId: null,
+      $or: [
+        { customRoleId: { $ne: null } },
+        { role: { $nin: EXCLUDED_SYSTEM_ROLES } }
+      ],
+      role: { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'] }
+    };
+  }
+
+  return await User.find(query)
+    .select('_id name role customRoleId roleName departmentId departmentName')
+    .sort({ name: 1 })
+    .lean();
 }
 
 async function getDepartments(companyIdList) {
@@ -293,7 +340,19 @@ exports.getDashboardData = async (req, res) => {
       endOfMonth = new Date(dateParam.getFullYear(), dateParam.getMonth() + 1, 0, 23, 59, 59, 999);
     }
 
-    const baseMatch = { tenantCompanyId: tenantObjectId };
+    const companyIdSet = new Set(
+      [tenantObjectId, req.user?.companyId, req.user?.brandId, req.user?.agencyId, req.user?._id]
+        .filter(Boolean)
+        .map(id => id.toString())
+    );
+    const companyIdList = Array.from(companyIdSet).map(id => new mongoose.Types.ObjectId(id));
+
+    const baseMatch = {
+      $or: [
+        { tenantCompanyId: { $in: companyIdList } },
+        { client: { $in: companyIdList } }
+      ]
+    };
     // Regular users: scope to their own entries
     if (['user', 'brand_team_user'].includes(req.user.role)) {
       baseMatch.employee = new mongoose.Types.ObjectId(req.user._id);
@@ -316,13 +375,6 @@ exports.getDashboardData = async (req, res) => {
     const utilizationRate = kpi.totalHours > 0 ? Math.round((kpi.billableHours / kpi.totalHours) * 100) : 0;
 
     // ── Active timers (tasks in_progress with workStartedAt set) ─────────────
-    const companyIdSet = new Set(
-      [tenantObjectId, req.user?.companyId, req.user?.brandId, req.user?.agencyId, req.user?._id]
-        .filter(Boolean)
-        .map(id => id.toString())
-    );
-    const companyIdList = Array.from(companyIdSet).map(id => new mongoose.Types.ObjectId(id));
-
     const activeTasks = await Task.find({
       $or: [
         { tenantCompanyId: { $in: companyIdList } },
@@ -386,7 +438,7 @@ exports.getDashboardData = async (req, res) => {
     }));
 
     // ── Missing timesheets: employees who haven't logged today ───────────────
-    let eligibleUsers = await getEligibleUsers(companyIdList);
+    let eligibleUsers = await getEligibleUsers(req, companyIdList);
 
     const todayStart = new Date(dateParam); todayStart.setHours(0, 0, 0, 0);
     const todayEnd = new Date(dateParam); todayEnd.setHours(23, 59, 59, 999);
@@ -539,7 +591,7 @@ exports.getDashboardData = async (req, res) => {
 
       return {
         name: u.name,
-        role: u.role,
+        role: u.roleName || u.role,
         department: deptName,
         initials: u.name ? u.name.substring(0, 2).toUpperCase() : 'UN',
         color: colors[i % colors.length],
@@ -679,7 +731,7 @@ exports.getFormOptions = async (req, res) => {
     const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
     const companyIdList = getCompanyIdList(req, tenantObjectId);
 
-    const employees = await getEligibleUsers(companyIdList);
+    const employees = await getEligibleUsers(req, companyIdList);
 
     const clients = await User.find({
       $or: [
@@ -760,7 +812,7 @@ exports.getTeamTaskPerformance = async (req, res) => {
     ]);
 
     // Fetch ALL active trackable users for this tenant
-    let users = await getEligibleUsers(companyIdList);
+    const users = await getEligibleUsers(companyIdList);
 
     // Fetch departments for label mapping
     const departments = await getDepartments(companyIdList);
@@ -809,7 +861,7 @@ exports.getTeamTaskPerformance = async (req, res) => {
       return {
         userId: u._id,
         name: u.name,
-        role: u.role,
+        role: u.roleName || u.role,
         department: deptName,
         tasksCompleted: tc ? tc.tasksCompleted : 0,
         totalTimeSpent: ts ? ts.totalTimeSpentHours : 0

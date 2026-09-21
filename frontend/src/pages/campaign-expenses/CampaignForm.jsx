@@ -136,7 +136,7 @@ const CampaignForm = () => {
   const { data: clientsData, isLoading: isLoadingClients } = useGetCompaniesDropdownQuery({
     search: debouncedClientSearch,
   });
-  const { data: projectsData } = useGetProjectsDropdownQuery(
+  const { data: projectsData, isLoading: isLoadingClientProjects } = useGetProjectsDropdownQuery(
     selectedClientId ? { companyId: selectedClientId } : {},
     { skip: !selectedClientId },
   );
@@ -145,21 +145,17 @@ const CampaignForm = () => {
 
   const { data: projectData, isLoading: isLoadingProject } =
     useGetProjectByIdQuery(selectedProjectId, { skip: !selectedProjectId });
-  const project = projectData?.data?.project;
-  const invoiceId = project?.invoiceId?._id || project?.invoiceId;
+  const project = projectData?.data?.project || projectData?.project || projectData?.data || projectData;
+  const invoiceId = project?.invoiceId?._id || (typeof project?.invoiceId === "string" ? project?.invoiceId : null);
   const { data: invoiceData, isLoading: isLoadingInvoice } =
     useGetInvoiceByIdQuery(invoiceId, { skip: !invoiceId });
-  const invoice = invoiceData?.data?.invoice;
+  const invoice = invoiceData?.data?.invoice || invoiceData?.invoice || invoiceData?.data || invoiceData;
   const [createCampaign, { isLoading }] = useCreateCampaignMutation();
 
-  const remainingBalance = invoice
-    ? invoice.campaignAmount || 0
-    : null;
-
-  const rawClients = clientsData?.data?.companies || clientsData?.data?.data || (Array.isArray(clientsData?.data) ? clientsData.data : []) || [];
-  const rawProjects = projectsData?.data?.projects || projectsData?.data?.data || [];
-  const allProjects = allProjectsData?.data?.projects || allProjectsData?.data?.data || [];
-  const allCampaigns = campaignsDropdownData?.data?.campaigns || campaignsDropdownData?.campaigns || [];
+  const rawClients = clientsData?.data?.companies || clientsData?.data?.data || (Array.isArray(clientsData?.data) ? clientsData.data : []) || (Array.isArray(clientsData) ? clientsData : []) || [];
+  const rawProjects = projectsData?.data?.projects || projectsData?.data?.data || (Array.isArray(projectsData?.data) ? projectsData.data : []) || (Array.isArray(projectsData) ? projectsData : []) || [];
+  const allProjects = allProjectsData?.data?.projects || allProjectsData?.data?.data || (Array.isArray(allProjectsData?.data) ? allProjectsData.data : []) || (Array.isArray(allProjectsData) ? allProjectsData : []) || [];
+  const allCampaigns = campaignsDropdownData?.data?.campaigns || campaignsDropdownData?.campaigns || (Array.isArray(campaignsDropdownData?.data) ? campaignsDropdownData.data : []) || (Array.isArray(campaignsDropdownData) ? campaignsDropdownData : []) || [];
 
   const isCampaignProject = useCallback((proj) => {
     if (!proj) return false;
@@ -173,31 +169,37 @@ const CampaignForm = () => {
 
     if (proj.isCampaign || proj.hasCampaigns) return true;
     if (proj.campaignAmount && Number(proj.campaignAmount) > 0) return true;
-    if (proj.masterItemId?.isCampaign || (proj.masterItemId?.campaignDetails?.campaignAmount > 0)) return true;
+
+    // Check master items
+    if (proj.masterItemId?.isCampaign || (proj.masterItemId?.campaignDetails?.campaignAmount > 0) || (proj.masterItemId?.campaignAmount > 0)) return true;
+    if (Array.isArray(proj.masterItemIds) && proj.masterItemIds.some(m => m?.isCampaign || (m?.campaignDetails?.campaignAmount > 0) || (m?.campaignAmount > 0))) return true;
+
+    // Check invoice / proposal
     if (proj.invoiceId?.campaignAmount && Number(proj.invoiceId.campaignAmount) > 0) return true;
+    if (proj.proposalId?.masterItems?.some(m => m?.isCampaign || (m?.campaignDetails?.campaignAmount > 0) || (m?.campaignAmount > 0))) return true;
 
     const depts = Array.isArray(proj.departments)
       ? proj.departments
       : [proj.department || ""];
     const hasCampaignDept = depts.some((d) => {
       const s = String(d || "").toLowerCase();
-      return s.includes("digital-marketing") || s.includes("campaign") || s.includes("performance-ads");
+      return s.includes("digital-marketing") || s.includes("campaign") || s.includes("performance-ads") || s.includes("marketing");
     });
     if (hasCampaignDept) return true;
 
-    if (proj.milestoneWorkflowType && ["campaign", "ads", "performance_ads"].includes(String(proj.milestoneWorkflowType).toLowerCase())) {
+    if (proj.milestoneWorkflowType && ["campaign", "ads", "performance_ads", "digital-marketing", "digital_marketing"].includes(String(proj.milestoneWorkflowType).toLowerCase())) {
       return true;
     }
 
     const name = String(proj.name || "").toLowerCase();
-    if (name.includes("campaign") || name.includes("meta ad") || name.includes("google ad") || name.includes("performance ad")) {
+    if (name.includes("campaign") || name.includes("meta ad") || name.includes("google ad") || name.includes("performance ad") || name.includes(" ad") || name.includes("ads")) {
       return true;
     }
 
     const cats = Array.isArray(proj.selectedCategories) ? proj.selectedCategories : [];
     const hasCampaignCat = cats.some((c) => {
       const catName = (typeof c === "string" ? c : c.name || c.categoryName || "").toLowerCase();
-      return catName.includes("campaign") || catName.includes("meta ad") || catName.includes("google ad") || catName.includes("performance ad");
+      return catName.includes("campaign") || catName.includes("meta ad") || catName.includes("google ad") || catName.includes("performance ad") || catName.includes("ads");
     });
     if (hasCampaignCat) return true;
 
@@ -220,24 +222,99 @@ const CampaignForm = () => {
   }, [allProjects, allCampaigns, isCampaignProject]);
 
   const clients = React.useMemo(() => {
-    return rawClients.filter((c) => {
+    if (!rawClients || rawClients.length === 0) return [];
+    const filtered = rawClients.filter((c) => {
       const cId = (c._id || c.id || "").toString();
       return campaignClientIds.has(cId) || (selectedClientId && cId === selectedClientId.toString());
     });
+    return filtered.length > 0 ? filtered : rawClients;
   }, [rawClients, campaignClientIds, selectedClientId]);
 
   const projects = React.useMemo(() => {
-    return rawProjects.filter((p) => isCampaignProject(p));
+    if (!rawProjects || rawProjects.length === 0) return [];
+    const filtered = rawProjects.filter((p) => isCampaignProject(p));
+    return filtered.length > 0 ? filtered : rawProjects;
   }, [rawProjects, isCampaignProject]);
 
-  // Auto-populate remainingBalance (read-only) from invoice into all Campaigns
+  // Compute allocated budget from project, invoice, proposal, and masterItems
+  const remainingBalance = React.useMemo(() => {
+    if (!project && !invoice) return null;
+
+    // 1. From invoice directly
+    if (invoice?.campaignAmount && Number(invoice.campaignAmount) > 0) {
+      return Number(invoice.campaignAmount);
+    }
+    // 2. From invoice's proposal masterItems
+    const invMasterItems = invoice?.proposalId?.masterItems || [];
+    const invCampAmt = invMasterItems.reduce((sum, item) => {
+      return sum + (item.isCampaign ? (item.campaignDetails?.campaignAmount || item.campaignAmount || 0) : 0);
+    }, 0);
+    if (invCampAmt > 0) return invCampAmt;
+
+    // 3. From project's proposal masterItems
+    const projProposalMasterItems = project?.proposalId?.masterItems || [];
+    const projProposalCampAmt = projProposalMasterItems.reduce((sum, item) => {
+      return sum + (item.isCampaign ? (item.campaignDetails?.campaignAmount || item.campaignAmount || 0) : 0);
+    }, 0);
+    if (projProposalCampAmt > 0) return projProposalCampAmt;
+
+    // 4. From project's masterItemIds
+    const projMasterItems = Array.isArray(project?.masterItemIds) ? project.masterItemIds : [];
+    const projMasterCampAmt = projMasterItems.reduce((sum, item) => {
+      return sum + (item.isCampaign ? (item.campaignDetails?.campaignAmount || item.campaignAmount || 0) : 0);
+    }, 0);
+    if (projMasterCampAmt > 0) return projMasterCampAmt;
+
+    // 5. From project's single masterItemId
+    if (project?.masterItemId?.campaignDetails?.campaignAmount > 0) {
+      return Number(project.masterItemId.campaignDetails.campaignAmount);
+    }
+    if (project?.masterItemId?.campaignAmount > 0) {
+      return Number(project.masterItemId.campaignAmount);
+    }
+    if (project?.campaignAmount > 0) {
+      return Number(project.campaignAmount);
+    }
+
+    return null;
+  }, [project, invoice]);
+
+  // Auto-populate campaign details from project and invoice into Form
   useEffect(() => {
-    if (invoice && remainingBalance != null) {
+    if (project) {
+      // Find masterItem campaignDetails if available
+      const masterCampDetails =
+        project?.masterItemId?.campaignDetails ||
+        (Array.isArray(project?.masterItemIds)
+          ? project.masterItemIds.find((m) => m?.isCampaign && m?.campaignDetails)?.campaignDetails
+          : null) ||
+        (invoice?.proposalId?.masterItems
+          ? invoice.proposalId.masterItems.find((m) => m?.isCampaign && m?.campaignDetails)?.campaignDetails
+          : null);
+
+      const defaultDailyBudget = masterCampDetails?.dailyBudget || null;
+      const defaultDays = masterCampDetails?.numberOfDays || null;
+      const defaultStartDate = defaultDays ? dayjs() : null;
+      const defaultEndDate = defaultDays ? dayjs().add(defaultDays - 1, "day") : null;
+
       const currentCampaigns = form.getFieldValue("campaigns") || [{}];
-      const updatedCampaigns = currentCampaigns.map((camp) => ({
-        ...camp,
-        campaignAmount: remainingBalance,
-      }));
+      const updatedCampaigns = currentCampaigns.map((camp, idx) => {
+        const dBudget = camp.dailyBudget || (idx === 0 ? defaultDailyBudget : null);
+        const sDate = camp.startDate ? dayjs(camp.startDate) : (idx === 0 ? defaultStartDate : null);
+        const eDate = camp.endDate ? dayjs(camp.endDate) : (idx === 0 ? defaultEndDate : null);
+        const days = calcDays(sDate, eDate);
+        const total = days > 0 && dBudget ? days * dBudget : undefined;
+
+        return {
+          ...camp,
+          campaignAmount: remainingBalance,
+          dailyBudget: dBudget,
+          startDate: sDate,
+          endDate: eDate,
+          totalCampaignValue: total,
+        };
+      });
+
       form.setFieldsValue({ campaigns: updatedCampaigns });
 
       // Update local state for summary strips
@@ -250,7 +327,7 @@ const CampaignForm = () => {
         })),
       );
     }
-  }, [invoice, remainingBalance, form]);
+  }, [project, invoice, remainingBalance, form]);
 
   /**
    * Recompute totalCampaignValue for a single campaign index,
@@ -501,60 +578,50 @@ const CampaignForm = () => {
               </Row>
             )}
 
-            {/* Invoice info box */}
-            {invoice && !isLoadingInvoice && (
+            {/* Invoice & Campaign Budget info box */}
+            {selectedProjectId && !isLoadingProject && project && (
               <Row style={{ marginTop: 16 }}>
                 <Col span={24}>
-                  <Alert
-                    message="Invoice Details"
-                    description={
-                      <div>
-                        <div>
-                          <strong>Invoice Number:</strong>{" "}
-                          {invoice.invoiceNumber || "Draft"}
-                        </div>
-                        <div>
-                          <strong>Total Invoice Campaign Amount:</strong> ₹
-                          {invoice.campaignAmount?.toLocaleString("en-IN", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }) || "0.00"}
-                        </div>
-                        <div style={{ fontSize: "16px", color: "#3f8600" }}>
-                          <strong>Allocated Budget for New Campaigns:</strong> ₹
-                          {remainingBalance?.toLocaleString("en-IN", {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                          }) || "0.00"}
-                        </div>
-                        <div style={{ marginTop: 8, color: "var(--accent-primary)" }}>
-                          Allocated Budget auto-populated in campaigns (read-only reference).
-                        </div>
-                      </div>
-                    }
-                    type="info"
-                    showIcon
-                  />
-                </Col>
-              </Row>
-            )}
-
-            {/* No invoice warning */}
-            {selectedProjectId &&
-              !isLoadingProject &&
-              project &&
-              !invoiceId && (
-                <Row style={{ marginTop: 16 }}>
-                  <Col span={24}>
+                  {remainingBalance != null && remainingBalance > 0 ? (
                     <Alert
-                      message="No Invoice Found"
-                      description="The selected project does not have an associated invoice. Enter campaign details manually."
+                      message="Campaign & Budget Details"
+                      description={
+                        <div>
+                          <div>
+                            <strong>Project:</strong> {project.name}
+                          </div>
+                          {(invoice?.invoiceNumber || (typeof project?.invoiceId === "object" && project.invoiceId?.invoiceNumber)) && (
+                            <div>
+                              <strong>Invoice Number:</strong>{" "}
+                              {invoice?.invoiceNumber || project?.invoiceId?.invoiceNumber}
+                            </div>
+                          )}
+                          <div style={{ fontSize: "16px", color: "#3f8600", marginTop: 4 }}>
+                            <strong>Allocated Budget for New Campaigns:</strong> ₹
+                            {remainingBalance?.toLocaleString("en-IN", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })}
+                          </div>
+                          <div style={{ marginTop: 6, color: "var(--accent-primary)", fontSize: "13px" }}>
+                            Allocated Budget and default campaign details auto-populated in campaigns.
+                          </div>
+                        </div>
+                      }
+                      type="info"
+                      showIcon
+                    />
+                  ) : (
+                    <Alert
+                      message="Manual Campaign Setup"
+                      description="No pre-configured campaign budget was found on the selected project or invoice. You can set the platform, daily budget, and duration manually."
                       type="warning"
                       showIcon
                     />
-                  </Col>
-                </Row>
-              )}
+                  )}
+                </Col>
+              </Row>
+            )}
           </Card>
 
           {/* ── Campaigns ── */}
@@ -609,6 +676,9 @@ const CampaignForm = () => {
                               ]}
                             >
                               <Select placeholder="Select platform">
+                                <Select.Option value="facebook_instagram_both">
+                                  Facebook & Instagram Both
+                                </Select.Option>
                                 <Select.Option value="instagram">
                                   Instagram
                                 </Select.Option>

@@ -63,20 +63,16 @@ export const AuthProvider = ({ children }) => {
     window.dispatchEvent(new Event('user-updated'));
     
     if (!skipNavigate) {
-      if (user.role === 'supreme_super_admin') {
+      if (['supreme_super_admin', 'superadmin'].includes(user.role)) {
         navigate('/superadmin/dashboard');
       } else if (user.role === 'commander_admin') {
         navigate('/dashboard');
-      } else if (['agency_super_admin', 'agency_manager'].includes(user.role)) {
+      } else if (['agency_super_admin', 'agency_manager', 'agency'].includes(user.role)) {
         navigate('/agency/overview');
-      } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'].includes(user.role) || (user.role === 'user' && user.brandId)) {
+      } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(user.role)) {
         navigate('/client/dashboard');
       } else {
-        // Fallback for custom roles (like developer, seo, etc)
-        if (user.role === 'superadmin') navigate('/superadmin/dashboard');
-        else if (user.role === 'agency') navigate('/agency/overview');
-        else if (user.role === 'client') navigate('/client/dashboard');
-        else navigate('/user/dashboard');
+        navigate('/user/dashboard');
       }
     }
   };

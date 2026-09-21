@@ -42,11 +42,41 @@ export const formatMinutesAsDuration = (minutes) => {
   return `${remainingMinutes}m`;
 };
 
+export const getTaskDueDeadline = (dueDate) => {
+  if (!dueDate) return null;
+  const d = new Date(dueDate);
+  if (isNaN(d.getTime())) return null;
+  const endOfDay = new Date(d);
+  endOfDay.setHours(23, 59, 59, 999);
+  return endOfDay;
+};
+
+export const isTaskTimerRunning = (task) => {
+  if (!task || task.status !== "in_progress" || !task.workStartedAt) {
+    return false;
+  }
+  if (task.dueDate) {
+    const deadline = getTaskDueDeadline(task.dueDate);
+    if (deadline && Date.now() > deadline.getTime()) {
+      return false;
+    }
+  }
+  return true;
+};
+
 export const getTaskLiveDurationMinutes = (task) => {
   if (!task) return 0;
   const accumulated = Number(task.workDurationMinutes) || 0;
   if (task.status === "in_progress" && task.workStartedAt) {
-    const elapsedMs = Date.now() - new Date(task.workStartedAt).getTime();
+    let endTime = Date.now();
+    if (task.dueDate) {
+      const deadline = getTaskDueDeadline(task.dueDate);
+      if (deadline && endTime > deadline.getTime()) {
+        endTime = deadline.getTime();
+      }
+    }
+    const startTime = new Date(task.workStartedAt).getTime();
+    const elapsedMs = Math.max(0, endTime - startTime);
     const elapsedMins = Math.max(0, Math.round(elapsedMs / 60000));
     return accumulated + elapsedMins;
   }

@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { Card } from 'antd';
 
-const SlabCard = ({ children, style, bodyStyle, shadowColor = 'var(--text-primary)' }) => {
+const SlabCard = ({ children, style, bodyStyle, shadowColor = 'var(--text-primary)', className, onClick, ...rest }) => {
   const [isHovered, setIsHovered] = useState(false);
   return (
     <Card 
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      className="glassmorphism"
+      onClick={onClick}
+      className={`glassmorphism ${className || ''}`}
       bodyStyle={{ padding: '24px 28px', ...bodyStyle }} 
+      {...rest}
       style={{ 
         borderRadius: 12, 
         border: '2px solid var(--border-color)',

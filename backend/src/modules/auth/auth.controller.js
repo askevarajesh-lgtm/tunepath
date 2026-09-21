@@ -1,7 +1,35 @@
 const User = require('./user.model');
 const Role = require('../roles/role.model');
+const Department = require('../departments/department.model');
 const jwt = require('jsonwebtoken');
 const { sendOtpEmail } = require('../../utils/sendpulse.service');
+
+const resolveUserRoleAndDept = async (user) => {
+  let rolePermissions = {};
+  let resolvedRoleName = user.roleName || null;
+  let resolvedDeptName = user.departmentName || null;
+
+  if (user.customRoleId) {
+    const roleDoc = await Role.findById(user.customRoleId);
+    if (roleDoc) {
+      if (roleDoc.permissions) rolePermissions = roleDoc.permissions;
+      if (!resolvedRoleName) resolvedRoleName = roleDoc.roleName;
+    }
+  } else if (user.role && !['supreme_super_admin', 'superadmin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency_client', 'brand_super_admin', 'brand_manager', 'user'].includes(user.role)) {
+    const roleDoc = await Role.findOne({ roleKey: user.role });
+    if (roleDoc) {
+      if (roleDoc.permissions) rolePermissions = roleDoc.permissions;
+      if (!resolvedRoleName) resolvedRoleName = roleDoc.roleName;
+    }
+  }
+
+  if (user.departmentId && !resolvedDeptName) {
+    const deptDoc = await Department.findById(user.departmentId);
+    if (deptDoc) resolvedDeptName = deptDoc.name;
+  }
+
+  return { rolePermissions, resolvedRoleName, resolvedDeptName };
+};
 
 
 const getEffectiveTheme = async (user) => {
@@ -186,12 +214,8 @@ exports.signin = async (req, res, next) => {
       }
     }
 
-    if (user.customRoleId) {
-      const roleDoc = await Role.findById(user.customRoleId);
-      if (roleDoc && roleDoc.permissions) {
-        rolePermissions = roleDoc.permissions;
-      }
-    }
+    const { rolePermissions: resolvedPerms, resolvedRoleName, resolvedDeptName } = await resolveUserRoleAndDept(user);
+    rolePermissions = resolvedPerms;
 
     if (user.brandId && user.brandId.features && user.brandId.features.length > 0 && ['brand_super_admin', 'brand_manager'].includes(user.role)) {
       features = Array.from(new Set([...features, ...user.brandId.features]));
@@ -236,7 +260,10 @@ exports.signin = async (req, res, next) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        roleName: user.roleName,
+        roleName: resolvedRoleName || user.roleName,
+        customRoleId: user.customRoleId,
+        departmentId: user.departmentId,
+        departmentName: resolvedDeptName || user.departmentName,
         avatar: user.avatar,
         companyName: user.companyName,
         agencyId: user.agencyId ? user.agencyId._id : null,
@@ -249,7 +276,6 @@ exports.signin = async (req, res, next) => {
         domain: user.domain,
         industry: user.industry,
         workspaceId: user.workspaceId,
-        departmentId: user.departmentId,
         features: features,
         integrations: integrations,
         permissions: rolePermissions,
@@ -333,12 +359,8 @@ exports.me = async (req, res, next) => {
       }
     }
 
-    if (user.customRoleId) {
-      const roleDoc = await Role.findById(user.customRoleId);
-      if (roleDoc && roleDoc.permissions) {
-        rolePermissions = roleDoc.permissions;
-      }
-    }
+    const { rolePermissions: resolvedPerms, resolvedRoleName, resolvedDeptName } = await resolveUserRoleAndDept(user);
+    rolePermissions = resolvedPerms;
 
     if (user.brandId && user.brandId.features && user.brandId.features.length > 0 && ['brand_super_admin', 'brand_manager'].includes(user.role)) {
       features = Array.from(new Set([...features, ...user.brandId.features]));
@@ -360,7 +382,10 @@ exports.me = async (req, res, next) => {
         email: user.email,
         phone: user.phone,
         role: user.role,
-        roleName: user.roleName,
+        roleName: resolvedRoleName || user.roleName,
+        customRoleId: user.customRoleId,
+        departmentId: user.departmentId,
+        departmentName: resolvedDeptName || user.departmentName,
         avatar: user.avatar,
         companyName: user.companyName,
         agencyId: user.agencyId ? user.agencyId._id : null,
@@ -373,7 +398,6 @@ exports.me = async (req, res, next) => {
         domain: user.domain || (user.brandId ? user.brandId.domain : null),
         industry: user.industry || (user.brandId ? user.brandId.industry : null),
         workspaceId: user.workspaceId,
-        departmentId: user.departmentId,
         features: features,
         agencyFeatures: agencyFeatures,
         integrations: integrations,
@@ -479,12 +503,8 @@ exports.impersonate = async (req, res, next) => {
       }
     }
 
-    if (user.customRoleId) {
-      const roleDoc = await Role.findById(user.customRoleId);
-      if (roleDoc && roleDoc.permissions) {
-        rolePermissions = roleDoc.permissions;
-      }
-    }
+    const { rolePermissions: resolvedPerms, resolvedRoleName, resolvedDeptName } = await resolveUserRoleAndDept(user);
+    rolePermissions = resolvedPerms;
 
     if (user.brandId && user.brandId.features && user.brandId.features.length > 0) {
       features = Array.from(new Set([...features, ...user.brandId.features]));
@@ -529,8 +549,13 @@ exports.impersonate = async (req, res, next) => {
         _id: user._id,
         name: user.name,
         email: user.email,
+        phone: user.phone,
+        avatar: user.avatar,
         role: user.role,
-        roleName: user.roleName,
+        roleName: resolvedRoleName || user.roleName,
+        customRoleId: user.customRoleId,
+        departmentId: user.departmentId,
+        departmentName: resolvedDeptName || user.departmentName,
         companyName: user.companyName,
         agencyId: user.agencyId ? user.agencyId._id : null,
         agencyName: user.agencyId ? (user.agencyId.companyName || user.agencyId.name) : null,

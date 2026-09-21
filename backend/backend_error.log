@@ -1349,4 +1349,4 @@ Require stack:
     at autoAggregateMetrics (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:300:64)
     at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
     at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.service.js:335:24)
-    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.controller.js:12:22)\n\n
+    at async exports.getMonthlyHighlights (E:\Office Projects\M1\tunepath\backend\src\modules\reports\monthlyHighlights.controller.js:12:22)\n\n2026-09-19T07:36:36.208Z\nundefined\n\n

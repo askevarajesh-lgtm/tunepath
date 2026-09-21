@@ -266,6 +266,7 @@ exports.createBrand = async (req, res, next) => {
       subscriptionStartDate: now,
       subscriptionEndDate,
       billingInterval: packageBillingInterval,
+      assignedUsers: req.body.assignedUsers || [],
       createdBy: req.user._id
     });
 

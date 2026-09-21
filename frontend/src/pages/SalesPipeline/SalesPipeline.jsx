@@ -533,11 +533,24 @@ const SalesPipeline = () => {
 
                             <Button 
                               size="small" 
-                              type="primary" 
-                              ghost
                               icon={<CheckCircle2 size={12} />}
-                              style={{ fontSize: 11, borderRadius: 6 }}
+                              style={{ 
+                                fontSize: 11, 
+                                borderRadius: 6, 
+                                background: 'rgba(239, 68, 68, 0.1)', 
+                                color: '#ef4444', 
+                                borderColor: 'rgba(239, 68, 68, 0.3)',
+                                boxShadow: 'none'
+                              }}
                               onClick={() => handleStageChange(d._id, d.stage)}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.background = '#ef4444';
+                                e.currentTarget.style.color = '#fff';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+                                e.currentTarget.style.color = '#ef4444';
+                              }}
                             >
                               Mark Active
                             </Button>
@@ -623,6 +636,7 @@ const SalesPipeline = () => {
                   <DatePicker
                     size="small"
                     placeholder="Set End Date"
+                    disabledDate={(current) => current && current < dayjs().startOf('day')}
                     value={selectedDeal.expectedCloseDate ? dayjs(selectedDeal.expectedCloseDate) : null}
                     onChange={async (d) => {
                       try {
@@ -837,7 +851,11 @@ const SalesPipeline = () => {
             </Col>
             <Col span={12}>
               <Form.Item label="Expected End Date" name="expectedCloseDate">
-                <DatePicker style={{ width: '100%' }} placeholder="Select Expected End Date" />
+                <DatePicker 
+                  style={{ width: '100%' }} 
+                  placeholder="Select Expected End Date" 
+                  disabledDate={(current) => current && current < dayjs().startOf('day')}
+                />
               </Form.Item>
             </Col>
           </Row>
@@ -845,7 +863,11 @@ const SalesPipeline = () => {
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item label="Follow-up Date" name="follow">
-                <DatePicker style={{ width: '100%' }} placeholder="Select Date" />
+                <DatePicker 
+                  style={{ width: '100%' }} 
+                  placeholder="Select Date" 
+                  disabledDate={(current) => current && current < dayjs().startOf('day')}
+                />
               </Form.Item>
             </Col>
           </Row>

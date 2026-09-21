@@ -67,11 +67,55 @@ export function useActionPermissions(path) {
 
     const hasCustomPermissions = user && user.permissions && Object.keys(user.permissions).length > 0;
 
+    const getModulePerms = () => {
+      if (!user?.permissions) return null;
+      if (user.permissions[moduleName]) return user.permissions[moduleName];
+      if (moduleName === 'Workspace-Task Management') {
+        return (
+          user.permissions['Workspace-Task Management'] ||
+          user.permissions['General-Tasks'] ||
+          user.permissions['Workspace-Tasks'] ||
+          user.permissions['Tasks']
+        );
+      }
+      if (moduleName === 'Workspace-CRM & Leads') {
+        return (
+          user.permissions['Workspace-CRM & Leads'] ||
+          user.permissions['Workspace-CRM'] ||
+          user.permissions['CRM & Leads']
+        );
+      }
+      if (moduleName === 'Workspace-Websites') {
+        return (
+          user.permissions['Workspace-Websites'] ||
+          user.permissions['Workspace-Website Builder'] ||
+          user.permissions['Websites']
+        );
+      }
+      if (moduleName === 'Workspace-SEO / AEO / GEO') {
+        return (
+          user.permissions['Workspace-SEO / AEO / GEO'] ||
+          user.permissions['Workspace-SEO'] ||
+          user.permissions['SEO']
+        );
+      }
+      return null;
+    };
+
     // If the user is assigned a custom role with permissions, STRICTLY ENFORCE IT
     if (hasCustomPermissions) {
-      const permissions = user.permissions[moduleName];
-      if (!permissions) return false; // If module isn't in permissions, deny
-      return !!permissions[actionKey];
+      const permissions = getModulePerms();
+      if (!permissions) {
+        // Default allow tasks module view/create for users if not explicitly blocked
+        if (moduleName === 'Workspace-Task Management') return true;
+        return false;
+      }
+      if (permissions[actionKey] !== undefined) return !!permissions[actionKey];
+      if (permissions.All !== undefined) return !!permissions.All;
+      if (permissions.Write !== undefined && (actionKey === 'Create' || actionKey === 'Edit')) return !!permissions.Write;
+      if (actionKey === 'View' && (permissions.Read || permissions.View || permissions.Create || permissions.Edit)) return true;
+      if (actionKey === 'Create' && moduleName === 'Workspace-Task Management') return true;
+      return false;
     }
 
     // Fallback for standard roles without custom permissions
@@ -79,10 +123,11 @@ export function useActionPermissions(path) {
       return true;
     }
 
-    // Default for 'user' or 'brand_team_user' with NO custom permissions: deny write, allow read/view?
-    // We deny everything by default to be safe, unless it's a View action and they have no custom permissions?
-    // Actually, previously it just returned true for user?.brandId. Let's return true for backward compatibility for standard users without roles, but false for Employee-type roles.
+    // Default for 'user' or employee-type roles with NO custom permissions:
+    // Allow Tasks create/edit/view by default, allow View for assigned modules
     if (['user'].includes(role)) {
+      if (moduleName === 'Workspace-Task Management') return true;
+      if (actionKey === 'View') return true;
       return false; 
     }
 

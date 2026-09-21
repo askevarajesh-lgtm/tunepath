@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { recordTimerStop } = require('./task.timeHelper');
+const { recordTimerStop, calculateSessionElapsedMinutes } = require('./task.timeHelper');
 const Task = require("./task.model");
 const { TaskActivity, TaskComment } = require("./taskInteraction.model");
 const ScheduledNote = require("./scheduledNote.model");
@@ -116,17 +116,10 @@ const WEBSITE_COORDINATOR_DEPARTMENTS = [
 const ROLES_WITH_FULL_TASK_ACCESS = [
   "super_admin",
   "admin",
-  "operations_head",
-  "digital_marketing_manager",
-  "digital_marketing_coordinator",
-  "website_coordinator",
-  "coordinator",
   "supreme_super_admin",
   "commander_admin",
   "agency_super_admin",
   "agency_manager",
-  "agency_client",
-  "client",
   "brand_super_admin",
   "brand_manager",
 ];
@@ -1130,9 +1123,9 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
   const creator = await User.findById(createdByUserId).select("role clientId brandId");
   const isGlobalAdmin = creator && ["supreme_super_admin"].includes(creator.role);
 
-  // Auto-assign companyId if missing and the creator is a client/brand user
-  if (!taskData.companyId && creator && ['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(creator.role)) {
-    taskData.companyId = creator.clientId || creator.brandId || createdByUserId;
+  // Auto-assign companyId if missing and the creator is a client/brand user/employee
+  if (!taskData.companyId && creator && ['client', 'agency_client', 'brand_super_admin', 'brand_manager', 'user'].includes(creator.role)) {
+    taskData.companyId = creator.clientId || creator.brandId || creator.agencyId || createdByUserId;
   }
 
   // Verify that the client company belongs to the tenant company if provided
@@ -2165,8 +2158,7 @@ const updateTask = async (
     const now = new Date();
     if (oldStatus === "in_progress" && task.status !== "in_progress") {
       if (task.workStartedAt) {
-        const diffMs = now - task.workStartedAt;
-        const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+        const diffMinutes = calculateSessionElapsedMinutes(task.workStartedAt, task.dueDate, now);
         task.workDurationMinutes = (task.workDurationMinutes || 0) + diffMinutes;
         await recordTimerStop(task, diffMinutes, updatedByUserId);
         task.workStartedAt = null;
@@ -2633,8 +2625,7 @@ const holdTask = async (taskId, holdReason, userId, userRole, tenantCompanyId) =
   const now = new Date();
   if (oldStatus === "in_progress") {
     if (task.workStartedAt) {
-      const diffMs = now - task.workStartedAt;
-      const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+      const diffMinutes = calculateSessionElapsedMinutes(task.workStartedAt, task.dueDate, now);
       task.workDurationMinutes = (task.workDurationMinutes || 0) + diffMinutes;
       await recordTimerStop(task, diffMinutes, userId);
       task.workStartedAt = null;
@@ -2695,8 +2686,7 @@ const submitTask = async (
   // ── [CUMULATIVE TIMING LOGIC] ──────────────────────────────────────────────
   if (task.workStartedAt) {
     const now = new Date();
-    const diffMs = now - task.workStartedAt;
-    const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+    const diffMinutes = calculateSessionElapsedMinutes(task.workStartedAt, task.dueDate, now);
     task.workDurationMinutes = (task.workDurationMinutes || 0) + diffMinutes;
     await recordTimerStop(task, diffMinutes, submittedByUserId || task.assignedTo);
     task.workStartedAt = null;
@@ -3725,8 +3715,7 @@ const updateTaskStatusAndOrder = async (
   // If moving FROM in_progress TO something else -> Add elapsed time to total
   if (oldStatus === "in_progress" && finalStatus !== "in_progress") {
     if (task.workStartedAt) {
-      const diffMs = now - task.workStartedAt;
-      const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
+      const diffMinutes = calculateSessionElapsedMinutes(task.workStartedAt, task.dueDate, now);
       task.workDurationMinutes = (task.workDurationMinutes || 0) + diffMinutes;
       await recordTimerStop(task, diffMinutes, userId);
       task.workStartedAt = null;

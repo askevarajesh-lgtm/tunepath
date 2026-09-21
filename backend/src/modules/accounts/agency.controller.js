@@ -405,12 +405,21 @@ exports.deleteAgency = async (req, res, next) => {
 exports.getDashboardStats = async (req, res, next) => {
   try {
     const agencyId = req.user.agencyId || req.user._id;
+    const { month, year } = req.query;
+    
+    let dateFilter = {};
+    if (month !== undefined && year !== undefined) {
+      const startDate = new Date(parseInt(year), parseInt(month), 1);
+      const endDate = new Date(parseInt(year), parseInt(month) + 1, 0, 23, 59, 59, 999);
+      dateFilter = { createdAt: { $gte: startDate, $lte: endDate } };
+    }
 
     // 1. Calculate Agency MRR (Sum of MRR from all clients)
     const clients = await User.find({
       agencyId,
       role: { $in: ['brand_super_admin', 'brand_manager', 'agency_client'] },
-      status: 'active'
+      status: 'active',
+      ...dateFilter
     });
     
     let totalMrr = 0;
@@ -420,17 +429,20 @@ exports.getDashboardStats = async (req, res, next) => {
     const activeClientsCount = clients.length;
 
     // 2. Count Team Members (Excluding clients)
-    const teamMembersCount = await User.countDocuments({
+    const teamMembersListRaw = await User.find({
       $or: [{ agencyId }, { _id: agencyId }],
       brandId: null,
-      role: { $nin: ['brand_super_admin', 'brand_manager', 'agency_client', 'superadmin', 'supreme_super_admin'] }
-    });
+      role: { $nin: ['brand_super_admin', 'brand_manager', 'agency_client', 'superadmin', 'supreme_super_admin'] },
+      ...dateFilter
+    }).select('name email phone role status createdAt');
+    const teamMembersCount = teamMembersListRaw.length;
 
     // 3. Team Performance (List of Agency Managers)
     const managers = await User.find({
       $or: [{ agencyId }, { _id: agencyId }],
-      role: 'agency_manager'
-    }).select('name email phone role roleName status');
+      role: 'agency_manager',
+      ...dateFilter
+    }).select('name email phone role roleName status createdAt');
 
     const teamPerformance = managers.map(m => ({
       key: m._id,
@@ -445,7 +457,8 @@ exports.getDashboardStats = async (req, res, next) => {
     const Invoice = require('../invoices/invoice.model');
     const invoices = await Invoice.find({
       agencyId,
-      isDeleted: false
+      isDeleted: false,
+      ...dateFilter
     });
 
     let totalInvoiceAmount = 0;
@@ -464,7 +477,7 @@ exports.getDashboardStats = async (req, res, next) => {
     // 5. Chart Data (Revenue per month for the last 6 months)
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const chartDataMap = {};
-    const today = new Date();
+    const today = (month !== undefined && year !== undefined) ? new Date(parseInt(year), parseInt(month), 15) : new Date();
     for (let i = 5; i >= 0; i--) {
       const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
       chartDataMap[`${d.getFullYear()}-${d.getMonth()}`] = {
@@ -548,7 +561,10 @@ exports.getDashboardStats = async (req, res, next) => {
         revenue: formatCurrency(revenue),
         teamPerformance,
         chartData,
-        recentActivities: recentActivities.slice(0, 5) // Return top 5
+        recentActivities: recentActivities.slice(0, 5), // Return top 5
+        clientsList: clients.map(c => ({ id: c._id, name: c.name || c.companyName, email: c.email, mrr: c.mrr, status: c.status })),
+        invoicesList: invoices.map(inv => ({ id: inv._id, invoiceNumber: inv.invoiceNumber, grandTotal: inv.grandTotal, totalPaid: inv.totalPaid, pendingAmount: inv.pendingAmount, status: inv.status, createdAt: inv.createdAt })),
+        teamMembersList: teamMembersListRaw.map(t => ({ id: t._id, name: t.name, email: t.email, role: t.role, status: t.status }))
       }
     });
   } catch (error) {

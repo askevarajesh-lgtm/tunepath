@@ -47,9 +47,8 @@ import {
 } from "../../api/taskApi";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
-import { getCloudinaryOriginalDeliveryUrl, getCloudinaryDownloadUrl } from "../../utils/cloudinaryUrl";
 import dayjs from "dayjs";
-import { isDurationTrackingTask, isCompletedTask } from "./taskDuration";
+import { isDurationTrackingTask, isCompletedTask, isTaskTimerRunning, getTaskLiveDurationMinutes } from "./taskDuration";
 import TaskReopenModal from "./TaskReopenModal";
 
 const { TextArea } = Input;
@@ -498,35 +497,31 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
                   </Space>
                 }
               >
-                {task.workStartedAt && task.status === "in_progress" ? (
-                  (() => {
-                    const runningMins = Math.round(
-                      (Date.now() - new Date(task.workStartedAt)) / 60000,
-                    );
-                    const totalMins = (task.workDurationMinutes || 0) + runningMins;
-                    const h = Math.floor(totalMins / 60);
-                    const m = totalMins % 60;
+                {(() => {
+                  const isRunning = isTaskTimerRunning(task);
+                  const totalMins = getTaskLiveDurationMinutes(task);
+                  const h = Math.floor(totalMins / 60);
+                  const m = totalMins % 60;
+                  const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
+
+                  if (isRunning) {
                     return (
                       <Tag color="processing" icon={<ClockCircleOutlined />}>
-                        {h > 0 ? `${h}h ${m}m` : `${m}m`} (in progress)
+                        {label} (in progress)
                       </Tag>
                     );
-                  })()
-                ) : task.workDurationMinutes != null ? (
-                  (() => {
-                    const mins = task.workDurationMinutes;
-                    const h = Math.floor(mins / 60);
-                    const m = mins % 60;
-                    const label = h > 0 ? `${h}h ${m}m` : `${m}m`;
+                  }
+
+                  if (totalMins > 0 || task.workDurationMinutes != null) {
                     return (
                       <Tag color="orange" icon={<ClockCircleOutlined />}>
                         {label}
                       </Tag>
                     );
-                  })()
-                ) : (
-                  <Tag color="default">—</Tag>
-                )}
+                  }
+
+                  return <Tag color="default">—</Tag>;
+                })()}
               </Descriptions.Item>
             </>
           )}

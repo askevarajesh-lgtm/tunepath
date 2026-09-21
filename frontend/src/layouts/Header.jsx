@@ -136,12 +136,12 @@ const Header = ({ collapsed, setCollapsed }) => {
                 window.location.href = '/superadmin/dashboard';
             } else if (parsedUser.role === 'commander_admin') {
                 window.location.href = '/dashboard';
-            } else if (['agency_super_admin', 'agency_manager'].includes(parsedUser.role)) {
+            } else if (['agency_super_admin', 'agency_manager', 'agency'].includes(parsedUser.role)) {
                 window.location.href = '/agency/overview';
-            } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'client'].includes(parsedUser.role) || (parsedUser.role === 'user' && parsedUser.brandId)) {
+            } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(parsedUser.role)) {
                 window.location.href = '/client/dashboard';
             } else {
-                window.location.href = '/';
+                window.location.href = '/user/dashboard';
             }
         }
     };

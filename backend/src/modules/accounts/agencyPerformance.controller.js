@@ -65,15 +65,33 @@ exports.getAgencyPerformance = async (req, res, next) => {
     const completedStatuses = ['completed', 'complete', 'validated', 'done', 'review'];
     const allTasks = await Task.find({
       $or: [
-        { agencyId },
-        { tenantCompanyId: agencyId },
-        { companyId: agencyId }
+        { tenantCompanyId: { $in: [agencyId, ...clientIds] } },
+        { companyId: { $in: [agencyId, ...clientIds] } }
       ]
     });
     const totalTasksThisMonth = allTasks.filter(t => t.createdAt >= startOfMonth && t.createdAt <= endOfMonth).length;
     const completedTasksThisMonth = allTasks.filter(t => completedStatuses.includes(t.status) && t.updatedAt >= startOfMonth && t.updatedAt <= endOfMonth).length;
-    const pendingTasks = allTasks.filter(t => !completedStatuses.includes(t.status)).length;
-    const overdueTasks = allTasks.filter(t => !completedStatuses.includes(t.status) && t.dueDate && new Date(t.dueDate) < now).length;
+    const isHistoricalMonth = endOfMonth < new Date();
+    const isFutureMonth = startOfMonth > new Date();
+    const referenceDate = isHistoricalMonth ? endOfMonth : new Date();
+
+    const pendingTasks = isFutureMonth ? 0 : allTasks.filter(t => {
+      if (t.createdAt > referenceDate) return false;
+      if (completedStatuses.includes(t.status)) {
+        return t.updatedAt && t.updatedAt > referenceDate;
+      }
+      return true;
+    }).length;
+
+    const overdueTasks = isFutureMonth ? 0 : allTasks.filter(t => {
+      if (!t.dueDate || t.dueDate > referenceDate) return false;
+      if (t.createdAt > referenceDate) return false;
+      if (completedStatuses.includes(t.status)) {
+        return t.updatedAt && t.updatedAt > referenceDate;
+      }
+      return true;
+    }).length;
+
     const taskCompletionRate = totalTasksThisMonth > 0 ? Math.round((completedTasksThisMonth / totalTasksThisMonth) * 100) : 100;
 
     // Projects Analytics
@@ -254,12 +272,8 @@ exports.getAgencyPerformance = async (req, res, next) => {
 
       const slaObj = teamSlas.find(sl => sl._id && sl._id.toString() === t._id.toString());
       let slaPerc = 0;
-      if (slaObj && slaObj.total > 0) {
-        slaPerc = Math.round(((slaObj.total - slaObj.breached) / slaObj.total) * 100);
-      } else if (tasksAssigned > 0) {
-        slaPerc = Math.round((tasksCompleted / tasksAssigned) * 100);
-      } else {
-        slaPerc = 0;
+      if (tasksAssigned > 0) {
+        slaPerc = Math.round(((tasksAssigned - tasksCompleted) / tasksAssigned) * 100);
       }
 
       const initials = (t.name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -273,7 +287,7 @@ exports.getAgencyPerformance = async (req, res, next) => {
         sla: `${slaPerc}%`,
         tasksAssigned,
         tasksCompleted,
-        status: slaPerc >= 95 ? 'good' : (slaPerc >= 85 ? 'warning' : 'danger')
+        status: slaPerc <= 5 ? 'good' : (slaPerc <= 15 ? 'warning' : 'danger')
       };
     }).sort((a, b) => b.tasksCompleted - a.tasksCompleted);
 
