@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Calendar, Plus, FileText, Download, CheckCircle2, Clock, Filter, Eye, 
   Activity, TrendingUp, TrendingDown, MoreVertical, AlertCircle, RefreshCw, 
-  BarChart2, PieChart as PieChartIcon, Layers, Sparkles 
+  BarChart2, PieChart as PieChartIcon, Layers, Sparkles, Users 
 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import dayjs from 'dayjs';
@@ -50,8 +50,29 @@ const Reports = () => {
   useEffect(() => {
     if (headerSelectedClient?._id) {
       setSelectedClient(headerSelectedClient._id);
+    } else {
+      setSelectedClient('all');
     }
   }, [headerSelectedClient]);
+
+  useEffect(() => {
+    const handleClientSwitched = () => {
+      const saved = localStorage.getItem('selectedClient');
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed?._id) {
+            setSelectedClient(parsed._id);
+            return;
+          }
+        } catch (e) {}
+      }
+      setSelectedClient('all');
+    };
+
+    window.addEventListener('client-switched', handleClientSwitched);
+    return () => window.removeEventListener('client-switched', handleClientSwitched);
+  }, []);
   
   const { data: clientsData, isLoading: isLoadingClients } = useGetClientsQuery({ limit: 1000 });
   
@@ -124,106 +145,119 @@ const Reports = () => {
     });
   }, [recentSentReports, selectedClient, selectedMonth]);
 
-  // Strictly Real Data Feeds
-  const funnelData = useMemo(() => {
-    const clientFilter = selectedClient !== 'all' ? selectedClient : null;
+  // Compute Client Reporting Coverage for selected period
+  const clientCoverage = useMemo(() => {
+    if (!clients || clients.length === 0) return { covered: 0, total: 0, percentage: 0, list: [] };
+    
+    // When a specific client is selected in the filter or header, display only that client
+    const targetClients = (selectedClient && selectedClient !== 'all')
+      ? clients.filter(c => String(c._id) === String(selectedClient))
+      : clients;
 
-    const filteredLeads = realLeads.filter(l => {
-      if (!clientFilter) return true;
-      const cId = l.clientId?._id || l.clientId || l.companyId?._id || l.companyId;
-      return String(cId) === String(clientFilter);
+    const list = targetClients.map(c => {
+      const cId = String(c._id);
+      const reportsForClient = filteredReports.filter(r => {
+        const rId = typeof r.clientId === 'object' ? String(r.clientId?._id) : String(r.clientId);
+        return rId === cId;
+      });
+      return {
+        client: c,
+        reportsCount: reportsForClient.length,
+        hasReport: reportsForClient.length > 0,
+        latestReport: reportsForClient[0] || null
+      };
     });
 
-    const filteredProps = realProposals.filter(p => {
-      if (!clientFilter) return true;
-      const cId = p.clientId?._id || p.clientId;
-      return String(cId) === String(clientFilter);
-    });
+    const covered = list.filter(item => item.hasReport).length;
+    const total = targetClients.length;
+    const percentage = total > 0 ? Math.round((covered / total) * 100) : 0;
 
-    const totalLeads = filteredLeads.length;
-    const qualifiedLeads = filteredLeads.filter(l => ['qualified', 'contacted', 'negotiation'].includes(String(l.status || l.stage).toLowerCase())).length;
-    const proposalsCount = filteredProps.length;
-    const conversions = filteredLeads.filter(l => ['won', 'converted', 'closed'].includes(String(l.status || l.stage).toLowerCase())).length;
+    return { covered, total, percentage, list };
+  }, [clients, filteredReports, selectedClient]);
 
-    if (totalLeads === 0 && proposalsCount === 0 && conversions === 0) {
-      return [];
+  // 6-Month Publishing Trend
+  const monthlyTrendData = useMemo(() => {
+    const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const baseDate = selectedMonth || dayjs();
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = baseDate.subtract(i, 'month');
+      months.push({
+        key: `${d.year()}-${d.month()}`,
+        monthName: `${monthAbbrs[d.month()]} ${d.year()}`,
+        monthIdx: d.month(),
+        yearVal: d.year(),
+        count: 0
+      });
     }
 
-    return [
-      { stage: 'Total Leads Captured', count: totalLeads, fill: '#8b5cf6' },
-      { stage: 'Qualified Prospects', count: qualifiedLeads, fill: '#3b82f6' },
-      { stage: 'Proposals Submitted', count: proposalsCount, fill: '#f59e0b' },
-      { stage: 'Client Conversions', count: conversions, fill: '#10b981' },
-    ];
-  }, [realLeads, realProposals, selectedClient]);
-
-  const seoRankingData = useMemo(() => {
-    return [];
-  }, [filteredReports]);
-
-  const socialEngagementData = useMemo(() => {
-    let fbLikes = 0, fbShares = 0, fbComments = 0;
-    let igLikes = 0, igShares = 0, igComments = 0;
-
-    filteredReports.forEach(r => {
-      if (r.digitalInsights) {
-        fbLikes += Number(r.digitalInsights.facebookFollowersIncreased) || 0;
-        fbShares += Number(r.digitalInsights.facebookReach) || 0;
-        igLikes += Number(r.digitalInsights.instagramFollowersIncreased) || 0;
-        igShares += Number(r.digitalInsights.instagramReach) || 0;
+    recentSentReports.forEach(r => {
+      if (selectedClient !== 'all') {
+        const rClientId = typeof r.clientId === 'object' ? String(r.clientId?._id) : String(r.clientId);
+        if (rClientId !== String(selectedClient)) return;
+      }
+      const rDate = dayjs(r.sentAt || r.createdAt);
+      const mMatch = months.find(m => m.monthIdx === rDate.month() && m.yearVal === rDate.year());
+      if (mMatch) {
+        mMatch.count += 1;
       }
     });
 
-    if (fbLikes === 0 && fbShares === 0 && igLikes === 0 && igShares === 0) {
-      return [];
-    }
+    return months.map(m => ({
+      month: m.monthName,
+      reports: m.count
+    }));
+  }, [recentSentReports, selectedMonth, selectedClient]);
 
-    return [
-      { platform: 'Instagram', likes: igLikes, shares: igShares, comments: igComments },
-      { platform: 'Facebook', likes: fbLikes, shares: fbShares, comments: fbComments },
-    ];
-  }, [filteredReports]);
-
+  // Report Types Distribution
   const reportTypesData = useMemo(() => {
     if (filteredReports.length === 0) return [];
 
     const counts = {};
     filteredReports.forEach(r => {
-      const type = r.template || 'Monthly Highlights';
+      const type = r.template || 'Highlights of the Month';
       counts[type] = (counts[type] || 0) + 1;
     });
 
+    const typeColors = {
+      'Highlights of the Month': '#8b5cf6',
+      'Keywords': '#10b981',
+      'Meta Campaign': '#3b82f6',
+      'Meta Insights': '#1877f2',
+      'Website Traffic': '#0284c7',
+      'Social Media Post Insights': '#ec4899',
+    };
+
     return Object.keys(counts).map(key => ({
       name: key,
-      value: counts[key]
+      value: counts[key],
+      color: typeColors[key] || '#8b5cf6'
     }));
   }, [filteredReports]);
 
-  // Real KPIs (using filtered data)
+  // Real KPIs
   const totalSent = filteredReports.length;
   const totalOpened = filteredReports.filter(r => ['Opened', 'Delivered', 'Published', 'Sent'].includes(r.status)).length;
-  const openRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0;
-  const totalPagesGenerated = filteredReports.reduce((acc, r) => acc + (r.pages || 1), 0);
+  const deliveryRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 100;
+  const activeCategoriesCount = reportTypesData.length;
 
-  // Status Distribution for Pie Chart
-  const statusDistribution = useMemo(() => {
-    const opened = filteredReports.filter(r => ['Opened', 'Delivered', 'Published', 'Sent'].includes(r.status)).length;
-    const pending = filteredReports.filter(r => !['Opened', 'Delivered', 'Published', 'Sent'].includes(r.status)).length;
-    if (opened === 0 && pending === 0) {
-      return [{ name: 'Opened', value: 45 }, { name: 'Pending', value: 15 }, { name: 'Failed', value: 2 }];
-    }
-    return [
-      { name: 'Opened', value: opened },
-      { name: 'Pending', value: pending }
-    ];
-  }, [filteredReports]);
-
-  const handleOpenCreateReport = () => {
-    setModalClientId(selectedClient !== 'all' ? selectedClient : (headerSelectedClient?._id || (clients.length > 0 ? clients[0]._id : null)));
-    setSelectedReportType('Highlights of the Month');
+  const handleOpenCreateReport = (clientId = null, template = 'Highlights of the Month') => {
+    const rawClientId = (clientId && typeof clientId === 'object' && clientId._id) ? clientId._id : (typeof clientId === 'string' ? clientId : null);
+    const targetClientId = rawClientId || (selectedClient !== 'all' && typeof selectedClient === 'string' ? selectedClient : (headerSelectedClient?._id || (clients.length > 0 ? clients[0]._id : null)));
+    setModalClientId(targetClientId);
+    setSelectedReportType(typeof template === 'string' ? template : 'Highlights of the Month');
     setModalDate(selectedMonth || dayjs());
     setIsCreateReportModalOpen(true);
   };
+
+  const REPORT_TEMPLATES = [
+    { key: 'Highlights of the Month', title: 'Highlights of Month', icon: Sparkles, color: '#8b5cf6', desc: 'Deliverables & Initiatives' },
+    { key: 'Keywords', title: 'Keywords Ranking', icon: TrendingUp, color: '#10b981', desc: 'SEO/AEO/GEO Rankings' },
+    { key: 'Meta Campaign', title: 'Meta Campaigns', icon: FileText, color: '#3b82f6', desc: 'Leads & Reach Ads' },
+    { key: 'Meta Insights', title: 'Meta Insights', icon: RefreshCw, color: '#1877f2', desc: 'Facebook & Instagram' },
+    { key: 'Website Traffic', title: 'Website Traffic', icon: Eye, color: '#0284c7', desc: 'GA4 Traffic & City Users' },
+    { key: 'Social Media Post Insights', title: 'Social Media Posts', icon: Sparkles, color: '#ec4899', desc: 'Content & YouTube Stats' },
+  ];
 
   // Handle Action Column Operations
   const handleRowAction = async (action, record) => {
@@ -362,7 +396,7 @@ const Reports = () => {
           <Button 
             type="primary" 
             icon={<Sparkles size={16} />} 
-            onClick={handleOpenCreateReport}
+            onClick={() => handleOpenCreateReport()}
             style={{ borderRadius: 10, background: 'var(--accent-primary)', fontWeight: 600, height: 40 }}
           >
             Create Report
@@ -417,161 +451,166 @@ const Reports = () => {
           <Col xs={24} sm={12} lg={6}>
             <Card style={{ borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(139, 92, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(139, 92, 246, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <FileText size={22} color="#8b5cf6" />
                 </div>
-                <Tag color="default" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>0%</Tag>
+                <Tag color="purple" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6' }}>
+                  {selectedMonth.format('MMM YYYY')}
+                </Tag>
               </div>
-              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Total Reports</Text>
-              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{totalSent > 0 ? totalSent : 0}</Title>
+              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Total Reports Generated</Text>
+              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{totalSent}</Title>
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <Card style={{ borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <TrendingUp size={22} color="#10b981" />
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(59, 130, 246, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Users size={22} color="#3b82f6" />
                 </div>
-                <Tag color="success" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>Live</Tag>
+                <Tag color="blue" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' }}>
+                  {clientCoverage.percentage}% Covered
+                </Tag>
               </div>
-              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Delivery Rate</Text>
-              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{openRate}%</Title>
+              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Client Coverage</Text>
+              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>
+                {clientCoverage.covered} <span style={{ fontSize: 18, fontWeight: 500, color: 'var(--text-tertiary)' }}>/ {clientCoverage.total} {clientCoverage.total === 1 ? 'Client' : 'Clients'}</span>
+              </Title>
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <Card style={{ borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Layers size={22} color="#3b82f6" />
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(16, 185, 129, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckCircle2 size={22} color="#10b981" />
                 </div>
-                <Tag color="default" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>Generated</Tag>
+                <Tag color="success" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>Live</Tag>
               </div>
-              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Pages Created</Text>
-              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{totalPagesGenerated}</Title>
+              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Delivery Success Rate</Text>
+              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{deliveryRate}%</Title>
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
             <Card style={{ borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(245, 158, 11, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Activity size={22} color="#f59e0b" />
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(245, 158, 11, 0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Layers size={22} color="#f59e0b" />
                 </div>
-                <Tag color="warning" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>Pending</Tag>
+                <Tag color="warning" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>
+                  {activeCategoriesCount > 0 ? `${activeCategoriesCount} Active` : '0 Active'}
+                </Tag>
               </div>
-              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Unopened Reports</Text>
-              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{totalSent - totalOpened > 0 ? totalSent - totalOpened : 0}</Title>
+              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Report Templates Used</Text>
+              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>
+                {activeCategoriesCount} <span style={{ fontSize: 18, fontWeight: 500, color: 'var(--text-tertiary)' }}>/ 6 Templates</span>
+              </Title>
             </Card>
           </Col>
         </Row>
       </motion.div>
 
-      {/* CHARTS SECTION 1 */}
+      {/* OVERVIEW SECTION: CLIENT COVERAGE & REPORT TYPES */}
       <motion.div variants={itemVariants} style={{ marginBottom: 24 }}>
         <Row gutter={[16, 16]}>
-          <Col xs={24} lg={12}>
+          {/* Client Reporting Status */}
+          <Col xs={24} lg={14}>
             <Card 
               title={
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Lead Conversion Performance</span>
-                  <Tag color="purple" style={{ borderRadius: 6, fontWeight: 600 }}>Leads to Won</Tag>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <Users size={18} color="var(--accent-primary)" />
+                    <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 16 }}>
+                      {selectedClient !== 'all' && clientCoverage.list.length === 1 
+                        ? `${clientCoverage.list[0].client.companyName || clientCoverage.list[0].client.name} — Reporting Status` 
+                        : 'Client Reporting Status'}
+                    </span>
+                  </div>
+                  <Tag color="blue" style={{ borderRadius: 6, fontWeight: 600 }}>
+                    {clientCoverage.covered} of {clientCoverage.total} Completed
+                  </Tag>
                 </div>
               } 
-              className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', height: '100%', boxShadow: 'var(--shadow-sm)' }}
+              className="glassmorphism" 
+              style={{ borderRadius: 16, border: '1px solid var(--border-color)', height: '100%', boxShadow: 'var(--shadow-sm)' }}
+              bodyStyle={{ padding: '16px 20px', maxHeight: 340, overflowY: 'auto' }}
             >
-              {funnelData.length > 0 ? (
-                <div style={{ height: 260 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={funnelData} layout="vertical" margin={{ top: 10, right: 30, left: 40, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
-                      <XAxis type="number" stroke="var(--text-tertiary)" tickLine={false} />
-                      <YAxis dataKey="stage" type="category" stroke="var(--text-tertiary)" tickLine={false} width={130} />
-                      <Tooltip contentStyle={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)', borderRadius: 8 }} />
-                      <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                        {funnelData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.fill} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+              {clientCoverage.list.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {clientCoverage.list.map(({ client, hasReport, reportsCount, latestReport }) => (
+                    <div 
+                      key={client._id}
+                      style={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'space-between', 
+                        padding: '10px 14px', 
+                        borderRadius: 12, 
+                        background: 'var(--bg-tertiary)', 
+                        border: '1px solid var(--border-color)' 
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                        <div style={{ 
+                          width: 34, 
+                          height: 34, 
+                          borderRadius: 8, 
+                          background: hasReport ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)', 
+                          display: 'flex', 
+                          alignItems: 'center', 
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}>
+                          {hasReport ? <CheckCircle2 size={18} color="#10b981" /> : <Clock size={18} color="#f59e0b" />}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <Text strong style={{ color: 'var(--text-primary)', fontSize: 14, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {client.companyName || client.name}
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>
+                            {hasReport 
+                              ? `${reportsCount} report${reportsCount > 1 ? 's' : ''} sent • Latest: ${latestReport?.template || 'Highlights'}`
+                              : 'No report generated for this month'}
+                          </Text>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                        {hasReport ? (
+                          <Tag color="success" style={{ borderRadius: 6, fontWeight: 600, margin: 0 }}>Completed</Tag>
+                        ) : (
+                          <Button 
+                            type="primary" 
+                            size="small" 
+                            icon={<Plus size={13} />} 
+                            onClick={() => handleOpenCreateReport(client._id)}
+                            style={{ borderRadius: 6, fontSize: 12, fontWeight: 600, background: 'var(--accent-primary)' }}
+                          >
+                            Create Report
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Empty description="No lead conversion data available for selected period" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  <Empty description="No clients found" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 </div>
               )}
             </Card>
           </Col>
-          <Col xs={24} lg={12}>
-            <Card 
-              title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><TrendingUp size={18} color="#10b981" /> <Text style={{ fontWeight: 700, fontSize: 16 }}>SEO Keyword Rankings</Text></div>} 
-              className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
-              bodyStyle={{ padding: '24px', height: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              {seoRankingData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={seoRankingData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorHigh" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorLow" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(200,200,200,0.15)" />
-                    <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
-                    <Tooltip 
-                      contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }}
-                      itemStyle={{ fontWeight: 600 }}
-                    />
-                    <Legend iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 20 }} />
-                    <Area type="monotone" dataKey="highRankings" name="High Rankings" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorHigh)" />
-                    <Area type="monotone" dataKey="lowRankings" name="Low Rankings" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorLow)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{ fontSize: 13 }}>No real SEO ranking data recorded for selected client</Text>} />
-              )}
-            </Card>
-          </Col>
-        </Row>
-      </motion.div>
 
-      {/* CHARTS SECTION 2 */}
-      <motion.div variants={itemVariants} style={{ marginBottom: 24 }}>
-        <Row gutter={[16, 16]}>
-          <Col xs={24} lg={14}>
-            <Card 
-              title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Activity size={18} color="var(--accent-primary)" /> <Text style={{ fontWeight: 700, fontSize: 16 }}>Social Media Engagement</Text></div>} 
-              className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
-              bodyStyle={{ padding: '24px', height: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              {socialEngagementData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={socialEngagementData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(200,200,200,0.15)" />
-                    <XAxis dataKey="platform" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }} dy={10} />
-                    <YAxis axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
-                    <Tooltip cursor={{fill: 'rgba(200,200,200,0.05)'}} contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }} />
-                    <Legend iconType="circle" wrapperStyle={{ fontSize: 13, paddingTop: 20 }} />
-                    <Bar dataKey="likes" name="Likes" stackId="a" fill="var(--accent-primary)" radius={[0, 0, 0, 0]} maxBarSize={40} />
-                    <Bar dataKey="shares" name="Shares" stackId="a" fill="#10b981" radius={[0, 0, 0, 0]} maxBarSize={40} />
-                    <Bar dataKey="comments" name="Comments" stackId="a" fill="#f59e0b" radius={[6, 6, 0, 0]} maxBarSize={40} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{ fontSize: 13 }}>No real social media engagement logged for selected period</Text>} />
-              )}
-            </Card>
-          </Col>
+          {/* Report Types Distribution */}
           <Col xs={24} lg={10}>
             <Card 
-              title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><PieChartIcon size={18} color="#f59e0b" /> <Text style={{ fontWeight: 700, fontSize: 16 }}>Report Types Distribution</Text></div>} 
-              className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
-              bodyStyle={{ padding: '24px', height: 350, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+              title={
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <PieChartIcon size={18} color="#8b5cf6" />
+                  <Text style={{ fontWeight: 700, fontSize: 16 }}>Report Types Breakdown</Text>
+                </div>
+              } 
+              className="glassmorphism" 
+              style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
+              bodyStyle={{ padding: '20px', height: 340, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
             >
               {reportTypesData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={260}>
@@ -579,27 +618,126 @@ const Reports = () => {
                     <Pie
                       data={reportTypesData}
                       cx="50%"
-                      cy="50%"
-                      innerRadius={65}
-                      outerRadius={95}
-                      paddingAngle={3}
+                      cy="48%"
+                      innerRadius={60}
+                      outerRadius={90}
+                      paddingAngle={4}
                       dataKey="value"
                       labelLine={false}
                     >
                       {reportTypesData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0)" />
+                        <Cell key={`cell-${index}`} fill={entry.color || COLORS[index % COLORS.length]} stroke="rgba(0,0,0,0)" />
                       ))}
                     </Pie>
                     <Tooltip 
-                      contentStyle={{ borderRadius: 12, border: 'none', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }}
+                      contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }}
                       itemStyle={{ fontWeight: 600, color: 'var(--text-primary)' }}
                     />
                     <Legend iconType="circle" verticalAlign="bottom" height={36} wrapperStyle={{ fontSize: 12, paddingTop: 10 }} />
                   </PieChart>
                 </ResponsiveContainer>
               ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{ fontSize: 13 }}>No report distribution data for selected client</Text>} />
+                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{ fontSize: 13 }}>No reports created in this period yet</Text>} />
               )}
+            </Card>
+          </Col>
+        </Row>
+      </motion.div>
+
+      {/* PUBLISHING TREND & QUICK LAUNCHPAD */}
+      <motion.div variants={itemVariants} style={{ marginBottom: 24 }}>
+        <Row gutter={[16, 16]}>
+          {/* 6-Month Publishing Trend */}
+          <Col xs={24} lg={14}>
+            <Card 
+              title={
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <BarChart2 size={18} color="#10b981" />
+                    <Text style={{ fontWeight: 700, fontSize: 16 }}>Monthly Publishing Output</Text>
+                  </div>
+                  <Tag color="green" style={{ borderRadius: 6, fontWeight: 600 }}>Last 6 Months</Tag>
+                </div>
+              } 
+              className="glassmorphism" 
+              style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
+              bodyStyle={{ padding: '20px 24px 10px 10px', height: 320 }}
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={monthlyTrendData} margin={{ top: 10, right: 15, left: -15, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorReports" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.35}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(200,200,200,0.15)" />
+                  <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} dy={10} />
+                  <YAxis axisLine={false} tickLine={false} allowDecimals={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }}
+                    itemStyle={{ fontWeight: 600 }}
+                  />
+                  <Area type="monotone" dataKey="reports" name="Reports Published" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorReports)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </Card>
+          </Col>
+
+          {/* Quick Report Launchpad */}
+          <Col xs={24} lg={10}>
+            <Card 
+              title={
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Sparkles size={18} color="var(--accent-primary)" />
+                  <Text style={{ fontWeight: 700, fontSize: 16 }}>Quick Report Launchpad</Text>
+                </div>
+              } 
+              className="glassmorphism" 
+              style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
+              bodyStyle={{ padding: '16px' }}
+            >
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                {REPORT_TEMPLATES.map(template => {
+                  const IconComp = template.icon;
+                  return (
+                    <div 
+                      key={template.key}
+                      onClick={() => handleOpenCreateReport(null, template.key)}
+                      style={{ 
+                        padding: '12px', 
+                        borderRadius: 12, 
+                        background: 'var(--bg-tertiary)', 
+                        border: '1px solid var(--border-color)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = template.color;
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = 'var(--border-color)';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: 8, background: `${template.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <IconComp size={15} color={template.color} />
+                        </div>
+                        <Plus size={14} color="var(--text-tertiary)" />
+                      </div>
+                      <div>
+                        <Text strong style={{ fontSize: 13, color: 'var(--text-primary)', display: 'block', lineHeight: 1.2 }}>{template.title}</Text>
+                        <Text type="secondary" style={{ fontSize: 11 }}>{template.desc}</Text>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </Card>
           </Col>
         </Row>

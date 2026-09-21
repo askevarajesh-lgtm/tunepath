@@ -3014,7 +3014,10 @@ const clientApproveTask = async (taskId, approvedByUserId, tenantCompanyId) => {
   task.clientReviewStatus = "approved";
   task.requiresClientReview = true;
   task.status = "validated";
-  task.actualCompletionDate = new Date();
+  if (!task.actualCompletionDate) {
+    task.actualCompletionDate = new Date();
+  }
+  task.validatedAt = new Date();
   task.updatedBy = approvedByUserId || task.updatedBy;
   await task.save();
 

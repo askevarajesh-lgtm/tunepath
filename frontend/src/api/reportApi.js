@@ -32,12 +32,21 @@ export const generateReport = async (reportData) => {
 
 export const generateReportApi = generateReport;
 
-export const getMonthlyHighlights = async (clientId, month, year, refresh = false) => {
+const sanitizeParam = (val) => {
+    if (!val || val === 'all' || val === '[object Object]') return undefined;
+    if (typeof val === 'object' && val._id) return String(val._id);
+    return typeof val === 'string' ? val : undefined;
+};
+
+export const getMonthlyHighlights = async (clientId, month, year, refresh = false, projectId = null) => {
     const params = {};
-    if (clientId) params.clientId = clientId;
+    const cleanClientId = sanitizeParam(clientId);
+    const cleanProjectId = sanitizeParam(projectId);
+    if (cleanClientId) params.clientId = cleanClientId;
     if (month) params.month = month;
     if (year) params.year = year;
     if (refresh) params.refresh = 'true';
+    if (cleanProjectId) params.projectId = cleanProjectId;
     const response = await api.get('/reports/monthly-highlights', { params });
     return response.data.data;
 };
@@ -49,25 +58,24 @@ export const upsertMonthlyHighlights = async (data) => {
 
 export const getClientMonthlyReportsList = async (clientId) => {
     const params = {};
-    if (clientId) params.clientId = clientId;
+    const cleanClientId = sanitizeParam(clientId);
+    if (cleanClientId) params.clientId = cleanClientId;
     const response = await api.get('/reports/monthly-highlights/client-list', { params });
     return response.data.data;
 };
 
 export const getMetaLeadCampaigns = async (clientId) => {
     const params = {};
-    if (clientId && clientId !== 'all') params.clientId = clientId;
-    const response = await api.get('/reports/meta-lead-campaigns', { params });
+    const cleanClientId = sanitizeParam(clientId);
+    if (cleanClientId) params.clientId = cleanClientId;
+    const response = await api.get('/performance-ads/meta-lead-reports', { params });
     return response.data.data;
 };
 
 export const getMetaReachCampaigns = async (clientId) => {
     const params = {};
-    if (clientId && clientId !== 'all') params.clientId = clientId;
-    const response = await api.get('/reports/meta-reach-campaigns', { params });
+    const cleanClientId = sanitizeParam(clientId);
+    if (cleanClientId) params.clientId = cleanClientId;
+    const response = await api.get('/performance-ads/meta-reach-reports', { params });
     return response.data.data;
 };
-
-
-
-

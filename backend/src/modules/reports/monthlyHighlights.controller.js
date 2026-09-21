@@ -1,12 +1,21 @@
+const mongoose = require('mongoose');
 const monthlyHighlightsService = require('./monthlyHighlights.service');
 
 const isClientUserRole = (role) => ['client', 'client_user', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(role);
 
+const sanitizeObjectId = (val) => {
+    if (!val || val === 'all' || val === '[object Object]') return null;
+    const strVal = typeof val === 'object' && val._id ? String(val._id) : String(val);
+    return mongoose.Types.ObjectId.isValid(strVal) ? strVal : null;
+};
+
 exports.getMonthlyHighlights = async (req, res, next) => {
     try {
-        const { clientId, month, year, refresh } = req.query;
+        const { clientId, month, year, refresh, projectId } = req.query;
         const isClientUser = isClientUserRole(req.user.role);
-        const targetClientId = isClientUser ? req.user._id : (clientId || req.user._id);
+        const cleanClientId = sanitizeObjectId(clientId);
+        const cleanProjectId = sanitizeObjectId(projectId);
+        const targetClientId = isClientUser ? req.user._id : (cleanClientId || req.user._id);
         const selectedMonth = parseInt(month, 10) || (new Date().getMonth() + 1);
         const selectedYear = parseInt(year, 10) || new Date().getFullYear();
         const forceRefresh = refresh === 'true' || refresh === true;
@@ -16,7 +25,8 @@ exports.getMonthlyHighlights = async (req, res, next) => {
             selectedMonth,
             selectedYear,
             isClientUser,
-            forceRefresh
+            forceRefresh,
+            cleanProjectId
         );
 
         res.status(200).json({ status: 'success', data });
@@ -41,7 +51,8 @@ exports.getClientReportsList = async (req, res, next) => {
     try {
         const { clientId } = req.query;
         const isClientUser = isClientUserRole(req.user.role);
-        const targetClientId = isClientUser ? req.user._id : (clientId || req.user._id);
+        const cleanClientId = sanitizeObjectId(clientId);
+        const targetClientId = isClientUser ? req.user._id : (cleanClientId || req.user._id);
         const reports = await monthlyHighlightsService.getClientReportsList(targetClientId);
 
         res.status(200).json({ status: 'success', data: reports });

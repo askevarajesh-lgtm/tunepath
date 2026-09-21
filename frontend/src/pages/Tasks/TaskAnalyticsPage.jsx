@@ -491,7 +491,14 @@ const TaskAnalyticsPage = () => {
       tasksData?.tasks ||
       tasksData?.data ||
       tasksData;
-    return Array.isArray(raw) ? raw : [];
+    const list = Array.isArray(raw) ? raw : [];
+    const map = new Map();
+    list.forEach((t) => {
+      if (t?._id && !map.has(String(t._id))) {
+        map.set(String(t._id), t);
+      }
+    });
+    return Array.from(map.values());
   }, [tasksData]);
 
   const allUsers = useMemo(() => {
@@ -554,6 +561,32 @@ const TaskAnalyticsPage = () => {
     return false;
   };
 
+  // Helper to match task to selected date range (based on assigned schedule)
+  const isTaskMatchingDateRange = (t, startRange, endRange) => {
+    if (!startRange || !endRange) return true;
+    const filterStart = startRange.startOf("day");
+    const filterEnd = endRange.endOf("day");
+    const s = filterStart.valueOf();
+    const e = filterEnd.valueOf();
+
+    const startDate = t.startDate ? dayjs(t.startDate).valueOf() : null;
+    const dueDate = t.dueDate ? dayjs(t.dueDate).valueOf() : null;
+    const createdAt = t.createdAt ? dayjs(t.createdAt).valueOf() : null;
+
+    // 1. Task scheduled start date in range
+    if (startDate && startDate >= s && startDate <= e) return true;
+    // 2. Task due date in range
+    if (dueDate && dueDate >= s && dueDate <= e) return true;
+    // 3. Multi-day task overlapping range
+    if (startDate && dueDate && startDate <= e && dueDate >= s) return true;
+
+    // 4. Fallback to createdAt if neither startDate nor dueDate is set
+    const noDates = (!startDate || t.startDate === null) && (!dueDate || t.dueDate === null);
+    if (noDates && createdAt && createdAt >= s && createdAt <= e) return true;
+
+    return false;
+  };
+
   // ─── Apply filters ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     return allTasks.filter((t) => {
@@ -572,28 +605,9 @@ const TaskAnalyticsPage = () => {
         return false;
       }
       if (dateRange?.[0] && dateRange?.[1]) {
-        const start = dayjs(t.startDate || t.createdAt).startOf("day");
-        const completedAt =
-          t.actualCompletionDate ||
-          t.completedAt ||
-          (isCompleted(t.status) ? t.updatedAt : null);
-        const effectiveEnd =
-          isCompleted(t.status) && completedAt
-            ? dayjs(completedAt).endOf("day")
-            : dayjs(t.dueDate || t.createdAt).endOf("day");
-
-        const filterStart = dateRange[0].startOf("day");
-        const filterEnd = dateRange[1].endOf("day");
-
-        const completedInRange =
-          isCompleted(t.status) &&
-          completedAt &&
-          dayjs(completedAt).isBetween(filterStart, filterEnd, "day", "[]");
-        if (completedInRange) return true;
-
-        // Overlap: task.start <= filterEnd AND task.effectiveEnd >= filterStart
-        if (start.isAfter(filterEnd) || effectiveEnd.isBefore(filterStart))
+        if (!isTaskMatchingDateRange(t, dateRange[0], dateRange[1])) {
           return false;
+        }
       }
       return true;
     });
@@ -607,27 +621,9 @@ const TaskAnalyticsPage = () => {
         if (assignedId !== selectedUser) return false;
       }
       if (dateRange?.[0] && dateRange?.[1]) {
-        const start = dayjs(t.startDate || t.createdAt).startOf("day");
-        const completedAt =
-          t.actualCompletionDate ||
-          t.completedAt ||
-          (isCompleted(t.status) ? t.updatedAt : null);
-        const effectiveEnd =
-          isCompleted(t.status) && completedAt
-            ? dayjs(completedAt).endOf("day")
-            : dayjs(t.dueDate || t.createdAt).endOf("day");
-
-        const filterStart = dateRange[0].startOf("day");
-        const filterEnd = dateRange[1].endOf("day");
-
-        const completedInRange =
-          isCompleted(t.status) &&
-          completedAt &&
-          dayjs(completedAt).isBetween(filterStart, filterEnd, "day", "[]");
-        if (completedInRange) return true;
-
-        if (start.isAfter(filterEnd) || effectiveEnd.isBefore(filterStart))
+        if (!isTaskMatchingDateRange(t, dateRange[0], dateRange[1])) {
           return false;
+        }
       }
       if (selectedDepartment && !matchDepartment(t, selectedDepartment)) {
         return false;
@@ -636,38 +632,10 @@ const TaskAnalyticsPage = () => {
     });
   }, [allTasks, selectedUser, selectedDepartment, dateRange, departments]);
 
-  const total = filtered.reduce((sum, t) => sum + getTaskWorkloadUnits(t), 0);
-  const completed = filtered.reduce((sum, t) => {
-    if (!isCompleted(t.status)) return sum;
-    const completedAt =
-      t.actualCompletionDate ||
-      t.completedAt ||
-      (isCompleted(t.status) ? t.updatedAt : null);
-
-    if (!dateRange) return sum + getTaskWorkloadUnits(t);
-
-    const filterStart = dateRange[0].startOf("day");
-    const filterEnd = dateRange[1].endOf("day");
-
-    if (
-      completedAt &&
-      dayjs(completedAt).isBetween(filterStart, filterEnd, "day", "[]")
-    ) {
-      return sum + getTaskWorkloadUnits(t);
-    }
-    if (!completedAt) {
-      return sum + getTaskWorkloadUnits(t);
-    }
-    return sum;
-  }, 0);
-  const inProgress = filtered.reduce(
-    (sum, t) => sum + (isInProgress(t.status) ? getTaskWorkloadUnits(t) : 0),
-    0,
-  );
-  const pending = filtered.reduce(
-    (sum, t) => sum + (isPending(t.status) ? getTaskWorkloadUnits(t) : 0),
-    0,
-  );
+  const total = filtered.length;
+  const completed = filtered.filter((t) => isCompleted(t.status)).length;
+  const inProgress = filtered.filter((t) => isInProgress(t.status)).length;
+  const pending = filtered.filter((t) => isPending(t.status)).length;
   const corrections = statusAgnosticFiltered.filter((t) =>
     isCorrectionTask(t),
   ).length;
@@ -675,66 +643,36 @@ const TaskAnalyticsPage = () => {
     isRedesignTask(t),
   ).length;
 
-  // ─── Chart data: tasks by date (createdAt) ────────────────────────────────
+  // ─── Chart data: tasks by date ────────────────────────────────────────────
   const dateChartData = useMemo(() => {
     const map = {};
     filtered.forEach((t) => {
-      const start = dayjs(t.startDate || t.createdAt).startOf("day");
-      const completedAt =
-        t.actualCompletionDate ||
-        t.completedAt ||
-        (isCompleted(t.status) ? t.updatedAt : null);
-      const effectiveEnd =
-        isCompleted(t.status) && completedAt
-          ? dayjs(completedAt).endOf("day")
-          : dayjs(t.dueDate || t.createdAt).endOf("day");
+      const taskDate = t.dueDate || t.startDate || t.actualCompletionDate || t.createdAt;
+      const key = taskDate ? dayjs(taskDate).format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD");
+      if (!map[key]) {
+        map[key] = {
+          raw: key,
+          date: formatDate(key),
+          Assigned: 0,
+          Completed: 0,
+          Correction: 0,
+          Redesign: 0,
+        };
+      }
+      map[key].Assigned++;
 
-      const filterStart = dateRange ? dateRange[0].startOf("day") : start;
-      const filterEnd = dateRange ? dateRange[1].endOf("day") : effectiveEnd;
+      if (isCorrectionTask(t)) {
+        map[key].Correction++;
+      } else if (isRedesignTask(t)) {
+        map[key].Redesign++;
+      }
 
-      const overlapStart = start.isBefore(filterStart) ? filterStart : start;
-      const overlapEnd = effectiveEnd.isAfter(filterEnd)
-        ? filterEnd
-        : effectiveEnd;
-
-      let current = overlapStart;
-      while (
-        current.isBefore(overlapEnd) ||
-        current.isSame(overlapEnd, "day")
-      ) {
-        const key = current.format("YYYY-MM-DD");
-        if (!map[key]) {
-          map[key] = {
-            raw: key,
-            date: formatDate(key),
-            Assigned: 0,
-            Completed: 0,
-            Correction: 0,
-            Redesign: 0,
-          };
-        }
-        map[key].Assigned++;
-
-        if (isCorrectionTask(t)) {
-          map[key].Correction++;
-        } else if (isRedesignTask(t)) {
-          map[key].Redesign++;
-        }
-
-        // Count completed on the actual date completed
-        if (
-          isCompleted(t.status) &&
-          completedAt &&
-          dayjs(completedAt).isSame(current, "day")
-        ) {
-          map[key].Completed += getTaskWorkloadUnits(t);
-        }
-
-        current = current.add(1, "day");
+      if (isCompleted(t.status)) {
+        map[key].Completed += 1;
       }
     });
     return Object.values(map).sort((a, b) => a.raw.localeCompare(b.raw));
-  }, [filtered, dateRange]);
+  }, [filtered]);
 
   // ─── Per-user performance ──────────────────────────────────────────────────
   const userPerf = useMemo(() => {
@@ -764,37 +702,15 @@ const TaskAnalyticsPage = () => {
         };
       }
 
-      const start = dayjs(t.startDate || t.createdAt).startOf("day");
-      const completedAt =
-        t.actualCompletionDate ||
-        t.completedAt ||
-        (isCompleted(t.status) ? t.updatedAt : null);
-      const effectiveEnd =
-        isCompleted(t.status) && completedAt
-          ? dayjs(completedAt).endOf("day")
-          : dayjs(t.dueDate || t.createdAt).endOf("day");
-
-      const filterStart = dateRange ? dateRange[0].startOf("day") : start;
-      const filterEnd = dateRange ? dateRange[1].endOf("day") : effectiveEnd;
-      const overlapStart = start.isBefore(filterStart) ? filterStart : start;
-      const overlapEnd = effectiveEnd.isAfter(filterEnd)
-        ? filterEnd
-        : effectiveEnd;
-
-      const activeDaysInRange = Math.max(
-        0,
-        overlapEnd.diff(overlapStart, "day") + 1,
-      );
-
-      perfMap[assignedId].assigned += activeDaysInRange;
-      perfMap[assignedId].distinctAssigned++;
+      perfMap[assignedId].assigned += 1;
+      perfMap[assignedId].distinctAssigned += 1;
 
       if (isCompleted(t.status)) {
-        perfMap[assignedId].completed += getTaskWorkloadUnits(t);
+        perfMap[assignedId].completed += 1;
       } else if (isInProgress(t.status)) {
-        perfMap[assignedId].inProgress++;
+        perfMap[assignedId].inProgress += 1;
       } else if (isPending(t.status)) {
-        perfMap[assignedId].pending++;
+        perfMap[assignedId].pending += 1;
       }
     });
 
@@ -863,26 +779,11 @@ const TaskAnalyticsPage = () => {
   const performanceTasksList = useMemo(() => {
     if (!selectedUser) return [];
 
-    const buildCompletionRows = (task) => {
-      const isDone = isCompleted(task.status);
-      if (!isDone) return [];
-
-      const baseRow = {
-        ...task,
-        _id: `${task._id}-completion-current`,
-      };
-
-      return [baseRow];
-    };
-
     return statusAgnosticFiltered
       .filter((task) => {
         const assignedId = task.assignedTo?._id || task.assignedTo;
         return assignedId === selectedUser;
       })
-      .flatMap((task) =>
-        performanceView === "completed" ? buildCompletionRows(task) : [task],
-      )
       .filter((t) => {
         const isDone = isCompleted(t.status);
         if (performanceView === "completed") {
@@ -895,35 +796,15 @@ const TaskAnalyticsPage = () => {
         // Apply Category Filter if set
         if (categoryFilter && t.taskCategory !== categoryFilter) return false;
 
-        const start = dayjs(t.startDate || t.createdAt).startOf("day");
-        const due = dayjs(t.dueDate || t.createdAt).endOf("day");
-        const filterStart = dateRange ? dateRange[0].startOf("day") : start;
-        const filterEnd = dateRange ? dateRange[1].endOf("day") : due;
-
-        // For completed tasks, filter by completion date in selected range
-        if (performanceView === "completed") {
-          const completedAt =
-            t.actualCompletionDate ||
-            t.completedAt ||
-            (isCompleted(t.status) ? t.updatedAt : null);
-
-          if (!completedAt) return false;
-          if (
-            !dayjs(completedAt).isBetween(filterStart, filterEnd, "day", "[]")
-          ) {
-            return false;
-          }
-        }
-
         return true;
       })
       .sort((a, b) => {
         if (performanceView === "completed") {
           const dateA = dayjs(
-            a.actualCompletionDate || a.completedAt || a.updatedAt,
+            a.actualCompletionDate || a.completedAt || a.updatedAt || a.dueDate || a.createdAt,
           );
           const dateB = dayjs(
-            b.actualCompletionDate || b.completedAt || b.updatedAt,
+            b.actualCompletionDate || b.completedAt || b.updatedAt || b.dueDate || b.createdAt,
           );
           return dateB.diff(dateA);
         } else {
@@ -936,7 +817,6 @@ const TaskAnalyticsPage = () => {
     statusAgnosticFiltered,
     selectedUser,
     performanceView,
-    dateRange,
     categoryFilter,
   ]);
 

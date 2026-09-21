@@ -130,7 +130,7 @@ const checkSocialMediaModuleEnabled = async (clientId, digitalInsights, delivera
     }
 };
 
-const autoAggregateMetrics = async (clientId, month, year) => {
+const autoAggregateMetrics = async (clientId, month, year, projectId = null) => {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59, 999);
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -402,16 +402,17 @@ const autoAggregateMetrics = async (clientId, month, year) => {
             return statusStr === 'published' || p.published_at || p.publishedAt;
         });
 
-        for (const acc of clientAccounts) {
+        await Promise.all(clientAccounts.map(async (acc) => {
             let followers = Number(acc.followers || acc.fan_count || acc.followers_count || acc.subscriberCount || acc.subscribers || 0);
             if (acc.access_token && (acc.platform === 'facebook' || acc.platform === 'instagram')) {
                 try {
                     const targetId = acc.ig_user_id || acc.page_id || 'me';
                     const fields = acc.platform === 'instagram' ? 'id,name,username,followers_count' : 'id,name,fan_count,followers_count';
                     const graphRes = await axios.get(`https://graph.facebook.com/v18.0/${targetId}`, {
-                        params: { access_token: acc.access_token, fields }
-                    });
-                    if (graphRes.data) {
+                        params: { access_token: acc.access_token, fields },
+                        timeout: 2000
+                    }).catch(() => null);
+                    if (graphRes && graphRes.data) {
                         followers = graphRes.data.followers_count ?? graphRes.data.fan_count ?? followers;
                     }
                 } catch (e) {}
@@ -425,7 +426,9 @@ const autoAggregateMetrics = async (clientId, month, year) => {
                 try {
                     const campaignScheduledService = require('../campaign-scheduled/campaignScheduled.service');
                     if (campaignScheduledService && campaignScheduledService.fetchYoutubeChannelLiveStats) {
-                        const ytStats = await campaignScheduledService.fetchYoutubeChannelLiveStats(acc).catch(() => null);
+                        const ytPromise = campaignScheduledService.fetchYoutubeChannelLiveStats(acc).catch(() => null);
+                        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2000));
+                        const ytStats = await Promise.race([ytPromise, timeoutPromise]);
                         if (ytStats && ytStats.subscribers) {
                             followers = Math.max(followers, ytStats.subscribers);
                         }
@@ -433,7 +436,7 @@ const autoAggregateMetrics = async (clientId, month, year) => {
                 } catch (e) {}
                 liveYtSubscribers = Math.max(liveYtSubscribers, followers);
             }
-        }
+        }));
 
         trackedMonthsList.forEach(mStr => {
             const [mName, yNum] = mStr.split(' ');
@@ -544,10 +547,21 @@ const autoAggregateMetrics = async (clientId, month, year) => {
     try {
         const SemrushProject = mongoose.models.SemrushProject || require('../semrush/models/semrushProject.model');
         const OptimizationSnapshot = mongoose.models.OptimizationSnapshot || require('../semrush/models/optimizationSnapshot.model');
+        const SemrushProjectData = mongoose.models.SemrushProjectData || require('../semrush/models/semrushProjectData.model');
 
-        const semrushProject = await SemrushProject.findOne({
-            $or: [{ clientId: clientId }, { companyId: clientId }]
-        }).catch(() => null);
+        let semrushProject = null;
+        if (projectId && mongoose.Types.ObjectId.isValid(projectId)) {
+            semrushProject = await SemrushProject.findById(projectId).catch(() => null);
+        }
+        if (!semrushProject && clientId) {
+            semrushProject = await SemrushProject.findOne({
+                $or: [
+                    { _id: (mongoose.Types.ObjectId.isValid(clientId) ? clientId : null) },
+                    { clientId: clientId },
+                    { companyId: clientId }
+                ].filter(Boolean)
+            }).catch(() => null);
+        }
 
         if (semrushProject) {
             const allSnapshots = await OptimizationSnapshot.find({
@@ -555,7 +569,25 @@ const autoAggregateMetrics = async (clientId, month, year) => {
             }).sort({ createdAt: -1 }).lean().catch(() => []);
 
             const latestSnapshot = allSnapshots[0] || null;
-            const rankings = latestSnapshot?.seo?.positionTracking?.rankings || latestSnapshot?.seo?.organicKeywordsData || [];
+            let rankings = latestSnapshot?.seo?.positionTracking?.rankings || latestSnapshot?.seo?.organicKeywordsData || latestSnapshot?.seo?.topKeywords || [];
+
+            if (!rankings || rankings.length === 0) {
+                const projectData = await SemrushProjectData.findOne({ projectId: semrushProject._id }).sort({ snapshotDate: -1 }).lean().catch(() => null);
+                if (projectData?.data?.rankings) {
+                    rankings = projectData.data.rankings;
+                } else if (projectData?.data?.organicKeywords) {
+                    rankings = projectData.data.organicKeywords;
+                }
+            }
+
+            if ((!rankings || rankings.length === 0) && Array.isArray(semrushProject.trackingConfig?.keywords) && semrushProject.trackingConfig.keywords.length > 0) {
+                rankings = semrushProject.trackingConfig.keywords.map(kw => ({
+                    keyword: kw,
+                    category: 'General',
+                    searchVolume: 0,
+                    position: '-'
+                }));
+            }
 
             if (Array.isArray(rankings) && rankings.length > 0) {
                 const currentMonthStr = `${monthAbbrs[month - 1]} ${year}`;
@@ -679,7 +711,9 @@ const autoAggregateMetrics = async (clientId, month, year) => {
                 const lastDayNum = new Date(yVal, mIdx, 0).getDate();
                 const endDateStr = `${yVal}-${String(mIdx).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
 
-                const gaRes = await googleAnalyticsSource.getOverviewMetrics(ga4PropertyId, startDateStr, endDateStr).catch(() => null);
+                const gaPromise = googleAnalyticsSource.getOverviewMetrics(ga4PropertyId, startDateStr, endDateStr).catch(() => null);
+                const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2500));
+                const gaRes = await Promise.race([gaPromise, timeoutPromise]);
                 if (gaRes && gaRes.connected) {
                     totalUsers = gaRes.totalUsers || 0;
                     newUsers = gaRes.newUsers || 0;
@@ -710,7 +744,9 @@ const autoAggregateMetrics = async (clientId, month, year) => {
             const lastDayNum = new Date(year, month, 0).getDate();
             const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
 
-            const landingRes = await googleAnalyticsSource.getLandingPagesReport(ga4PropertyId, startDateStr, endDateStr, 20).catch(() => null);
+            const landingPromise = googleAnalyticsSource.getLandingPagesReport(ga4PropertyId, startDateStr, endDateStr, 20).catch(() => null);
+            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2500));
+            const landingRes = await Promise.race([landingPromise, timeoutPromise]);
             if (landingRes && landingRes.connected && Array.isArray(landingRes.rows)) {
                 websiteTrafficLandingPages = landingRes.rows;
             }
@@ -771,22 +807,33 @@ const autoAggregateMetrics = async (clientId, month, year) => {
 /**
  * Fetch monthly highlights report for a client and month/year
  */
-exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = false, forceRefresh = false) => {
-    let report = await MonthlyHighlights.findOne({ clientId, month, year })
-        .populate('clientId', 'name companyName email')
-        .populate('createdBy', 'name email');
+exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = false, forceRefresh = false, projectId = null) => {
+    // Validate ObjectId to prevent CastErrors
+    const isValidId = clientId && mongoose.Types.ObjectId.isValid(String(clientId)) && String(clientId) !== '[object Object]';
+    if (!isValidId && !projectId) {
+        return exports.aggregateRealAgencyHighlights(null, month, year);
+    }
+
+    let report = null;
+    if (isValidId) {
+        report = await MonthlyHighlights.findOne({ clientId, month, year })
+            .populate('clientId', 'name companyName email')
+            .populate('createdBy', 'name email');
+    }
 
     // Also check SentReport history for individual sent reports for this client
     let sentTypes = [];
-    try {
-        const SentReport = mongoose.models.SentReport || require('./sentReport.model');
-        const sentList = await SentReport.find({ clientId, status: { $in: ['Sent', 'Delivered', 'Opened'] } }).lean();
-        sentTypes = sentList.map(s => s.template).filter(Boolean);
-    } catch (err) {
-        console.warn('SentReport check note:', err.message);
+    if (isValidId) {
+        try {
+            const SentReport = mongoose.models.SentReport || require('./sentReport.model');
+            const sentList = await SentReport.find({ clientId, status: { $in: ['Sent', 'Delivered', 'Opened'] } }).lean();
+            sentTypes = sentList.map(s => s.template).filter(Boolean);
+        } catch (err) {
+            console.warn('SentReport check note:', err.message);
+        }
     }
 
-    if (report && !forceRefresh) {
+    if (report && !forceRefresh && !projectId) {
         const allPublishedTypes = Array.from(new Set([...(report.publishedReportTypes || []), ...sentTypes]));
         
         if (isClientUser && report.status !== 'Published' && allPublishedTypes.length === 0) {
@@ -795,20 +842,14 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
         
         report = report.toObject ? report.toObject() : report;
         report.publishedReportTypes = allPublishedTypes;
-        
-        const hasTrafficData = Array.isArray(report.websiteTrafficOverview) && report.websiteTrafficOverview.some(w => (w.users || 0) > 0 || (w.newUsers || 0) > 0);
-        const hasLandingPages = Array.isArray(report.websiteTrafficLandingPages) && report.websiteTrafficLandingPages.length > 0;
-        const hasCityTraffic = Array.isArray(report.websiteTrafficUsersByCity) && report.websiteTrafficUsersByCity.length > 0;
-        if (hasTrafficData && hasLandingPages && hasCityTraffic) {
-            return report;
-        }
+        return report;
     }
 
     if (isClientUser && (!report || (report.status !== 'Published' && sentTypes.length === 0))) {
         return { status: 'NotPublished', publishedReportTypes: sentTypes, message: 'No report published for this month.' };
     }
 
-    const aggregated = await autoAggregateMetrics(clientId, month, year);
+    const aggregated = await autoAggregateMetrics(clientId, month, year, projectId);
 
     if (report) {
         const MonthlyHighlightsModel = MonthlyHighlights;
@@ -827,6 +868,12 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
             }
             if (!dbDoc.websiteTrafficUsersByCity || dbDoc.websiteTrafficUsersByCity.length === 0 || forceRefresh) {
                 dbDoc.websiteTrafficUsersByCity = aggregated.websiteTrafficUsersByCity;
+            }
+            if (projectId || !dbDoc.keywordRankingOverview || dbDoc.keywordRankingOverview.length === 0 || forceRefresh) {
+                dbDoc.keywordRankingOverview = aggregated.keywordRankingOverview;
+            }
+            if (projectId || !dbDoc.keywordRankingDetails || dbDoc.keywordRankingDetails.length === 0 || forceRefresh) {
+                dbDoc.keywordRankingDetails = aggregated.keywordRankingDetails;
             }
             await dbDoc.save();
             const resObj = dbDoc.toObject();

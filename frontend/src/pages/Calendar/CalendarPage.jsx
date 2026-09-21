@@ -805,7 +805,14 @@ const CalendarPage = () => {
             name="attendees"
             label="Attendees"
           >
-            <Select mode="multiple" placeholder="Select attendees" filterOption={(input, option) => option.children.toLowerCase().indexOf(input.toLowerCase()) >= 0}>
+            <Select 
+              mode="multiple" 
+              placeholder="Select attendees" 
+              filterOption={(input, option) => {
+                const text = Array.isArray(option?.children) ? option.children.join('') : String(option?.children || option?.label || option?.value || '');
+                return text.toLowerCase().includes((input || '').toLowerCase());
+              }}
+            >
               {users.map(u => (
                 <Option key={u._id} value={u._id}>{u.name} ({u.role})</Option>
               ))}

@@ -98,7 +98,10 @@ const DashboardFilters = React.memo(function DashboardFilters({
           onChange={handleProjectChange}
           showSearch
           optionFilterProp="children"
-          filterOption={(input, option) => (option?.children ?? '').toLowerCase().includes(input.toLowerCase())}
+          filterOption={(input, option) => {
+            const text = Array.isArray(option?.children) ? option.children.join('') : String(option?.children || option?.label || option?.value || '');
+            return text.toLowerCase().includes((input || '').toLowerCase());
+          }}
           style={{ width: 220, fontWeight: 600 }}
           size="large"
           aria-label="Select domain"

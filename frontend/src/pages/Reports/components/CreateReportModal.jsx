@@ -13,6 +13,7 @@ import {
   getMetaReachCampaigns,
   generateReport 
 } from '../../../api/reportApi';
+import { semrushApi } from '../../../api/semrushApi';
 import { useClientContext } from '../../../contexts/ClientContext';
 import { 
   generateHighlightsOfTheMonthPDF,
@@ -57,6 +58,13 @@ const getNormalizedReportType = (rt) => {
   return 'Highlights of the Month';
 };
 
+const sanitizeClientId = (val) => {
+  if (!val || val === 'all' || val === '[object Object]') return null;
+  if (typeof val === 'object' && val._id) return String(val._id);
+  if (typeof val === 'string' && val.length > 5) return val;
+  return null;
+};
+
 const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = null, defaultReportType = 'Highlights of the Month', defaultDate = null, onSuccess }) => {
   const { selectedClient: headerSelectedClient } = useClientContext();
   const [form] = Form.useForm();
@@ -65,7 +73,12 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(defaultDate || dayjs());
-  const [selectedClient, setSelectedClient] = useState(defaultClientId);
+  const [selectedClient, setSelectedClient] = useState(() => sanitizeClientId(defaultClientId));
+
+  // SEO/AEO/GEO Module Projects State
+  const [seoProjects, setSeoProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [loadingProjects, setLoadingProjects] = useState(false);
 
   // Meta Lead Campaigns State
   const [metaReportData, setMetaReportData] = useState({ campaigns: [], summary: {} });
@@ -93,65 +106,191 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   const [socialMediaPostInsights, setSocialMediaPostInsights] = useState({ videoCount: 0, postCount: 0, totalCount: 0 });
   const [youTubeReportList, setYouTubeReportList] = useState([]);
 
+  // Fetch SEO/AEO/GEO projects from Semrush module
+  useEffect(() => {
+    const fetchSeoProjects = async () => {
+      try {
+        setLoadingProjects(true);
+        const res = await semrushApi.getProjects();
+        if (res.data?.success && Array.isArray(res.data.data)) {
+          setSeoProjects(res.data.data);
+        }
+      } catch (err) {
+        console.error('Failed to load SEO projects:', err);
+      } finally {
+        setLoadingProjects(false);
+      }
+    };
+    if (visible) {
+      fetchSeoProjects();
+    }
+  }, [visible]);
+
   useEffect(() => {
     if (visible) {
-      const activeClientId = (defaultClientId && defaultClientId !== 'all') 
-        ? defaultClientId 
-        : (headerSelectedClient?._id || (clients.length > 0 ? clients[0]._id : null));
+      const cleanDefaultId = sanitizeClientId(defaultClientId);
+      const cleanHeaderId = sanitizeClientId(headerSelectedClient?._id);
+      const firstClientId = (clients.length > 0 && clients[0]?._id) ? sanitizeClientId(clients[0]._id) : null;
+
+      const activeClientId = cleanDefaultId || cleanHeaderId || firstClientId;
 
       if (activeClientId) {
         setSelectedClient(activeClientId);
       }
-      setReportType(getNormalizedReportType(defaultReportType));
+      const normType = getNormalizedReportType(defaultReportType);
+      setReportType(normType);
       if (defaultDate) {
         setSelectedDate(defaultDate);
+      }
+      if (normType !== 'Keywords') {
+        setSelectedProjectId(null);
       }
     }
   }, [visible, defaultClientId, headerSelectedClient, clients, defaultReportType, defaultDate]);
 
-  const loadData = async (clientId, dateVal, refresh = false) => {
-    if (!clientId || !dateVal) return;
+  const cachedMonthlyHighlightsRef = React.useRef(null);
+  const cachedMetaCampaignRef = React.useRef({});
+
+  const populateFormAndLists = (res, m, y) => {
+    setHasSocialMediaModule(res.hasSocialMediaModule ?? false);
+    form.setFieldsValue({
+      facebookFollowersIncreased: res.digitalInsights?.facebookFollowersIncreased ?? 0,
+      facebookTotalFollowers: res.digitalInsights?.facebookTotalFollowers ?? 0,
+      facebookReach: res.digitalInsights?.facebookReach ?? 0,
+      instagramFollowersIncreased: res.digitalInsights?.instagramFollowersIncreased ?? 0,
+      instagramTotalFollowers: res.digitalInsights?.instagramTotalFollowers ?? 0,
+      instagramReach: res.digitalInsights?.instagramReach ?? 0,
+      blogsCount: res.blogs?.count ?? 0,
+      blogsNotes: res.blogs?.notes ?? '',
+      socialMediaPostDesignsCount: res.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0,
+      videosCount: res.brandCommunicationDesign?.videosCount ?? 0,
+      brandCommNotes: res.brandCommunicationDesign?.notes ?? '',
+      offlineCollaterals: res.offlineCollaterals ?? '',
+      specialInitiatives: res.specialInitiatives ?? '',
+    });
+
+    if (res.brandCommunicationDesign?.deliverables && Array.isArray(res.brandCommunicationDesign.deliverables)) {
+      setDeliverablesList(res.brandCommunicationDesign.deliverables);
+    } else {
+      setDeliverablesList([]);
+    }
+
+    const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const defaultMonths = [];
+    for (let i = 1; i >= 0; i--) {
+      const d = new Date(y, m - 1 - i, 1);
+      defaultMonths.push(`${monthAbbrs[d.getMonth()]} ${d.getFullYear()}`);
+    }
+
+    if (res.keywordRankingOverview && Array.isArray(res.keywordRankingOverview) && res.keywordRankingOverview.length > 0) {
+      setKeywordRankingList(res.keywordRankingOverview);
+    } else {
+      setKeywordRankingList(defaultMonths.map(mStr => ({ month: mStr, top10: 0, top20: 0, top30Above: 0 })));
+    }
+
+    if (res.keywordRankingDetails && Array.isArray(res.keywordRankingDetails) && res.keywordRankingDetails.length > 0) {
+      setKeywordDetailsList(res.keywordRankingDetails);
+    } else {
+      setKeywordDetailsList([]);
+    }
+
+    if (res.metaInsightsFacebook && Array.isArray(res.metaInsightsFacebook) && res.metaInsightsFacebook.length > 0) {
+      setMetaInsightsFacebookList(res.metaInsightsFacebook);
+    } else {
+      setMetaInsightsFacebookList(defaultMonths.map(mStr => ({ month: mStr, views: 0, reach: 0, followers: 0 })));
+    }
+
+    if (res.metaInsightsInstagram && Array.isArray(res.metaInsightsInstagram) && res.metaInsightsInstagram.length > 0) {
+      setMetaInsightsInstagramList(res.metaInsightsInstagram);
+    } else {
+      setMetaInsightsInstagramList(defaultMonths.map(mStr => ({ month: mStr, views: 0, reach: 0, followers: 0 })));
+    }
+
+    if (res.websiteTrafficOverview && Array.isArray(res.websiteTrafficOverview) && res.websiteTrafficOverview.length > 0) {
+      setWebsiteTrafficList(res.websiteTrafficOverview);
+    } else {
+      setWebsiteTrafficList(defaultMonths.map(mStr => ({ month: mStr, users: 0, newUsers: 0 })));
+    }
+
+    if (res.websiteTrafficLandingPages && Array.isArray(res.websiteTrafficLandingPages) && res.websiteTrafficLandingPages.length > 0) {
+      setWebsiteTrafficLandingPagesList(res.websiteTrafficLandingPages);
+    } else {
+      setWebsiteTrafficLandingPagesList([]);
+    }
+
+    if (res.websiteTrafficUsersByCity && Array.isArray(res.websiteTrafficUsersByCity)) {
+      setWebsiteTrafficUsersByCityList(res.websiteTrafficUsersByCity);
+    } else {
+      setWebsiteTrafficUsersByCityList([]);
+    }
+
+    if (res.youTubeReport && Array.isArray(res.youTubeReport) && res.youTubeReport.length > 0) {
+      setYouTubeReportList(res.youTubeReport);
+    } else {
+      setYouTubeReportList([{ month: `${monthAbbrs[m - 1]} ${y}`, views: 0, lastMonthSubscribers: 0, totalSubscribers: 0 }]);
+    }
+
+    if (res.socialMediaPostInsights) {
+      setSocialMediaPostInsights(res.socialMediaPostInsights);
+    } else {
+      const v = res.brandCommunicationDesign?.videosCount ?? 0;
+      const p = res.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0;
+      setSocialMediaPostInsights({ videoCount: v, postCount: p, totalCount: v + p });
+    }
+  };
+
+  const handleReportTypeChange = (newType) => {
+    setReportType(newType);
+    if (newType === 'Keywords') {
+      setKeywordRankingList([]);
+      setKeywordDetailsList([]);
+    } else {
+      setSelectedProjectId(null);
+    }
+  };
+
+  const loadData = async (clientId, dateVal, refresh = false, projectId = null, currentType = null) => {
+    const activeType = currentType || reportType;
+    const isKeywordReport = activeType === 'Keywords' || activeType.includes('Keyword');
+    const isMetaCampaign = activeType === 'Meta Campaign' || activeType.includes('Meta Campaign') || activeType.includes('Lead') || activeType.includes('Reach');
+    const targetProjectId = projectId !== undefined && projectId !== null ? projectId : selectedProjectId;
+
+    if (isKeywordReport && !targetProjectId) {
+      setKeywordRankingList([]);
+      setKeywordDetailsList([]);
+      return;
+    }
+
+    const targetClientId = sanitizeClientId(clientId || selectedClient);
+    if (!targetClientId && !targetProjectId) return;
+    if (!dateVal) return;
+
     try {
       setLoading(true);
       const m = dateVal.month() + 1;
       const y = dateVal.year();
+      const cacheKey = `${targetClientId}_${m}_${y}`;
 
-      // Fetch Meta Lead & Reach Data if Meta Campaign selected
-      if (reportType === 'Meta Campaign' || reportType.includes('Meta Campaign') || reportType.includes('Lead') || reportType.includes('Reach')) {
-        const [leadRes, reachRes] = await Promise.all([
-          getMetaLeadCampaigns(clientId).catch(() => ({ campaigns: [], summary: {} })),
-          getMetaReachCampaigns(clientId).catch(() => ({ campaigns: [], summary: {} }))
-        ]);
-        setMetaReportData(leadRes || { campaigns: [], summary: {} });
-        setMetaReachReportData(reachRes || { campaigns: [], summary: {} });
+      // 1. If Meta Campaign, fetch or use cached Meta Lead & Reach Data
+      if (isMetaCampaign) {
+        if (!refresh && cachedMetaCampaignRef.current[targetClientId]) {
+          const cached = cachedMetaCampaignRef.current[targetClientId];
+          setMetaReportData(cached.leadRes || { campaigns: [], summary: {} });
+          setMetaReachReportData(cached.reachRes || { campaigns: [], summary: {} });
+        } else {
+          const [leadRes, reachRes] = await Promise.all([
+            getMetaLeadCampaigns(targetClientId).catch(() => ({ campaigns: [], summary: {} })),
+            getMetaReachCampaigns(targetClientId).catch(() => ({ campaigns: [], summary: {} }))
+          ]);
+          cachedMetaCampaignRef.current[targetClientId] = { leadRes, reachRes };
+          setMetaReportData(leadRes || { campaigns: [], summary: {} });
+          setMetaReachReportData(reachRes || { campaigns: [], summary: {} });
+        }
+        return;
       }
 
-      // Fetch MoM / Highlights / SEO / Social Data
-      const res = await getMonthlyHighlights(clientId, m, y, refresh);
-      if (res) {
-        setHasSocialMediaModule(res.hasSocialMediaModule ?? false);
-        form.setFieldsValue({
-          facebookFollowersIncreased: res.digitalInsights?.facebookFollowersIncreased ?? 0,
-          facebookTotalFollowers: res.digitalInsights?.facebookTotalFollowers ?? 0,
-          facebookReach: res.digitalInsights?.facebookReach ?? 0,
-          instagramFollowersIncreased: res.digitalInsights?.instagramFollowersIncreased ?? 0,
-          instagramTotalFollowers: res.digitalInsights?.instagramTotalFollowers ?? 0,
-          instagramReach: res.digitalInsights?.instagramReach ?? 0,
-          blogsCount: res.blogs?.count ?? 0,
-          blogsNotes: res.blogs?.notes ?? '',
-          socialMediaPostDesignsCount: res.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0,
-          videosCount: res.brandCommunicationDesign?.videosCount ?? 0,
-          brandCommNotes: res.brandCommunicationDesign?.notes ?? '',
-          offlineCollaterals: res.offlineCollaterals ?? '',
-          specialInitiatives: res.specialInitiatives ?? '',
-        });
-
-        if (res.brandCommunicationDesign?.deliverables && Array.isArray(res.brandCommunicationDesign.deliverables)) {
-          setDeliverablesList(res.brandCommunicationDesign.deliverables);
-        } else {
-          setDeliverablesList([]);
-        }
-
+      // 2. If Keywords report, fetch for project
+      if (isKeywordReport) {
         const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const defaultMonths = [];
         for (let i = 1; i >= 0; i--) {
@@ -159,61 +298,57 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
           defaultMonths.push(`${monthAbbrs[d.getMonth()]} ${d.getFullYear()}`);
         }
 
-        if (res.keywordRankingOverview && Array.isArray(res.keywordRankingOverview) && res.keywordRankingOverview.length > 0) {
-          setKeywordRankingList(res.keywordRankingOverview);
+        let loadedKeywordOverview = null;
+        let loadedKeywordDetails = null;
+
+        try {
+          const trackRes = await semrushApi.getPositionTracking(targetProjectId, refresh);
+          if (trackRes.data?.data) {
+            const tData = trackRes.data.data;
+            if (Array.isArray(tData.keywordRankingOverview) && tData.keywordRankingOverview.length > 0) {
+              loadedKeywordOverview = tData.keywordRankingOverview;
+            }
+            if (Array.isArray(tData.keywordRankingDetails) && tData.keywordRankingDetails.length > 0) {
+              loadedKeywordDetails = tData.keywordRankingDetails;
+            }
+          }
+        } catch (trackErr) {
+          console.warn('Direct position tracking fetch note:', trackErr);
+        }
+
+        if (!loadedKeywordDetails || loadedKeywordDetails.length === 0) {
+          const res = await getMonthlyHighlights(targetClientId, m, y, refresh, targetProjectId);
+          if (res) {
+            if (res.keywordRankingOverview?.length > 0) loadedKeywordOverview = res.keywordRankingOverview;
+            if (res.keywordRankingDetails?.length > 0) loadedKeywordDetails = res.keywordRankingDetails;
+          }
+        }
+
+        if (loadedKeywordOverview && Array.isArray(loadedKeywordOverview) && loadedKeywordOverview.length > 0) {
+          setKeywordRankingList(loadedKeywordOverview);
         } else {
           setKeywordRankingList(defaultMonths.map(mStr => ({ month: mStr, top10: 0, top20: 0, top30Above: 0 })));
         }
 
-        if (res.keywordRankingDetails && Array.isArray(res.keywordRankingDetails) && res.keywordRankingDetails.length > 0) {
-          setKeywordDetailsList(res.keywordRankingDetails);
+        if (loadedKeywordDetails && Array.isArray(loadedKeywordDetails) && loadedKeywordDetails.length > 0) {
+          setKeywordDetailsList(loadedKeywordDetails);
         } else {
           setKeywordDetailsList([]);
         }
+        return;
+      }
 
-        if (res.metaInsightsFacebook && Array.isArray(res.metaInsightsFacebook) && res.metaInsightsFacebook.length > 0) {
-          setMetaInsightsFacebookList(res.metaInsightsFacebook);
-        } else {
-          setMetaInsightsFacebookList(defaultMonths.map(mStr => ({ month: mStr, views: 0, reach: 0, followers: 0 })));
-        }
+      // 3. For Highlights, Meta Insights, Website Traffic, Social Media: check cache
+      if (!refresh && cachedMonthlyHighlightsRef.current?.key === cacheKey && cachedMonthlyHighlightsRef.current?.data) {
+        populateFormAndLists(cachedMonthlyHighlightsRef.current.data, m, y);
+        return;
+      }
 
-        if (res.metaInsightsInstagram && Array.isArray(res.metaInsightsInstagram) && res.metaInsightsInstagram.length > 0) {
-          setMetaInsightsInstagramList(res.metaInsightsInstagram);
-        } else {
-          setMetaInsightsInstagramList(defaultMonths.map(mStr => ({ month: mStr, views: 0, reach: 0, followers: 0 })));
-        }
-
-        if (res.websiteTrafficOverview && Array.isArray(res.websiteTrafficOverview) && res.websiteTrafficOverview.length > 0) {
-          setWebsiteTrafficList(res.websiteTrafficOverview);
-        } else {
-          setWebsiteTrafficList(defaultMonths.map(mStr => ({ month: mStr, users: 0, newUsers: 0 })));
-        }
-
-        if (res.websiteTrafficLandingPages && Array.isArray(res.websiteTrafficLandingPages) && res.websiteTrafficLandingPages.length > 0) {
-          setWebsiteTrafficLandingPagesList(res.websiteTrafficLandingPages);
-        } else {
-          setWebsiteTrafficLandingPagesList([]);
-        }
-
-        if (res.websiteTrafficUsersByCity && Array.isArray(res.websiteTrafficUsersByCity)) {
-          setWebsiteTrafficUsersByCityList(res.websiteTrafficUsersByCity);
-        } else {
-          setWebsiteTrafficUsersByCityList([]);
-        }
-
-        if (res.youTubeReport && Array.isArray(res.youTubeReport) && res.youTubeReport.length > 0) {
-          setYouTubeReportList(res.youTubeReport);
-        } else {
-          setYouTubeReportList([{ month: `${monthAbbrs[m - 1]} ${y}`, views: 0, lastMonthSubscribers: 0, totalSubscribers: 0 }]);
-        }
-
-        if (res.socialMediaPostInsights) {
-          setSocialMediaPostInsights(res.socialMediaPostInsights);
-        } else {
-          const v = res.brandCommunicationDesign?.videosCount ?? 0;
-          const p = res.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0;
-          setSocialMediaPostInsights({ videoCount: v, postCount: p, totalCount: v + p });
-        }
+      // Fetch fresh MoM / Highlights Data
+      const res = await getMonthlyHighlights(targetClientId, m, y, refresh);
+      if (res) {
+        cachedMonthlyHighlightsRef.current = { key: cacheKey, data: res };
+        populateFormAndLists(res, m, y);
       }
     } catch (error) {
       console.error('Error loading report data:', error);
@@ -224,10 +359,19 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   };
 
   useEffect(() => {
-    if (visible && selectedClient && selectedDate) {
-      loadData(selectedClient, selectedDate);
+    if (visible) {
+      const isKeywordReport = reportType === 'Keywords' || reportType.includes('Keyword');
+      if (isKeywordReport) {
+        if (selectedProjectId && selectedDate) {
+          loadData(selectedClient, selectedDate, false, selectedProjectId, reportType);
+        }
+      } else {
+        if (selectedClient && selectedDate) {
+          loadData(selectedClient, selectedDate, false, null, reportType);
+        }
+      }
     }
-  }, [visible, selectedClient, selectedDate, reportType]);
+  }, [visible, selectedClient, selectedDate, reportType, selectedProjectId]);
 
   const handleSyncMetaAds = async () => {
     try {
@@ -244,12 +388,40 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   };
 
   const getSelectedClientInfo = () => {
+    if (reportType === 'Keywords' || reportType.includes('Keyword')) {
+      if (selectedProjectId) {
+        const proj = seoProjects.find(p => String(p._id) === String(selectedProjectId));
+        if (proj) {
+          const clientFromProj = clients.find(c => String(c._id) === String(proj.clientId));
+          if (clientFromProj) {
+            return {
+              ...clientFromProj,
+              name: proj.name || clientFromProj.name,
+              companyName: proj.name || clientFromProj.companyName,
+              domain: proj.domain || clientFromProj.domain
+            };
+          }
+          return {
+            _id: proj._id,
+            name: proj.name,
+            companyName: proj.name,
+            domain: proj.domain,
+            email: `${proj.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@client.com`
+          };
+        }
+      }
+    }
     if (selectedClient === 'all') return { name: 'All Clients', companyName: 'All Clients' };
     const found = clients.find(c => String(c._id) === String(selectedClient));
     return found || { name: 'Client', companyName: 'Client' };
   };
 
   const handleDownloadPDF = async () => {
+    const isKeywordReport = reportType === 'Keywords' || reportType.includes('Keyword');
+    if (isKeywordReport && !selectedProjectId) {
+      message.warning('Please select an SEO/AEO/GEO project to download the Keywords report.');
+      return;
+    }
     const clientInfo = getSelectedClientInfo();
     try {
       if (reportType === 'Meta Campaign' || reportType.includes('Meta Campaign')) {
@@ -311,7 +483,12 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   };
 
   const handlePublishAndSend = async () => {
-    if (!selectedClient || selectedClient === 'all') {
+    const isKeywordReport = reportType === 'Keywords' || reportType.includes('Keyword');
+    if (isKeywordReport && !selectedProjectId) {
+      message.warning('Please select an SEO/AEO/GEO project to send the Keywords report.');
+      return;
+    }
+    if (!isKeywordReport && (!selectedClient || selectedClient === 'all')) {
       message.warning('Please select a specific client account to send the report.');
       return;
     }
@@ -319,13 +496,18 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
     try {
       setSaving(true);
       const clientInfo = getSelectedClientInfo();
+      const targetClientId = selectedClient && selectedClient !== 'all' 
+        ? selectedClient 
+        : (clientInfo._id || (clients.length > 0 ? clients[0]._id : null));
+
       const recipientEmail = clientInfo.email || `${clientInfo.companyName || clientInfo.name}@client.com`;
 
       // Save database state for non-standalone Meta Lead/Reach reports
       if (reportType !== 'Meta Campaign Insights – Lead Campaign' && reportType !== 'Meta Campaign Insights – Reach Campaign') {
         const values = await form.validateFields().catch(() => form.getFieldsValue());
         const payload = {
-          clientId: selectedClient,
+          clientId: targetClientId,
+          projectId: selectedProjectId || undefined,
           month: selectedDate.month() + 1,
           year: selectedDate.year(),
           status: 'Published',
@@ -357,12 +539,14 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       }
 
       // Dispatch exact standalone report via API
-      await generateReport({
-        clientId: selectedClient,
-        template: reportType,
-        recipients: [recipientEmail],
-        deliveryMethod: 'Email'
-      });
+      if (targetClientId) {
+        await generateReport({
+          clientId: targetClientId,
+          template: reportType,
+          recipients: [recipientEmail],
+          deliveryMethod: 'Email'
+        });
+      }
 
       message.success(`Standalone "${reportType}" report sent to ${clientInfo.companyName || clientInfo.name}!`);
       if (onSuccess) onSuccess();
@@ -468,7 +652,7 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       }
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 4px' }}>
-          <Button icon={<RefreshCw size={15} className={syncing ? 'spin' : ''} />} onClick={() => loadData(selectedClient, selectedDate, true)} disabled={loading || saving} style={{ borderRadius: 8 }}>
+          <Button icon={<RefreshCw size={15} className={syncing ? 'spin' : ''} />} onClick={() => loadData(selectedClient, selectedDate, true, selectedProjectId)} disabled={loading || saving || ((reportType === 'Keywords' || reportType.includes('Keyword')) && !selectedProjectId)} style={{ borderRadius: 8 }}>
             Auto-Refetch Data
           </Button>
           <Space size="middle">
@@ -485,25 +669,59 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       destroyOnClose
     >
       <Spin spinning={loading}>
-        {/* TOP CONTROLS: Client Account, Report Type, Report Period */}
+        {/* TOP CONTROLS: Client Account / SEO Project, Report Type, Report Period */}
         <Card style={{ marginBottom: 20, borderRadius: 14, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }} bodyStyle={{ padding: 18 }}>
           <Row gutter={[16, 16]} align="middle">
             <Col xs={24} md={7}>
-              <Text style={{ fontWeight: 600, display: 'block', marginBottom: 6, fontSize: 13 }}>Client Account</Text>
-              <Select
-                style={{ width: '100%' }}
-                value={selectedClient}
-                onChange={setSelectedClient}
-                showSearch
-                placeholder="Select client account..."
-                optionFilterProp="children"
-              >
-                {clients.map(c => (
-                  <Option key={c._id} value={c._id}>
-                    {c.companyName || c.name || c.brandName || 'Unnamed Client'}
-                  </Option>
-                ))}
-              </Select>
+              {reportType === 'Keywords' || reportType.includes('Keyword') ? (
+                <>
+                  <Text style={{ fontWeight: 600, display: 'block', marginBottom: 6, fontSize: 13 }}>SEO/AEO/GEO Project</Text>
+                  <Select
+                    style={{ width: '100%' }}
+                    value={selectedProjectId}
+                    onChange={(val) => {
+                      setSelectedProjectId(val);
+                      const proj = seoProjects.find(p => String(p._id) === String(val));
+                      if (proj?.clientId) {
+                        setSelectedClient(proj.clientId);
+                      }
+                      loadData(proj?.clientId || selectedClient, selectedDate, false, val);
+                    }}
+                    showSearch
+                    placeholder="Select SEO/AEO/GEO project..."
+                    optionFilterProp="children"
+                    loading={loadingProjects}
+                    notFoundContent="No SEO/AEO/GEO projects found"
+                  >
+                    {seoProjects.map(p => (
+                      <Option key={p._id} value={p._id}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span>
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{p.domain}</span>
+                        </div>
+                      </Option>
+                    ))}
+                  </Select>
+                </>
+              ) : (
+                <>
+                  <Text style={{ fontWeight: 600, display: 'block', marginBottom: 6, fontSize: 13 }}>Client Account</Text>
+                  <Select
+                    style={{ width: '100%' }}
+                    value={selectedClient}
+                    onChange={setSelectedClient}
+                    showSearch
+                    placeholder="Select client account..."
+                    optionFilterProp="children"
+                  >
+                    {clients.map(c => (
+                      <Option key={c._id} value={c._id}>
+                        {c.companyName || c.name || c.brandName || 'Unnamed Client'}
+                      </Option>
+                    ))}
+                  </Select>
+                </>
+              )}
             </Col>
 
             <Col xs={24} md={11}>
@@ -511,7 +729,7 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
               <Select
                 style={{ width: '100%' }}
                 value={reportType}
-                onChange={setReportType}
+                onChange={handleReportTypeChange}
                 dropdownStyle={{ borderRadius: 12 }}
               >
                 {REPORT_TYPES.map(r => (
@@ -724,6 +942,15 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
 
         {/* 2. KEYWORD RANKING OVERVIEW & DETAILS */}
         {(reportType === 'Keywords' || reportType.includes('Keyword')) && (
+          !selectedProjectId ? (
+            <Card style={{ textAlign: 'center', padding: '40px 20px', borderRadius: 14, background: 'var(--bg-secondary)', border: '1px dashed var(--border-color)', marginBottom: 20 }}>
+              <TrendingUp size={40} color="var(--accent-primary)" style={{ margin: '0 auto 12px auto', opacity: 0.8 }} />
+              <Title level={4} style={{ margin: '0 0 8px 0', fontWeight: 700 }}>Select an SEO/AEO/GEO Project</Title>
+              <Text type="secondary" style={{ fontSize: 13, display: 'block', maxWidth: 480, margin: '0 auto' }}>
+                Please select a project from the SEO/AEO/GEO module in the dropdown above to load and customize its keyword ranking performance data.
+              </Text>
+            </Card>
+          ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -907,7 +1134,7 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
               </div>
             </div>
           </div>
-        )}
+        ))}
 
         {/* 3. META CAMPAIGN (LEAD & REACH) */}
         {(reportType === 'Meta Campaign' || reportType.includes('Meta Campaign')) && (
