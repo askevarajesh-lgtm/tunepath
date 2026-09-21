@@ -46,7 +46,7 @@ import {
   useClientApproveTaskMutation,
 } from "../../api/taskApi";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
-import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
+import { PERMISSION_ACTIONS, isSeniorUser } from "../../utils/actionPermissions";
 import dayjs from "dayjs";
 import { isDurationTrackingTask, isCompletedTask, isTaskTimerRunning, getTaskLiveDurationMinutes } from "./taskDuration";
 import TaskReopenModal from "./TaskReopenModal";
@@ -112,10 +112,21 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
   const isSEO = userRole === "seo";
   const isSEOFullTime = isSEO && userType === "full_time";
 
-  const { hasPermission } = useActionPermissions("/tasks");
-  const canEdit = hasPermission(PERMISSION_ACTIONS.EDIT_TASK);
-  const canEditTaskDetails = hasPermission(PERMISSION_ACTIONS.EDIT_TASK);
-  const canDelete = hasPermission(PERMISSION_ACTIONS.DELETE_TASK);
+  const {
+    canAdd: canCreatePermission,
+    canCreate: canCreateAction,
+    canEdit: canEditPermission,
+    canDelete: canDeletePermission,
+    canReopen: canReopenPermission,
+    hasPermission,
+  } = useActionPermissions("/tasks");
+
+  const isSenior = isSeniorUser(user, userRole);
+  const canCreate = isSenior || canCreatePermission || canCreateAction || hasPermission(PERMISSION_ACTIONS.CREATE_TASK);
+  const canEdit = isSenior || canEditPermission || hasPermission(PERMISSION_ACTIONS.EDIT_TASK);
+  const canDelete = isSenior || canDeletePermission || hasPermission(PERMISSION_ACTIONS.DELETE_TASK);
+  const canReopen = isSenior || canReopenPermission || canCreate || canEdit || canDelete || hasPermission(PERMISSION_ACTIONS.REOPEN_TASK);
+  const canEditTaskDetails = canEdit;
 
   const isCreator = task?.createdBy && (task.createdBy._id === user?._id || task.createdBy === user?._id);
   const canEditThisTask = canEdit && canEditTaskDetails && isCreator;
@@ -869,7 +880,7 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
               )}
               {task &&
                 !hideHoldAndReopen &&
-                canEdit && (
+                canReopen && (
                   <Button
                     icon={<ReloadOutlined />}
                     onClick={() => {

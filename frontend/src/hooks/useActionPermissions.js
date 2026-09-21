@@ -1,10 +1,13 @@
 import { useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { isSeniorUser, SENIOR_ROLES } from '../utils/actionPermissions';
 
 // Roles that always get full Create/Edit/Delete/View access without needing permissions configured
 const ALWAYS_FULL_ACCESS_ROLES = [
-  'supreme_super_admin', 'superadmin', 'commander_admin', 'agency_super_admin',
-  'agency_manager', 'admin', 'brand_admin', 'brand_manager', 'brand_team_user', 'brand_super_admin', 'agency_client', 'client'
+  ...SENIOR_ROLES,
+  'brand_team_user',
+  'agency_client',
+  'client',
 ];
 
 // Roles that are Employee-type (permission-controlled via their role's permission matrix)
@@ -50,8 +53,8 @@ export function useActionPermissions(path) {
   if (path === '/performance') moduleName = 'HRMS-Performance';
 
   const hasPermission = useCallback((action) => {
-    // Supreme and core super admins always get full access
-    if (['supreme_super_admin', 'superadmin', 'commander_admin', 'agency_super_admin', 'brand_super_admin'].includes(role)) {
+    // Senior roles (Agency Manager, Brand Head, Admins, etc.) always get full access
+    if (isSeniorUser(user, role) || ALWAYS_FULL_ACCESS_ROLES.includes(role)) {
       return true;
     }
 
@@ -60,8 +63,9 @@ export function useActionPermissions(path) {
     
     // Map specific action strings to standard permission keys
     const actionLower = action.toLowerCase();
-    if (actionLower.includes('create') || actionLower === 'add') actionKey = 'Create';
-    else if (actionLower.includes('edit') || actionLower.includes('assign') || actionLower.includes('complete') || actionLower.includes('validate') || actionLower.includes('reopen') || actionLower.includes('manage')) actionKey = 'Edit';
+    if (actionLower.includes('reopen')) actionKey = 'Reopen';
+    else if (actionLower.includes('create') || actionLower === 'add') actionKey = 'Create';
+    else if (actionLower.includes('edit') || actionLower.includes('assign') || actionLower.includes('complete') || actionLower.includes('validate') || actionLower.includes('manage')) actionKey = 'Edit';
     else if (actionLower.includes('delete')) actionKey = 'Delete';
     else if (actionLower.includes('view') || actionLower.includes('read')) actionKey = 'View';
 
@@ -117,15 +121,20 @@ export function useActionPermissions(path) {
     if (hasCustomPermissions) {
       const permissions = getModulePerms();
       if (!permissions) {
-        // Default allow tasks and performance module view/create for users if not explicitly blocked
-        if (moduleName === 'Workspace-Task Management' || moduleName === 'HRMS-Performance') return true;
+        // Default allow view for tasks & performance module for users if not explicitly blocked
+        if (moduleName === 'Workspace-Task Management' || moduleName === 'HRMS-Performance') {
+          if (actionKey === 'View') return true;
+          return false;
+        }
         return false;
+      }
+      if (actionKey === 'Reopen') {
+        return !!(permissions.Reopen || permissions.Create || permissions.Edit || permissions.Delete || permissions.All || permissions.Write);
       }
       if (permissions[actionKey] !== undefined) return !!permissions[actionKey];
       if (permissions.All !== undefined) return !!permissions.All;
       if (permissions.Write !== undefined && (actionKey === 'Create' || actionKey === 'Edit')) return !!permissions.Write;
-      if (actionKey === 'View' && (permissions.Read || permissions.View || permissions.Create || permissions.Edit)) return true;
-      if (actionKey === 'Create' && (moduleName === 'Workspace-Task Management' || moduleName === 'HRMS-Performance')) return true;
+      if (actionKey === 'View' && (permissions.Read || permissions.View || permissions.Create || permissions.Edit || permissions.Delete)) return true;
       return false;
     }
 
@@ -135,9 +144,12 @@ export function useActionPermissions(path) {
     }
 
     // Default for 'user' or employee-type roles with NO custom permissions:
-    // Allow Tasks create/edit/view by default, allow View for assigned modules
+    // Allow Tasks View by default, but NOT Create / Edit / Delete / Reopen
     if (['user'].includes(role)) {
-      if (moduleName === 'Workspace-Task Management') return true;
+      if (moduleName === 'Workspace-Task Management') {
+        if (actionKey === 'View') return true;
+        return false;
+      }
       if (actionKey === 'View') return true;
       return false; 
     }
@@ -145,14 +157,21 @@ export function useActionPermissions(path) {
     return true;
   }, [user, role, moduleName]);
 
+  const canCreate = hasPermission('create');
+  const canEdit = hasPermission('edit');
+  const canDelete = hasPermission('delete');
+  const canView = hasPermission('view');
+  const canReopen = hasPermission('reopen') || canCreate || canEdit || canDelete;
+
   return {
     hasPermission,
-    canAdd: hasPermission('create'),
-    canCreate: hasPermission('create'),
-    canEdit: hasPermission('edit'),
-    canDelete: hasPermission('delete'),
-    canView: hasPermission('view')
+    canAdd: canCreate,
+    canCreate,
+    canEdit,
+    canDelete,
+    canView,
+    canReopen
   };
 }
 
-export default useActionPermissions;
+export default useActionPermissions;

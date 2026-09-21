@@ -240,11 +240,19 @@ const getDepartmentFilterValues = (value) => {
       "Video editor",
       "Video Editor",
       "Video Editing",
+      "digital-marketing",
+      "digital_marketing",
+      "marketing",
+      "Digital Marketing",
+      "dm",
+      "DM",
     ].forEach((v) => set.add(v));
   } else if (
     normalized === "designer" ||
     normalized === "graphic-designer" ||
-    normalized === "design"
+    normalized === "graphic_designer" ||
+    normalized === "design" ||
+    normalized === "creative"
   ) {
     [
       "designer",
@@ -252,6 +260,13 @@ const getDepartmentFilterValues = (value) => {
       "graphic-designer",
       "graphic_designer",
       "Designer",
+      "creative",
+      "digital-marketing",
+      "digital_marketing",
+      "marketing",
+      "Digital Marketing",
+      "dm",
+      "DM",
     ].forEach((v) => set.add(v));
   } else if (
     normalized === "digital-marketing" ||
@@ -266,6 +281,16 @@ const getDepartmentFilterValues = (value) => {
       "Digital Marketing",
       "dm",
       "DM",
+      "designer",
+      "design",
+      "graphic-designer",
+      "graphic_designer",
+      "Designer",
+      "video-editor",
+      "video_editor",
+      "video-editing",
+      "video_editing",
+      "video",
     ].forEach((v) => set.add(v));
   } else if (
     normalized === "website-designing" ||

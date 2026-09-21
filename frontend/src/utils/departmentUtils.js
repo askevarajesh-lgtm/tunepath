@@ -69,15 +69,16 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
         }
       }
 
-      // Video Editor & Designer group (maps to specific video/design department if exists, else fallback to digital-marketing)
-      const isVideoOrDesignerTerm = ["video-editor", "video_editor", "video-edit", "video", "designer", "graphic-designer", "ui-ux", "design"].some((alias) => normSanitized.includes(alias));
+      // Video Editor & Designer group (maps to specific graphic/video department if exists, excluding website designing, else fallback to digital-marketing)
+      const isVideoOrDesignerTerm = ["video-editor", "video_editor", "video-edit", "video", "designer", "graphic-designer", "graphic_designer", "ui-ux", "design"].some((alias) => normSanitized.includes(alias));
       if (isVideoOrDesignerTerm) {
         const specificDept = departments.find(d => {
           const s = (d.slug || "").toLowerCase();
           const n = (d.name || "").toLowerCase();
+          if (s.includes("website") || n.includes("website")) return false; // website designing belongs to web/tech
           if (normSanitized.includes("video")) return s.includes("video") || n.includes("video");
-          if (normSanitized.includes("design")) return s.includes("design") || n.includes("design");
-          return s.includes("video") || n.includes("video") || s.includes("design") || n.includes("design");
+          if (normSanitized.includes("design") || normSanitized.includes("graphic")) return s.includes("graphic") || n.includes("graphic") || s.includes("design") || n.includes("design");
+          return false;
         });
         if (specificDept) {
           const iden = getDepartmentIdentifier(specificDept);
@@ -131,13 +132,7 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
     if (["seo", "seo_specialist", "seo_manager", "seo_lead", "seo_executive", "seo_analyst"].includes(normSanitized) || normSanitized.includes("seo")) {
       return "seo";
     }
-    if (["video-editor", "video_editor", "video-edit", "video"].some((alias) => normSanitized.includes(alias))) {
-      return "video-editor";
-    }
-    if (["designer", "graphic-designer", "ui-ux", "design"].some((alias) => normSanitized.includes(alias))) {
-      return "designer";
-    }
-    if (["dm", "digital-marketing", "digital_marketing", "marketing"].some((alias) => normSanitized.includes(alias))) {
+    if (["video-editor", "video_editor", "video-edit", "video", "designer", "graphic-designer", "graphic_designer", "ui-ux", "design", "dm", "digital-marketing", "digital_marketing", "marketing"].some((alias) => normSanitized.includes(alias))) {
       return "digital-marketing";
     }
     if (
@@ -216,16 +211,16 @@ export const resolveUserDepartmentSlug = (user, departments = [], roles = []) =>
     seo_analyst: "seo",
 
     // Video Editor
-    video_editor: "video-editor",
-    video_editing: "video-editor",
+    video_editor: "digital-marketing",
+    video_editing: "digital-marketing",
 
     // Design
-    designer: "designer",
-    graphic_designer: "designer",
-    ui_ux_designer: "designer",
-    ui_designer: "designer",
-    ux_designer: "designer",
-    creative_designer: "designer",
+    designer: "digital-marketing",
+    graphic_designer: "digital-marketing",
+    ui_ux_designer: "digital-marketing",
+    ui_designer: "digital-marketing",
+    ux_designer: "digital-marketing",
+    creative_designer: "digital-marketing",
 
     // Digital Marketing
     content_writer: "digital-marketing",

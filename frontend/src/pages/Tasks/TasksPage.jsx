@@ -33,7 +33,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useGetDepartmentsDynamicQuery, useGetRolesQuery } from "../../api/accessControlApi";
 import { resolveUserDepartmentSlug, getDepartmentIdentifier } from "../../utils/departmentUtils";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
-import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
+import { PERMISSION_ACTIONS, isSeniorUser } from "../../utils/actionPermissions";
 import KanbanBoard from "./KanbanBoard";
 import TaskListView from "./TaskListView";
 import TaskCalendarView from "./TaskCalendarView";
@@ -58,7 +58,9 @@ const TasksPage = () => {
   const location = useLocation();
   const { user: user } = useAuth();
   const userRole = user?.role;
-  const { canAdd: canCreate, canEdit } = useActionPermissions("/tasks");
+  const { canAdd: canCreatePermission, canCreate: canCreateAction, canEdit } = useActionPermissions("/tasks");
+  const isSenior = isSeniorUser(user, userRole);
+  const canCreate = isSenior || canCreatePermission || canCreateAction;
   
   const getBaseRoute = () => {
     if (location.pathname.startsWith("/client")) return "/client/workspace";
@@ -75,13 +77,13 @@ const TasksPage = () => {
     "agency_manager",
     "brand_manager"
   ];
-  const isAdmin = adminRoles.includes(userRole);
+  const isAdmin = isSenior || adminRoles.includes(userRole);
   const userType = (user?.type || "").toLowerCase().trim();
   const isIntern = userType === "intern";
   const isSEO = false; // Default-Allow model
   const isSEOFullTime = false;
 
-  // Allow create if: the role has explicit Create permission from useActionPermissions
+  // Allow create if: the role has explicit Create permission from useActionPermissions or is senior
   const canCreateTask = !isIntern && canCreate && (!isSEO || isSEOFullTime);
 
   // Define roles that can view tasks (all regular users + admins)
@@ -395,7 +397,7 @@ const TasksPage = () => {
   useEffect(() => {
     if (!user) return;
     if (!hasInitializedDept.current) {
-      if (isGlobalAdmin) {
+      if (isGlobalAdmin || isUserPortal) {
         setSelectedDepartment("all");
       } else if (userDepartmentSlug) {
         setSelectedDepartment(userDepartmentSlug);
@@ -404,7 +406,7 @@ const TasksPage = () => {
       }
       hasInitializedDept.current = true;
     }
-  }, [user, isGlobalAdmin, userDepartmentSlug]);
+  }, [user, isGlobalAdmin, isUserPortal, userDepartmentSlug]);
 
   const settingsTabItems = [
     {

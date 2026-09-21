@@ -24,7 +24,7 @@ import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
 import useBulkSelection from "../../hooks/useBulkSelection";
 import BulkActionBar from "../../components/common/BulkActionBar";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
-import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
+import { PERMISSION_ACTIONS, isSeniorUser } from "../../utils/actionPermissions";
 import dayjs from "dayjs";
 import { getProjectServiceStats } from "../../utils/categoryUtils";
 import { notifyLoading, notifySuccess, notifyError } from '../../utils/notify';
@@ -50,8 +50,10 @@ const TaskList = () => {
   };
   const {
     canAdd: canCreatePermission,
+    canCreate: canCreateAction,
     canEdit: canEditPermission,
     canDelete: canDeletePermission,
+    canReopen: canReopenPermission,
     canView,
   } = useActionPermissions("/tasks");
   const [deleteTask] = useDeleteTaskMutation();
@@ -66,6 +68,7 @@ const TaskList = () => {
   const isSEO = userRole === "seo";
   const isSEOFullTime = isSEO && userType === "full_time";
 
+  const isSenior = isSeniorUser(user, userRole);
   const adminRoles = [
     "supreme_super_admin",
     "commander_admin",
@@ -74,13 +77,13 @@ const TaskList = () => {
     "agency_manager",
     "brand_manager"
   ];
-  const isAdmin = adminRoles.includes(userRole);
+  const isAdmin = isSenior || adminRoles.includes(userRole);
 
   const canCreate =
-    !isIntern && canCreatePermission && (!isSEO || isSEOFullTime);
-  const canEdit = !isIntern && canEditPermission && (!isSEO || isSEOFullTime);
+    !isIntern && (isSenior || canCreatePermission || canCreateAction) && (!isSEO || isSEOFullTime);
+  const canEdit = !isIntern && (isSenior || canEditPermission) && (!isSEO || isSEOFullTime);
   const canDelete =
-    !isIntern && canDeletePermission && (!isSEO || isSEOFullTime);
+    !isIntern && (isSenior || canDeletePermission) && (!isSEO || isSEOFullTime);
   const [filters, setFilters] = useState({});
   const { data, isLoading, error, refetch } = useGetTasksQuery(filters);
   const { data: departmentsResp } = useGetDepartmentsDynamicQuery();

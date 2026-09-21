@@ -65,7 +65,7 @@ import { useGetDepartmentsDynamicQuery, useGetRolesQuery } from "../../api/acces
 import { resolveUserDepartmentSlug } from "../../utils/departmentUtils";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
-import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
+import { PERMISSION_ACTIONS, isSeniorUser } from "../../utils/actionPermissions";
 import TaskDetailDrawer from "./TaskDetailDrawer";
 import TaskReopenModal from "./TaskReopenModal";
 import { getTaskDurationLabel, isCompletedTask } from "./taskDuration";
@@ -132,6 +132,7 @@ const TaskCardInner = ({
   durationLabel,
   canEdit,
   canDelete,
+  canReopen,
   onDelete,
   onReopen,
   navigate,
@@ -937,7 +938,7 @@ const TaskCardInner = ({
           )}
 
           {/* Reopen button */}
-          {canEdit &&
+          {canReopen &&
             onReopen && (
               <Tooltip title={isCompleted ? "Reopen as Correction Task" : "Reopen / Create New Task"}>
                 <button
@@ -1045,6 +1046,7 @@ const TaskCard = ({
   canEdit,
   canDrag,
   canDelete,
+  canReopen,
   onDelete,
   onReopen,
   columnStatusId,
@@ -1121,6 +1123,7 @@ const TaskCard = ({
       durationLabel={durationLabel}
       canEdit={canEdit}
       canDelete={canDelete}
+      canReopen={canReopen}
       onDelete={onDelete}
       onReopen={onReopen}
       navigate={navigate}
@@ -1151,6 +1154,7 @@ const TaskCardWithReminder = ({
   showPendingOnly,
   onSendReminder,
   canEdit,
+  canReopen,
   user,
 }) => {
   const { isDark } = useTheme();
@@ -1204,6 +1208,7 @@ const TaskCardWithReminder = ({
       durationLabel={durationLabel}
       canEdit={canEdit}
       canDelete={canEdit} // For now, if they can edit/move, we allow delete prop to be true if passed, but TaskCardWithReminder doesn't have it explicitly yet.
+      canReopen={canReopen}
       navigate={navigate}
       userRole={userRole}
       showPendingOnly={showPendingOnly}
@@ -1229,6 +1234,7 @@ const KanbanColumn = ({
   canEdit = false,
   canDrag = false,
   canDelete = false,
+  canReopen = false,
   onDelete,
   getWorkflowColorForTask,
   userRole,
@@ -1445,6 +1451,7 @@ const KanbanColumn = ({
                   canEdit={canEdit}
                   canDrag={canDrag}
                   canDelete={canDelete}
+                  canReopen={canReopen}
                   onDelete={onDelete}
                   onReopen={onReopen}
                   columnStatusId={statusConfig.id}
@@ -1523,21 +1530,23 @@ const KanbanBoard = ({
   const isSEO = false; // Default-Allow model
   const isSEOFullTime = false;
 
-  const { canAdd: canCreatePermission, hasPermission } = useActionPermissions("/tasks");
-  const adminRoles = [
-    "supreme_super_admin",
-    "commander_admin",
-    "agency_super_admin",
-    "brand_super_admin",
-    "agency_manager",
-    "brand_manager"
-  ];
-  const canCreate = canCreatePermission || hasPermission(PERMISSION_ACTIONS.CREATE_TASK);
-  const canEdit = hasPermission(PERMISSION_ACTIONS.EDIT_TASK);
-  const canDelete = hasPermission(PERMISSION_ACTIONS.DELETE_TASK);
+  const {
+    canAdd: canCreatePermission,
+    canCreate: canCreateAction,
+    canEdit: canEditPermission,
+    canDelete: canDeletePermission,
+    canReopen: canReopenPermission,
+    hasPermission,
+  } = useActionPermissions("/tasks");
+
+  const isSenior = isSeniorUser(user, userRole);
+  const canCreate = isSenior || canCreatePermission || canCreateAction || hasPermission(PERMISSION_ACTIONS.CREATE_TASK);
+  const canEdit = isSenior || canEditPermission || hasPermission(PERMISSION_ACTIONS.EDIT_TASK);
+  const canDelete = isSenior || canDeletePermission || hasPermission(PERMISSION_ACTIONS.DELETE_TASK);
+  const canReopen = isSenior || canReopenPermission || canCreate || canEdit || canDelete || hasPermission(PERMISSION_ACTIONS.REOPEN_TASK);
   const canMoveStatus = true; // Drag functionality should always remain enabled by default for all users.
   
-  const isAdmin = true; // Default-Allow model
+  const isAdmin = isSenior;
   const isCoordinatorRole = true; // Default-Allow model
   const canUseClientScope = true; // Default-Allow model
 
@@ -3049,6 +3058,7 @@ const KanbanBoard = ({
                   canEdit={canEdit}
                   canDrag={canMoveStatus}
                   canDelete={canDelete}
+                  canReopen={canReopen}
                   onDelete={async (id) => {
                     await deleteTask(id).unwrap();
                     refetch();

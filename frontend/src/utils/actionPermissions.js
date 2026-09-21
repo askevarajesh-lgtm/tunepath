@@ -23,4 +23,49 @@ export const PERMISSION_ACTIONS = {
   VIEW_ANALYTICS: 'view-analytics',
 };
 
+export const SENIOR_ROLES = [
+  'supreme_super_admin',
+  'superadmin',
+  'super_admin',
+  'commander_admin',
+  'agency_super_admin',
+  'agency_manager',
+  'brand_super_admin',
+  'brand_admin',
+  'brand_manager',
+  'brand_head',
+  'admin',
+  'operations_head',
+];
+
+export const isSeniorUser = (user, role) => {
+  const userRole = (role || user?.role || '').toLowerCase().trim();
+  const roleName = (user?.roleName || '').toLowerCase().trim();
+  const designation = (user?.designation || '').toLowerCase().trim();
+
+  if (SENIOR_ROLES.includes(userRole)) return true;
+
+  const seniorKeywords = [
+    'agency manager',
+    'brand head',
+    'brand manager',
+    'operations head',
+    'super admin',
+    'commander',
+    'manager',
+    'head',
+    'admin',
+    'director',
+    'lead'
+  ];
+
+  return seniorKeywords.some(
+    (kw) =>
+      userRole.includes(kw) ||
+      roleName.includes(kw) ||
+      designation.includes(kw)
+  );
+};
+
 export default PERMISSION_ACTIONS;
+

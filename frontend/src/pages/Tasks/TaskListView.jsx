@@ -27,7 +27,7 @@ import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
 import { useGetProjectsDropdownQuery } from "../../api/projectApi";
 import { useGetUsersDropdownQuery } from "../../api/userApi";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
-import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
+import { PERMISSION_ACTIONS, isSeniorUser } from "../../utils/actionPermissions";
 import dayjs from "dayjs";
 import { isDurationTrackingTask, isCompletedTask, isTaskTimerRunning, getTaskLiveDurationMinutes, getTaskDueDeadline } from "./taskDuration";
 import TaskReopenModal from "./TaskReopenModal";
@@ -126,12 +126,23 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
   const isSEO = false; // Default-Allow model
   const isSEOFullTime = false;
 
-  const { hasPermission } = useActionPermissions("/tasks");
-  const canEdit = hasPermission(PERMISSION_ACTIONS.EDIT_TASK);
-  const canDelete = hasPermission(PERMISSION_ACTIONS.DELETE_TASK);
-  const canEditTaskDetails = hasPermission(PERMISSION_ACTIONS.EDIT_TASK);
+  const {
+    canAdd: canCreatePermission,
+    canCreate: canCreateAction,
+    canEdit: canEditPermission,
+    canDelete: canDeletePermission,
+    canReopen: canReopenPermission,
+    hasPermission,
+  } = useActionPermissions("/tasks");
 
-  const isAdmin = true; // Default-Allow model
+  const isSenior = isSeniorUser(user, userRole);
+  const canCreate = isSenior || canCreatePermission || canCreateAction || hasPermission(PERMISSION_ACTIONS.CREATE_TASK);
+  const canEdit = isSenior || canEditPermission || hasPermission(PERMISSION_ACTIONS.EDIT_TASK);
+  const canDelete = isSenior || canDeletePermission || hasPermission(PERMISSION_ACTIONS.DELETE_TASK);
+  const canReopen = isSenior || canReopenPermission || canCreate || canEdit || canDelete || hasPermission(PERMISSION_ACTIONS.REOPEN_TASK);
+  const canEditTaskDetails = canEdit;
+
+  const isAdmin = isSenior;
   const canSeeAllFilters = true; // Default-Allow model
   const canUseClientScope = true; // Default-Allow model
 
@@ -530,7 +541,7 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
               });
             },
           },
-          canEdit && {
+          canReopen && {
             key: "reopen",
             label: "Reopen",
             icon: <ReloadOutlined />,
