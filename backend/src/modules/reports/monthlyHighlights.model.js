@@ -59,6 +59,8 @@ const monthlyHighlightsSchema = new mongoose.Schema({
             {
                 name: { type: String, required: true },
                 completed: { type: Number, default: 0 },
+                pending: { type: Number, default: 0 },
+                remaining: { type: Number, default: 0 },
                 total: { type: Number, default: 0 },
                 unit: { type: String, default: 'Completed' }
             }

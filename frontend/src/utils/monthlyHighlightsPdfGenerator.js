@@ -61,7 +61,7 @@ export function generateHighlightsOfTheMonthPDF(data = {}, clientInfo = {}) {
 
   const blogsText = `Number of blog updates: ${data.blogs?.count ?? 0}${data.blogs?.notes ? ` (${data.blogs.notes})` : ''}`;
   const brandCommText = (data.brandCommunicationDesign?.deliverables && data.brandCommunicationDesign.deliverables.length > 0)
-    ? data.brandCommunicationDesign.deliverables.map(d => `${d.name} — ${d.completed} / ${d.total} Completed`).join('; ')
+    ? data.brandCommunicationDesign.deliverables.map(d => `${d.name} — Total: ${d.total || 0}, Completed: ${d.completed || 0}, Remaining: ${d.remaining ?? Math.max(0, (d.total || 0) - (d.completed || 0))}`).join('; ')
     : (data.brandCommunicationDesign?.notes || `Number of social media post designs: ${data.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0}; Number of videos: ${data.brandCommunicationDesign?.videosCount ?? 0}`);
   const offlineText = data.offlineCollaterals || 'Internal branding / collateral work completed';
   const specialText = data.specialInitiatives || 'Special initiatives completed during the month';

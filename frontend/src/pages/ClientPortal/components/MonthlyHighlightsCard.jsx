@@ -99,7 +99,7 @@ const MonthlyHighlightsCard = ({ clientId, clientName, initialDate }) => {
             key: '3',
             category: 'Brand Communication Design',
             info: (reportData.brandCommunicationDesign?.deliverables && reportData.brandCommunicationDesign.deliverables.length > 0)
-                ? reportData.brandCommunicationDesign.deliverables.map(d => `${d.name} — ${d.completed} / ${d.total} Completed`).join('; ')
+                ? reportData.brandCommunicationDesign.deliverables.map(d => `${d.name} — Total: ${d.total || 0}, Completed: ${d.completed || 0}, Remaining: ${d.remaining ?? Math.max(0, (d.total || 0) - (d.completed || 0))}`).join('; ')
                 : (reportData.brandCommunicationDesign?.notes || `Number of social media post designs: ${reportData.brandCommunicationDesign?.socialMediaPostDesignsCount ?? 0}; number of videos: ${reportData.brandCommunicationDesign?.videosCount ?? 0}`)
         },
         {

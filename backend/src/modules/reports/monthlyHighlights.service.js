@@ -133,6 +133,8 @@ const checkSocialMediaModuleEnabled = async (clientId, digitalInsights, delivera
 const autoAggregateMetrics = async (clientId, month, year) => {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const monthName = monthNames[month - 1] || 'Month';
 
     let blogCount = 0;
     const deliverablesMap = {};
@@ -152,47 +154,79 @@ const autoAggregateMetrics = async (clientId, month, year) => {
     };
 
     try {
+        const User = mongoose.models.User || require('../auth/user.model');
+        const clientTargetIds = [clientId, String(clientId)];
+        if (mongoose.Types.ObjectId.isValid(clientId)) {
+            clientTargetIds.push(new mongoose.Types.ObjectId(clientId));
+        }
+        const user = await User.findById(clientId).catch(() => null);
+        if (user) {
+            [user.clientCompanyId, user.brandId, user.workspaceId].forEach(id => {
+                if (id) {
+                    clientTargetIds.push(id, String(id));
+                    if (mongoose.Types.ObjectId.isValid(id)) clientTargetIds.push(new mongoose.Types.ObjectId(id));
+                }
+            });
+        }
+
         const Project = mongoose.models.Project || require('../projects/project.model');
-        const projects = await Project.find({ clientId: clientId }).catch(() => []);
+        const projects = await Project.find({
+            $or: [
+                { clientId: { $in: clientTargetIds } },
+                { companyId: { $in: clientTargetIds } }
+            ]
+        }).catch(() => []);
 
         projects.forEach(p => {
             const numPosters = p.numberOfPosters || 0;
             if (numPosters > 0) {
-                const remP = p.remainingPosters ?? numPosters;
                 const compP = (p.completedPosters !== undefined && p.completedPosters !== null)
                     ? Math.max(p.completedPosters || 0, p.approvedPosters || 0)
-                    : ((p.approvedPosters > 0) ? p.approvedPosters : Math.max(0, numPosters - remP));
+                    : (p.approvedPosters || 0);
+                const remP = (p.remainingPosters !== undefined && p.remainingPosters !== null)
+                    ? Math.max(0, p.remainingPosters)
+                    : Math.max(0, numPosters - compP);
+
                 if (!deliverablesMap['poster']) {
-                    deliverablesMap['poster'] = { name: 'Posters', completed: 0, total: 0, unit: 'Completed' };
+                    deliverablesMap['poster'] = { name: 'Posters', total: 0, completed: 0, remaining: 0, unit: 'Completed' };
                 }
                 deliverablesMap['poster'].total += numPosters;
                 deliverablesMap['poster'].completed += compP;
+                deliverablesMap['poster'].remaining += remP;
             }
 
             const numVideos = p.numberOfVideos || 0;
             if (numVideos > 0) {
-                const remV = p.remainingVideos ?? numVideos;
                 const compV = (p.completedVideos !== undefined && p.completedVideos !== null)
                     ? Math.max(p.completedVideos || 0, p.approvedVideos || 0)
-                    : ((p.approvedVideos > 0) ? p.approvedVideos : Math.max(0, numVideos - remV));
+                    : (p.approvedVideos || 0);
+                const remV = (p.remainingVideos !== undefined && p.remainingVideos !== null)
+                    ? Math.max(0, p.remainingVideos)
+                    : Math.max(0, numVideos - compV);
+
                 if (!deliverablesMap['video']) {
-                    deliverablesMap['video'] = { name: 'Videos', completed: 0, total: 0, unit: 'Completed' };
+                    deliverablesMap['video'] = { name: 'Videos', total: 0, completed: 0, remaining: 0, unit: 'Completed' };
                 }
                 deliverablesMap['video'].total += numVideos;
                 deliverablesMap['video'].completed += compV;
+                deliverablesMap['video'].remaining += remV;
             }
 
             const numShoots = p.numberOfShoots || 0;
             if (numShoots > 0) {
-                const remS = p.remainingShoots ?? numShoots;
                 const compS = (p.completedShoots !== undefined && p.completedShoots !== null)
                     ? Math.max(p.completedShoots || 0, p.approvedShoots || 0)
-                    : ((p.approvedShoots > 0) ? p.approvedShoots : Math.max(0, numShoots - remS));
+                    : (p.approvedShoots || 0);
+                const remS = (p.remainingShoots !== undefined && p.remainingShoots !== null)
+                    ? Math.max(0, p.remainingShoots)
+                    : Math.max(0, numShoots - compS);
+
                 if (!deliverablesMap['shoot']) {
-                    deliverablesMap['shoot'] = { name: 'Shoots', completed: 0, total: 0, unit: 'Completed' };
+                    deliverablesMap['shoot'] = { name: 'Shoots', total: 0, completed: 0, remaining: 0, unit: 'Completed' };
                 }
                 deliverablesMap['shoot'].total += numShoots;
                 deliverablesMap['shoot'].completed += compS;
+                deliverablesMap['shoot'].remaining += remS;
             }
 
             if (p.selectedCategories && Array.isArray(p.selectedCategories)) {
@@ -203,16 +237,25 @@ const autoAggregateMetrics = async (clientId, month, year) => {
 
                     const { key, displayName } = getKeyAndDisplayName(rawName);
 
+                    const cComp = (cat.completed !== undefined && cat.completed !== null)
+                        ? Math.max(cat.completed || 0, cat.approved || 0)
+                        : (cat.approved || 0);
+                    const cRem = (cat.remaining !== undefined && cat.remaining !== null)
+                        ? Math.max(0, cat.remaining)
+                        : Math.max(0, cTotal - cComp);
+
                     if (!deliverablesMap[key]) {
-                        const cRem = cat.remaining ?? cTotal;
-                        const cComp = (cat.approved > 0) ? cat.approved : ((cat.completed > 0) ? cat.completed : Math.max(0, cTotal - cRem));
                         deliverablesMap[key] = {
                             name: displayName,
-                            completed: cComp,
-                            total: cTotal,
+                            total: 0,
+                            completed: 0,
+                            remaining: 0,
                             unit: 'Completed'
                         };
                     }
+                    deliverablesMap[key].total += cTotal;
+                    deliverablesMap[key].completed += cComp;
+                    deliverablesMap[key].remaining += cRem;
                 });
             }
         });
@@ -245,6 +288,9 @@ const autoAggregateMetrics = async (clientId, month, year) => {
 
     const postDesignsCount = deliverablesMap['poster'] ? deliverablesMap['poster'].completed : 0;
     const videosCount = deliverablesMap['video'] ? deliverablesMap['video'].completed : 0;
+    const notesSummary = deliverables.length > 0
+        ? deliverables.map(d => `${d.name} — Total: ${d.total}, Completed: ${d.completed}, Remaining: ${d.remaining}`).join('; ')
+        : `Number of social media post designs: ${postDesignsCount}; Number of videos: ${videosCount}`;
 
     const digitalInsights = {
         facebookFollowersIncreased: 0,
@@ -583,11 +629,6 @@ const autoAggregateMetrics = async (clientId, month, year) => {
     } catch (err) {
         console.warn('Live keyword fetch note:', err.message);
     }
-
-    const monthName = startDate.toLocaleString('default', { month: 'long' });
-    const notesSummary = deliverables.length > 0
-        ? deliverables.map(d => `${d.name} — ${d.completed} / ${d.total} Completed`).join('; ')
-        : 'No deliverables assigned for this project.';
 
     const metaInsightsFacebook = trackedMonthsList.map(mStr => {
         const stats = fbMonthlyStatsMap[mStr] || { views: 0, reach: 0 };

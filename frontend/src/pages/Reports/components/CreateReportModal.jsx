@@ -57,14 +57,14 @@ const getNormalizedReportType = (rt) => {
   return 'Highlights of the Month';
 };
 
-const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = null, defaultReportType = 'Highlights of the Month', onSuccess }) => {
+const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = null, defaultReportType = 'Highlights of the Month', defaultDate = null, onSuccess }) => {
   const { selectedClient: headerSelectedClient } = useClientContext();
   const [form] = Form.useForm();
   const [reportType, setReportType] = useState(defaultReportType || 'Highlights of the Month');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(dayjs());
+  const [selectedDate, setSelectedDate] = useState(defaultDate || dayjs());
   const [selectedClient, setSelectedClient] = useState(defaultClientId);
 
   // Meta Lead Campaigns State
@@ -103,8 +103,11 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
         setSelectedClient(activeClientId);
       }
       setReportType(getNormalizedReportType(defaultReportType));
+      if (defaultDate) {
+        setSelectedDate(defaultDate);
+      }
     }
-  }, [visible, defaultClientId, headerSelectedClient, clients, defaultReportType]);
+  }, [visible, defaultClientId, headerSelectedClient, clients, defaultReportType, defaultDate]);
 
   const loadData = async (clientId, dateVal, refresh = false) => {
     if (!clientId || !dateVal) return;
@@ -384,8 +387,48 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
     updated[index] = { ...updated[index], [field]: value };
     setYouTubeReportList(updated);
   };
-  const handleAddDeliverable = () => setDeliverablesList([...deliverablesList, { name: '', completed: 0, total: 0, unit: 'Completed' }]);
-  const handleRemoveDeliverable = (index) => setDeliverablesList(deliverablesList.filter((_, i) => i !== index));
+  const handleDeliverableChange = (index, field, value) => {
+    const updated = [...deliverablesList];
+    const currentItem = { ...updated[index], [field]: value };
+    if (field === 'total' || field === 'completed') {
+      const tot = Math.max(0, Number(field === 'total' ? value : currentItem.total) || 0);
+      const comp = Math.max(0, Number(field === 'completed' ? value : currentItem.completed) || 0);
+      if (field !== 'remaining') {
+        currentItem.remaining = Math.max(0, tot - comp);
+      }
+    }
+    updated[index] = currentItem;
+    setDeliverablesList(updated);
+
+    const currentNotes = form.getFieldValue('brandCommNotes');
+    const autoSummary = updated
+      .filter(d => d.name && d.name.trim())
+      .map(d => `${d.name} — Total: ${d.total || 0}, Completed: ${d.completed || 0}, Remaining: ${d.remaining ?? Math.max(0, (d.total || 0) - (d.completed || 0))}`)
+      .join('; ');
+    if (!currentNotes || currentNotes.includes('Completed') || currentNotes.includes('Total')) {
+      form.setFieldsValue({ brandCommNotes: autoSummary });
+    }
+  };
+
+  const handleAddDeliverable = () => {
+    setDeliverablesList([
+      ...deliverablesList,
+      { name: '', total: 0, completed: 0, remaining: 0, unit: 'Completed' }
+    ]);
+  };
+
+  const handleRemoveDeliverable = (index) => {
+    const updated = deliverablesList.filter((_, i) => i !== index);
+    setDeliverablesList(updated);
+    const currentNotes = form.getFieldValue('brandCommNotes');
+    const autoSummary = updated
+      .filter(d => d.name && d.name.trim())
+      .map(d => `${d.name} — Total: ${d.total || 0}, Completed: ${d.completed || 0}, Remaining: ${d.remaining ?? Math.max(0, (d.total || 0) - (d.completed || 0))}`)
+      .join('; ');
+    if (!currentNotes || currentNotes.includes('Completed') || currentNotes.includes('Total')) {
+      form.setFieldsValue({ brandCommNotes: autoSummary });
+    }
+  };
 
   const metaColumns = [
     { title: 'Campaign Name', dataIndex: 'campaignName', key: 'campaignName', render: text => <strong style={{ color: 'var(--text-primary)' }}>{text}</strong> },
@@ -550,15 +593,118 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
                 </Row>
               </Card>
 
-              <Card size="small" title={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Layers size={16} color="#8b5cf6" /><strong style={{ fontSize: 14 }}>Brand Communication & Deliverables</strong></div><Button type="dashed" size="small" icon={<Plus size={14} />} onClick={handleAddDeliverable}>Add Deliverable</Button></div>} style={{ marginBottom: 16, borderRadius: 12 }}>
-                {deliverablesList.map((item, idx) => (
-                  <Row key={idx} gutter={[12, 8]} align="middle" style={{ background: 'var(--bg-secondary)', padding: '10px 14px', borderRadius: 8, marginBottom: 8 }}>
-                    <Col span={10}><Input placeholder="Deliverable name" value={item.name} onChange={e => handleDeliverableChange(idx, 'name', e.target.value)} /></Col>
-                    <Col span={5}><InputNumber style={{ width: '100%' }} placeholder="Completed" value={item.completed} onChange={val => handleDeliverableChange(idx, 'completed', val || 0)} /></Col>
-                    <Col span={5}><InputNumber style={{ width: '100%' }} placeholder="Total" value={item.total} onChange={val => handleDeliverableChange(idx, 'total', val || 0)} /></Col>
-                    <Col span={4} style={{ textAlign: 'right' }}><Button type="text" danger icon={<Trash2 size={16} />} onClick={() => handleRemoveDeliverable(idx)} /></Col>
-                  </Row>
-                ))}
+              <Card
+                size="small"
+                title={
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Layers size={16} color="#8b5cf6" />
+                      <strong style={{ fontSize: 14 }}>Brand Communication & Deliverables</strong>
+                      <Tag color="purple" style={{ borderRadius: 10, fontWeight: 600, fontSize: 11, margin: 0 }}>
+                        {deliverablesList.length} Categories
+                      </Tag>
+                    </div>
+                    <Button type="dashed" size="small" icon={<Plus size={14} />} onClick={handleAddDeliverable}>
+                      Add Deliverable
+                    </Button>
+                  </div>
+                }
+                style={{ marginBottom: 16, borderRadius: 12 }}
+              >
+                {deliverablesList.length > 0 ? (
+                  <div style={{ marginBottom: 16 }}>
+                    {/* Column Headers */}
+                    <Row gutter={[10, 8]} align="middle" style={{ padding: '6px 12px', background: 'rgba(0,0,0,0.03)', borderRadius: 6, marginBottom: 8, fontWeight: 700, fontSize: 11, color: 'var(--text-secondary)' }}>
+                      <Col span={8}>DELIVERABLE / CATEGORY</Col>
+                      <Col span={4} style={{ textAlign: 'center' }}>TOTAL</Col>
+                      <Col span={4} style={{ textAlign: 'center', color: '#10b981' }}>COMPLETED</Col>
+                      <Col span={4} style={{ textAlign: 'center', color: '#6366f1' }}>REMAINING</Col>
+                      <Col span={2} style={{ textAlign: 'center' }}>STATUS</Col>
+                      <Col span={2} style={{ textAlign: 'right' }}>ACTION</Col>
+                    </Row>
+
+                    {deliverablesList.map((item, idx) => {
+                      const totalVal = Number(item.total) || 0;
+                      const compVal = Number(item.completed) || 0;
+                      const remVal = (item.remaining !== undefined && item.remaining !== null)
+                        ? Number(item.remaining)
+                        : Math.max(0, totalVal - compVal);
+                      const isComplete = totalVal > 0 && compVal >= totalVal;
+
+                      return (
+                        <Row
+                          key={idx}
+                          gutter={[10, 8]}
+                          align="middle"
+                          style={{
+                            background: 'var(--bg-secondary)',
+                            padding: '8px 12px',
+                            borderRadius: 8,
+                            marginBottom: 8,
+                            border: '1px solid var(--border-color)',
+                            transition: 'all 0.2s'
+                          }}
+                        >
+                          <Col span={8}>
+                            <Input
+                              placeholder="e.g. Posters, Videos..."
+                              value={item.name}
+                              onChange={e => handleDeliverableChange(idx, 'name', e.target.value)}
+                              style={{ fontWeight: 600 }}
+                            />
+                          </Col>
+                          <Col span={4}>
+                            <InputNumber
+                              style={{ width: '100%' }}
+                              min={0}
+                              placeholder="Total"
+                              value={item.total}
+                              onChange={val => handleDeliverableChange(idx, 'total', val || 0)}
+                            />
+                          </Col>
+                          <Col span={4}>
+                            <InputNumber
+                              style={{ width: '100%', borderColor: '#10b981' }}
+                              min={0}
+                              placeholder="Completed"
+                              value={item.completed}
+                              onChange={val => handleDeliverableChange(idx, 'completed', val || 0)}
+                            />
+                          </Col>
+                          <Col span={4}>
+                            <InputNumber
+                              style={{ width: '100%', borderColor: '#6366f1' }}
+                              min={0}
+                              placeholder="Remaining"
+                              value={remVal}
+                              onChange={val => handleDeliverableChange(idx, 'remaining', val || 0)}
+                            />
+                          </Col>
+                          <Col span={2} style={{ textAlign: 'center' }}>
+                            <Tag
+                              color={isComplete ? 'success' : (compVal > 0 ? 'processing' : 'default')}
+                              style={{ margin: 0, fontWeight: 600, borderRadius: 6, fontSize: 11 }}
+                            >
+                              {compVal}/{totalVal}
+                            </Tag>
+                          </Col>
+                          <Col span={2} style={{ textAlign: 'right' }}>
+                            <Button
+                              type="text"
+                              danger
+                              icon={<Trash2 size={15} />}
+                              onClick={() => handleRemoveDeliverable(idx)}
+                            />
+                          </Col>
+                        </Row>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ padding: '16px', textAlign: 'center', background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 16, color: 'var(--text-secondary)' }}>
+                    No deliverables found for this client. Click <strong>+ Add Deliverable</strong> to add posters, videos, or custom categories.
+                  </div>
+                )}
                 <Form.Item name="brandCommNotes" label="Summary Notes (Optional)">
                   <Input placeholder="Summary of brand communication deliverables..." />
                 </Form.Item>

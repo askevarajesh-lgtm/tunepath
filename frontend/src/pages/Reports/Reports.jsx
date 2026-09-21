@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Typography, Row, Col, Card, Button, Table, Tag, message, Select, DatePicker, Skeleton, Tooltip as AntTooltip, Dropdown, Menu, Empty } from 'antd';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, Plus, FileText, Download, CheckCircle2, Clock, Filter, Eye, Activity, TrendingUp, TrendingDown, MoreVertical, AlertCircle, RefreshCw, BarChart2, PieChart as PieChartIcon } from 'lucide-react';
+import { 
+  Calendar, Plus, FileText, Download, CheckCircle2, Clock, Filter, Eye, 
+  Activity, TrendingUp, TrendingDown, MoreVertical, AlertCircle, RefreshCw, 
+  BarChart2, PieChart as PieChartIcon, Layers, Sparkles 
+} from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 import { 
@@ -25,7 +29,6 @@ import CreateReportModal from './components/CreateReportModal';
 import { generateMetaLeadCampaignPDF } from '../../utils/metaLeadCampaignPdfGenerator';
 import { generateMetaReachCampaignPDF } from '../../utils/metaReachCampaignPdfGenerator';
 import { getMetaLeadCampaigns, getMetaReachCampaigns } from '../../api/reportApi';
-import { Sparkles } from 'lucide-react';
 
 const Reports = () => {
   const { role } = useAuth();
@@ -37,6 +40,9 @@ const Reports = () => {
   const [loading, setLoading] = useState(true);
   const [isCreateReportModalOpen, setIsCreateReportModalOpen] = useState(false);
   const [selectedReportType, setSelectedReportType] = useState('meta_lead');
+
+  const [modalClientId, setModalClientId] = useState(null);
+  const [modalDate, setModalDate] = useState(null);
 
   const [selectedClient, setSelectedClient] = useState(() => headerSelectedClient?._id || 'all');
   const [selectedMonth, setSelectedMonth] = useState(dayjs());
@@ -212,6 +218,13 @@ const Reports = () => {
     ];
   }, [filteredReports]);
 
+  const handleOpenCreateReport = () => {
+    setModalClientId(selectedClient !== 'all' ? selectedClient : (headerSelectedClient?._id || (clients.length > 0 ? clients[0]._id : null)));
+    setSelectedReportType('Highlights of the Month');
+    setModalDate(selectedMonth || dayjs());
+    setIsCreateReportModalOpen(true);
+  };
+
   // Handle Action Column Operations
   const handleRowAction = async (action, record) => {
     const clientId = typeof record.clientId === 'object' ? record.clientId?._id : record.clientId;
@@ -222,7 +235,9 @@ const Reports = () => {
     const year = record.year || sentDate.year();
 
     if (action === 'edit' || action === 'view') {
-      if (clientId) setSelectedClient(clientId);
+      const targetClientId = clientId || (selectedClient !== 'all' ? selectedClient : (headerSelectedClient?._id || (clients.length > 0 ? clients[0]._id : null)));
+      setModalClientId(targetClientId);
+      
       if (record.template?.includes('Keyword')) {
         setSelectedReportType('Keywords');
       } else if (record.template?.includes('Meta Campaign') || record.template?.includes('Lead') || record.template?.includes('Reach')) {
@@ -236,7 +251,7 @@ const Reports = () => {
       } else {
         setSelectedReportType('Highlights of the Month');
       }
-      setSelectedMonth(dayjs().month(month - 1).year(year));
+      setModalDate(dayjs().month(month - 1).year(year));
       setIsCreateReportModalOpen(true);
     } else if (action === 'download') {
       const hide = message.loading('Generating PDF report...', 0);
@@ -347,7 +362,7 @@ const Reports = () => {
           <Button 
             type="primary" 
             icon={<Sparkles size={16} />} 
-            onClick={() => { setSelectedReportType('meta_lead'); setIsCreateReportModalOpen(true); }}
+            onClick={handleOpenCreateReport}
             style={{ borderRadius: 10, background: 'var(--accent-primary)', fontWeight: 600, height: 40 }}
           >
             Create Report
@@ -389,8 +404,9 @@ const Reports = () => {
         visible={isCreateReportModalOpen}
         onClose={() => setIsCreateReportModalOpen(false)}
         clients={clients}
-        defaultClientId={selectedClient !== 'all' ? selectedClient : (headerSelectedClient?._id || clients[0]?._id || null)}
+        defaultClientId={modalClientId || (selectedClient !== 'all' ? selectedClient : (headerSelectedClient?._id || clients[0]?._id || null))}
         defaultReportType={selectedReportType}
+        defaultDate={modalDate || selectedMonth || dayjs()}
         onSuccess={fetchData}
       />
 
@@ -414,12 +430,24 @@ const Reports = () => {
             <Card style={{ borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
                 <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(16, 185, 129, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Eye size={22} color="#10b981" />
+                  <TrendingUp size={22} color="#10b981" />
                 </div>
-                <Tag color="default" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>0%</Tag>
+                <Tag color="success" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>Live</Tag>
               </div>
-              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Avg Open Rate</Text>
-              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{openRate > 0 ? `${openRate}%` : '0%'}</Title>
+              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Delivery Rate</Text>
+              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{openRate}%</Title>
+            </Card>
+          </Col>
+          <Col xs={24} sm={12} lg={6}>
+            <Card style={{ borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: '20px 24px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Layers size={22} color="#3b82f6" />
+                </div>
+                <Tag color="default" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>Generated</Tag>
+              </div>
+              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Pages Created</Text>
+              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{totalPagesGenerated}</Title>
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>
@@ -428,22 +456,10 @@ const Reports = () => {
                 <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(245, 158, 11, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Activity size={22} color="#f59e0b" />
                 </div>
-                <Tag color="default" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>0%</Tag>
+                <Tag color="warning" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>Pending</Tag>
               </div>
-              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Engagement Score</Text>
-              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{totalOpened > 0 ? Math.round((totalOpened/totalSent)*10)*10 : 0}</Title>
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card style={{ borderRadius: 16, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: '20px 24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <FileText size={22} color="var(--accent-primary)" />
-                </div>
-                <Tag color="default" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>-</Tag>
-              </div>
-              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Pages Generated</Text>
-              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{totalPagesGenerated > 0 ? totalPagesGenerated : 0}</Title>
+              <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Unopened Reports</Text>
+              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{totalSent - totalOpened > 0 ? totalSent - totalOpened : 0}</Title>
             </Card>
           </Col>
         </Row>
@@ -454,28 +470,34 @@ const Reports = () => {
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={12}>
             <Card 
-              title={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><Filter size={18} color="#8b5cf6" /> <Text style={{ fontWeight: 700, fontSize: 16 }}>Lead Conversion Funnel</Text></div>} 
-              className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', height: '100%' }} 
-              bodyStyle={{ padding: '24px', height: 350, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              title={
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Lead Conversion Performance</span>
+                  <Tag color="purple" style={{ borderRadius: 6, fontWeight: 600 }}>Leads to Won</Tag>
+                </div>
+              } 
+              className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)', height: '100%', boxShadow: 'var(--shadow-sm)' }}
             >
               {funnelData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={funnelData} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="rgba(200,200,200,0.15)" />
-                    <XAxis type="number" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-tertiary)', fontSize: 12 }} />
-                    <YAxis dataKey="stage" type="category" axisLine={false} tickLine={false} tick={{ fill: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }} width={140} />
-                    <Tooltip cursor={{fill: 'rgba(200,200,200,0.05)'}} contentStyle={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', boxShadow: 'var(--shadow-md)' }} />
-                    <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={24}>
-                      {
-                        funnelData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.fill || COLORS[index % COLORS.length]} />
-                        ))
-                      }
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+                <div style={{ height: 260 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={funnelData} layout="vertical" margin={{ top: 10, right: 30, left: 40, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="var(--border-color)" />
+                      <XAxis type="number" stroke="var(--text-tertiary)" tickLine={false} />
+                      <YAxis dataKey="stage" type="category" stroke="var(--text-tertiary)" tickLine={false} width={130} />
+                      <Tooltip contentStyle={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-color)', borderRadius: 8 }} />
+                      <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                        {funnelData.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               ) : (
-                <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={<Text type="secondary" style={{ fontSize: 13 }}>No real lead conversion data recorded</Text>} />
+                <div style={{ height: 260, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Empty description="No lead conversion data available for selected period" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                </div>
               )}
             </Card>
           </Col>
@@ -600,8 +622,14 @@ const Reports = () => {
           <Table 
             loading={loading} 
             columns={recentCols} 
-            dataSource={filteredReports.length > 0 ? filteredReports : []} // Can add mock table data here if needed, but keeping real is better for lists
-            pagination={{ defaultPageSize: 8, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'], style: { padding: '0 24px 16px' } }} 
+            dataSource={filteredReports.length > 0 ? filteredReports : []}
+            pagination={{ 
+              defaultPageSize: 10, 
+              pageSizeOptions: ['10', '20', '50', '100'], 
+              showSizeChanger: true, 
+              showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} reports`,
+              style: { padding: '12px 24px 16px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8 } 
+            }} 
             rowKey="_id" 
             size="middle" 
             scroll={{ x: 1000 }} 
