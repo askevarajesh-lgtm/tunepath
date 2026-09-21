@@ -70,19 +70,30 @@ export function useActionPermissions(path) {
     const getModulePerms = () => {
       if (!user?.permissions) return null;
       if (user.permissions[moduleName]) return user.permissions[moduleName];
+      const shortKey = moduleName.replace(/^[^-]+-/, '');
+      if (user.permissions[shortKey]) return user.permissions[shortKey];
       if (moduleName === 'Workspace-Task Management') {
         return (
           user.permissions['Workspace-Task Management'] ||
           user.permissions['General-Tasks'] ||
           user.permissions['Workspace-Tasks'] ||
-          user.permissions['Tasks']
+          user.permissions['Tasks'] ||
+          user.permissions['Task Management']
+        );
+      }
+      if (moduleName === 'HRMS-Performance') {
+        return (
+          user.permissions['HRMS-Performance'] ||
+          user.permissions['Performance'] ||
+          user.permissions['General-Performance']
         );
       }
       if (moduleName === 'Workspace-CRM & Leads') {
         return (
           user.permissions['Workspace-CRM & Leads'] ||
           user.permissions['Workspace-CRM'] ||
-          user.permissions['CRM & Leads']
+          user.permissions['CRM & Leads'] ||
+          user.permissions['CRM']
         );
       }
       if (moduleName === 'Workspace-Websites') {
@@ -106,15 +117,15 @@ export function useActionPermissions(path) {
     if (hasCustomPermissions) {
       const permissions = getModulePerms();
       if (!permissions) {
-        // Default allow tasks module view/create for users if not explicitly blocked
-        if (moduleName === 'Workspace-Task Management') return true;
+        // Default allow tasks and performance module view/create for users if not explicitly blocked
+        if (moduleName === 'Workspace-Task Management' || moduleName === 'HRMS-Performance') return true;
         return false;
       }
       if (permissions[actionKey] !== undefined) return !!permissions[actionKey];
       if (permissions.All !== undefined) return !!permissions.All;
       if (permissions.Write !== undefined && (actionKey === 'Create' || actionKey === 'Edit')) return !!permissions.Write;
       if (actionKey === 'View' && (permissions.Read || permissions.View || permissions.Create || permissions.Edit)) return true;
-      if (actionKey === 'Create' && moduleName === 'Workspace-Task Management') return true;
+      if (actionKey === 'Create' && (moduleName === 'Workspace-Task Management' || moduleName === 'HRMS-Performance')) return true;
       return false;
     }
 

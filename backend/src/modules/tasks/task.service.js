@@ -3229,9 +3229,8 @@ const getTasksForKanban = async (
                 },
               ],
             },
-            // Option E: Task was started or active in this range, or is currently in progress
+            // Option E: Task was started on this day
             { workStartedAt: { $gte: start, $lte: end } },
-            { status: { $in: ["in_progress", "inprogress"] } },
           ],
         },
       ];

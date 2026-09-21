@@ -2,7 +2,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { 
   CheckSquare, LayoutDashboard, Settings, FileText, Palette, GitMerge, 
-  Target, Search, BarChart2, Globe, LineChart, MessageCircle, TrendingUp, Briefcase, Users, Activity, Sparkles
+  Target, Search, BarChart2, Globe, LineChart, MessageCircle, TrendingUp, Briefcase, Users, Activity, Sparkles, Clock
 } from 'lucide-react';
 import PortalSidebar from './PortalSidebar';
 import { useAuth } from '../contexts/AuthContext';
@@ -13,24 +13,34 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
 
   const { user } = useAuth();
   const permissions = user?.permissions || {};
-  const hasAnyPerm = Object.keys(permissions).length > 0;
 
   const getIcon = (IconCmp) => <IconCmp size={18} strokeWidth={2} />;
 
   const hasPerm = (key) => {
-    const p = permissions[key];
+    if (!permissions) return false;
+    const shortKey = key.replace(/^[^-]+-/, '');
+    const p = permissions[key] || permissions[shortKey] || permissions[`Workspace-${shortKey}`] || permissions[`General-${shortKey}`] || permissions[`Intelligence-${shortKey}`] || permissions[`Agency Ops-${shortKey}`] || permissions[`HRMS-${shortKey}`] || permissions[`Clients-${shortKey}`];
     if (!p) return false;
     return !!(p.Read || p.View || p.All || p.Create || p.Edit);
   };
 
+  const isExplicitlyDenied = (key) => {
+    if (!permissions) return false;
+    const shortKey = key.replace(/^[^-]+-/, '');
+    const p = permissions[key] || permissions[shortKey];
+    if (!p) return false;
+    return p.Read === false && p.View === false && p.All === false;
+  };
+
   const taskManagementChildren = [];
-  if (!hasAnyPerm || hasPerm('Workspace-Task Management') || hasPerm('General-Tasks')) {
+  // Task Management is available by default for all employees unless explicitly disabled
+  if (!isExplicitlyDenied('Workspace-Task Management')) {
     taskManagementChildren.push({ key: '/user/tasks', label: 'Tasks' });
   }
-  if (hasPerm('Workspace-Task Analytics')) {
+  if (hasPerm('Workspace-Task Analytics') || hasPerm('Task Analytics')) {
     taskManagementChildren.push({ key: '/user/workspace/tasks/analytics', label: 'Task Analytics' });
   }
-  if (hasPerm('Workspace-Coordinator Tasks')) {
+  if (hasPerm('Workspace-Coordinator Tasks') || hasPerm('Coordinator Tasks')) {
     taskManagementChildren.push({ key: '/user/workspace/tasks/coordinator', label: 'Coordinator Tasks' });
   }
 
@@ -39,7 +49,7 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   ];
 
   const clientsChildren = [];
-  if (hasPerm('Clients-Accounts')) {
+  if (hasPerm('Clients-Accounts') || hasPerm('Accounts')) {
     clientsChildren.push({ key: '/user/clients', icon: getIcon(Users), label: 'Accounts' });
   }
 
@@ -58,13 +68,13 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   if (hasPerm('Workspace-AI Studio')) workspaceChildren.push({ key: '/user/workspace/aistudio', icon: getIcon(Palette), label: 'AI Studio' });
   if (hasPerm('Workspace-Social Media')) workspaceChildren.push({ key: '/user/workspace/social', icon: getIcon(GitMerge), label: 'Social Media' });
   if (hasPerm('Workspace-Performance Ads')) workspaceChildren.push({ key: '/user/workspace/ads', icon: getIcon(BarChart2), label: 'Performance Ads' });
-  if (hasPerm('Workspace-CRM & Leads') || hasPerm('Workspace-CRM')) workspaceChildren.push({ key: '/user/workspace/crm', icon: getIcon(LineChart), label: 'CRM & Leads' });
-  if (hasPerm('Workspace-Websites') || hasPerm('Workspace-Website Builder')) workspaceChildren.push({ key: '/user/workspace/website', icon: getIcon(Globe), label: 'Websites' });
+  if (hasPerm('Workspace-CRM & Leads') || hasPerm('Workspace-CRM') || hasPerm('CRM & Leads') || hasPerm('CRM')) workspaceChildren.push({ key: '/user/workspace/crm', icon: getIcon(LineChart), label: 'CRM & Leads' });
+  if (hasPerm('Workspace-Websites') || hasPerm('Workspace-Website Builder') || hasPerm('Websites')) workspaceChildren.push({ key: '/user/workspace/website', icon: getIcon(Globe), label: 'Websites' });
   if (hasPerm('Workspace-Proposals')) workspaceChildren.push({ key: '/user/workspace/proposals', icon: getIcon(FileText), label: 'Proposals' });
   if (hasPerm('Workspace-Invoices')) workspaceChildren.push({ key: '/user/workspace/invoices', icon: getIcon(FileText), label: 'Invoices' });
   if (hasPerm('Workspace-Projects')) workspaceChildren.push({ key: '/user/workspace/projects', icon: getIcon(Target), label: 'Projects' });
   if (hasPerm('Workspace-SEO Panel')) workspaceChildren.push({ key: '/user/workspace/seo-panel', icon: getIcon(Search), label: 'SEO Panel' });
-  if (hasPerm('Workspace-SEO / AEO / GEO') || hasPerm('Workspace-SEO')) workspaceChildren.push({ key: '/user/workspace/seo', icon: getIcon(Search), label: 'SEO/AEO/GEO' });
+  if (hasPerm('Workspace-SEO / AEO / GEO') || hasPerm('Workspace-SEO') || hasPerm('SEO')) workspaceChildren.push({ key: '/user/workspace/seo', icon: getIcon(Search), label: 'SEO/AEO/GEO' });
 
   if (workspaceChildren.length > 0) {
     menuItems.push({
@@ -85,13 +95,13 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   }
 
   const intelligenceChildren = [];
-  if (hasPerm('Intelligence-Google Analytics')) intelligenceChildren.push({ key: '/user/intelligence/analytics', icon: getIcon(TrendingUp), label: 'Analytics' });
-  if (hasPerm('Intelligence-MOS Score')) intelligenceChildren.push({ key: '/user/intelligence/mos', icon: getIcon(BarChart2), label: 'MOS Score' });
-  if (hasPerm('Intelligence-ChatGPT')) intelligenceChildren.push({ key: '/user/intelligence/chatgpt', icon: getIcon(MessageCircle), label: 'ChatGPT' });
-  if (hasPerm('Intelligence-Claude Chat') || hasPerm('Intelligence-Claude')) intelligenceChildren.push({ key: '/user/intelligence/claude', icon: getIcon(Sparkles), label: 'Claude Chat' });
-  if (hasPerm('Intelligence-Canva')) intelligenceChildren.push({ key: '/user/intelligence/canva', icon: getIcon(Palette), label: 'Canva' });
-  if (hasPerm('Intelligence-AI Agent')) intelligenceChildren.push({ key: '/user/intelligence/agents', icon: getIcon(Target), label: 'AI Agent' });
-  if (hasPerm('Intelligence-Reports')) intelligenceChildren.push({ key: '/user/intelligence/reports', icon: getIcon(FileText), label: 'Reports' });
+  if (hasPerm('Intelligence-Google Analytics') || hasPerm('Google Analytics') || hasPerm('Analytics')) intelligenceChildren.push({ key: '/user/intelligence/analytics', icon: getIcon(TrendingUp), label: 'Analytics' });
+  if (hasPerm('Intelligence-MOS Score') || hasPerm('MOS Score')) intelligenceChildren.push({ key: '/user/intelligence/mos', icon: getIcon(BarChart2), label: 'MOS Score' });
+  if (hasPerm('Intelligence-ChatGPT') || hasPerm('ChatGPT')) intelligenceChildren.push({ key: '/user/intelligence/chatgpt', icon: getIcon(MessageCircle), label: 'ChatGPT' });
+  if (hasPerm('Intelligence-Claude Chat') || hasPerm('Intelligence-Claude') || hasPerm('Claude Chat')) intelligenceChildren.push({ key: '/user/intelligence/claude', icon: getIcon(Sparkles), label: 'Claude Chat' });
+  if (hasPerm('Intelligence-Canva') || hasPerm('Canva')) intelligenceChildren.push({ key: '/user/intelligence/canva', icon: getIcon(Palette), label: 'Canva' });
+  if (hasPerm('Intelligence-AI Agent') || hasPerm('AI Agent')) intelligenceChildren.push({ key: '/user/intelligence/agents', icon: getIcon(Target), label: 'AI Agent' });
+  if (hasPerm('Intelligence-Reports') || hasPerm('Reports')) intelligenceChildren.push({ key: '/user/intelligence/reports', icon: getIcon(FileText), label: 'Reports' });
   if (hasPerm('Intelligence-SEO / AEO / GEO(semrush)') || hasPerm('Intelligence-SEO / AEO / GEO') || hasPerm('Workspace-SEO / AEO / GEO')) intelligenceChildren.push({ key: '/user/intelligence/seo-aeo-geo', icon: getIcon(Search), label: 'SEO/AEO/GEO' });
 
   if (intelligenceChildren.length > 0) {
@@ -104,11 +114,11 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   }
 
   const opsChildren = [];
-  if (hasPerm('Agency Ops-Time Tracking') || hasPerm('Workspace-Time Tracking')) opsChildren.push({ key: '/user/time', icon: getIcon(Clock), label: 'Time Tracking' });
-  if (hasPerm('Agency Ops-Meetings') || hasPerm('Workspace-Meetings') || hasPerm('Agency Ops-Global Meetings')) opsChildren.push({ key: '/user/workspace/meetings', icon: getIcon(MessageCircle), label: 'Meetings' });
-  if (hasPerm('Agency Ops-Calendar') || hasPerm('Workspace-Calendar') || hasPerm('Agency Ops-Global Calendar')) opsChildren.push({ key: '/user/workspace/calendar', icon: getIcon(CheckSquare), label: 'Calendar' });
-  if (hasPerm('Agency Ops-Deliverables') || hasPerm('Workspace-Deliverables') || hasPerm('Agency Ops-Global Deliverables')) opsChildren.push({ key: '/user/workspace/deliverables', icon: getIcon(CheckSquare), label: 'Deliverables' });
-  if (hasPerm('Agency Ops-Sales Pipeline') || hasPerm('Workspace-Sales Pipeline')) opsChildren.push({ key: '/user/workspace/salespipeline', icon: getIcon(Briefcase), label: 'Sales Pipeline' });
+  if (hasPerm('Agency Ops-Time Tracking') || hasPerm('Workspace-Time Tracking') || hasPerm('Time Tracking')) opsChildren.push({ key: '/user/time', icon: getIcon(Clock), label: 'Time Tracking' });
+  if (hasPerm('Agency Ops-Meetings') || hasPerm('Workspace-Meetings') || hasPerm('Meetings') || hasPerm('Agency Ops-Global Meetings')) opsChildren.push({ key: '/user/workspace/meetings', icon: getIcon(MessageCircle), label: 'Meetings' });
+  if (hasPerm('Agency Ops-Calendar') || hasPerm('Workspace-Calendar') || hasPerm('Calendar') || hasPerm('Agency Ops-Global Calendar')) opsChildren.push({ key: '/user/workspace/calendar', icon: getIcon(CheckSquare), label: 'Calendar' });
+  if (hasPerm('Agency Ops-Deliverables') || hasPerm('Workspace-Deliverables') || hasPerm('Deliverables') || hasPerm('Agency Ops-Global Deliverables')) opsChildren.push({ key: '/user/workspace/deliverables', icon: getIcon(CheckSquare), label: 'Deliverables' });
+  if (hasPerm('Agency Ops-Sales Pipeline') || hasPerm('Workspace-Sales Pipeline') || hasPerm('Sales Pipeline')) opsChildren.push({ key: '/user/workspace/salespipeline', icon: getIcon(Briefcase), label: 'Sales Pipeline' });
 
   if (opsChildren.length > 0) {
     menuItems.push({
@@ -120,10 +130,11 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   }
 
   const hrmsChildren = [];
-  if (!hasAnyPerm || hasPerm('HRMS-Performance')) {
+  // Performance is available by default for all employees unless explicitly disabled
+  if (!isExplicitlyDenied('HRMS-Performance')) {
     hrmsChildren.push({ key: '/user/hrms/performance', icon: getIcon(Target), label: 'Performance' });
   }
-  if (hasPerm('HRMS-Daily Reports')) {
+  if (hasPerm('HRMS-Daily Reports') || hasPerm('Daily Reports')) {
     hrmsChildren.push({ key: '/user/hrms/daily-reports', icon: getIcon(FileText), label: 'Daily Reports' });
   }
 
@@ -137,8 +148,8 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   }
 
   const settingsChildren = [];
-  if (hasPerm('Workspace-Automation')) settingsChildren.push({ key: '/user/workspace/automation', icon: getIcon(Settings), label: 'Automation' });
-  if (hasPerm('General-Master Item') || hasPerm('Workspace-Master Item')) settingsChildren.push({ key: '/user/workspace/master-items', icon: getIcon(Settings), label: 'Master Item' });
+  if (hasPerm('Workspace-Automation') || hasPerm('Automation')) settingsChildren.push({ key: '/user/workspace/automation', icon: getIcon(Settings), label: 'Automation' });
+  if (hasPerm('General-Master Item') || hasPerm('Workspace-Master Item') || hasPerm('Master Item')) settingsChildren.push({ key: '/user/workspace/master-items', icon: getIcon(Settings), label: 'Master Item' });
   settingsChildren.push({ key: '/user/settings', icon: getIcon(Settings), label: 'Settings' });
 
   if (settingsChildren.length > 0) {
