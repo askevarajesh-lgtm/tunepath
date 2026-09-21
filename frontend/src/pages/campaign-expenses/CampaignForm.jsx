@@ -17,6 +17,9 @@ import {
   Tag,
   Modal,
   Table,
+  Radio,
+  Typography,
+  AutoComplete,
 } from "antd";
 import {
   PlusOutlined,
@@ -26,8 +29,11 @@ import {
   LockOutlined,
   CalendarOutlined,
   CheckCircleOutlined,
+  RocketOutlined,
+  ShopOutlined,
 } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../../contexts/AuthContext";
 import {
   useCreateCampaignMutation,
   useGetCampaignsDropdownQuery,
@@ -41,6 +47,8 @@ import { useGetInvoiceByIdQuery } from "../../api/invoiceApi";
 import dayjs from "dayjs";
 import { useDebouncedSearch } from "../../hooks/useDebounce";
 
+const { Text } = Typography;
+
 const rupeeFormatter = (value) =>
   `₹ ${value}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 const rupeeParser = (value) => value.replace(/₹\s?|(,*)/g, "");
@@ -53,14 +61,14 @@ const calcDays = (start, end) => {
 };
 
 /** Summary strip shown inside each campaign card */
-const CampaignSummaryStrip = ({ dailyBudget, startDate, endDate, campaignAmount }) => {
+const CampaignSummaryStrip = ({ dailyBudget, startDate, endDate, campaignAmount, isInternal }) => {
   if (!dailyBudget || !startDate || !endDate) return null;
   const days = calcDays(startDate, endDate);
   if (days <= 0) return null;
   const total = days * dailyBudget;
 
-  // Check if campaign amount from invoice is set and total exceeds it
-  const hasInvoiceLimit = campaignAmount != null && campaignAmount > 0;
+  // Check if campaign amount from invoice is set and total exceeds it (client campaigns only)
+  const hasInvoiceLimit = !isInternal && campaignAmount != null && campaignAmount > 0;
   const isOverBudget = hasInvoiceLimit && total > campaignAmount;
 
   return (
@@ -68,8 +76,10 @@ const CampaignSummaryStrip = ({ dailyBudget, startDate, endDate, campaignAmount 
       style={{
         background: isOverBudget
           ? "linear-gradient(90deg,#fff2f0 0%,#ffccc7 100%)"
-          : "linear-gradient(90deg,#f0f9ff 0%,#e6f7ff 100%)",
-        border: `1px solid ${isOverBudget ? "#ff4d4f" : "#91d5ff"}`,
+          : isInternal
+            ? "linear-gradient(90deg,#f9f0ff 0%,#f0f5ff 100%)"
+            : "linear-gradient(90deg,#f0f9ff 0%,#e6f7ff 100%)",
+        border: `1px solid ${isOverBudget ? "#ff4d4f" : isInternal ? "#d3adf7" : "#91d5ff"}`,
         borderRadius: 8,
         padding: "10px 16px",
         marginBottom: 16,
@@ -79,6 +89,13 @@ const CampaignSummaryStrip = ({ dailyBudget, startDate, endDate, campaignAmount 
         alignItems: "center",
       }}
     >
+      {isInternal && (
+        <div>
+          <Tag color="purple" style={{ fontWeight: 700, fontSize: 13, borderRadius: 6 }}>
+            <RocketOutlined /> Own Brand Marketing
+          </Tag>
+        </div>
+      )}
       <div>
         <span style={{ color: "#888", fontSize: 12 }}>Campaign Days: </span>
         <Tag color="blue" style={{ fontWeight: 700, fontSize: 13 }}>
@@ -121,7 +138,14 @@ const CampaignSummaryStrip = ({ dailyBudget, startDate, endDate, campaignAmount 
 
 const CampaignForm = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [form] = Form.useForm();
+  const [campaignScope, setCampaignScope] = useState("client"); // "client" | "internal"
+  const isInternal = campaignScope === "internal";
+
+  const agencyBrandId = user?.companyId?._id || user?.companyId || user?._id;
+  const agencyBrandName = user?.companyName || user?.name || "Agency Own Brand";
+
   const [selectedClientId, setSelectedClientId] = useState(null);
   const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [createdCampaigns, setCreatedCampaigns] = useState([]);
@@ -206,6 +230,17 @@ const CampaignForm = () => {
     return false;
   }, [allCampaigns]);
 
+  const existingOwnBrandNames = React.useMemo(() => {
+    const list = [];
+    (allCampaigns || []).forEach((c) => {
+      const name = (c.ownBrandName || "").trim();
+      if (name && !list.includes(name)) {
+        list.push(name);
+      }
+    });
+    return list;
+  }, [allCampaigns]);
+
   const campaignClientIds = React.useMemo(() => {
     const set = new Set();
     allCampaigns.forEach((c) => {
@@ -238,6 +273,7 @@ const CampaignForm = () => {
 
   // Compute allocated budget from project, invoice, proposal, and masterItems
   const remainingBalance = React.useMemo(() => {
+    if (isInternal) return null;
     if (!project && !invoice) return null;
 
     // 1. From invoice directly
@@ -277,11 +313,11 @@ const CampaignForm = () => {
     }
 
     return null;
-  }, [project, invoice]);
+  }, [project, invoice, isInternal]);
 
   // Auto-populate campaign details from project and invoice into Form
   useEffect(() => {
-    if (project) {
+    if (project && !isInternal) {
       // Find masterItem campaignDetails if available
       const masterCampDetails =
         project?.masterItemId?.campaignDetails ||
@@ -327,7 +363,7 @@ const CampaignForm = () => {
         })),
       );
     }
-  }, [project, invoice, remainingBalance, form]);
+  }, [project, invoice, remainingBalance, form, isInternal]);
 
   /**
    * Recompute totalCampaignValue for a single campaign index,
@@ -356,12 +392,12 @@ const CampaignForm = () => {
           dailyBudget,
           startDate: startDate ? dayjs(startDate) : null,
           endDate: endDate ? dayjs(endDate) : null,
-          campaignAmount: campaignAmount ?? null,
+          campaignAmount: isInternal ? null : (campaignAmount ?? null),
         };
         return next;
       });
     },
-    [form],
+    [form, isInternal],
   );
 
   const onValuesChange = useCallback(
@@ -380,29 +416,41 @@ const CampaignForm = () => {
         return;
       }
 
-      // ── Hard budget-cap validation ──────────────────────────────────────
-      let totalValueAcrossAll = 0;
-      for (let i = 0; i < values.campaigns.length; i++) {
-        const camp = values.campaigns[i];
-        if (!camp.startDate || !camp.endDate || !camp.dailyBudget) continue;
-        const days = calcDays(dayjs(camp.startDate), dayjs(camp.endDate));
-        totalValueAcrossAll += days * camp.dailyBudget;
-      }
+      // ── Hard budget-cap validation (Client campaigns only) ─────────────
+      if (!isInternal && remainingBalance != null) {
+        let totalValueAcrossAll = 0;
+        for (let i = 0; i < values.campaigns.length; i++) {
+          const camp = values.campaigns[i];
+          if (!camp.startDate || !camp.endDate || !camp.dailyBudget) continue;
+          const days = calcDays(dayjs(camp.startDate), dayjs(camp.endDate));
+          totalValueAcrossAll += days * camp.dailyBudget;
+        }
 
-      if (remainingBalance != null && totalValueAcrossAll > remainingBalance) {
-        message.error({
-          content: (
-            <span>
-              <strong>Total Budget Exceeded:</strong> The total value of these new campaigns
-              (₹{totalValueAcrossAll.toLocaleString("en-IN")}) exceeds the allocated budget
-              (₹{remainingBalance.toLocaleString("en-IN")}).
-            </span>
-          ),
-          duration: 6,
-        });
-        return; // stop — do NOT create any campaign
+        if (totalValueAcrossAll > remainingBalance) {
+          message.error({
+            content: (
+              <span>
+                <strong>Total Budget Exceeded:</strong> The total value of these new campaigns
+                (₹{totalValueAcrossAll.toLocaleString("en-IN")}) exceeds the allocated budget
+                (₹{remainingBalance.toLocaleString("en-IN")}).
+              </span>
+            ),
+            duration: 6,
+          });
+          return; // stop — do NOT create any campaign
+        }
       }
       // ────────────────────────────────────────────────────────────────────
+
+      let resolvedBrandName = null;
+      if (isInternal) {
+        resolvedBrandName = (values.ownBrandName || "").trim();
+        if (!resolvedBrandName) {
+          resolvedBrandName = agencyBrandName || "Agency Own Brand";
+        }
+      }
+
+      const effectiveClientId = isInternal ? (agencyBrandId || values.clientId) : values.clientId;
 
       const campaignsToCreate = values.campaigns.map((campaign) => {
         const startDate = dayjs(campaign.startDate).toDate();
@@ -417,16 +465,18 @@ const CampaignForm = () => {
             : 0;
 
         return {
-          clientId: values.clientId,
-          clientCompanyId: values.clientId,
-          projectId: values.projectId || null,
+          clientId: effectiveClientId,
+          clientCompanyId: effectiveClientId,
+          projectId: isInternal ? null : (values.projectId || null),
           platform: campaign.platform,
           startDate,
           endDate,
           campaignDays,
           dailyBudget: campaign.dailyBudget,
-          campaignAmount: campaign.campaignAmount || 0,
+          campaignAmount: isInternal ? totalCampaignValue : (campaign.campaignAmount || 0),
           totalCampaignValue,
+          isInternal: Boolean(isInternal),
+          ownBrandName: isInternal ? resolvedBrandName : null,
         };
       });
 
@@ -483,94 +533,209 @@ const CampaignForm = () => {
       </div>
 
       <Card style={{ maxWidth: 1000 }}>
+        {/* Campaign Type Selector */}
+        <Card
+          type="inner"
+          style={{
+            marginBottom: 24,
+            background: isInternal ? "#f9f0ff" : "#f0f7ff",
+            border: `1px solid ${isInternal ? "#d3adf7" : "#bae0ff"}`,
+            borderRadius: 8,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              flexWrap: "wrap",
+              gap: 12,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  fontWeight: 600,
+                  fontSize: 15,
+                  color: isInternal ? "#722ed1" : "#1677ff",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                {isInternal ? <RocketOutlined /> : <ShopOutlined />}
+                Campaign Purpose
+              </div>
+              <div style={{ color: "#666", fontSize: 13, marginTop: 4 }}>
+                {isInternal
+                  ? "Running campaigns for your agency's own brand. No proposal, project, or invoice budget limit required."
+                  : "Running campaigns for a client project with invoice budget tracking."}
+              </div>
+            </div>
+            <Radio.Group
+              value={campaignScope}
+              onChange={(e) => {
+                const newScope = e.target.value;
+                setCampaignScope(newScope);
+                if (newScope === "internal") {
+                  setSelectedClientId(agencyBrandId);
+                  setSelectedProjectId(null);
+                  form.setFieldsValue({
+                    clientId: agencyBrandId,
+                    projectId: undefined,
+                  });
+                  const current = form.getFieldValue("campaigns") || [{}];
+                  const updated = current.map((c) => ({ ...c, campaignAmount: undefined }));
+                  form.setFieldsValue({ campaigns: updated });
+                  setCampaignFields((prev) => prev.map((c) => ({ ...c, campaignAmount: null })));
+                } else {
+                  setSelectedClientId(null);
+                  setSelectedProjectId(null);
+                  form.setFieldsValue({ clientId: undefined, projectId: undefined });
+                  const current = form.getFieldValue("campaigns") || [{}];
+                  const updated = current.map((c) => ({ ...c, campaignAmount: undefined }));
+                  form.setFieldsValue({ campaigns: updated });
+                  setCampaignFields((prev) => prev.map((c) => ({ ...c, campaignAmount: null })));
+                }
+              }}
+              buttonStyle="solid"
+              size="middle"
+            >
+              <Radio.Button value="client">
+                <Space>
+                  <ShopOutlined /> Client Campaign
+                </Space>
+              </Radio.Button>
+              <Radio.Button value="internal">
+                <Space>
+                  <RocketOutlined /> Own Brand Marketing
+                </Space>
+              </Radio.Button>
+            </Radio.Group>
+          </div>
+        </Card>
+
         <Form
           form={form}
           layout="vertical"
           onFinish={onFinish}
           onValuesChange={onValuesChange}
-          initialValues={{ campaigns: [{}] }}
+          initialValues={{
+            campaigns: [{}],
+            clientId: isInternal ? agencyBrandId : undefined,
+          }}
         >
-          {/* ── Common Information ── */}
+          {/* ── Common Information / Own Brand Information ── */}
           <Card
             type="inner"
-            title="Common Information"
+            title={isInternal ? "Own Brand Information" : "Common Information"}
             style={{ marginBottom: 24 }}
           >
-            <Row gutter={16}>
-              <Col xs={24} md={12}>
-                <Form.Item
-                  name="clientId"
-                  label="Client"
-                  rules={[{ required: true, message: "Please select a client" }]}
-                >
-                  <Select
-                    placeholder="Select client"
-                    showSearch
-                    filterOption={false}
-                    onSearch={setClientSearch}
-                    loading={isLoadingClients}
-                    allowClear
-                    onChange={(value) => {
-                      setSelectedClientId(value);
-                      form.setFieldsValue({ projectId: undefined });
-                      setClientSearch("");
-                    }}
-                    onBlur={() => {
-                      setClientSearch("");
-                    }}
-                    options={clients.map((c) => ({
-                      value: c._id,
-                      label: c.name,
-                    }))}
-                  />
-                </Form.Item>
-              </Col>
-              <Col xs={24} md={12}>
-                <Form.Item
-                  name="projectId"
-                  label="Project"
-                  rules={[
-                    { required: true, message: "Please select a project" },
-                  ]}
-                  tooltip="Select project to auto-fetch invoice info"
-                >
-                  <Select
-                    placeholder={
-                      selectedClientId
-                        ? "Select project"
-                        : "Select a client first"
-                    }
-                    disabled={!selectedClientId}
-                    showSearch
-                    optionFilterProp="label"
-                    filterOption={(input, option) =>
-                      (option?.label ?? "")
-                        .toLowerCase()
-                        .includes(input.toLowerCase())
-                    }
-                    allowClear
-                    onChange={(value) => {
-                      setSelectedProjectId(value);
-                      // Clear campaign amounts when project changes
-                      const current = form.getFieldValue("campaigns") || [{}];
-                      form.setFieldsValue({
-                        campaigns: current.map((camp) => ({
-                          ...camp,
-                          campaignAmount: undefined,
-                        })),
-                      });
-                    }}
-                    options={projects.map((p) => ({
-                      value: p._id,
-                      label: `${p.name}${p.status ? ` (${p.status.replace(/_/g, " ")})` : ""}`,
-                    }))}
-                  />
-                </Form.Item>
-              </Col>
-            </Row>
+            {isInternal ? (
+              <Row gutter={16}>
+                <Col xs={24}>
+                  <Form.Item
+                    name="ownBrandName"
+                    label={<b>Own Brand / In-House Business Name</b>}
+                    rules={[
+                      { required: true, message: "Please enter or select your own brand name" },
+                    ]}
+                    tooltip="Type any brand name or choose from your previous own brands"
+                  >
+                    <AutoComplete
+                      options={existingOwnBrandNames.map((name) => ({
+                        value: name,
+                        label: `🏢 ${name}`,
+                      }))}
+                      placeholder="Type or select your own brand name (e.g. Brand 1, Brand 2, Tunepath...)"
+                      filterOption={(inputValue, option) =>
+                        (option?.value ?? "")
+                          .toLowerCase()
+                          .includes(inputValue.toLowerCase())
+                      }
+                      allowClear
+                      size="large"
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+            ) : (
+              <Row gutter={16}>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    name="clientId"
+                    label="Client"
+                    rules={[{ required: true, message: "Please select a client" }]}
+                  >
+                    <Select
+                      placeholder="Select client"
+                      showSearch
+                      filterOption={false}
+                      onSearch={setClientSearch}
+                      loading={isLoadingClients}
+                      allowClear
+                      onChange={(value) => {
+                        setSelectedClientId(value);
+                        form.setFieldsValue({ projectId: undefined });
+                        setClientSearch("");
+                      }}
+                      onBlur={() => {
+                        setClientSearch("");
+                      }}
+                      options={clients.map((c) => ({
+                        value: c._id,
+                        label: c.name,
+                      }))}
+                    />
+                  </Form.Item>
+                </Col>
+                <Col xs={24} md={12}>
+                  <Form.Item
+                    name="projectId"
+                    label="Project"
+                    rules={[
+                      { required: true, message: "Please select a project" },
+                    ]}
+                    tooltip="Select project to auto-fetch invoice info"
+                  >
+                    <Select
+                      placeholder={
+                        selectedClientId
+                          ? "Select project"
+                          : "Select a client first"
+                      }
+                      disabled={!selectedClientId}
+                      showSearch
+                      optionFilterProp="label"
+                      filterOption={(input, option) =>
+                        (option?.label ?? "")
+                          .toLowerCase()
+                          .includes(input.toLowerCase())
+                      }
+                      allowClear
+                      onChange={(value) => {
+                        setSelectedProjectId(value);
+                        // Clear campaign amounts when project changes
+                        const current = form.getFieldValue("campaigns") || [{}];
+                        form.setFieldsValue({
+                          campaigns: current.map((camp) => ({
+                            ...camp,
+                            campaignAmount: undefined,
+                          })),
+                        });
+                      }}
+                      options={projects.map((p) => ({
+                        value: p._id,
+                        label: `${p.name}${p.status ? ` (${p.status.replace(/_/g, " ")})` : ""}`,
+                      }))}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+            )}
 
             {/* Loading */}
-            {(isLoadingProject || isLoadingInvoice) && (
+            {!isInternal && (isLoadingProject || isLoadingInvoice) && (
               <Row style={{ marginTop: 8 }}>
                 <Col>
                   <Spin size="small" /> &nbsp;Loading invoice details…
@@ -578,8 +743,8 @@ const CampaignForm = () => {
               </Row>
             )}
 
-            {/* Invoice & Campaign Budget info box */}
-            {selectedProjectId && !isLoadingProject && project && (
+            {/* Invoice & Campaign Budget info box (Client campaigns) */}
+            {!isInternal && selectedProjectId && !isLoadingProject && project && (
               <Row style={{ marginTop: 16 }}>
                 <Col span={24}>
                   {remainingBalance != null && remainingBalance > 0 ? (
@@ -622,6 +787,20 @@ const CampaignForm = () => {
                 </Col>
               </Row>
             )}
+
+            {/* Info notice for Own Brand campaigns */}
+            {isInternal && (
+              <Row style={{ marginTop: 12 }}>
+                <Col span={24}>
+                  <Alert
+                    message="Manual Daily Budget Mode"
+                    description="Enter your own brand name and daily budget below. The total campaign cost will be calculated automatically based on the number of days, without requiring any project or proposal."
+                    type="success"
+                    showIcon
+                  />
+                </Col>
+              </Row>
+            )}
           </Card>
 
           {/* ── Campaigns ── */}
@@ -659,6 +838,7 @@ const CampaignForm = () => {
                           startDate={campaignFields[key]?.startDate}
                           endDate={campaignFields[key]?.endDate}
                           campaignAmount={campaignFields[key]?.campaignAmount}
+                          isInternal={isInternal}
                         />
 
                         {/* Row 1: Platform */}
@@ -780,9 +960,10 @@ const CampaignForm = () => {
                                       );
                                     }
 
-                                    // ── Budget cap check ──────────────────
+                                    // ── Budget cap check (Client campaigns only) ──
                                     const { dailyBudget, campaignAmount } = camp;
                                     if (
+                                      !isInternal &&
                                       dailyBudget &&
                                       campaignAmount != null &&
                                       campaignAmount > 0
@@ -821,8 +1002,9 @@ const CampaignForm = () => {
                                   const start = dayjs(camp.startDate).startOf("day");
                                   // Disable past start date
                                   if (d && d < start) return true;
-                                  // Disable dates that would exceed invoice budget
+                                  // Disable dates that would exceed invoice budget (Client campaigns only)
                                   if (
+                                    !isInternal &&
                                     camp.dailyBudget &&
                                     camp.campaignAmount != null &&
                                     camp.campaignAmount > 0
@@ -839,6 +1021,7 @@ const CampaignForm = () => {
                                   return false;
                                 }}
                                 renderExtraFooter={() => {
+                                  if (isInternal) return null;
                                   const campaigns =
                                     form.getFieldValue("campaigns") || [];
                                   const camp = campaigns[name] || {};
@@ -874,9 +1057,9 @@ const CampaignForm = () => {
                           </Col>
                         </Row>
 
-                        {/* Row 3: Total Campaign Value (auto-calc, read-only) + Campaign Amount from Invoice (read-only) */}
+                        {/* Row 3: Total Campaign Value (auto-calc, read-only) + Campaign Amount from Invoice (Client campaigns only) */}
                         <Row gutter={16}>
-                          <Col xs={24} md={12}>
+                          <Col xs={24} md={isInternal ? 24 : 12}>
                             <Form.Item
                               {...restField}
                               name={[name, "totalCampaignValue"]}
@@ -908,33 +1091,35 @@ const CampaignForm = () => {
                               />
                             </Form.Item>
                           </Col>
-                          <Col xs={24} md={12}>
-                            <Form.Item
-                              {...restField}
-                              name={[name, "campaignAmount"]}
-                              label={
-                                <span>
-                                  Campaign Amount from Invoice (excl GST){" "}
-                                  <Tooltip title="Auto-populated from the project invoice. Read-only — for reference only.">
-                                    <LockOutlined style={{ color: "#bbb" }} />
-                                  </Tooltip>
-                                </span>
-                              }
-                            >
-                              <InputNumber
-                                style={{
-                                  width: "100%",
-                                  background: "#f5f5f5",
-                                  cursor: "not-allowed",
-                                }}
-                                formatter={rupeeFormatter}
-                                parser={rupeeParser}
-                                readOnly
-                                tabIndex={-1}
-                                placeholder="Auto-populated from invoice"
-                              />
-                            </Form.Item>
-                          </Col>
+                          {!isInternal && (
+                            <Col xs={24} md={12}>
+                              <Form.Item
+                                {...restField}
+                                name={[name, "campaignAmount"]}
+                                label={
+                                  <span>
+                                    Campaign Amount from Invoice (excl GST){" "}
+                                    <Tooltip title="Auto-populated from the project invoice. Read-only — for reference only.">
+                                      <LockOutlined style={{ color: "#bbb" }} />
+                                    </Tooltip>
+                                  </span>
+                                }
+                              >
+                                <InputNumber
+                                  style={{
+                                    width: "100%",
+                                    background: "#f5f5f5",
+                                    cursor: "not-allowed",
+                                  }}
+                                  formatter={rupeeFormatter}
+                                  parser={rupeeParser}
+                                  readOnly
+                                  tabIndex={-1}
+                                  placeholder="Auto-populated from invoice"
+                                />
+                              </Form.Item>
+                            </Col>
+                          )}
                         </Row>
                       </Card>
                       {key < fields.length - 1 && <Divider />}

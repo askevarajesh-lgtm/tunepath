@@ -385,6 +385,11 @@ const CampaignView = ({ isClientView: propIsClientView = false }) => {
           >
             Campaign: {formatPlatformName(campaign.platform)}
           </Title>
+          {campaign.isInternal && (
+            <Tag color="purple" style={{ fontWeight: 700, fontSize: 13, padding: "2px 10px", borderRadius: 6 }}>
+              Own Brand Marketing
+            </Tag>
+          )}
         </Space>
       </div>
       <Card>
@@ -393,8 +398,15 @@ const CampaignView = ({ isClientView: propIsClientView = false }) => {
           column={{ xxl: 3, xl: 3, lg: 2, md: 1, sm: 1, xs: 1 }}
           style={{ fontSize: "14px" }}
         >
-          <Descriptions.Item label="Client">
-            {campaign.clientCompanyId?.name || campaign.clientId?.name}
+          <Descriptions.Item label={campaign.isInternal ? "Brand / Entity" : "Client"}>
+            <Space>
+              <span>{campaign.ownBrandName || campaign.clientCompanyId?.name || campaign.clientId?.name || "Agency Own Brand"}</span>
+              {campaign.isInternal && (
+                <Tag color="purple" style={{ fontWeight: 600, fontSize: 11 }}>
+                  Own Brand
+                </Tag>
+              )}
+            </Space>
           </Descriptions.Item>
           <Descriptions.Item label="Platform">
             {formatPlatformName(campaign.platform)}
@@ -463,7 +475,7 @@ const CampaignView = ({ isClientView: propIsClientView = false }) => {
               <Descriptions.Item label="Daily Budget">
                 ₹{campaign.dailyBudget}
               </Descriptions.Item>
-              <Descriptions.Item label="Campaign Amount (from Invoice)">
+              <Descriptions.Item label={campaign.isInternal ? "Campaign Budget" : "Campaign Amount (from Invoice)"}>
                 ₹{campaign.campaignAmount}
               </Descriptions.Item>
               <Descriptions.Item label="Actual Spend">
@@ -474,13 +486,13 @@ const CampaignView = ({ isClientView: propIsClientView = false }) => {
         </Descriptions>
 
         {/* Client-Side Payment Information */}
-        <Divider>Client-Side Payment Information</Divider>
+        <Divider>{campaign.isInternal ? "Own Brand Expense & Recharge Information" : "Client-Side Payment Information"}</Divider>
         <Descriptions
           bordered
           column={{ xxl: 3, xl: 3, lg: 2, md: 1, sm: 1, xs: 1 }}
           style={{ marginTop: 16, fontSize: "14px" }}
         >
-          <Descriptions.Item label="Campaign Amount (Invoice)">
+          <Descriptions.Item label={campaign.isInternal ? "Campaign Budget" : "Campaign Amount (Invoice)"}>
             ₹{(campaign.campaignAmount || 0).toLocaleString("en-IN")}
           </Descriptions.Item>
           <Descriptions.Item label="Total Campaign Value">

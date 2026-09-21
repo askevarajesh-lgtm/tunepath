@@ -315,42 +315,70 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
     return false;
   }, [campaignsDropdown]);
 
-  // Clients who have existing campaigns created in Campaign Create
+  // Clients and individual Own Brands who have existing campaigns created in Campaign Create
   const rechargeClientsDropdown = useMemo(() => {
     const map = new Map();
 
     (campaignsDropdown || []).forEach((c) => {
-      const clientObj = c.clientCompanyId || c.clientId;
-      const cId = (clientObj?._id || clientObj || "").toString();
-      if (cId) {
-        let name = "";
-        let email = "";
-
-        if (typeof clientObj === "object" && clientObj.name) {
-          name = clientObj.name;
-          email = clientObj.email || "";
-        } else {
-          const found = (rawClientsDropdown || []).find(
-            (rc) => (rc._id || rc.id || "").toString() === cId,
-          );
-          if (found) {
-            name = found.name;
-            email = found.email || "";
-          }
-        }
-
-        if (name && !map.has(cId)) {
-          map.set(cId, {
-            _id: cId,
-            name,
-            email,
+      const isInternal = Boolean(c.isInternal);
+      if (isInternal) {
+        const brandName = (c.ownBrandName || "").trim() || "Agency Own Brand";
+        const internalKey = `internal_${brandName}`;
+        if (!map.has(internalKey)) {
+          map.set(internalKey, {
+            _id: c.clientCompanyId?._id || c.clientCompanyId || c.clientId?._id || c.clientId || internalKey,
+            name: `${brandName} (Own Brand)`,
+            ownBrandName: brandName,
+            isInternal: true,
           });
+        }
+      } else {
+        const clientObj = c.clientCompanyId || c.clientId;
+        const cId = (clientObj?._id || clientObj || "").toString();
+        if (cId) {
+          let name = "";
+          let email = "";
+
+          if (typeof clientObj === "object" && clientObj.name) {
+            name = clientObj.name;
+            email = clientObj.email || "";
+          } else {
+            const found = (rawClientsDropdown || []).find(
+              (rc) => (rc._id || rc.id || "").toString() === cId,
+            );
+            if (found) {
+              name = found.name;
+              email = found.email || "";
+            }
+          }
+
+          if (name && !map.has(cId)) {
+            map.set(cId, {
+              _id: cId,
+              name,
+              email,
+              isInternal: false,
+            });
+          }
         }
       }
     });
 
+    // Also ensure agency's own company is included for internal recharges if no internal brands yet
+    const agencyId = (currentUser?.companyId?._id || currentUser?.companyId || currentUser?._id || "").toString();
+    const agencyName = currentUser?.companyName || currentUser?.name || "Agency Own Brand";
+    if (agencyId && !Array.from(map.values()).some((item) => item.isInternal) && !isClientView) {
+      map.set(`internal_${agencyName}`, {
+        _id: agencyId,
+        name: `${agencyName} (Own Brand)`,
+        ownBrandName: agencyName,
+        email: currentUser?.email || "",
+        isInternal: true,
+      });
+    }
+
     return Array.from(map.values());
-  }, [campaignsDropdown, rawClientsDropdown]);
+  }, [campaignsDropdown, rawClientsDropdown, currentUser, isClientView]);
 
   const canViewAmounts = canRead;
   const canManageClientAmountValue = canEdit;
@@ -616,13 +644,25 @@ const CampaignList = ({ isClientView = false, defaultTab = "campaigns" }) => {
       render: (platform) => formatPlatformName(platform),
     },
     {
-      title: "Client",
+      title: "Client / Brand",
       dataIndex: "clientCompanyId",
       key: "clientCompanyId",
       render: (client, record) => {
         // Support both clientCompanyId and clientId (legacy)
         const clientData = client || record.clientId;
-        return clientData?.name || "N/A";
+        const name = record.isInternal
+          ? (record.ownBrandName || clientData?.name || "Own Brand")
+          : (clientData?.name || "N/A");
+        return (
+          <Space>
+            <span>{name}</span>
+            {record.isInternal && (
+              <Tag color="purple" style={{ fontWeight: 600, fontSize: 11, borderRadius: 4 }}>
+                Own Brand
+              </Tag>
+            )}
+          </Space>
+        );
       },
     },
     {

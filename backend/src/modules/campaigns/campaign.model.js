@@ -208,11 +208,23 @@ const campaignSchema = new mongoose.Schema(
       min: 0,
       comment: "Daily budget (excl GST)",
     },
+    isInternal: {
+      type: Boolean,
+      default: false,
+      comment: "Whether this campaign is for the agency's own brand (in-house marketing)",
+    },
+    ownBrandName: {
+      type: String,
+      trim: true,
+      default: null,
+      comment: "Custom name of the agency's own brand (e.g. Brand 1, Brand 2, etc.)",
+    },
     campaignAmount: {
       type: Number,
-      required: true,
+      required: false,
+      default: 0,
       min: 0,
-      comment: "Total campaign amount from invoice (excl GST)",
+      comment: "Total campaign amount from invoice (excl GST) or allocated internal budget",
     },
     totalCampaignValue: {
       type: Number,

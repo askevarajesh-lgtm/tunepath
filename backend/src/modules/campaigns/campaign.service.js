@@ -208,7 +208,7 @@ const getCampaignsDropdown = async (
       { path: "clientId", select: "name email phone" },
       { path: "projectId", select: "name status departments invoiceId" },
     ],
-    "platform startDate endDate status clientCompanyId clientId projectId dailyBudget campaignDays totalCampaignValue campaignAmount",
+    "platform startDate endDate status clientCompanyId clientId projectId dailyBudget campaignDays totalCampaignValue campaignAmount isInternal ownBrandName",
   );
 };
 const getCampaignById = async (
@@ -238,7 +238,7 @@ const getCampaignById = async (
   let campaign = await Campaign.findOne(filter)
     .populate({
       path: "clientCompanyId",
-      select: "name email phone address",
+      select: "name email phone address companyName",
     })
     .populate({
       path: "projectId",
@@ -254,11 +254,11 @@ const getCampaignById = async (
     })
     .populate({
       path: "rechargeHistory.clientCompanyIds",
-      select: "name email",
+      select: "name email companyName",
     })
     .populate({
       path: "rechargeHistory.clientCompanyId",
-      select: "name email",
+      select: "name email companyName",
     })
     .populate({
       path: "rechargeHistory.rechargedBy",
@@ -286,6 +286,25 @@ const createCampaign = async (campaignData, companyId, performedByUserId) => {
     campaignData.clientCompanyId = campaignData.clientId;
   }
 
+  // If internal campaign or no clientCompanyId provided, use agency companyId
+  if (campaignData.isInternal || !campaignData.clientCompanyId) {
+    campaignData.isInternal = true;
+    if (!campaignData.clientCompanyId && companyId) {
+      campaignData.clientCompanyId = companyId;
+    }
+  }
+
+  // Fallback for campaign budget if no invoice exists
+  if (!campaignData.campaignAmount || campaignData.campaignAmount <= 0) {
+    campaignData.campaignAmount =
+      campaignData.totalCampaignValue ||
+      (Number(campaignData.dailyBudget || 0) * Number(campaignData.campaignDays || 1)) ||
+      0;
+  }
+  if (!campaignData.totalCampaignValue || campaignData.totalCampaignValue <= 0) {
+    campaignData.totalCampaignValue = campaignData.campaignAmount;
+  }
+
   campaignData.companyId = companyId;
   campaignData.createdBy = performedByUserId;
 
@@ -298,16 +317,20 @@ const createCampaign = async (campaignData, companyId, performedByUserId) => {
 
   const campaign = await Campaign.create(campaignData);
 
+  const brandLabel = campaign.ownBrandName || (campaign.isInternal ? "Own Brand" : "");
+
   await createTimelineEvent({
     eventType: "campaign_created",
     entityType: "Campaign",
     entityId: campaign._id,
     performedByUserId,
-    description: `Campaign created for ${campaign.platform}`,
+    description: `Campaign created for ${campaign.platform}${brandLabel ? ` (${brandLabel})` : ""}`,
     metadata: {
       platform: campaign.platform,
       clientCompanyId:
         campaign.clientCompanyId?.toString() || campaign.clientCompanyId,
+      isInternal: campaign.isInternal,
+      ownBrandName: campaign.ownBrandName,
     },
     companyId,
   });
