@@ -1058,6 +1058,30 @@ const ClientsTab = () => {
 
             <div style={{ marginBottom: 24 }}>
               <Text style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12, display: 'block' }}>
+                Assignment
+              </Text>
+              <Form.Item
+                name="assignedUsers"
+                label={<span style={{ fontWeight: 600 }}>Assign Users (Optional)</span>}
+              >
+                <Select
+                  mode="multiple"
+                  placeholder="Select users to manage this client"
+                  size="large"
+                  style={{ borderRadius: 8 }}
+                  optionFilterProp="children"
+                >
+                  {agencyUsersList.map(u => (
+                    <Select.Option key={u._id} value={u._id}>
+                      {u.name} ({u.email})
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Form.Item>
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <Text style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12, display: 'block' }}>
                 Subscription
               </Text>
               <Form.Item

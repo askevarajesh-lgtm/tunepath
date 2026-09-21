@@ -62,6 +62,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
   
   const [dateRangeFilter, setDateRangeFilter] = useState(null);
   const [formNameFilter, setFormNameFilter] = useState([]);
+  const [statusFilter, setStatusFilter] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
@@ -239,6 +240,14 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     return Array.from(names);
   }, [leads]);
 
+  const uniqueStatuses = useMemo(() => {
+    const statuses = new Set();
+    leads.forEach(lead => {
+      if (lead.status) statuses.add(lead.status);
+    });
+    return Array.from(statuses);
+  }, [leads]);
+
   const getActualLeadDate = (lead) => {
     const customDate = lead?.customData?.created_time || lead?.customData?.createdTime || lead?.customData?.createdtime;
     if (customDate) {
@@ -306,8 +315,12 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                     status.includes(q) ||
                     assignedTo.includes(q);
     }
+    let statusMatch = true;
+    if (statusFilter && statusFilter.length > 0) {
+      statusMatch = statusFilter.includes(lead.status);
+    }
     
-    return dateMatch && formMatch && searchMatch;
+    return dateMatch && formMatch && searchMatch && statusMatch;
   }).sort((a, b) => getActualLeadDate(b).valueOf() - getActualLeadDate(a).valueOf());
 
   const handleEditClick = (record) => {
@@ -542,6 +555,19 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
             >
               {uniqueFormNames.map(name => (
                 <Option key={name} value={name}>{name}</Option>
+              ))}
+            </Select>
+            <Select
+              mode="multiple"
+              placeholder="Filter by Status"
+              value={statusFilter}
+              onChange={val => setStatusFilter(val || [])}
+              style={{ minWidth: 200, borderRadius: 8 }}
+              allowClear
+              showSearch
+            >
+              {uniqueStatuses.map(status => (
+                <Option key={status} value={status}>{status.replace(/_/g, ' ')}</Option>
               ))}
             </Select>
             {canView && (

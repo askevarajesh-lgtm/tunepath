@@ -13,6 +13,7 @@ import {
   CalendarTwoTone, WarningOutlined, FileAddOutlined, ReloadOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { CalendarSync } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { 
@@ -447,7 +448,17 @@ const MeetingsPage = () => {
             <Tooltip title={`${item.title} (${item.time})`}>
               <Badge 
                 status={item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'error' : 'processing'} 
-                text={<span style={{ fontSize: '11px', display: 'inline-block', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>} 
+                text={
+                  <span 
+                    style={{ fontSize: '11px', display: 'inline-block', maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
+                    onClick={() => {
+                      setSelectedMeetingId(item._id);
+                      setDetailModalVisible(true);
+                    }}
+                  >
+                    {item.title}
+                  </span>
+                } 
               />
             </Tooltip>
           </li>
@@ -560,7 +571,7 @@ const MeetingsPage = () => {
               <Tooltip title="Reschedule Meeting">
                 <Button 
                   type="link" 
-                  icon={<ReloadOutlined />} 
+                  icon={<CalendarSync size={16} />} 
                   onClick={() => openRescheduleModal(record)} 
                   style={{ color: record.status === 'cancelled' ? '#ff4d4f' : '#1890ff' }}
                 />
@@ -1015,7 +1026,7 @@ const MeetingsPage = () => {
                     {((detailData.meeting.host?._id || detailData.meeting.host) === currentUser._id || canManageMeetings || isClientRole) && (
                       <Button 
                         type="default" 
-                        icon={<ReloadOutlined />} 
+                        icon={<CalendarSync size={16} />} 
                         onClick={() => openRescheduleModal(detailData.meeting)}
                       >
                         Reschedule Meeting
@@ -1113,116 +1124,7 @@ const MeetingsPage = () => {
               </Form.Item>
             </Tabs.TabPane>
 
-            <Tabs.TabPane tab="Action Items & Tasks" key="followups">
-              <h3>Arising Deliverables</h3>
-              <List
-                dataSource={detailData.followUps}
-                style={{ marginBottom: 24 }}
-                renderItem={item => (
-                  <List.Item
-                    key={item._id}
-                    actions={[
-                      item.status !== 'completed' && (
-                        <Tooltip title="Mark Completed" key="complete">
-                          <Button type="link" size="small" icon={<CheckCircleOutlined />} style={{ color: '#52c41a' }} onClick={() => handleCompleteFollowUp(item._id)} />
-                        </Tooltip>
-                      ),
-                      <Tooltip title="Edit" key="edit">
-                        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEditFollowUp(item)} />
-                      </Tooltip>,
-                      <Popconfirm
-                        key="delete"
-                        title="Delete this follow-up?"
-                        onConfirm={() => handleDeleteFollowUp(item._id)}
-                        okText="Yes"
-                        cancelText="No"
-                      >
-                        <Tooltip title="Delete">
-                          <Button type="link" size="small" danger icon={<DeleteOutlined />} />
-                        </Tooltip>
-                      </Popconfirm>
-                    ].filter(Boolean)}
-                  >
-                    <Checkbox checked={item.status === 'completed'} disabled>
-                      {item.description}
-                    </Checkbox>
-                    <div style={{ fontSize: '12px', color: '#8c8c8c' }}>
-                      Assignee: {item.assignedTo?.name || 'N/A'} | Due: {dayjs(item.dueDate).format('MMM D, YYYY')}
-                      {item.taskId && (
-                        <div>
-                          Linked Task: <Tag color="blue">{item.taskId.title} ({item.taskId.status})</Tag>
-                        </div>
-                      )}
-                    </div>
-                  </List.Item>
-                )}
-              />
-              
-              {['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager'].includes(userRole) && (
-                <>
-                  <Divider />
-                  <h4>{editingFollowUpId ? "Edit Follow-Up / Action Item" : "Add Follow-Up / Action Item"}</h4>
-                  <Form layout="vertical">
-                    <Form.Item label="Description" required>
-                      <Input 
-                        value={followUpDescription} 
-                        onChange={e => setFollowUpDescription(e.target.value)} 
-                        placeholder="Action item / task to assign..."
-                      />
-                    </Form.Item>
-                    <Row gutter={16}>
-                      <Col span={12}>
-                        <Form.Item label="Assign To" required>
-                          <Select 
-                            value={followUpAssignedTo} 
-                            onChange={setFollowUpAssignedTo} 
-                            placeholder="Select assignee"
-                          >
-                            {users.map(u => (
-                              <Option key={u._id} value={u._id}>{u.name}</Option>
-                            ))}
-                          </Select>
-                        </Form.Item>
-                      </Col>
-                      <Col span={12}>
-                        <Form.Item label="Due Date" required>
-                          <DatePicker 
-                            value={followUpDueDate} 
-                            onChange={setFollowUpDueDate} 
-                            disabledDate={(current) => current && current < dayjs().startOf('day')}
-                            style={{ width: '100%' }}
-                          />
-                        </Form.Item>
-                      </Col>
-                    </Row>
-                    
-                    {/* {!editingFollowUpId && (
-                      <Form.Item>
-                        <Checkbox 
-                          checked={followUpCreateTask} 
-                          onChange={e => setFollowUpCreateTask(e.target.checked)}
-                        >
-                          Auto-generate and link with Task Management module (assigned user gets notified)
-                        </Checkbox>
-                      </Form.Item>
-                    )} */}
 
-                    <Space>
-                      <Button 
-                        type="primary" 
-                        onClick={handleCreateFollowUp}
-                        loading={editingFollowUpId ? isUpdatingFollowUp : isCreatingFollowUp}
-                      >
-                        {editingFollowUpId ? "Save Changes" : "Assign Action Item"}
-                      </Button>
-                      {editingFollowUpId && (
-                        <Button onClick={handleCancelEditFollowUp}>Cancel</Button>
-                      )}
-                    </Space>
-                  </Form>
-                </>
-              )}
-            </Tabs.TabPane>
 
             <Tabs.TabPane tab="Attachments" key="attachments">
               <List
@@ -1276,7 +1178,7 @@ const MeetingsPage = () => {
       <Modal
         title={
           <Space>
-            <ReloadOutlined style={{ color: 'var(--accent-primary)' }} />
+            <CalendarSync size={20} style={{ color: 'var(--accent-primary)' }} />
             <span>Reschedule Meeting: {reschedulingMeeting?.title || ''}</span>
           </Space>
         }

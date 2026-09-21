@@ -352,7 +352,7 @@ const DashboardTab = () => {
       { label: 'TASKS COMPLETED', value: stats.completedTasksThisMonth, sub: `Out of ${stats.totalTasksThisMonth} this month`, color: 'var(--accent-secondary)', icon: <TrendingUp size={20} /> },
       { label: 'OPEN TASKS', value: stats.openTasksCount, sub: `In progress`, color: 'var(--accent-primary)', icon: <CheckSquare size={20} /> },
       { label: 'OVERDUE TASKS', value: stats.overdueTasksCount, sub: `Requires action`, color: stats.overdueTasksCount > 0 ? 'var(--accent-danger)' : 'var(--accent-success)', icon: <AlertTriangle size={20} /> },
-      { label: 'DELIVERABLES IN QUEUE', value: stats.pendingDeliverables, sub: `In pipeline`, color: 'var(--accent-info)', icon: <FileText size={20} /> },
+      { label: 'DELIVERABLES IN QUEUE', value: stats.pendingDeliverables, sub: `In pipeline`, color: 'var(--accent-info)', icon: <FileText size={20} />, route: '/client/deliverables' },
     ];
 
     return (
@@ -383,14 +383,17 @@ const DashboardTab = () => {
           <Row gutter={[16, 16]}>
             {kpis.map((kpi, idx) => (
               <Col xs={24} sm={12} lg={6} key={idx}>
-                <div style={{
+                <div 
+                  onClick={() => kpi.route && navigate(kpi.route)}
+                  style={{
                   background: 'var(--bg-tertiary)',
                   borderRadius: 20,
                   padding: 24,
                   boxShadow: '0 4px 20px rgba(0,0,0,0.03)',
                   border: '1px solid var(--border-color)',
                   position: 'relative',
-                  overflow: 'hidden'
+                  overflow: 'hidden',
+                  cursor: kpi.route ? 'pointer' : 'default'
                 }}>
                   <div style={{ position: 'absolute', top: -10, right: -10, width: 80, height: 80, borderRadius: '50%', background: kpi.color, opacity: 0.05 }} />
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
