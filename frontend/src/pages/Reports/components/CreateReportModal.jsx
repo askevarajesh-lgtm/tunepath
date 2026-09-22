@@ -72,7 +72,30 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(defaultDate || dayjs());
+  const [reportDateRange, setReportDateRange] = useState(() => {
+    if (defaultDate) {
+      if (defaultDate.fromDate && defaultDate.toDate) {
+        return {
+          fromDate: defaultDate.fromDate,
+          toDate: defaultDate.toDate,
+          label: defaultDate.label || `${dayjs(defaultDate.fromDate).format('MMM D')} - ${dayjs(defaultDate.toDate).format('MMM D')}`,
+          filterType: defaultDate.filterType || 'custom'
+        };
+      }
+      return {
+        fromDate: dayjs(defaultDate).startOf('month').format('YYYY-MM-DD'),
+        toDate: dayjs(defaultDate).endOf('month').format('YYYY-MM-DD'),
+        label: dayjs(defaultDate).format('MMMM YYYY'),
+        filterType: 'custom'
+      };
+    }
+    return {
+      fromDate: dayjs().startOf('month').format('YYYY-MM-DD'),
+      toDate: dayjs().endOf('month').format('YYYY-MM-DD'),
+      label: 'This Month',
+      filterType: 'thisMonth'
+    };
+  });
   const [selectedClient, setSelectedClient] = useState(() => sanitizeClientId(defaultClientId));
 
   // SEO/AEO/GEO Module Projects State
@@ -140,7 +163,21 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       const normType = getNormalizedReportType(defaultReportType);
       setReportType(normType);
       if (defaultDate) {
-        setSelectedDate(defaultDate);
+        if (defaultDate.fromDate && defaultDate.toDate) {
+          setReportDateRange({
+            fromDate: defaultDate.fromDate,
+            toDate: defaultDate.toDate,
+            label: defaultDate.label || `${dayjs(defaultDate.fromDate).format('MMM D')} - ${dayjs(defaultDate.toDate).format('MMM D')}`,
+            filterType: defaultDate.filterType || 'custom'
+          });
+        } else {
+          setReportDateRange({
+            fromDate: dayjs(defaultDate).startOf('month').format('YYYY-MM-DD'),
+            toDate: dayjs(defaultDate).endOf('month').format('YYYY-MM-DD'),
+            label: dayjs(defaultDate).format('MMMM YYYY'),
+            filterType: 'custom'
+          });
+        }
       }
       if (normType !== 'Keywords') {
         setSelectedProjectId(null);
@@ -177,9 +214,13 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
 
     const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const defaultMonths = [];
-    for (let i = 1; i >= 0; i--) {
-      const d = new Date(y, m - 1 - i, 1);
-      defaultMonths.push(`${monthAbbrs[d.getMonth()]} ${d.getFullYear()}`);
+    if (m && y) {
+      for (let i = 1; i >= 0; i--) {
+        const d = new Date(y, m - 1 - i, 1);
+        defaultMonths.push(`${monthAbbrs[d.getMonth()]} ${d.getFullYear()}`);
+      }
+    } else {
+      defaultMonths.push(reportDateRange.label);
     }
 
     if (res.keywordRankingOverview && Array.isArray(res.keywordRankingOverview) && res.keywordRankingOverview.length > 0) {
@@ -227,7 +268,8 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
     if (res.youTubeReport && Array.isArray(res.youTubeReport) && res.youTubeReport.length > 0) {
       setYouTubeReportList(res.youTubeReport);
     } else {
-      setYouTubeReportList([{ month: `${monthAbbrs[m - 1]} ${y}`, views: 0, lastMonthSubscribers: 0, totalSubscribers: 0 }]);
+      const defaultMonthStr = (m && y) ? `${monthAbbrs[m - 1]} ${y}` : reportDateRange.label;
+      setYouTubeReportList([{ month: defaultMonthStr, views: 0, lastMonthSubscribers: 0, totalSubscribers: 0 }]);
     }
 
     if (res.socialMediaPostInsights) {
@@ -249,7 +291,7 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
     }
   };
 
-  const loadData = async (clientId, dateVal, refresh = false, projectId = null, currentType = null) => {
+  const loadData = async (clientId, dateRange, refresh = false, projectId = null, currentType = null) => {
     const activeType = currentType || reportType;
     const isKeywordReport = activeType === 'Keywords' || activeType.includes('Keyword');
     const isMetaCampaign = activeType === 'Meta Campaign' || activeType.includes('Meta Campaign') || activeType.includes('Lead') || activeType.includes('Reach');
@@ -263,26 +305,34 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
 
     const targetClientId = sanitizeClientId(clientId || selectedClient);
     if (!targetClientId && !targetProjectId) return;
-    if (!dateVal) return;
+    if (!dateRange) return;
 
     try {
       setLoading(true);
-      const m = dateVal.month() + 1;
-      const y = dateVal.year();
-      const cacheKey = `${targetClientId}_${m}_${y}`;
+      const { fromDate, toDate, filterType } = dateRange;
+      const cacheKey = `${targetClientId}_${fromDate}_${toDate}_${targetProjectId || 'none'}`;
+
+      // Calculate default fallback m/y for the UI to use if we clear (so it fetches this month's data as the default behavior)
+      const isCleared = filterType === 'clear' || (!fromDate && !toDate);
+      const activeFrom = isCleared ? dayjs().startOf('month').format('YYYY-MM-DD') : fromDate;
+      const activeTo = isCleared ? dayjs().endOf('month').format('YYYY-MM-DD') : toDate;
+      
+      const dFrom = dayjs(activeFrom);
+      const m = dFrom.month() + 1;
+      const y = dFrom.year();
 
       // 1. If Meta Campaign, fetch or use cached Meta Lead & Reach Data
       if (isMetaCampaign) {
-        if (!refresh && cachedMetaCampaignRef.current[targetClientId]) {
-          const cached = cachedMetaCampaignRef.current[targetClientId];
+        if (!refresh && cachedMetaCampaignRef.current[cacheKey]) {
+          const cached = cachedMetaCampaignRef.current[cacheKey];
           setMetaReportData(cached.leadRes || { campaigns: [], summary: {} });
           setMetaReachReportData(cached.reachRes || { campaigns: [], summary: {} });
         } else {
           const [leadRes, reachRes] = await Promise.all([
-            getMetaLeadCampaigns(targetClientId).catch(() => ({ campaigns: [], summary: {} })),
-            getMetaReachCampaigns(targetClientId).catch(() => ({ campaigns: [], summary: {} }))
+            getMetaLeadCampaigns(targetClientId, isCleared ? null : activeFrom, isCleared ? null : activeTo).catch(() => ({ campaigns: [], summary: {} })),
+            getMetaReachCampaigns(targetClientId, isCleared ? null : activeFrom, isCleared ? null : activeTo).catch(() => ({ campaigns: [], summary: {} }))
           ]);
-          cachedMetaCampaignRef.current[targetClientId] = { leadRes, reachRes };
+          cachedMetaCampaignRef.current[cacheKey] = { leadRes, reachRes };
           setMetaReportData(leadRes || { campaigns: [], summary: {} });
           setMetaReachReportData(reachRes || { campaigns: [], summary: {} });
         }
@@ -317,7 +367,15 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
         }
 
         if (!loadedKeywordDetails || loadedKeywordDetails.length === 0) {
-          const res = await getMonthlyHighlights(targetClientId, m, y, refresh, targetProjectId);
+          const res = await getMonthlyHighlights(
+            targetClientId,
+            m,
+            y,
+            refresh,
+            targetProjectId,
+            isCleared ? null : activeFrom,
+            isCleared ? null : activeTo
+          );
           if (res) {
             if (res.keywordRankingOverview?.length > 0) loadedKeywordOverview = res.keywordRankingOverview;
             if (res.keywordRankingDetails?.length > 0) loadedKeywordDetails = res.keywordRankingDetails;
@@ -344,11 +402,18 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
         return;
       }
 
-      // Fetch fresh MoM / Highlights Data
-      const res = await getMonthlyHighlights(targetClientId, m, y, refresh);
+      const res = await getMonthlyHighlights(
+        targetClientId,
+        m,
+        y,
+        refresh,
+        null,
+        isCleared ? null : activeFrom,
+        isCleared ? null : activeTo
+      );
       if (res) {
         cachedMonthlyHighlightsRef.current = { key: cacheKey, data: res };
-        populateFormAndLists(res, m, y);
+        populateFormAndLists(res, dateRange.filterType === 'thisMonth' ? m : null, dateRange.filterType === 'thisMonth' ? y : null);
       }
     } catch (error) {
       console.error('Error loading report data:', error);
@@ -362,23 +427,23 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
     if (visible) {
       const isKeywordReport = reportType === 'Keywords' || reportType.includes('Keyword');
       if (isKeywordReport) {
-        if (selectedProjectId && selectedDate) {
-          loadData(selectedClient, selectedDate, false, selectedProjectId, reportType);
+        if (selectedProjectId && reportDateRange) {
+          loadData(selectedClient, reportDateRange, false, selectedProjectId, reportType);
         }
       } else {
-        if (selectedClient && selectedDate) {
-          loadData(selectedClient, selectedDate, false, null, reportType);
+        if (selectedClient && reportDateRange) {
+          loadData(selectedClient, reportDateRange, false, null, reportType);
         }
       }
     }
-  }, [visible, selectedClient, selectedDate, reportType, selectedProjectId]);
+  }, [visible, selectedClient, reportDateRange, reportType, selectedProjectId]);
 
   const handleSyncMetaAds = async () => {
     try {
       setSyncing(true);
       await api.post('/performance-ads/sync', { clientId: selectedClient !== 'all' ? selectedClient : undefined });
       message.success('Meta Ads performance data synced successfully!');
-      await loadData(selectedClient, selectedDate);
+      await loadData(selectedClient, reportDateRange);
     } catch (err) {
       console.error('Meta sync error:', err);
       message.error('Failed to sync Meta Ads data');
@@ -440,8 +505,10 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       } else {
         const values = form.getFieldsValue();
         const dataPayload = {
-          month: selectedDate.month() + 1,
-          year: selectedDate.year(),
+          month: reportDateRange.filterType === 'thisMonth' ? dayjs(reportDateRange.fromDate).month() + 1 : undefined,
+          year: reportDateRange.filterType === 'thisMonth' ? dayjs(reportDateRange.fromDate).year() : undefined,
+          fromDate: reportDateRange.filterType !== 'thisMonth' ? reportDateRange.fromDate : undefined,
+          toDate: reportDateRange.filterType !== 'thisMonth' ? reportDateRange.toDate : undefined,
           hasSocialMediaModule,
           digitalInsights: values,
           blogs: { count: values.blogsCount || 0, notes: values.blogsNotes },
@@ -508,8 +575,10 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
         const payload = {
           clientId: targetClientId,
           projectId: selectedProjectId || undefined,
-          month: selectedDate.month() + 1,
-          year: selectedDate.year(),
+          month: reportDateRange.filterType === 'thisMonth' ? dayjs(reportDateRange.fromDate).month() + 1 : undefined,
+          year: reportDateRange.filterType === 'thisMonth' ? dayjs(reportDateRange.fromDate).year() : undefined,
+          fromDate: reportDateRange.filterType !== 'thisMonth' ? reportDateRange.fromDate : undefined,
+          toDate: reportDateRange.filterType !== 'thisMonth' ? reportDateRange.toDate : undefined,
           status: 'Published',
           reportType: reportType,
           hasSocialMediaModule,
@@ -745,13 +814,42 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
 
             <Col xs={24} md={6}>
               <Text style={{ fontWeight: 600, display: 'block', marginBottom: 6, fontSize: 13 }}>Report Period</Text>
-              <DatePicker
-                picker="month"
-                value={selectedDate}
-                onChange={date => date && setSelectedDate(date)}
-                allowClear={false}
-                style={{ width: '100%' }}
-              />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <DatePicker.RangePicker
+                  presets={[
+                    { label: 'This Week', value: [dayjs().startOf('week'), dayjs().endOf('week')] },
+                    { label: 'This Month', value: [dayjs().startOf('month'), dayjs().endOf('month')] }
+                  ]}
+                  value={reportDateRange.fromDate && reportDateRange.toDate && reportDateRange.filterType !== 'clear' ? [dayjs(reportDateRange.fromDate), dayjs(reportDateRange.toDate)] : null}
+                  onChange={(dates) => {
+                    if (dates && dates[0] && dates[1]) {
+                      const isThisMonth = dates[0].isSame(dayjs().startOf('month'), 'day') && dates[1].isSame(dayjs().endOf('month'), 'day');
+                      setReportDateRange({
+                        fromDate: dates[0].format('YYYY-MM-DD'),
+                        toDate: dates[1].format('YYYY-MM-DD'),
+                        label: isThisMonth ? 'This Month' : `${dates[0].format('MMM D')} - ${dates[1].format('MMM D')}`,
+                        filterType: isThisMonth ? 'thisMonth' : 'custom'
+                      });
+                    }
+                  }}
+                  allowClear={false}
+                  style={{ flex: 1 }}
+                  getPopupContainer={(triggerNode) => triggerNode.parentNode}
+                />
+                <Button 
+                  onClick={() => {
+                    setReportDateRange({
+                      fromDate: null,
+                      toDate: null,
+                      label: '',
+                      filterType: 'clear'
+                    });
+                  }}
+                  disabled={reportDateRange.filterType === 'clear' || (!reportDateRange.fromDate && !reportDateRange.toDate)}
+                >
+                  Clear
+                </Button>
+              </div>
             </Col>
           </Row>
         </Card>

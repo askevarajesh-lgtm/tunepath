@@ -285,7 +285,20 @@ const Reports = () => {
       } else {
         setSelectedReportType('Highlights of the Month');
       }
-      setModalDate(dayjs().month(month - 1).year(year));
+      
+      let passDate;
+      if (record.fromDate && record.toDate) {
+        passDate = {
+          fromDate: record.fromDate,
+          toDate: record.toDate,
+          label: `Custom Range`,
+          filterType: 'custom'
+        };
+      } else {
+        passDate = dayjs().month(month - 1).year(year);
+      }
+      
+      setModalDate(passDate);
       setIsCreateReportModalOpen(true);
     } else if (action === 'download') {
       const hide = message.loading('Generating PDF report...', 0);

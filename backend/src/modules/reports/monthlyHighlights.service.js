@@ -130,11 +130,21 @@ const checkSocialMediaModuleEnabled = async (clientId, digitalInsights, delivera
     }
 };
 
-const autoAggregateMetrics = async (clientId, month, year, projectId = null) => {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0, 23, 59, 59, 999);
+const autoAggregateMetrics = async (clientId, month, year, projectId = null, fromDate = null, toDate = null) => {
+    let startDate, endDate, monthName;
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-    const monthName = monthNames[month - 1] || 'Month';
+    
+    if (fromDate && toDate) {
+        startDate = new Date(fromDate);
+        startDate.setHours(0, 0, 0, 0);
+        endDate = new Date(toDate);
+        endDate.setHours(23, 59, 59, 999);
+        monthName = 'Custom Range';
+    } else {
+        startDate = new Date(year, month - 1, 1);
+        endDate = new Date(year, month, 0, 23, 59, 59, 999);
+        monthName = monthNames[month - 1] || 'Month';
+    }
 
     let blogCount = 0;
     const deliverablesMap = {};
@@ -171,9 +181,15 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
 
         const Project = mongoose.models.Project || require('../projects/project.model');
         const projects = await Project.find({
-            $or: [
-                { clientId: { $in: clientTargetIds } },
-                { companyId: { $in: clientTargetIds } }
+            $and: [
+                { $or: [
+                    { clientId: { $in: clientTargetIds } },
+                    { companyId: { $in: clientTargetIds } }
+                ] },
+                { $or: [
+                    { createdAt: { $gte: startDate, $lte: endDate } },
+                    { updatedAt: { $gte: startDate, $lte: endDate } }
+                ] }
             ]
         }).catch(() => []);
 
@@ -319,10 +335,14 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
 
     const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const trackedMonthsList = [];
-    for (let i = 1; i >= 0; i--) {
-        const d = new Date(year, month - 1 - i, 1);
-        const mStr = `${monthAbbrs[d.getMonth()]} ${d.getFullYear()}`;
-        trackedMonthsList.push(mStr);
+    if (monthName === 'Custom Range') {
+        trackedMonthsList.push('Custom Range');
+    } else {
+        for (let i = 1; i >= 0; i--) {
+            const d = new Date(year, month - 1 - i, 1);
+            const mStr = `${monthAbbrs[d.getMonth()]} ${d.getFullYear()}`;
+            trackedMonthsList.push(mStr);
+        }
     }
 
     // Real Social Media (Facebook, Instagram & YouTube) Metrics Aggregation - Real Data Only
@@ -402,12 +422,34 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
         }
 
         // Strictly fetch published posts for THIS client only
+        let postDateQuery = { $or: [
+            { published_at: { $gte: startDate, $lte: endDate } },
+            { publishedAt: { $gte: startDate, $lte: endDate } },
+            { scheduled_iso: { $gte: startDate, $lte: endDate } },
+            { scheduledISO: { $gte: startDate, $lte: endDate } },
+            { created_at: { $gte: startDate, $lte: endDate } },
+            { createdAt: { $gte: startDate, $lte: endDate } }
+        ] };
+        if (monthName !== 'Custom Range') {
+            const prevMonthDate = new Date(year, month - 2, 1);
+            postDateQuery = { $or: [
+                { published_at: { $gte: prevMonthDate, $lte: endDate } },
+                { publishedAt: { $gte: prevMonthDate, $lte: endDate } },
+                { scheduled_iso: { $gte: prevMonthDate, $lte: endDate } },
+                { scheduledISO: { $gte: prevMonthDate, $lte: endDate } },
+                { created_at: { $gte: prevMonthDate, $lte: endDate } },
+                { createdAt: { $gte: prevMonthDate, $lte: endDate } }
+            ] };
+        }
         const clientPosts = await PostModel.find({
-            $or: [
-                { clientCompanyId: { $in: clientTargetIds } },
-                { clientId: { $in: clientTargetIds } },
-                { userId: { $in: clientTargetIds } },
-                { brandId: { $in: clientTargetIds } }
+            $and: [
+                { $or: [
+                    { clientCompanyId: { $in: clientTargetIds } },
+                    { clientId: { $in: clientTargetIds } },
+                    { userId: { $in: clientTargetIds } },
+                    { brandId: { $in: clientTargetIds } }
+                ] },
+                postDateQuery
             ]
         }).lean().catch(() => []);
 
@@ -453,9 +495,13 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
         }));
 
         trackedMonthsList.forEach(mStr => {
-            const [mName, yNum] = mStr.split(' ');
-            const monthIdx = monthAbbrs.indexOf(mName);
-            const yearVal = Number(yNum);
+            let monthIdx = -1;
+            let yearVal = -1;
+            if (mStr !== 'Custom Range') {
+                const [mName, yNum] = mStr.split(' ');
+                monthIdx = monthAbbrs.indexOf(mName);
+                yearVal = Number(yNum);
+            }
 
             let fbViews = 0, fbReach = 0;
             let igViews = 0, igReach = 0;
@@ -467,7 +513,14 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
                 const pDate = new Date(rawDate);
                 if (isNaN(pDate.getTime())) return;
 
-                if (pDate.getMonth() === monthIdx && pDate.getFullYear() === yearVal) {
+                let matchesDate = false;
+                if (mStr === 'Custom Range') {
+                    matchesDate = pDate.getTime() >= startDate.getTime() && pDate.getTime() <= endDate.getTime();
+                } else {
+                    matchesDate = pDate.getMonth() === monthIdx && pDate.getFullYear() === yearVal;
+                }
+
+                if (matchesDate) {
                     const platforms = Array.isArray(post.platforms) ? post.platforms : [];
                     const pubKeys = post.platform_publications && typeof post.platform_publications === 'object' ? Object.keys(post.platform_publications) : [];
                     const allPStrings = [...platforms, ...pubKeys, String(post.platform || '')].map(s => String(s).toLowerCase());
@@ -504,9 +557,9 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
         });
 
         digitalInsights.facebookTotalFollowers = liveFbFollowers;
-        digitalInsights.facebookReach = fbMonthlyStatsMap[`${monthAbbrs[month - 1]} ${year}`]?.reach || 0;
+        digitalInsights.facebookReach = monthName === 'Custom Range' ? (fbMonthlyStatsMap['Custom Range']?.reach || 0) : (fbMonthlyStatsMap[`${monthAbbrs[month - 1]} ${year}`]?.reach || 0);
         digitalInsights.instagramTotalFollowers = liveIgFollowers;
-        digitalInsights.instagramReach = igMonthlyStatsMap[`${monthAbbrs[month - 1]} ${year}`]?.reach || 0;
+        digitalInsights.instagramReach = monthName === 'Custom Range' ? (igMonthlyStatsMap['Custom Range']?.reach || 0) : (igMonthlyStatsMap[`${monthAbbrs[month - 1]} ${year}`]?.reach || 0);
 
         let publishedVideoCount = 0;
         let publishedPostCount = 0;
@@ -517,7 +570,14 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
             const pDate = new Date(rawDate);
             if (isNaN(pDate.getTime())) return;
 
-            if (pDate.getMonth() === (month - 1) && pDate.getFullYear() === year) {
+            let matchesDate = false;
+            if (monthName === 'Custom Range') {
+                matchesDate = pDate.getTime() >= startDate.getTime() && pDate.getTime() <= endDate.getTime();
+            } else {
+                matchesDate = pDate.getMonth() === (month - 1) && pDate.getFullYear() === year;
+            }
+
+            if (matchesDate) {
                 const postTypeStr = String(post.type || '').toLowerCase();
                 const postOption = post.post_option || {};
                 const platformOption = String(postOption.youtube || postOption.facebook || postOption.instagram || '').toLowerCase();
@@ -578,15 +638,21 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
         }
 
         if (semrushProject) {
-            const allSnapshots = await OptimizationSnapshot.find({
-                projectId: semrushProject._id
-            }).sort({ createdAt: -1 }).lean().catch(() => []);
+            let snapQuery = { projectId: semrushProject._id };
+            if (monthName === 'Custom Range') {
+                snapQuery.createdAt = { $lte: endDate };
+            }
+            const allSnapshots = await OptimizationSnapshot.find(snapQuery).sort({ createdAt: -1 }).lean().catch(() => []);
 
             const latestSnapshot = allSnapshots[0] || null;
             let rankings = latestSnapshot?.seo?.positionTracking?.rankings || latestSnapshot?.seo?.organicKeywordsData || latestSnapshot?.seo?.topKeywords || [];
 
             if (!rankings || rankings.length === 0) {
-                const projectData = await SemrushProjectData.findOne({ projectId: semrushProject._id }).sort({ snapshotDate: -1 }).lean().catch(() => null);
+                let dataQuery = { projectId: semrushProject._id };
+                if (monthName === 'Custom Range') {
+                    dataQuery.snapshotDate = { $lte: endDate };
+                }
+                const projectData = await SemrushProjectData.findOne(dataQuery).sort({ snapshotDate: -1 }).lean().catch(() => null);
                 if (projectData?.data?.rankings) {
                     rankings = projectData.data.rankings;
                 } else if (projectData?.data?.organicKeywords) {
@@ -604,7 +670,7 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
             }
 
             if (Array.isArray(rankings) && rankings.length > 0) {
-                const currentMonthStr = `${monthAbbrs[month - 1]} ${year}`;
+                const currentMonthStr = monthName === 'Custom Range' ? 'Custom Range' : `${monthAbbrs[month - 1]} ${year}`;
 
                 keywordRankingDetails = rankings.map(r => {
                     const kwName = r.keyword || r.Keyword || r.name || '';
@@ -821,7 +887,7 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
 /**
  * Fetch monthly highlights report for a client and month/year
  */
-exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = false, forceRefresh = false, projectId = null) => {
+exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = false, forceRefresh = false, projectId = null, fromDate = null, toDate = null) => {
     // Validate ObjectId to prevent CastErrors
     const isValidId = clientId && mongoose.Types.ObjectId.isValid(String(clientId)) && String(clientId) !== '[object Object]';
     if (!isValidId && !projectId) {
@@ -829,8 +895,17 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
     }
 
     let report = null;
+    let query = { clientId };
+    if (fromDate && toDate) {
+        query.fromDate = new Date(fromDate);
+        query.toDate = new Date(toDate);
+    } else {
+        query.month = month;
+        query.year = year;
+    }
+
     if (isValidId) {
-        report = await MonthlyHighlights.findOne({ clientId, month, year })
+        report = await MonthlyHighlights.findOne(query)
             .populate('clientId', 'name companyName email')
             .populate('createdBy', 'name email');
     }
@@ -863,11 +938,11 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
         return { status: 'NotPublished', publishedReportTypes: sentTypes, message: 'No report published for this month.' };
     }
 
-    const aggregated = await autoAggregateMetrics(clientId, month, year, projectId);
+    const aggregated = await autoAggregateMetrics(clientId, month, year, projectId, fromDate, toDate);
 
     if (report) {
         const MonthlyHighlightsModel = MonthlyHighlights;
-        const dbDoc = await MonthlyHighlightsModel.findOne({ clientId, month, year });
+        const dbDoc = await MonthlyHighlightsModel.findOne(query);
         if (dbDoc) {
             dbDoc.hasSocialMediaModule = aggregated.hasSocialMediaModule;
             dbDoc.socialMediaPostInsights = aggregated.socialMediaPostInsights;
@@ -898,8 +973,10 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
 
     return {
         clientId,
-        month,
-        year,
+        month: fromDate ? undefined : month,
+        year: fromDate ? undefined : year,
+        fromDate: fromDate ? new Date(fromDate) : undefined,
+        toDate: toDate ? new Date(toDate) : undefined,
         status: 'Draft',
         publishedReportTypes: sentTypes,
         ...aggregated,
@@ -911,9 +988,16 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
  * Save or update monthly highlights report
  */
 exports.upsertMonthlyHighlights = async (agencyId, userId, payload) => {
-    const { clientId, month, year, status, reportType, hasSocialMediaModule, digitalInsights, socialMediaPostInsights, blogs, brandCommunicationDesign, offlineCollaterals, specialInitiatives, keywordRankingOverview, keywordRankingDetails, metaInsightsFacebook, metaInsightsInstagram, youTubeReport, websiteTrafficOverview, websiteTrafficLandingPages, websiteTrafficUsersByCity } = payload;
+    const { clientId, month, year, fromDate, toDate, status, reportType, hasSocialMediaModule, digitalInsights, socialMediaPostInsights, blogs, brandCommunicationDesign, offlineCollaterals, specialInitiatives, keywordRankingOverview, keywordRankingDetails, metaInsightsFacebook, metaInsightsInstagram, youTubeReport, websiteTrafficOverview, websiteTrafficLandingPages, websiteTrafficUsersByCity } = payload;
 
-    const query = { clientId, month, year };
+    let query = { clientId };
+    if (fromDate && toDate) {
+        query.fromDate = new Date(fromDate);
+        query.toDate = new Date(toDate);
+    } else {
+        query.month = month;
+        query.year = year;
+    }
     
     // Retrieve existing to merge publishedReportTypes
     const existing = await MonthlyHighlights.findOne(query);
@@ -925,8 +1009,10 @@ exports.upsertMonthlyHighlights = async (agencyId, userId, payload) => {
     const update = {
         agencyId,
         clientId,
-        month,
-        year,
+        month: (fromDate && toDate) ? undefined : month,
+        year: (fromDate && toDate) ? undefined : year,
+        fromDate: (fromDate && toDate) ? new Date(fromDate) : undefined,
+        toDate: (fromDate && toDate) ? new Date(toDate) : undefined,
         status: status || 'Draft',
         publishedReportTypes: Array.from(existingTypes),
         hasSocialMediaModule: hasSocialMediaModule ?? false,

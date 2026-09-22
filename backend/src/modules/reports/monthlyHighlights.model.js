@@ -14,13 +14,17 @@ const monthlyHighlightsSchema = new mongoose.Schema({
     },
     month: {
         type: Number,
-        required: true,
         min: 1,
         max: 12
     },
     year: {
-        type: Number,
-        required: true
+        type: Number
+    },
+    fromDate: {
+        type: Date
+    },
+    toDate: {
+        type: Date
     },
     status: {
         type: String,
@@ -159,7 +163,8 @@ const monthlyHighlightsSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
-// Compound index for quick lookups per client and month/year
-monthlyHighlightsSchema.index({ clientId: 1, year: 1, month: 1 }, { unique: true });
+// Compound index for quick lookups
+monthlyHighlightsSchema.index({ clientId: 1, year: 1, month: 1 });
+monthlyHighlightsSchema.index({ clientId: 1, fromDate: 1, toDate: 1 });
 
 module.exports = mongoose.model('MonthlyHighlights', monthlyHighlightsSchema);
