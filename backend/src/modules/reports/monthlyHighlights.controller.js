@@ -11,7 +11,7 @@ const sanitizeObjectId = (val) => {
 
 exports.getMonthlyHighlights = async (req, res, next) => {
     try {
-        const { clientId, month, year, refresh, projectId } = req.query;
+        const { clientId, month, year, fromDate, toDate, refresh, projectId } = req.query;
         const isClientUser = isClientUserRole(req.user.role);
         const cleanClientId = sanitizeObjectId(clientId);
         const cleanProjectId = sanitizeObjectId(projectId);
@@ -26,7 +26,9 @@ exports.getMonthlyHighlights = async (req, res, next) => {
             selectedYear,
             isClientUser,
             forceRefresh,
-            cleanProjectId
+            cleanProjectId,
+            fromDate,
+            toDate
         );
 
         res.status(200).json({ status: 'success', data });

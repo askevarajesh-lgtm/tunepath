@@ -38,13 +38,15 @@ const sanitizeParam = (val) => {
     return typeof val === 'string' ? val : undefined;
 };
 
-export const getMonthlyHighlights = async (clientId, month, year, refresh = false, projectId = null) => {
+export const getMonthlyHighlights = async (clientId, month, year, refresh = false, projectId = null, fromDate = null, toDate = null) => {
     const params = {};
     const cleanClientId = sanitizeParam(clientId);
     const cleanProjectId = sanitizeParam(projectId);
     if (cleanClientId) params.clientId = cleanClientId;
     if (month) params.month = month;
     if (year) params.year = year;
+    if (fromDate) params.fromDate = fromDate;
+    if (toDate) params.toDate = toDate;
     if (refresh) params.refresh = 'true';
     if (cleanProjectId) params.projectId = cleanProjectId;
     const response = await api.get('/reports/monthly-highlights', { params });
@@ -64,18 +66,22 @@ export const getClientMonthlyReportsList = async (clientId) => {
     return response.data.data;
 };
 
-export const getMetaLeadCampaigns = async (clientId) => {
+export const getMetaLeadCampaigns = async (clientId, fromDate = null, toDate = null) => {
     const params = {};
     const cleanClientId = sanitizeParam(clientId);
     if (cleanClientId) params.clientId = cleanClientId;
+    if (fromDate) params.fromDate = fromDate;
+    if (toDate) params.toDate = toDate;
     const response = await api.get('/reports/meta-lead-campaigns', { params });
     return response.data.data;
 };
 
-export const getMetaReachCampaigns = async (clientId) => {
+export const getMetaReachCampaigns = async (clientId, fromDate = null, toDate = null) => {
     const params = {};
     const cleanClientId = sanitizeParam(clientId);
     if (cleanClientId) params.clientId = cleanClientId;
+    if (fromDate) params.fromDate = fromDate;
+    if (toDate) params.toDate = toDate;
     const response = await api.get('/reports/meta-reach-campaigns', { params });
     return response.data.data;
 };

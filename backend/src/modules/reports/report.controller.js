@@ -100,9 +100,9 @@ exports.generateReport = async (req, res, next) => {
 
 exports.getMetaLeadCampaigns = async (req, res, next) => {
     try {
-        const { clientId } = req.query;
+        const { clientId, fromDate, toDate } = req.query;
         const targetId = clientId || req.user.agencyId || req.user._id;
-        const data = await reportService.getMetaLeadCampaigns(targetId);
+        const data = await reportService.getMetaLeadCampaigns(targetId, fromDate, toDate);
         res.status(200).json({ status: 'success', data });
     } catch (error) {
         next(error);
@@ -111,9 +111,9 @@ exports.getMetaLeadCampaigns = async (req, res, next) => {
 
 exports.getMetaReachCampaigns = async (req, res, next) => {
     try {
-        const { clientId } = req.query;
+        const { clientId, fromDate, toDate } = req.query;
         const targetId = clientId || req.user.agencyId || req.user._id;
-        const data = await reportService.getMetaReachCampaigns(targetId);
+        const data = await reportService.getMetaReachCampaigns(targetId, fromDate, toDate);
         res.status(200).json({ status: 'success', data });
     } catch (error) {
         next(error);

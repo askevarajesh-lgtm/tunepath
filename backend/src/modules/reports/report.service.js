@@ -91,7 +91,14 @@ exports.getRecentSentReports = async (agencyId, user = null) => {
     monthlyReports.forEach(m => {
         const clientObj = m.clientId;
         const clientName = clientObj?.companyName || clientObj?.name || 'Client';
-        const name = `${clientName} - Monthly Highlights (${m.month}/${m.year})`;
+        let dateLabel = `(${m.month}/${m.year})`;
+        if (m.fromDate && m.toDate) {
+            const fd = new Date(m.fromDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const td = new Date(m.toDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            dateLabel = `(${fd} - ${td})`;
+        }
+        const reportType = m.reportType || 'Monthly Highlights';
+        const name = `${clientName} - ${reportType} ${dateLabel}`;
         const key = `${clientObj?._id || m.clientId}_${name}`;
 
         if (!existingKeys.has(key)) {
@@ -100,13 +107,17 @@ exports.getRecentSentReports = async (agencyId, user = null) => {
                 agencyId: m.agencyId || agencyId,
                 clientId: clientObj,
                 name: name,
-                template: 'Monthly Highlights',
+                template: reportType,
                 sentAt: m.publishedAt || m.updatedAt || m.createdAt,
                 deliveredTo: clientObj?.email ? [clientObj.email] : ['Client Portal'],
                 deliveryMethod: 'Email & Portal',
                 status: 'Delivered',
                 pages: 2,
-                generatedBy: m.createdBy
+                generatedBy: m.createdBy,
+                month: m.month,
+                year: m.year,
+                fromDate: m.fromDate,
+                toDate: m.toDate
             });
         }
     });
@@ -168,10 +179,125 @@ exports.getReportAnalytics = async (agencyId, user = null) => {
     };
 };
 
-exports.getMetaLeadCampaigns = async (targetId) => {
+exports.getMetaLeadCampaigns = async (targetId, fromDate = null, toDate = null) => {
     const PerformanceAd = require('../performanceAds/performanceAds.model');
     const User = require('../auth/user.model');
     const mongoose = require('mongoose');
+    
+    // Dynamic Date-Filtered Fetch (Meta Graph API)
+    if (fromDate && toDate) {
+        const Integration = require('../integrations/integration.model');
+        const User = require('../auth/user.model');
+        const axios = require('axios');
+        
+        let queryId = targetId;
+        if (!queryId || queryId === 'all' || queryId === '[object Object]' || !mongoose.Types.ObjectId.isValid(queryId)) {
+            queryId = null;
+        }
+
+        let clientCompanyId = queryId;
+        if (queryId) {
+            const u = await User.findById(queryId).lean();
+            if (u && u.agencyId) clientCompanyId = u.agencyId;
+        }
+
+        const integration = await Integration.findOne({ 
+            $or: [ { companyId: clientCompanyId }, { clientId: queryId } ], 
+            type: { $in: ['meta_ads', 'meta', 'facebook'] }, 
+            isActive: true 
+        }).sort({ createdAt: -1 }).lean();
+
+        if (!integration || !integration.config || !integration.config.accessToken) {
+            throw new Error('Meta integration unavailable');
+        }
+
+        const { accessToken, selectedAdAccounts } = integration.config;
+        if (!selectedAdAccounts || selectedAdAccounts.length === 0) {
+            throw new Error('Meta Ad Accounts unavailable');
+        }
+
+        const extractLeads = (actions) => {
+            if (!actions || !Array.isArray(actions) || actions.length === 0) return 0;
+            const directLead = actions.find(a => a.action_type === 'lead');
+            if (directLead && parseInt(directLead.value, 10) > 0) return parseInt(directLead.value, 10);
+            const groupedLead = actions.find(a => a.action_type === 'onsite_conversion.total_lead' || a.action_type === 'lead_grouped' || a.action_type === 'onsite_conversion.lead_grouped');
+            if (groupedLead && parseInt(groupedLead.value, 10) > 0) {
+                const pixelLead = actions.find(a => a.action_type === 'offsite_conversion.fb_pixel_lead');
+                const pixelVal = pixelLead ? parseInt(pixelLead.value, 10) : 0;
+                return parseInt(groupedLead.value, 10) + pixelVal;
+            }
+            let total = 0;
+            actions.forEach(a => {
+                const val = parseInt(a.value || 0, 10);
+                if (val > 0 && (a.action_type === 'offsite_conversion.fb_pixel_lead' || a.action_type === 'leadgen_grouped' || a.action_type === 'onsite_conversion.lead' || a.action_type === 'onsite_conversion.messaging_conversation_started_7d' || a.action_type === 'contact_total' || a.action_type === 'submit_application_total' || a.action_type === 'omni_complete_registration')) {
+                    total += val;
+                }
+            });
+            if (total > 0) return total;
+            return 0;
+        };
+
+        const timeRange = JSON.stringify({ since: fromDate, until: toDate });
+        let liveCampaigns = [];
+        let totalSpend = 0;
+        let totalLeads = 0;
+
+        for (const adAccount of selectedAdAccounts) {
+            try {
+                const campaignsRes = await axios.get(`https://graph.facebook.com/v18.0/${adAccount.id}/campaigns`, {
+                    params: {
+                        access_token: accessToken,
+                        time_range: timeRange,
+                        fields: 'id,name,status,effective_status,insights{spend,cpc,cpm,ctr,reach,clicks,actions}',
+                        limit: 100
+                    }
+                });
+                const campaigns = campaignsRes.data.data || [];
+                campaigns.forEach(c => {
+                    const cInsights = c.insights && c.insights.data && c.insights.data[0] ? c.insights.data[0] : null;
+                    if (!cInsights) return; 
+                    
+                    const spendVal = parseFloat(cInsights.spend || 0);
+                    if (spendVal <= 0) return;
+
+                    const cLeads = extractLeads(cInsights.actions);
+                    const cplVal = cLeads > 0 ? (spendVal / cLeads).toFixed(2) : (cInsights.cpc || '0');
+
+                    liveCampaigns.push({
+                        id: c.id,
+                        campaignName: c.name,
+                        typeOfCampaign: 'Lead',
+                        amountSpent: `₹${spendVal.toLocaleString('en-IN')}`,
+                        rawSpend: spendVal,
+                        noOfLeads: cLeads,
+                        cpl: `₹${parseFloat(cplVal).toLocaleString('en-IN')}`,
+                        rawCpl: parseFloat(cplVal),
+                        status: c.effective_status || c.status || 'Active',
+                        adAccount: adAccount.name || adAccount.id || 'Connected Meta Account'
+                    });
+                    
+                    totalSpend += spendVal;
+                    totalLeads += cLeads;
+                });
+            } catch (e) {
+                console.warn('Meta API error:', e.message);
+            }
+        }
+        
+        const avgCpl = totalLeads > 0 ? (totalSpend / totalLeads).toFixed(2) : 0;
+        return {
+            campaigns: liveCampaigns,
+            summary: {
+                totalCampaigns: liveCampaigns.length,
+                totalAmountSpent: `₹${totalSpend.toLocaleString('en-IN')}`,
+                rawTotalAmountSpent: totalSpend,
+                totalLeads: totalLeads,
+                avgCpl: `₹${parseFloat(avgCpl).toLocaleString('en-IN')}`,
+                rawAvgCpl: parseFloat(avgCpl)
+            }
+        };
+    }
+
 
     let queryId = targetId;
     if (!queryId || queryId === 'all' || queryId === '[object Object]' || !mongoose.Types.ObjectId.isValid(queryId)) {
@@ -249,10 +375,105 @@ exports.getMetaLeadCampaigns = async (targetId) => {
     };
 };
 
-exports.getMetaReachCampaigns = async (targetId) => {
+exports.getMetaReachCampaigns = async (targetId, fromDate = null, toDate = null) => {
     const PerformanceAd = require('../performanceAds/performanceAds.model');
     const User = require('../auth/user.model');
     const mongoose = require('mongoose');
+
+    // Dynamic Date-Filtered Fetch (Meta Graph API)
+    if (fromDate && toDate) {
+        const Integration = require('../integrations/integration.model');
+        const User = require('../auth/user.model');
+        const axios = require('axios');
+        
+        let queryId = targetId;
+        if (!queryId || queryId === 'all' || queryId === '[object Object]' || !mongoose.Types.ObjectId.isValid(queryId)) {
+            queryId = null;
+        }
+
+        let clientCompanyId = queryId;
+        if (queryId) {
+            const u = await User.findById(queryId).lean();
+            if (u && u.agencyId) clientCompanyId = u.agencyId;
+        }
+
+        const integration = await Integration.findOne({ 
+            $or: [ { companyId: clientCompanyId }, { clientId: queryId } ], 
+            type: { $in: ['meta_ads', 'meta', 'facebook'] }, 
+            isActive: true 
+        }).sort({ createdAt: -1 }).lean();
+
+        if (!integration || !integration.config || !integration.config.accessToken) {
+            throw new Error('Meta integration unavailable');
+        }
+
+        const { accessToken, selectedAdAccounts } = integration.config;
+        if (!selectedAdAccounts || selectedAdAccounts.length === 0) {
+            throw new Error('Meta Ad Accounts unavailable');
+        }
+
+        const timeRange = JSON.stringify({ since: fromDate, until: toDate });
+        let liveCampaigns = [];
+        let totalSpend = 0;
+        let totalReach = 0;
+
+        for (const adAccount of selectedAdAccounts) {
+            try {
+                const campaignsRes = await axios.get(`https://graph.facebook.com/v18.0/${adAccount.id}/campaigns`, {
+                    params: {
+                        access_token: accessToken,
+                        time_range: timeRange,
+                        fields: 'id,name,status,effective_status,insights{spend,cpc,cpm,ctr,reach,clicks,impressions,actions}',
+                        limit: 100
+                    }
+                });
+                const campaigns = campaignsRes.data.data || [];
+                campaigns.forEach(c => {
+                    const cInsights = c.insights && c.insights.data && c.insights.data[0] ? c.insights.data[0] : null;
+                    if (!cInsights) return; 
+                    
+                    const spendVal = parseFloat(cInsights.spend || 0);
+                    if (spendVal <= 0) return;
+
+                    const reachVal = parseInt(cInsights.reach || 0, 10);
+                    const impressionsVal = parseInt(cInsights.impressions || 0, 10);
+                    const cprVal = reachVal > 0 ? (spendVal / reachVal).toFixed(2) : '0';
+
+                    liveCampaigns.push({
+                        id: c.id,
+                        campaignName: c.name,
+                        typeOfCampaign: 'Reach',
+                        amountSpent: `₹${spendVal.toLocaleString('en-IN')}`,
+                        rawSpend: spendVal,
+                        reach: reachVal,
+                        impressions: impressionsVal,
+                        cpr: `₹${parseFloat(cprVal).toLocaleString('en-IN')}`,
+                        rawCpr: parseFloat(cprVal),
+                        status: c.effective_status || c.status || 'Active',
+                        adAccount: adAccount.name || adAccount.id || 'Connected Meta Account'
+                    });
+                    
+                    totalSpend += spendVal;
+                    totalReach += reachVal;
+                });
+            } catch (e) {
+                console.warn('Meta Reach API error:', e.message);
+            }
+        }
+        
+        const avgCpr = totalReach > 0 ? (totalSpend / totalReach).toFixed(2) : 0;
+        return {
+            campaigns: liveCampaigns,
+            summary: {
+                totalCampaigns: liveCampaigns.length,
+                totalAmountSpent: `₹${totalSpend.toLocaleString('en-IN')}`,
+                rawTotalAmountSpent: totalSpend,
+                totalReach: totalReach,
+                avgCpr: `₹${parseFloat(avgCpr).toLocaleString('en-IN')}`,
+                rawAvgCpr: parseFloat(avgCpr)
+            }
+        };
+    }
 
     let queryId = targetId;
     if (!queryId || queryId === 'all' || queryId === '[object Object]' || !mongoose.Types.ObjectId.isValid(queryId)) {

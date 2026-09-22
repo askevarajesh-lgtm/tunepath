@@ -40,6 +40,8 @@ import {
   CheckCircleOutlined,
   RedoOutlined,
   DeleteOutlined,
+  FilePdfOutlined,
+  FilePptOutlined,
 } from "@ant-design/icons";
 import MasterItemDetailsCard from "../../components/common/MasterItemDetailsCard";
 import TaskDetailDrawer from "../tasks/TaskDetailDrawer";
@@ -76,6 +78,7 @@ import {
   isDurationTrackingTask,
   formatMinutesAsDuration,
 } from "../tasks/taskDuration";
+import { generateProjectTaskPDF, generateProjectTaskPPT } from "../../utils/projectTaskReportGenerator";
 
 const { TextArea } = Input;
 const { TabPane } = Tabs;
@@ -1711,6 +1714,24 @@ const ProjectDetail = () => {
                         { label: "Calendar View", value: "calendar" },
                       ]}
                     />
+                    <Button
+                      icon={<FilePdfOutlined />}
+                      onClick={() => {
+                        message.success("Downloading PDF report...");
+                        generateProjectTaskPDF(project, deliverablesProgressStats);
+                      }}
+                    >
+                      Download PDF
+                    </Button>
+                    <Button
+                      icon={<FilePptOutlined />}
+                      onClick={() => {
+                        message.success("Downloading PPT report...");
+                        generateProjectTaskPPT(project, deliverablesProgressStats);
+                      }}
+                    >
+                      Download PPT
+                    </Button>
                     <Button
                       type="primary"
                       onClick={() => navigate(`/tasks?projectId=${id}`)}

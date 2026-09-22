@@ -7,6 +7,25 @@ const monthNames = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+
+function getReportDateLabel(data) {
+  if (data.fromDate && data.toDate) {
+    return `${dayjs(data.fromDate).format('MMM D, YYYY')} – ${dayjs(data.toDate).format('MMM D, YYYY')}`;
+  }
+  const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
+  const yearStr = data.year || dayjs().format('YYYY');
+  return `${monthStr} ${yearStr}`;
+}
+
+function getReportDateFilenameLabel(data) {
+  if (data.fromDate && data.toDate) {
+    return `${dayjs(data.fromDate).format('YYYYMMDD')}_${dayjs(data.toDate).format('YYYYMMDD')}`;
+  }
+  const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
+  const yearStr = data.year || dayjs().format('YYYY');
+  return `${monthStr}_${yearStr}`;
+}
+
 function addDocHeader(doc, clientName, reportTitle, subTitle) {
   doc.setTextColor(30, 41, 59);
   doc.setFont('helvetica', 'bold');
@@ -41,12 +60,14 @@ export function generateHighlightsOfTheMonthPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Highlights of the Month (${monthStr} ${yearStr})`, 
+    `Highlights of the Month (${dateLabel})`, 
     `Purpose: Provide a short management-level summary of the month's completed digital/marketing activities.`
   );
 
@@ -83,8 +104,8 @@ export function generateHighlightsOfTheMonthPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Highlights of the Month (${monthStr} ${yearStr})`);
-  const filename = `Highlights_of_the_Month_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Highlights of the Month (${dateLabel})`);
+  const filename = `Highlights_of_the_Month_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -96,12 +117,14 @@ export function generateKeywordRankingOverviewPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Keyword Ranking Overview (${monthStr} ${yearStr})`, 
+    `Keyword Ranking Overview (${dateLabel})`, 
     `Purpose: Show overall organic keyword-ranking performance for the selected month and compare it with previous months.`
   );
 
@@ -120,8 +143,8 @@ export function generateKeywordRankingOverviewPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Keyword Ranking Overview (${monthStr} ${yearStr})`);
-  const filename = `Keyword_Ranking_Overview_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Keyword Ranking Overview (${dateLabel})`);
+  const filename = `Keyword_Ranking_Overview_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -133,12 +156,14 @@ export function generateKeywordRankingDetailsPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Keyword Ranking Details (${monthStr} ${yearStr})`, 
+    `Keyword Ranking Details (${dateLabel})`, 
     `Purpose: Granular organic keyword rankings with monthly rank trends and category grouping.`
   );
 
@@ -162,8 +187,8 @@ export function generateKeywordRankingDetailsPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Keyword Ranking Details (${monthStr} ${yearStr})`);
-  const filename = `Keyword_Ranking_Details_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Keyword Ranking Details (${dateLabel})`);
+  const filename = `Keyword_Ranking_Details_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -175,12 +200,14 @@ export function generateMetaInsightsFacebookPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Meta Insights – Facebook (${monthStr} ${yearStr})`, 
+    `Meta Insights – Facebook (${dateLabel})`, 
     `Purpose: Show monthly Facebook performance (views, reach, and followers).`
   );
 
@@ -204,8 +231,8 @@ export function generateMetaInsightsFacebookPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Meta Insights – Facebook (${monthStr} ${yearStr})`);
-  const filename = `Meta_Insights_Facebook_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Meta Insights – Facebook (${dateLabel})`);
+  const filename = `Meta_Insights_Facebook_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -217,12 +244,14 @@ export function generateMetaInsightsInstagramPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Meta Insights – Instagram (${monthStr} ${yearStr})`, 
+    `Meta Insights – Instagram (${dateLabel})`, 
     `Purpose: Show monthly Instagram performance (views, reach, and followers).`
   );
 
@@ -246,8 +275,8 @@ export function generateMetaInsightsInstagramPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Meta Insights – Instagram (${monthStr} ${yearStr})`);
-  const filename = `Meta_Insights_Instagram_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Meta Insights – Instagram (${dateLabel})`);
+  const filename = `Meta_Insights_Instagram_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -259,12 +288,14 @@ export function generateWebsiteTrafficOverviewPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Website Traffic – Overview (${monthStr} ${yearStr})`, 
+    `Website Traffic – Overview (${dateLabel})`, 
     `Purpose: Show monthly website traffic trend.`
   );
 
@@ -287,8 +318,8 @@ export function generateWebsiteTrafficOverviewPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Website Traffic – Overview (${monthStr} ${yearStr})`);
-  const filename = `Website_Traffic_Overview_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Website Traffic – Overview (${dateLabel})`);
+  const filename = `Website_Traffic_Overview_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -300,12 +331,14 @@ export function generateWebsiteTrafficLandingPagesPDF(data = {}, clientInfo = {}
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Website Traffic – Landing Page Views (${monthStr} ${yearStr})`, 
+    `Website Traffic – Landing Page Views (${dateLabel})`, 
     `Purpose: Show which website pages receive the most traffic and engagement.`
   );
 
@@ -338,8 +371,8 @@ export function generateWebsiteTrafficLandingPagesPDF(data = {}, clientInfo = {}
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Website Traffic – Landing Page Views (${monthStr} ${yearStr})`);
-  const filename = `Website_Traffic_Landing_Page_Views_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Website Traffic – Landing Page Views (${dateLabel})`);
+  const filename = `Website_Traffic_Landing_Page_Views_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -351,12 +384,14 @@ export function generateWebsiteTrafficUsersByCityPDF(data = {}, clientInfo = {})
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Website Traffic – Users by City (${monthStr} ${yearStr})`, 
+    `Website Traffic – Users by City (${dateLabel})`, 
     `Purpose: Show website audience and engagement by city.`
   );
 
@@ -397,8 +432,8 @@ export function generateWebsiteTrafficUsersByCityPDF(data = {}, clientInfo = {})
     margin: { left: 10, right: 10 }
   });
 
-  addDocFooter(doc, clientName, `Website Traffic – Users by City (${monthStr} ${yearStr})`);
-  const filename = `Website_Traffic_Users_by_City_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Website Traffic – Users by City (${dateLabel})`);
+  const filename = `Website_Traffic_Users_by_City_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -410,12 +445,14 @@ export function generateSocialMediaPostInsightsPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `3.12 Social Media Post Insights (${monthStr} ${yearStr})`, 
+    `3.12 Social Media Post Insights (${dateLabel})`, 
     `Purpose: Track the number of social media contents published during the month.`
   );
 
@@ -441,8 +478,8 @@ export function generateSocialMediaPostInsightsPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `3.12 Social Media Post Insights (${monthStr} ${yearStr})`);
-  const filename = `Social_Media_Post_Insights_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `3.12 Social Media Post Insights (${dateLabel})`);
+  const filename = `Social_Media_Post_Insights_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -454,12 +491,14 @@ export function generateYouTubeReportPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `3.14 YouTube Report (${monthStr} ${yearStr})`, 
+    `3.14 YouTube Report (${dateLabel})`, 
     `Purpose: Simple monthly YouTube performance reporting.`
   );
 
@@ -491,8 +530,8 @@ export function generateYouTubeReportPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `3.14 YouTube Report (${monthStr} ${yearStr})`);
-  const filename = `YouTube_Report_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `3.14 YouTube Report (${dateLabel})`);
+  const filename = `YouTube_Report_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -504,12 +543,14 @@ export function generateKeywordsCombinedPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Keywords Report (${monthStr} ${yearStr})`, 
+    `Keywords Report (${dateLabel})`, 
     `Purpose: Organic keyword performance metrics including ranking overview and granular keyword details.`
   );
 
@@ -568,8 +609,8 @@ export function generateKeywordsCombinedPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Keywords Report (${monthStr} ${yearStr})`);
-  const filename = `Keywords_Report_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Keywords Report (${dateLabel})`);
+  const filename = `Keywords_Report_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -581,12 +622,14 @@ export function generateMetaInsightsCombinedPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Meta Insights Report (${monthStr} ${yearStr})`, 
+    `Meta Insights Report (${dateLabel})`, 
     `Purpose: Monthly profile performance metrics for Facebook Page Insights and Instagram Profile Insights.`
   );
 
@@ -638,8 +681,8 @@ export function generateMetaInsightsCombinedPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Meta Insights Report (${monthStr} ${yearStr})`);
-  const filename = `Meta_Insights_Report_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Meta Insights Report (${dateLabel})`);
+  const filename = `Meta_Insights_Report_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -651,12 +694,14 @@ export function generateWebsiteTrafficCombinedPDF(data = {}, clientInfo = {}) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Website Traffic Report (${monthStr} ${yearStr})`, 
+    `Website Traffic Report (${dateLabel})`, 
     `Purpose: Comprehensive website traffic analysis including traffic overview, top landing pages, and user location breakdown.`
   );
 
@@ -741,8 +786,8 @@ export function generateWebsiteTrafficCombinedPDF(data = {}, clientInfo = {}) {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Website Traffic Report (${monthStr} ${yearStr})`);
-  const filename = `Website_Traffic_Report_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Website Traffic Report (${dateLabel})`);
+  const filename = `Website_Traffic_Report_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
@@ -754,12 +799,14 @@ export function generateSocialMediaInsightsCombinedPDF(data = {}, clientInfo = {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const monthStr = data.month ? monthNames[data.month - 1] : dayjs().format('MMMM');
   const yearStr = data.year || dayjs().format('YYYY');
+  const dateLabel = getReportDateLabel(data);
+  const fileDateLabel = getReportDateFilenameLabel(data);
   const clientName = clientInfo.companyName || clientInfo.name || 'Client';
 
   addDocHeader(
     doc, 
     clientName, 
-    `Social Media Post Insights Report (${monthStr} ${yearStr})`, 
+    `Social Media Post Insights Report (${dateLabel})`, 
     `Purpose: Track content published across social media channels and YouTube performance.`
   );
 
@@ -818,8 +865,8 @@ export function generateSocialMediaInsightsCombinedPDF(data = {}, clientInfo = {
     margin: { left: 14, right: 14 }
   });
 
-  addDocFooter(doc, clientName, `Social Media Post Insights Report (${monthStr} ${yearStr})`);
-  const filename = `Social_Media_Post_Insights_${clientName.replace(/\s+/g, '_')}_${monthStr}_${yearStr}.pdf`;
+  addDocFooter(doc, clientName, `Social Media Post Insights Report (${dateLabel})`);
+  const filename = `Social_Media_Post_Insights_${clientName.replace(/\s+/g, '_')}_${fileDateLabel}.pdf`;
   doc.save(filename);
   return filename;
 }
