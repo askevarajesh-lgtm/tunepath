@@ -100,7 +100,7 @@ exports.createManualTransaction = async (req, res) => {
 
 exports.getTransactions = async (req, res) => {
   try {
-    const { invoiceId, status, paymentMethod } = req.query;
+    const { invoiceId, status, paymentMethod, page, limit, startDate, endDate } = req.query;
     let query = {};
     
     // If a specific client is selected via the agency switcher, filter by their company ID
@@ -116,6 +116,9 @@ exports.getTransactions = async (req, res) => {
     if (invoiceId) query.invoiceId = invoiceId;
     if (status) query.status = status;
     if (paymentMethod) query.paymentMethod = paymentMethod;
+    if (startDate && endDate) {
+      query.paymentDate = { $gte: new Date(startDate), $lte: new Date(endDate) };
+    }
 
     // Backfill legacy paid invoices missing Transaction records
     try {
@@ -163,7 +166,7 @@ exports.getTransactions = async (req, res) => {
       console.error('Error during getTransactions backfill:', e);
     }
 
-    const transactions = await Transaction.find(query)
+    let transactionsQuery = Transaction.find(query)
       .populate('invoiceId', 'invoiceNumber grandTotal totalPaid pendingAmount')
       .populate('marketplacePurchaseId', 'moduleName')
       .populate('companyId', 'name email companyName')
@@ -171,9 +174,27 @@ exports.getTransactions = async (req, res) => {
       .populate('verifiedBy', 'name email')
       .sort({ paymentDate: -1 });
 
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    let transactions = [];
+    let total = 0;
+
+    if (pageNum && limitNum) {
+      total = await Transaction.countDocuments(query);
+      transactions = await transactionsQuery.skip((pageNum - 1) * limitNum).limit(limitNum);
+    } else {
+      transactions = await transactionsQuery;
+      total = transactions.length;
+    }
+
     res.status(200).json({
       success: true,
-      data: transactions
+      data: transactions,
+      pagination: {
+        total,
+        page: pageNum || 1,
+        limit: limitNum || total
+      }
     });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Server error', error: error.message });

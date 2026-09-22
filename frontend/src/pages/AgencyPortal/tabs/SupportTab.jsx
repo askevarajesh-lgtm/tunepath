@@ -168,7 +168,7 @@ const SupportTab = () => {
     { title: 'SUBJECT', dataIndex: 'subject', key: 'subject', render: (val) => <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{val}</span> },
     { title: 'TYPE', dataIndex: 'type', key: 'type', render: (val) => <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{val}</span> },
     { title: 'PRIORITY', dataIndex: 'priority', key: 'priority', render: (val) => <span style={{ color: getPriorityColor(val), fontWeight: 800 }}>{val}</span> },
-    { title: 'AM', dataIndex: 'am', key: 'am', render: (val) => <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>{val}</span> },
+    { title: 'ASSIGNED USER', dataIndex: 'am', key: 'am', render: (val) => <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>{val}</span> },
     { title: 'OPENED', dataIndex: 'opened', key: 'opened', render: (val) => <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{val}</span> },
     { 
       title: 'STATUS', 

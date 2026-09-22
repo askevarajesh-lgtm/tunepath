@@ -7,6 +7,8 @@ export const useGetSEOQuery = createQueryHook((params) => ({
 
 export const useGetSEOByIdQuery = createQueryHook((id) => `/seo-panel/${id}`);
 
+export const useGetSEOTimelineQuery = createQueryHook((id) => `/seo-panel/${id}/timeline`);
+
 export const useCreateSEOMutation = createMutationHook((data) => {
   const formData = new FormData();
 

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Button, Input, Table, Typography, Space, Select, DatePicker, Card, Row, Col, Modal, Checkbox, Tag, message, Spin } from "antd";
 import { Plus, Search, X, ArrowUp, ArrowDown, Edit3, Copy, HelpCircle, FileText, BarChart3, Inbox, Calendar, Link2, ListPlus, Upload as UploadIcon, Eye, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { useLocation } from "react-router-dom";
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -44,6 +45,25 @@ const FormsTab = ({ itemVariants }) => {
 
   const [viewSubmission, setViewSubmission] = useState(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tab = params.get('tab');
+    const fId = params.get('formId');
+    const sId = params.get('submissionId');
+
+    if (tab === 'submissions') {
+      setActiveSubTab('submissions');
+    }
+    if (fId) {
+      setSubmissionFormId(fId);
+    }
+    if (sId) {
+      // Store submissionId to open later when submissions load
+      window.__targetSubmissionId = sId;
+    }
+  }, [location.search]);
 
   useEffect(() => {
     if (!activeForm) {
@@ -100,7 +120,17 @@ const FormsTab = ({ itemVariants }) => {
       });
       const data = await res.json();
       if (data.success) {
-        setSubmissions(data.data.map(s => ({ ...s, key: s._id })));
+        const loadedSubmissions = data.data.map(s => ({ ...s, key: s._id }));
+        setSubmissions(loadedSubmissions);
+        
+        if (window.__targetSubmissionId) {
+          const target = loadedSubmissions.find(s => s._id === window.__targetSubmissionId);
+          if (target) {
+            setViewSubmission(target);
+            setIsViewModalOpen(true);
+          }
+          window.__targetSubmissionId = null; // Clear it
+        }
       }
     } catch (err) {
       console.error("Failed to fetch submissions", err);

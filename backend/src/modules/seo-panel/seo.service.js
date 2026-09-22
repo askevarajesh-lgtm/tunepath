@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const SEO = require("./seo.model");
 const Task = require("../tasks/task.model");
+const TimelineEvent = require("../projects/timeline.model");
 const { createTimelineEvent } = require("../projects/shimTimelineHelper");
 
 // Get all SEO entries
@@ -66,6 +67,28 @@ const getSEOById = async (seoId, tenantCompanyId) => {
   }
 
   return seo;
+};
+
+// Get SEO Timeline
+const getSEOTimeline = async (seoId, tenantCompanyId) => {
+  const seo = await SEO.findOne({
+    _id: seoId,
+    companyId: tenantCompanyId,
+  });
+
+  if (!seo) {
+    throw new Error("SEO entry not found");
+  }
+
+  const timelineEvents = await TimelineEvent.find({
+    companyId: tenantCompanyId,
+    entityType: "seo",
+    entityId: seoId,
+  })
+    .populate("performedByUserId", "name email")
+    .sort({ createdAt: -1 });
+
+  return timelineEvents;
 };
 
 // Create SEO entry
@@ -968,6 +991,7 @@ const getSEOUniqueWebsites = async (tenantCompanyId) => {
 module.exports = {
   getAllSEO,
   getSEOById,
+  getSEOTimeline,
   createSEO,
   updateSEO,
   deleteSEO,

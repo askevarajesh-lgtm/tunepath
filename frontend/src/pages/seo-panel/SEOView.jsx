@@ -29,8 +29,7 @@ import {
   ScheduleOutlined,
 } from "@ant-design/icons";
 import { Icon } from "@iconify/react";
-import { useGetSEOByIdQuery } from "../../api/seoApi";
-import { useGetTimelineEventsQuery } from "../../api/timelineApi";
+import { useGetSEOByIdQuery, useGetSEOTimelineQuery } from "../../api/seoApi";
 import TimelineView from "../../components/common/TimelineView";
 import WorkUpdateModal from "./WorkUpdateModal";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
@@ -45,10 +44,7 @@ const SEOView = () => {
   const { user: currentUser } = useAuth();
   const { data, isLoading, refetch } = useGetSEOByIdQuery(id);
   const { data: timelineData, isLoading: isLoadingTimeline } =
-    useGetTimelineEventsQuery(
-      { entityType: "seo", entityId: id },
-      { skip: !id },
-    );
+    useGetSEOTimelineQuery(id, { skip: !id });
   const [isWorkUpdateModalOpen, setIsWorkUpdateModalOpen] = useState(false);
 
   const seo = data?.data?.seo;

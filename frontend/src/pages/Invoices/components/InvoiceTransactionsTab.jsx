@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Row, Col, Typography, Button, Table, Tag, Modal, Form, Input, DatePicker, Select, Upload, message, Space } from 'antd';
+import { Card, Row, Col, Typography, Button, Table, Tag, Modal, Form, Input, DatePicker, Select, Upload, message, Space, Image } from 'antd';
 import { PlusOutlined, UploadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useGetPaymentsByInvoiceQuery, useRecordPaymentMutation, useVerifyPaymentMutation } from '../../../api/paymentApi';
@@ -45,7 +45,8 @@ const InvoiceTransactionsTab = ({ invoice, isClientRole }) => {
         formData.append('referenceNumber', values.referenceNumber);
       }
       if (fileList.length > 0) {
-        formData.append('screenshot', fileList[0].originFileObj);
+        const fileToUpload = fileList[0].originFileObj || fileList[0];
+        formData.append('screenshot', fileToUpload);
       }
 
       const res = await recordPayment(formData);
@@ -103,7 +104,7 @@ const InvoiceTransactionsTab = ({ invoice, isClientRole }) => {
     {
       title: 'Screenshot',
       dataIndex: 'screenshotUrl',
-      render: (url) => url ? <a href={url} target="_blank" rel="noopener noreferrer">View</a> : '-'
+      render: (url) => url ? <Image src={url} width={50} height={50} style={{ objectFit: 'cover', borderRadius: '4px' }} /> : '-'
     },
     ...(!isClientRole ? [{
       title: 'Action',

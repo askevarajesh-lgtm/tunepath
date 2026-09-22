@@ -124,7 +124,7 @@ const MeetingsPage = () => {
   const [completeFollowUp] = useCompleteFollowUpMutation();
   const [deleteFollowUp] = useDeleteFollowUpMutation();
 
-  const meetings = meetingsResponse?.data?.meetings || [];
+  const meetings = [...(meetingsResponse?.data?.meetings || [])].sort((a, b) => new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date));
   const analytics = analyticsResponse?.data?.analytics || null;
   const detailData = detailResponse?.data || null;
 

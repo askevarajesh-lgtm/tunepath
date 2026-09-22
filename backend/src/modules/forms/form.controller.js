@@ -1,6 +1,8 @@
 const Form = require('./form.model');
 const FormSubmission = require('./form-submission.model');
 const mongoose = require('mongoose');
+const User = require('../auth/user.model');
+const Notification = require('../tasks/notification.model');
 
 function buildAssetAuthQuery(req, baseQuery = {}) {
   const query = { ...baseQuery, isDeleted: false };
@@ -234,6 +236,61 @@ exports.submitForm = async (req, res, next) => {
     });
 
     const saved = await submission.save();
+
+    // -- START NOTIFICATION DISPATCH --
+    try {
+      const formCreatorId = form.createdBy?.toString();
+      const notifyUserIds = new Set();
+      
+      if (formCreatorId) notifyUserIds.add(formCreatorId);
+
+      // Resolve roles
+      const findAdminsQuery = { isActive: true };
+      const roles = [];
+      
+      if (form.agencyId) {
+        findAdminsQuery.agencyId = form.agencyId;
+        roles.push('agency_super_admin', 'agency_manager');
+      } else if (form.brandId) {
+        findAdminsQuery.brandId = form.brandId;
+        roles.push('brand_super_admin', 'brand_manager');
+      }
+
+      if (roles.length > 0) {
+        findAdminsQuery.role = { $in: roles };
+        const admins = await User.find(findAdminsQuery).select('_id');
+        admins.forEach(admin => notifyUserIds.add(admin._id.toString()));
+      }
+
+      if (notifyUserIds.size > 0) {
+        const submitterName = name || firstName || email || "A visitor";
+        const title = "New Form Submission";
+        const message = `New submission received from ${submitterName} on ${form.name}.`;
+
+        const notifications = Array.from(notifyUserIds).map(userId => ({
+          userId,
+          type: 'form_submission',
+          title,
+          message,
+          channels: { inApp: true, email: false, sms: false, whatsapp: false },
+          metadata: {
+            formId: form._id,
+            submissionId: saved._id,
+            formName: form.name,
+            workspaceId: form.workspaceId,
+            agencyId: form.agencyId,
+            brandId: form.brandId,
+            email: email
+          }
+        }));
+
+        await Notification.insertMany(notifications);
+      }
+    } catch (notifErr) {
+      console.error("Failed to send form submission notification:", notifErr);
+    }
+    // -- END NOTIFICATION DISPATCH --
+
     res.status(201).json({ success: true, data: saved });
   } catch (error) {
     next(error);
@@ -255,7 +312,13 @@ exports.getSubmissions = async (req, res, next) => {
     
     if (formId && formId !== 'all') {
       if (mongoose.Types.ObjectId.isValid(formId)) {
-        query.formId = new mongoose.Types.ObjectId(formId);
+        const requestedId = new mongoose.Types.ObjectId(formId);
+        // Ensure requested form belongs to scoped forms
+        const hasAccess = formIds.some(fid => fid.equals(requestedId));
+        if (!hasAccess) {
+          return res.status(403).json({ success: false, error: 'Unauthorized access to form submissions' });
+        }
+        query.formId = requestedId;
       }
     } else {
       query.formId = { $in: formIds };

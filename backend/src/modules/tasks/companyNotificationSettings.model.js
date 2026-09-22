@@ -101,6 +101,12 @@ const companyNotificationSettingsSchema = new mongoose.Schema(
         email: { type: Boolean, default: false },
         whatsapp: { type: Boolean, default: false },
       sms: { type: Boolean, default: false },
+      },
+      formSubmission: {
+        inApp: { type: Boolean, default: true },
+        email: { type: Boolean, default: false },
+        whatsapp: { type: Boolean, default: false },
+        sms: { type: Boolean, default: false },
       }
     }
   },

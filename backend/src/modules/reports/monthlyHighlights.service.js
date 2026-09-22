@@ -267,18 +267,32 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null) => 
         });
 
         if (mongoose.models.BlogAsset && clientId) {
-            const BlogPost = mongoose.models.BlogAsset;
-            const clientBlogAssets = await BlogPost.countDocuments({
+            const Blog = mongoose.models.BlogAsset; // Blog and BlogPost share BlogAsset
+            // 1. Find blogs belonging to the client's scopes
+            const clientBlogs = await Blog.find({
+                assetType: 'blog',
                 $or: [
-                    { clientId: clientId },
-                    { createdBy: clientId },
-                    { authorId: clientId }
-                ],
-                assetType: 'post',
-                status: 'published',
-                createdAt: { $gte: startDate, $lte: endDate }
-            }).catch(() => 0);
-            blogCount = Math.max(blogCount, clientBlogAssets);
+                    { workspaceId: { $in: clientTargetIds } },
+                    { brandId: { $in: clientTargetIds } },
+                    { agencyId: { $in: clientTargetIds } }
+                ]
+            }).select('_id').lean().catch(() => []);
+
+            const clientBlogIds = clientBlogs.map(b => b._id);
+
+            if (clientBlogIds.length > 0) {
+                // 2. Count published posts in this month for those blogs
+                const clientBlogAssets = await Blog.countDocuments({
+                    assetType: 'post',
+                    blogId: { $in: clientBlogIds },
+                    status: 'published',
+                    $or: [
+                        { createdAt: { $gte: startDate, $lte: endDate } },
+                        { updatedAt: { $gte: startDate, $lte: endDate } }
+                    ]
+                }).catch(() => 0);
+                blogCount = Math.max(blogCount, clientBlogAssets);
+            }
         }
     } catch (err) {
         console.warn('Auto-aggregate deliverables note:', err.message);
