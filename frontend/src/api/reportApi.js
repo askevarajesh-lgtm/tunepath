@@ -68,7 +68,7 @@ export const getMetaLeadCampaigns = async (clientId) => {
     const params = {};
     const cleanClientId = sanitizeParam(clientId);
     if (cleanClientId) params.clientId = cleanClientId;
-    const response = await api.get('/performance-ads/meta-lead-reports', { params });
+    const response = await api.get('/reports/meta-lead-campaigns', { params });
     return response.data.data;
 };
 
@@ -76,6 +76,6 @@ export const getMetaReachCampaigns = async (clientId) => {
     const params = {};
     const cleanClientId = sanitizeParam(clientId);
     if (cleanClientId) params.clientId = cleanClientId;
-    const response = await api.get('/performance-ads/meta-reach-reports', { params });
+    const response = await api.get('/reports/meta-reach-campaigns', { params });
     return response.data.data;
 };

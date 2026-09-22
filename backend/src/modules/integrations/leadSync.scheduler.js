@@ -83,9 +83,8 @@ const syncFacebookIntegrationLeads = async (integration) => {
 
           let hasNextPage = true;
           let url = `https://graph.facebook.com/v18.0/${formId}/leads`;
-          // Only fetch leads from the last 7 days to prevent fetching thousands of old leads and timing out.
-          // If we have a lastSyncAt, we fetch from 12 hours before that to ensure we catch any missed leads.
-          let sinceUnix = Math.floor((Date.now() - 7 * 24 * 60 * 60 * 1000) / 1000);
+          // Fetch leads from the last 30 days on initial sync, or 12 hours before lastSyncAt on recurring sync.
+          let sinceUnix = Math.floor((Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000);
           if (page.lastSyncAt) {
             let lastSync = Math.floor(new Date(page.lastSyncAt).getTime() / 1000) - (12 * 60 * 60);
             if (lastSync > sinceUnix) {

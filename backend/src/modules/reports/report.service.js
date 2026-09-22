@@ -170,22 +170,36 @@ exports.getReportAnalytics = async (agencyId, user = null) => {
 
 exports.getMetaLeadCampaigns = async (targetId) => {
     const PerformanceAd = require('../performanceAds/performanceAds.model');
+    const User = require('../auth/user.model');
     const mongoose = require('mongoose');
 
     let queryId = targetId;
-    if (!queryId || !mongoose.Types.ObjectId.isValid(queryId)) {
+    if (!queryId || queryId === 'all' || queryId === '[object Object]' || !mongoose.Types.ObjectId.isValid(queryId)) {
         queryId = null;
     }
 
-    let dashboard = null;
+    let dashboards = [];
     if (queryId) {
-        dashboard = await PerformanceAd.findOne({ agency: queryId }).lean();
+        let dashboard = await PerformanceAd.findOne({ $or: [{ agency: queryId }, { clientId: queryId }] }).lean();
         if (!dashboard) {
-            dashboard = await PerformanceAd.findOne({ clientId: queryId }).lean();
+            const clientUser = await User.findById(queryId).lean();
+            if (clientUser && clientUser.agencyId) {
+                dashboard = await PerformanceAd.findOne({ agency: clientUser.agencyId }).lean();
+            }
         }
+        if (dashboard) {
+            dashboards.push(dashboard);
+        }
+    } else {
+        dashboards = await PerformanceAd.find({}).lean();
     }
 
-    const rawCampaigns = dashboard?.activeCampaigns || [];
+    let rawCampaigns = [];
+    dashboards.forEach(d => {
+        if (Array.isArray(d.activeCampaigns)) {
+            rawCampaigns = rawCampaigns.concat(d.activeCampaigns);
+        }
+    });
 
     const leadCampaigns = rawCampaigns
         .filter(c => {
@@ -237,22 +251,36 @@ exports.getMetaLeadCampaigns = async (targetId) => {
 
 exports.getMetaReachCampaigns = async (targetId) => {
     const PerformanceAd = require('../performanceAds/performanceAds.model');
+    const User = require('../auth/user.model');
     const mongoose = require('mongoose');
 
     let queryId = targetId;
-    if (!queryId || !mongoose.Types.ObjectId.isValid(queryId)) {
+    if (!queryId || queryId === 'all' || queryId === '[object Object]' || !mongoose.Types.ObjectId.isValid(queryId)) {
         queryId = null;
     }
 
-    let dashboard = null;
+    let dashboards = [];
     if (queryId) {
-        dashboard = await PerformanceAd.findOne({ agency: queryId }).lean();
+        let dashboard = await PerformanceAd.findOne({ $or: [{ agency: queryId }, { clientId: queryId }] }).lean();
         if (!dashboard) {
-            dashboard = await PerformanceAd.findOne({ clientId: queryId }).lean();
+            const clientUser = await User.findById(queryId).lean();
+            if (clientUser && clientUser.agencyId) {
+                dashboard = await PerformanceAd.findOne({ agency: clientUser.agencyId }).lean();
+            }
         }
+        if (dashboard) {
+            dashboards.push(dashboard);
+        }
+    } else {
+        dashboards = await PerformanceAd.find({}).lean();
     }
 
-    const rawCampaigns = dashboard?.activeCampaigns || [];
+    let rawCampaigns = [];
+    dashboards.forEach(d => {
+        if (Array.isArray(d.activeCampaigns)) {
+            rawCampaigns = rawCampaigns.concat(d.activeCampaigns);
+        }
+    });
 
     const reachCampaigns = rawCampaigns
         .filter(c => {
