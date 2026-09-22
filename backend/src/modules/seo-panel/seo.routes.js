@@ -44,6 +44,12 @@ router.get(
   seoController.getSEOById,
 );
 
+router.get(
+  "/:id/timeline",
+  permissionMiddleware("view-seo-panel"),
+  seoController.getSEOTimeline,
+);
+
 router.post(
   "/",
   permissionMiddleware("create-seo-panel"),

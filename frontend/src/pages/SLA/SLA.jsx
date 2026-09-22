@@ -10,6 +10,7 @@ import { exportToCSV } from '../../utils/exportUtils';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
+const { RangePicker } = DatePicker;
 
 const SLA = () => {
   const { selectedClient } = useClientContext();
@@ -17,7 +18,7 @@ const SLA = () => {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0 });
-  const [filters, setFilters] = useState({ status: 'All', triggerType: 'All', search: '' });
+  const [filters, setFilters] = useState({ status: 'All', triggerType: 'All', search: '', dateRange: null });
   const [trendRange, setTrendRange] = useState('6M'); // '3M', '6M', '1Y'
   
   // Drawer state
@@ -35,7 +36,16 @@ const SLA = () => {
     try {
       const clientId = selectedClient?._id;
       const [slasRes, statsRes] = await Promise.all([
-        slaApi.getSlas({ page, limit: pageSize, status: filters.status, triggerType: filters.triggerType, search: filters.search, clientId }),
+        slaApi.getSlas({ 
+          page, 
+          limit: pageSize, 
+          status: filters.status, 
+          triggerType: filters.triggerType, 
+          search: filters.search, 
+          clientId,
+          startDate: filters.dateRange ? filters.dateRange[0].toISOString() : undefined,
+          endDate: filters.dateRange ? filters.dateRange[1].toISOString() : undefined
+        }),
         slaApi.getSlaDashboardStats({ clientId })
       ]);
       setSlas(slasRes.data);
@@ -309,6 +319,11 @@ const SLA = () => {
                 allowClear
               />
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <RangePicker 
+                  value={filters.dateRange}
+                  onChange={val => handleFilterChange({ ...filters, dateRange: val })}
+                  style={{ width: 240 }}
+                />
                 <Select value={filters.triggerType} onChange={val => handleFilterChange({...filters, triggerType: val})} style={{ width: 140 }}>
                   <Option value="All">All Types</Option>
                   <Option value="Due Date">Due Date</Option>

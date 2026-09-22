@@ -280,12 +280,13 @@ const TransactionsPage = () => {
       title: "Screenshot",
       key: "screenshot",
       render: (_, record) => {
-        if (!record.paymentScreenshotUrl) return "N/A";
+        const url = record.screenshotUrl || record.paymentScreenshotUrl;
+        if (!url) return "N/A";
         return (
           <Image
             width={50}
             height={50}
-            src={record.paymentScreenshotUrl}
+            src={url}
             preview={{
               mask: <EyeOutlined />,
             }}

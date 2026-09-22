@@ -242,6 +242,12 @@ const NotificationsTab = () => {
               {renderTriggerRow('Brand Created', 'systemTriggers', 'brandCreated')}
               {renderTriggerRow('Report Downloaded', 'systemTriggers', 'reportDownloaded')}
               
+              {/* Form Events */}
+              <div style={{ padding: '16px 24px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>
+                <strong style={{ color: 'var(--text-primary)' }}>Form Events</strong>
+              </div>
+              {renderTriggerRow('Form Submission', 'systemTriggers', 'formSubmission')}
+
               {/* Task Events */}
               <div style={{ padding: '16px 24px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-color)', borderTop: '1px solid var(--border-color)' }}>
                 <strong style={{ color: 'var(--text-primary)' }}>Task Events</strong>

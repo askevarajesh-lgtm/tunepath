@@ -59,6 +59,7 @@ const notificationSchema = new mongoose.Schema(
         "sla_status_changed",
         "workspace_automation_triggered",
         "workspace_task_verification_failed",
+        "form_submission",
       ],
     },
     title: {

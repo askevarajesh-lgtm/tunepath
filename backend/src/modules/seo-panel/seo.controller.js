@@ -29,6 +29,25 @@ const getSEOById = async (req, res) => {
   }
 };
 
+// Get SEO Timeline
+const getSEOTimeline = async (req, res) => {
+  try {
+    const timelineEvents = await seoService.getSEOTimeline(
+      req.params.id,
+      req.companyId,
+    );
+    return sendSuccess(res, "SEO timeline retrieved successfully", {
+      timelineEvents,
+    });
+  } catch (error) {
+    return sendError(
+      res,
+      error.message === "SEO entry not found" ? 404 : 500,
+      error.message,
+    );
+  }
+};
+
 // Create SEO entry
 const createSEO = async (req, res) => {
   try {
@@ -525,6 +544,7 @@ const getSEOUniqueWebsites = async (req, res) => {
 module.exports = {
   getAllSEO,
   getSEOById,
+  getSEOTimeline,
   createSEO,
   updateSEO,
   deleteSEO,

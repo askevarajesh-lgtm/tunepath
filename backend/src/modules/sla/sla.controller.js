@@ -235,12 +235,22 @@ exports.getSlaDashboardStats = async (req, res, next) => {
 
 exports.getSlas = async (req, res, next) => {
   try {
-    const { page = 1, limit = 10, status, triggerType, priority, search } = req.query;
+    const { page = 1, limit = 10, status, triggerType, priority, search, startDate, endDate } = req.query;
     const query = await buildSlaMatchFilter(req);
 
     if (status && status !== 'All') query.status = status;
     if (triggerType && triggerType !== 'All') query.triggerType = triggerType;
     if (priority && priority !== 'All') query.priority = priority;
+
+    if (startDate || endDate) {
+      query.dueDate = {};
+      if (startDate) query.dueDate.$gte = new Date(startDate);
+      if (endDate) {
+        const eDate = new Date(endDate);
+        eDate.setHours(23, 59, 59, 999);
+        query.dueDate.$lte = eDate;
+      }
+    }
 
     if (search) {
       const searchCondition = [
