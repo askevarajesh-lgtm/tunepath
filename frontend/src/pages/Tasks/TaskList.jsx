@@ -255,9 +255,10 @@ const TaskList = () => {
         const isCompleted = [
           "done",
           "completed",
+          "complete",
           "validated",
           "review",
-        ].includes(record.status);
+        ].includes(record.status?.toLowerCase?.() || record.status);
         return isCompleted
           ? "-"
           : date

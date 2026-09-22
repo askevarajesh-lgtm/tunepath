@@ -225,7 +225,7 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
     opsChildren.push({ key: '/client/meetings', icon: getIcon(Calendar), label: 'Meetings', moduleGroup: 'Workspace', moduleId: 'Meetings' });
     opsChildren.push({ key: '/client/calendar', icon: getIcon(Calendar), label: 'Calendar', moduleGroup: 'Workspace', moduleId: 'Calendar' });
   } else {
-    // Agency Client flow does not have Time Tracking
+    // Agency Client flow - Default modules
     opsChildren.push({ key: '/client/meetings', icon: getIcon(Calendar), label: 'Meetings', moduleGroup: 'Workspace', moduleId: 'Meetings' });
     opsChildren.push({ key: '/client/calendar', icon: getIcon(Calendar), label: 'Calendar', moduleGroup: 'Workspace', moduleId: 'Calendar' });
     opsChildren.push({ key: '/client/deliverables', icon: getIcon(FileText), label: 'Deliverables', moduleGroup: 'Workspace', moduleId: 'Deliverables' });

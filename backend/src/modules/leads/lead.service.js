@@ -14,7 +14,7 @@ const escapeRegex = (string) => {
 };
 
 const ensureCurrentUserData = async (currentUser) => {
-  if (currentUser && (!currentUser.name || !currentUser.role) && currentUser._id) {
+  if (currentUser && currentUser._id) {
     try {
       const dbUser = await User.findById(currentUser._id).select("name email role customRoleId roleName brandId agencyId").lean();
       if (dbUser) {
@@ -23,6 +23,13 @@ const ensureCurrentUserData = async (currentUser) => {
         if (!currentUser.role) currentUser.role = dbUser.role;
         if (currentUser.brandId === undefined) currentUser.brandId = dbUser.brandId;
         if (currentUser.agencyId === undefined) currentUser.agencyId = dbUser.agencyId;
+        if (dbUser.brandId) {
+          currentUser.isClientRole = true;
+          currentUser.clientUserId = dbUser.brandId;
+        } else if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(dbUser.role)) {
+          currentUser.isClientRole = true;
+          currentUser.clientUserId = dbUser._id;
+        }
       }
     } catch (e) {
       console.error("Error fetching user data in lead service:", e);
@@ -31,13 +38,13 @@ const ensureCurrentUserData = async (currentUser) => {
 };
 
 const buildLeadAccessFilter = (companyId, currentUser) => {
-  const baseFilter = { companyId };
-  if (!currentUser) return baseFilter;
+  if (!currentUser) return companyId ? { companyId } : {};
 
   const userRole = String(currentUser.role || "").toLowerCase();
 
-  // 1. Sub-users of Agency Client / Brand only see leads specifically assigned to them or owned by them
-  if (userRole === "user" && currentUser.brandId) {
+  // 1. Sub-users of Agency Client / Brand only see leads belonging to their client company that are assigned to them or owned by them
+  if (userRole === "user" && (currentUser.brandId || currentUser.clientUserId)) {
+    const effectiveClientId = currentUser.clientUserId || currentUser.brandId;
     const userName = String(currentUser.name || "").trim();
     const userEmail = String(currentUser.email || "").trim();
     const userMatch = [];
@@ -61,21 +68,20 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
     }
 
     return {
-      ...baseFilter,
-      isClientLead: true,
-      clientId: currentUser.clientUserId,
+      clientId: effectiveClientId,
       $or: userMatch.length > 0 ? userMatch : [{ assignedTo: "__NO_ACCESS__" }],
     };
   }
 
-  // 2. Client / Brand Admins and Managers see only leads belonging to their client company
-  if (currentUser.isClientRole) {
+  // 2. Client / Brand Admins and Managers see all leads belonging to their client company
+  if (currentUser.isClientRole || ['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole)) {
+    const effectiveClientId = currentUser.clientUserId || currentUser.brandId || currentUser._id;
     return {
-      ...baseFilter,
-      isClientLead: true,
-      clientId: currentUser.clientUserId,
+      clientId: effectiveClientId,
     };
   }
+
+  const baseFilter = companyId ? { companyId } : {};
 
   // 3. Platform & Agency Management roles (commander_admin, supreme_super_admin, agency_super_admin, agency_manager, agency)
   // They see all agency prospecting leads by default (or client leads if query.companyId is passed)
@@ -432,9 +438,14 @@ const addLeadReminder = async (leadId, companyId, currentUser, payload) => {
   });
   if (!lead) throw new Error("Lead not found");
 
-  lead.reminders.push(payload);
+  const reminderObj = {
+    ...payload,
+    remindTo: payload.remindTo || currentUser?.name || currentUser?.username || 'Self',
+  };
+
+  lead.reminders.push(reminderObj);
   lead.activityLogs.push({
-    message: `Reminder added for ${payload.remindTo}`,
+    message: reminderObj.remindTo ? `Reminder added for ${reminderObj.remindTo}` : `Reminder added`,
     createdAt: new Date(),
   });
   await lead.save();

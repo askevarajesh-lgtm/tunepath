@@ -5,13 +5,18 @@ exports.getDepartments = async (req, res, next) => {
     let queryFilter = {};
     if (req.user.role === 'commander_admin') {
       queryFilter.adminId = req.user._id;
-    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role)) {
-      queryFilter.brandId = req.user.brandId || req.user._id;
+      queryFilter.agencyId = null;
+      queryFilter.brandId = null;
+    } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
+      queryFilter.brandId = req.user.brandId || (['agency_client', 'brand_super_admin', 'brand_manager'].includes(req.user.role) ? req.user._id : null);
     } else {
       if (req.user.adminId && !req.user.agencyId) {
         queryFilter.adminId = req.user.adminId;
+        queryFilter.agencyId = null;
+        queryFilter.brandId = null;
       } else {
         queryFilter.agencyId = req.companyId || req.user.agencyId || req.user._id;
+        queryFilter.brandId = null;
       }
     }
     const departments = await Department.find(queryFilter).sort({ createdAt: -1 });
@@ -26,13 +31,18 @@ exports.getDepartmentsDynamic = async (req, res, next) => {
     let queryFilter = {};
     if (req.user.role === 'commander_admin') {
       queryFilter.adminId = req.user._id;
-    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role)) {
-      queryFilter.brandId = req.user.brandId || req.user._id;
+      queryFilter.agencyId = null;
+      queryFilter.brandId = null;
+    } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
+      queryFilter.brandId = req.user.brandId || (['agency_client', 'brand_super_admin', 'brand_manager'].includes(req.user.role) ? req.user._id : null);
     } else {
       if (req.user.adminId && !req.user.agencyId) {
         queryFilter.adminId = req.user.adminId;
+        queryFilter.agencyId = null;
+        queryFilter.brandId = null;
       } else {
         queryFilter.agencyId = req.companyId || req.user.agencyId || req.user._id;
+        queryFilter.brandId = null;
       }
     }
     const departments = await Department.find(queryFilter).sort({ createdAt: -1 });
@@ -47,8 +57,8 @@ exports.createDepartment = async (req, res, next) => {
     const data = { ...req.body };
     if (req.user.role === 'commander_admin') {
       data.adminId = req.user._id;
-    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role)) {
-      data.brandId = req.user.brandId || req.user._id;
+    } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
+      data.brandId = req.user.brandId || (['agency_client', 'brand_super_admin', 'brand_manager'].includes(req.user.role) ? req.user._id : null);
       data.agencyId = req.companyId || req.user.agencyId;
       if (req.user.adminId) data.adminId = req.user.adminId;
     } else {
@@ -64,8 +74,8 @@ exports.createDepartment = async (req, res, next) => {
     let existingQuery = {
       name: { $regex: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
     };
-    if (data.agencyId) existingQuery.agencyId = data.agencyId;
-    else if (data.brandId) existingQuery.brandId = data.brandId;
+    if (data.brandId) existingQuery.brandId = data.brandId;
+    else if (data.agencyId) existingQuery.agencyId = data.agencyId;
     else if (data.adminId) existingQuery.adminId = data.adminId;
 
     const existing = await Department.findOne(existingQuery);
@@ -91,8 +101,8 @@ exports.updateDepartment = async (req, res, next) => {
           _id: { $ne: req.params.id },
           name: { $regex: new RegExp(`^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
         };
-        if (current.agencyId) existingQuery.agencyId = current.agencyId;
-        else if (current.brandId) existingQuery.brandId = current.brandId;
+        if (current.brandId) existingQuery.brandId = current.brandId;
+        else if (current.agencyId) existingQuery.agencyId = current.agencyId;
         else if (current.adminId) existingQuery.adminId = current.adminId;
 
         const existing = await Department.findOne(existingQuery);

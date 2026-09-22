@@ -188,9 +188,9 @@ const UserManagementTab = () => {
         'brand_super_admin', 'brand_manager', 'brand_admin',
         'manager', 'agency_client', 'client'
       ];
-      setUsers(allUsers.filter(u => u.customRoleId || !excludedRoles.includes(u.role)));
-      setDepartments(deptsRes.data?.data || []);
-      setRoles(rolesRes.data?.data || []);
+      setUsers(allUsers.filter(u => !u.brandId && (u.customRoleId || !excludedRoles.includes(u.role))));
+      setDepartments((deptsRes.data?.data || []).filter(d => !d.brandId));
+      setRoles((rolesRes.data?.data || []).filter(r => !r.brandId));
     } catch (err) {
       console.error(err);
       message.error('Failed to load data');

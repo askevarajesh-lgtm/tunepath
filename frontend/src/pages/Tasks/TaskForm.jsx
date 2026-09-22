@@ -1200,12 +1200,12 @@ const TaskForm = () => {
         taskData.serviceType = values.serviceType;
       }
 
-      const isCompleted = ["review", "done", "completed", "validated"].includes(
-        taskData.status,
+      const isCompleted = ["review", "done", "completed", "complete", "validated"].includes(
+        taskData.status?.toLowerCase?.() || taskData.status,
       );
       const isAlreadyCompleted =
         isEdit &&
-        ["review", "done", "completed", "validated"].includes(task?.status);
+        ["review", "done", "completed", "complete", "validated"].includes(task?.status?.toLowerCase?.() || task?.status);
       const isNewlyCompleted = isCompleted && !isAlreadyCompleted;
       const isAssignedToMe =
         taskData.assignedTo === currentUser?._id ||

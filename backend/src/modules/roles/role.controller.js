@@ -5,10 +5,13 @@ exports.getRoles = async (req, res, next) => {
     let queryFilter = {};
     if (req.user.role === 'commander_admin') {
       queryFilter.adminId = req.user._id;
-    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role)) {
+      queryFilter.agencyId = null;
+      queryFilter.brandId = null;
+    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
       queryFilter.brandId = req.user.brandId || req.user._id;
     } else {
       queryFilter.agencyId = req.companyId || req.user.agencyId || req.user._id;
+      queryFilter.brandId = null;
     }
     const roles = await Role.find(queryFilter).sort({ createdAt: -1 });
     res.status(200).json({ success: true, data: roles });

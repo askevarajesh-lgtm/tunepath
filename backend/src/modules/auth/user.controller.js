@@ -67,23 +67,28 @@ exports.getUsersDropdown = async (req, res, next) => {
     let queryFilter = {};
     if (req.query.role) queryFilter.role = req.query.role;
     
-    // If user is supreme_super_admin, only return commander_admin
-    if (req.user.role === 'supreme_super_admin') {
+    if (req.query.clientId || req.query.brandId) {
+      const targetBrandId = req.query.clientId || req.query.brandId;
+      queryFilter.$or = [
+        { brandId: targetBrandId, role: { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'brand_super_admin'] } },
+        { _id: targetBrandId }
+      ];
+      queryFilter.role = { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager'] };
+    } else if (req.user.role === 'supreme_super_admin') {
+      // If user is supreme_super_admin, only return commander_admin
       queryFilter.role = 'commander_admin';
     } else if (req.user.role === 'commander_admin') {
       queryFilter.adminId = req.user._id;
       queryFilter.agencyId = null;
       queryFilter.brandId = null;
-    } else if (req.user.role === 'agency_client') {
+    } else if (req.user.role === 'agency_client' || (req.user.role === 'user' && req.user.brandId)) {
       const clientBrandId = req.user.brandId || req.user._id;
-      const clientAgencyId = req.companyId || req.user.agencyId;
       queryFilter.$or = [
-        { brandId: clientBrandId, role: { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'brand_super_admin'] } },
-        { _id: clientBrandId, role: 'agency_client' },
-        { agencyId: clientAgencyId, role: { $in: ['agency_super_admin', 'agency_manager'] } }
+        { brandId: clientBrandId, role: { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'brand_super_admin'] } },
+        { _id: clientBrandId, role: { $in: ['agency_client', 'brand_super_admin', 'brand_manager', 'user'] } }
       ];
-    } else if (['brand_super_admin', 'brand_manager', 'brand_admin'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
-      const activeBrandId = req.user.brandId || (['brand_super_admin', 'brand_manager', 'brand_admin'].includes(req.user.role) ? req.user._id : null);
+    } else if (['brand_super_admin', 'brand_manager', 'brand_admin'].includes(req.user.role)) {
+      const activeBrandId = req.user.brandId || req.user._id;
       if (activeBrandId) {
         queryFilter.$or = [
           { brandId: activeBrandId },
@@ -235,11 +240,15 @@ exports.createUser = async (req, res, next) => {
         }
       }
 
-      // Ensure features are a subset of the creator's features
+      // Ensure features and integrations are a subset of the creator's features and integrations
       const parentFeatures = req.user.features || [];
+      const parentIntegrations = req.user.integrations || [];
       if (['agency_client', 'user'].includes(req.user.role)) {
-        if (userData.features && Array.isArray(userData.features)) {
+        if (userData.features && Array.isArray(userData.features) && parentFeatures.length > 0) {
           userData.features = userData.features.filter(f => parentFeatures.includes(f));
+        }
+        if (userData.integrations && Array.isArray(userData.integrations) && parentIntegrations.length > 0) {
+          userData.integrations = userData.integrations.filter(i => parentIntegrations.includes(i));
         }
       }
     } else {
@@ -413,9 +422,18 @@ exports.updateUser = async (req, res, next) => {
       updateData.roleName = updateData.role.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     }
 
+    if (updateData.status && updateData.isActive === undefined) {
+      updateData.isActive = updateData.status === 'active';
+    } else if (updateData.isActive !== undefined && !updateData.status) {
+      updateData.status = updateData.isActive ? 'active' : 'inactive';
+    }
+
     if (updateData.departmentId) {
       const dept = await Department.findById(updateData.departmentId);
       if (dept) updateData.departmentName = dept.name;
+    } else if (updateData.departmentId === null || updateData.departmentId === '') {
+      updateData.departmentId = null;
+      updateData.departmentName = null;
     }
 
     const user = await User.findByIdAndUpdate(req.params.id, updateData, { returnDocument: 'after', runValidators: true }).select('-password');

@@ -254,6 +254,15 @@ const ClientReportsRouteGuard = () => {
   return <ClientReportsTab />;
 };
 
+const UserLayoutRouteGuard = () => {
+  const { role, user } = useAuth();
+  const isClientUser = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) || Boolean(user?.brandId);
+  if (isClientUser) {
+    return <Navigate to="/client/dashboard" replace />;
+  }
+  return <UserLayout />;
+};
+
 const AppRoutes = () => {
   const { role, user } = useAuth();
   
@@ -641,7 +650,7 @@ const AppRoutes = () => {
       <Route path="/user" element={
         <ProtectedRoute />
       }>
-        <Route element={<UserLayout />}>
+        <Route element={<UserLayoutRouteGuard />}>
           <Route index element={<Navigate to="/user/dashboard" replace />} />
           <Route path="dashboard" element={<UserDashboardTab />} />
           <Route path="tasks" element={<TasksPage />} />

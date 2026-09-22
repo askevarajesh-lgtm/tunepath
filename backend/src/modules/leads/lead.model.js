@@ -13,7 +13,7 @@ const reminderSchema = new mongoose.Schema(
     },
     remindTo: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     status: {

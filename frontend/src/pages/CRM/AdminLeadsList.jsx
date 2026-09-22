@@ -143,28 +143,6 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
 
   const currentViewingLead = viewingLead ? leads.find(l => l._id === viewingLead._id) || viewingLead : null;
   
-  const [createLead, { isLoading: isCreating }] = useCreateLeadMutation();
-  const [updateLead, { isLoading: isUpdating }] = useUpdateLeadMutation();
-  const [deleteLead] = useDeleteLeadMutation();
-  const [addLeadNote, { isLoading: isAddingNote }] = useAddLeadNoteMutation();
-  const [deleteLeadNote] = useDeleteLeadNoteMutation();
-  const [addLeadReminder, { isLoading: isAddingReminder }] = useAddLeadReminderMutation();
-  const { data: bdeData } = useGetAssignableBdeUsersQuery();
-  const { data: usersData, isLoading: isLoadingUsers } = useGetUsersDropdownQuery({});
-  
-  const bdeUsers = bdeData?.data?.users || [];
-  const allUsers = usersData?.data?.users || usersData?.data?.data || (Array.isArray(usersData?.data) ? usersData.data : []);
-
-  const [exportCsv, { isFetching: isExporting }] = useLazyExportLeadsCsvQuery();
-  const [importCsv, { isLoading: isImporting }] = useImportLeadsCsvMutation();
-  const [syncWhatsApp, { isLoading: isSyncingWhatsApp }] = useSyncWhatsAppLeadsMutation();
-  const [bulkDeleteLeads, { isLoading: isBulkDeleting }] = useBulkDeleteLeadsMutation();
-  const [activeTab, setActiveTab] = useState('all');
-  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
-  const [isFbSyncModalOpen, setIsFbSyncModalOpen] = useState(false);
-  const [selectedFbPageId, setSelectedFbPageId] = useState(null);
-  const [selectedFbFormIds, setSelectedFbFormIds] = useState([]);
-
   const selectedClientId = useMemo(() => {
     const userStr = localStorage.getItem('user');
     if (userStr) {
@@ -184,6 +162,28 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     }
     return null;
   }, []);
+
+  const [createLead, { isLoading: isCreating }] = useCreateLeadMutation();
+  const [updateLead, { isLoading: isUpdating }] = useUpdateLeadMutation();
+  const [deleteLead] = useDeleteLeadMutation();
+  const [addLeadNote, { isLoading: isAddingNote }] = useAddLeadNoteMutation();
+  const [deleteLeadNote] = useDeleteLeadNoteMutation();
+  const [addLeadReminder, { isLoading: isAddingReminder }] = useAddLeadReminderMutation();
+  const { data: bdeData } = useGetAssignableBdeUsersQuery();
+  const { data: usersData, isLoading: isLoadingUsers } = useGetUsersDropdownQuery(selectedClientId ? { clientId: selectedClientId } : {});
+  
+  const bdeUsers = bdeData?.data?.users || [];
+  const allUsers = usersData?.data?.users || usersData?.data?.data || (Array.isArray(usersData?.data) ? usersData.data : []);
+
+  const [exportCsv, { isFetching: isExporting }] = useLazyExportLeadsCsvQuery();
+  const [importCsv, { isLoading: isImporting }] = useImportLeadsCsvMutation();
+  const [syncWhatsApp, { isLoading: isSyncingWhatsApp }] = useSyncWhatsAppLeadsMutation();
+  const [bulkDeleteLeads, { isLoading: isBulkDeleting }] = useBulkDeleteLeadsMutation();
+  const [activeTab, setActiveTab] = useState('all');
+  const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [isFbSyncModalOpen, setIsFbSyncModalOpen] = useState(false);
+  const [selectedFbPageId, setSelectedFbPageId] = useState(null);
+  const [selectedFbFormIds, setSelectedFbFormIds] = useState([]);
 
   const { data: fbIntegrationsData, isLoading: isLoadingFbIntegrations } = useGetFacebookIntegrationsQuery(selectedClientId);
   const fbPages = fbIntegrationsData?.data?.integrations || [];
@@ -454,8 +454,8 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
   };
 
   const handleAddReminder = async () => {
-    if (!reminderDesc.trim() || !reminderDate || !reminderTo) {
-      message.error("Please fill all reminder fields");
+    if (!reminderDesc.trim() || !reminderDate) {
+      message.error("Please provide description and date/time for the reminder");
       return;
     }
     try {
@@ -463,7 +463,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
         leadId: currentViewingLead._id,
         description: reminderDesc,
         remindAt: reminderDate.toISOString(),
-        remindTo: reminderTo
+        remindTo: reminderTo || user?.name || user?.username || 'Self'
       }).unwrap();
       message.success('Reminder added successfully');
       setReminderDesc('');
@@ -781,8 +781,8 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                       <DatePicker showTime style={{ width: '100%', borderRadius: 6, marginTop: 4 }} value={reminderDate} onChange={setReminderDate} placeholder="Select date" />
                     </Col>
                     <Col span={12}>
-                      <span style={{ color: 'red' }}>*</span> <span style={{ fontWeight: 600, fontSize: 13 }}>Set reminder to</span>
-                      <Select style={{ width: '100%', marginTop: 4 }} placeholder="Select User" value={reminderTo} onChange={setReminderTo} loading={isLoadingUsers} showSearch>
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>Set reminder to</span>
+                      <Select style={{ width: '100%', marginTop: 4 }} placeholder="Select User (optional)" allowClear value={reminderTo} onChange={setReminderTo} loading={isLoadingUsers} showSearch>
                         {allUsers.map(u => (
                           <Option key={u._id} value={u.name || u.username}>{u.name || u.username}</Option>
                         ))}

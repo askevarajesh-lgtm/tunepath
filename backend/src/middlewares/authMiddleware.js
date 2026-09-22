@@ -124,10 +124,10 @@ const authMiddleware = async (req, res, next) => {
   }
 
   if (req.user) {
-    req.isClientRole = ['client', 'agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user'].includes(req.user.role);
+    req.isClientRole = ['client', 'agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user'].includes(req.user.role) || (req.user.role === 'user' && !!req.user.brandId);
     req.user.isClientRole = req.isClientRole;
     if (req.isClientRole) {
-      req.clientUserId = req.user.clientId || req.user.brandId || req.user._id;
+      req.clientUserId = req.user.brandId || req.user.clientId || req.user._id;
       req.user.clientUserId = req.clientUserId;
     }
   }

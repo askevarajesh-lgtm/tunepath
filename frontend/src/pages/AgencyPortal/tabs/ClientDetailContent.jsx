@@ -26,7 +26,6 @@ const INTEGRATIONS_LIST = [
   { id: 'email', label: 'Email Integration' },
   { id: 'facebook', label: 'Facebook Integration' },
   { id: 'twilio', label: 'Twilio Integration' },
-  { id: 'payment', label: 'Payment Integration' },
 ];
 
 const ClientDetailContent = ({
@@ -610,8 +609,8 @@ const ClientDetailContent = ({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 24 }}>
                     <Text style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, display: 'block' }}>Accessed Integrations</Text>
                     {(() => {
-                      const clientIntegrations = selectedClient.integrations || [];
-                      const allowedIntegrations = (authUser?.integrations || []);
+                      const clientIntegrations = (selectedClient.integrations || []).filter(id => id !== 'payment');
+                      const allowedIntegrations = (authUser?.integrations || []).filter(id => id !== 'payment');
                       
                       const integrationsToShow = [...allowedIntegrations];
                       clientIntegrations.forEach(intId => {
@@ -619,8 +618,9 @@ const ClientDetailContent = ({
                           integrationsToShow.push(intId);
                         }
                       });
+                      const finalIntegrationsToShow = integrationsToShow.filter(id => id !== 'payment');
 
-                      if (integrationsToShow.length === 0) {
+                      if (finalIntegrationsToShow.length === 0) {
                         return (
                           <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-tertiary)', background: 'var(--bg-secondary)', borderRadius: 12, border: '1px dashed var(--border-color)' }}>
                             No integrations available in scope.
@@ -628,7 +628,7 @@ const ClientDetailContent = ({
                         );
                       }
 
-                      return integrationsToShow.map(intId => {
+                      return finalIntegrationsToShow.map(intId => {
                         const integrationDef = INTEGRATIONS_LIST.find(i => i.id === intId);
                         const label = integrationDef ? integrationDef.label : (intId.charAt(0).toUpperCase() + intId.slice(1));
                         const enabled = clientIntegrations.includes(intId);

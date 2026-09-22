@@ -18,7 +18,7 @@ const { Title, Text } = Typography;
 const { TabPane } = Tabs;
 const { TextArea } = Input;
 
-const isCompleted = (status) => ["review", "completed", "validated", "approved"].includes(status?.toLowerCase());
+const isCompleted = (status) => ["review", "in_review", "in review", "reviewing", "completed", "complete", "validated", "approved", "done"].includes(status?.toLowerCase());
 const isInProgress = (status) => ["in_progress", "submitted"].includes(status?.toLowerCase());
 const isPending = (status) => ["created", "assigned", "backlog", "to_do"].includes(status?.toLowerCase());
 

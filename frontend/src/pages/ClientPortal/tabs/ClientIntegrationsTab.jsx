@@ -337,7 +337,7 @@ const INTEGRATION_META = {
   }
 };
 
-const SUPPORTED_INTEGRATIONS = ['whatsapp', 'sms', 'email', 'website', 'payment', 'ekta'];
+const SUPPORTED_INTEGRATIONS = ['whatsapp', 'sms', 'email', 'website', 'ekta'];
 
 const ClientIntegrationsTab = ({ user }) => {
   const [selectedConfig, setSelectedConfig] = useState(null);
@@ -408,7 +408,6 @@ const ClientIntegrationsTab = ({ user }) => {
       case 'sms': return <SmsConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
       case 'email': return <EmailConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
       case 'website': return <WebsiteConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
-      case 'payment': return <PaymentConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
       case 'ekta': return <EktaHrInlineConfigPage clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
       default: return null;
     }
@@ -423,7 +422,7 @@ const ClientIntegrationsTab = ({ user }) => {
   }
 
   // Get the effective product integrations from the user object (provided by backend)
-  const entitledTypes = (user?.integrations || []).filter(type => SUPPORTED_INTEGRATIONS.includes(type));
+  const entitledTypes = (user?.integrations || []).filter(type => SUPPORTED_INTEGRATIONS.includes(type) && type !== 'payment');
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" style={{ padding: '0' }}>
