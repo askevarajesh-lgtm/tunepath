@@ -74,6 +74,7 @@ const ExpenseManagementPage = () => {
   const [form] = Form.useForm();
   const [dateFilter, setDateFilter] = useState("allTime");
   const [customDateRange, setCustomDateRange] = useState(null);
+  const [departmentFilter, setDepartmentFilter] = useState("all");
   const [showMonthlySummary, setShowMonthlySummary] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(dayjs().month() + 1);
   const [selectedYear, setSelectedYear] = useState(dayjs().year());
@@ -169,8 +170,9 @@ const ExpenseManagementPage = () => {
 
   // Filter expenses by type
   const filteredExpenses = useMemo(() => {
+    let result = expenses;
     if (activeTab === "fixed") {
-      return expenses.filter((e) => {
+      result = expenses.filter((e) => {
         if (e.expenseType === "fixed") return true;
         // Legacy support
         const isFixedCategory = [
@@ -204,13 +206,31 @@ const ExpenseManagementPage = () => {
         return isFixedCategory && !e.staffId;
       });
     } else {
-      return expenses.filter((e) => {
+      result = expenses.filter((e) => {
         if (e.expenseType === "variable") return true;
         // Legacy support: expenses with staffId are variable
         return e.staffId !== null && e.staffId !== undefined;
       });
     }
-  }, [expenses, activeTab]);
+
+    if (departmentFilter && departmentFilter !== "all") {
+      result = result.filter((e) => {
+        let dept = e.department;
+        if (!dept && e.staffId) {
+          dept = e.staffId.team || e.staffId.department;
+        }
+        if (dept && /^[0-9a-fA-F]{24}$/.test(dept)) {
+          const foundDept = fetchedDepartments.find((d) => d._id === dept);
+          if (foundDept) {
+            dept = foundDept.name;
+          }
+        }
+        return dept === departmentFilter || (dept && dept.toLowerCase() === departmentFilter.toLowerCase());
+      });
+    }
+
+    return result;
+  }, [expenses, activeTab, departmentFilter, fetchedDepartments]);
 
   // Group expenses by month (optional enhancement)
   const groupedExpenses = useMemo(() => {
@@ -1323,7 +1343,23 @@ const ExpenseManagementPage = () => {
           bodyStyle={{ padding: 24 }}
         >
           <Spin spinning={isLoading || isCreating || isUpdating}>
-            <Tabs activeKey={activeTab} onChange={setActiveTab} size="large">
+            <Tabs 
+              activeKey={activeTab} 
+              onChange={setActiveTab} 
+              size="large"
+              tabBarExtraContent={
+                <Select
+                  value={departmentFilter}
+                  onChange={setDepartmentFilter}
+                  style={{ width: 220 }}
+                  placeholder="Filter by Department"
+                  options={[
+                    { value: "all", label: "All Departments" },
+                    ...departments.map(d => ({ value: d.value, label: d.label }))
+                  ]}
+                />
+              }
+            >
               <TabPane
                 key="fixed"
                 tab={
