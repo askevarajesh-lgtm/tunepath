@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Table, Tag, Space, Button, Typography, Input, Card, Modal, Select, Form, message, Upload, Row, Col, Tabs, Descriptions, Empty, DatePicker, Radio } from 'antd';
+import { Table, Tag, Space, Button, Typography, Input, Card, Modal, Select, Form, message, Upload, Row, Col, Tabs, Descriptions, Empty, DatePicker, Radio, AutoComplete } from 'antd';
 import { EyeOutlined, EditOutlined, DeleteOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, FileTextOutlined, AudioOutlined, PictureOutlined, VideoCameraOutlined, FileOutlined, WhatsAppOutlined, FacebookOutlined, CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, UserAddOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { 
@@ -33,6 +33,8 @@ const CustomLabel = ({ text }) => (
   </span>
 );
 
+const DEFAULT_STATUSES = ['RNR', 'COLD', 'WARM', 'HOT', 'DROP', 'OTHER LOCATIONS', 'SV DONE', 'NOT REACHABLE', 'BOOKING DONE'];
+
 const AdminLeadsList = ({ leads = [], refetch }) => {
   const { user, role } = useAuth();
   const { canAdd, canEdit, canDelete, canView } = useActionPermissions('/crm');
@@ -50,6 +52,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
   const [noteContent, setNoteContent] = useState('');
   const [noteType, setNoteType] = useState('text');
   const [noteFile, setNoteFile] = useState(null);
+  const [customStatuses, setCustomStatuses] = useState([]);
   
   const [reminderDesc, setReminderDesc] = useState('');
   const [reminderDate, setReminderDate] = useState(null);
@@ -369,10 +372,10 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     form.validateFields().then(async (values) => {
       try {
         if (editingLead) {
-          await updateLead({ id: editingLead._id, ...values, countryCode: leadCountryCode, status: values.status.toLowerCase() }).unwrap();
+          await updateLead({ id: editingLead._id, ...values, countryCode: leadCountryCode, status: (values.status || '').toLowerCase() }).unwrap();
           message.success('Lead updated successfully');
         } else {
-          await createLead({ ...values, countryCode: leadCountryCode, status: values.status.toLowerCase() }).unwrap();
+          await createLead({ ...values, countryCode: leadCountryCode, status: (values.status || '').toLowerCase() }).unwrap();
           message.success('Lead created successfully');
         }
         refetch?.();
@@ -702,16 +705,50 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
 
           <Row gutter={24}>
             <Col span={12}>
-              <Form.Item name="status" label={<CustomLabel text="Status" />} initialValue="NEW">
-                <Select size="large">
-                  <Option value="NEW">NEW</Option>
-                  <Option value="CONTACTED">CONTACTED</Option>
-                  <Option value="FOLLOW_UP">FOLLOW UP</Option>
-                  <Option value="IN_PROGRESS">IN PROGRESS</Option>
-                  <Option value="CONVERTED">CONVERTED</Option>
-                  <Option value="LOST">LOST</Option>
-                  <Option value="JUNK">JUNK</Option>
-                </Select>
+              <Form.Item name="status" label={<CustomLabel text="Status" />}>
+                <AutoComplete
+                  size="large"
+                  options={[
+                    ...DEFAULT_STATUSES.map(s => ({ value: s })),
+                    ...customStatuses.map(s => ({
+                      value: s,
+                      label: (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span>{s}</span>
+                          <DeleteOutlined 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCustomStatuses(prev => prev.filter(custom => custom !== s));
+                              if (form.getFieldValue('status') === s) {
+                                form.setFieldsValue({ status: '' });
+                              }
+                            }}
+                            style={{ color: 'var(--accent-danger)' }}
+                          />
+                        </div>
+                      )
+                    }))
+                  ]}
+                  filterOption={(inputValue, option) =>
+                    option.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                  }
+                  onBlur={() => {
+                    const val = form.getFieldValue('status');
+                    if (val && !DEFAULT_STATUSES.includes(val) && !customStatuses.includes(val)) {
+                      setCustomStatuses(prev => [...prev, val]);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const val = e.target.value || form.getFieldValue('status');
+                      if (val && !DEFAULT_STATUSES.includes(val) && !customStatuses.includes(val)) {
+                        setCustomStatuses(prev => [...prev, val]);
+                      }
+                    }
+                  }}
+                  placeholder="Select or Type the status"
+                />
               </Form.Item>
             </Col>
             <Col span={12}>
