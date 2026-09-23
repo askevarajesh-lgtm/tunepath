@@ -7,7 +7,7 @@ import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;
 
-const AdminDashboard = ({ leads = [], onOpenReportModal }) => {
+const AdminDashboard = ({ leads = [], stats = null, isLoading = false, onOpenReportModal }) => {
   const itemVariants = {
     hidden: { y: 20, opacity: 0 },
     visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
@@ -94,6 +94,20 @@ const AdminDashboard = ({ leads = [], onOpenReportModal }) => {
     emailAddedLeads,
     followUpLeads
   } = useMemo(() => {
+    if (filteredLeads.length === 0 && stats) {
+      return {
+        totalLeads: stats.totalLeads || 0,
+        newLeads: stats.newLeads || 0,
+        activeLeads: stats.activeLeads || 0,
+        assignedLeads: stats.assignedLeads || 0,
+        convertedLeads: stats.convertedLeads || 0,
+        contactReadyLeads: stats.contactReadyLeads || 0,
+        phoneAddedLeads: stats.phoneAddedLeads || 0,
+        emailAddedLeads: stats.emailAddedLeads || 0,
+        followUpLeads: stats.followUpLeads || 0,
+      };
+    }
+
     let newL = 0, activeL = 0, assignedL = 0, convertedL = 0;
     let contactReady = 0, phoneAdded = 0, emailAdded = 0, followUp = 0;
 
@@ -121,7 +135,7 @@ const AdminDashboard = ({ leads = [], onOpenReportModal }) => {
       emailAddedLeads: emailAdded,
       followUpLeads: followUp,
     };
-  }, [filteredLeads]);
+  }, [filteredLeads, stats]);
 
   const conversionRate = totalLeads ? Math.round((convertedLeads / totalLeads) * 100) : 0;
   const assignedRate = totalLeads ? Math.round((assignedLeads / totalLeads) * 100) : 0;

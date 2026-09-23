@@ -67,6 +67,7 @@ const EXPORT_HEADERS = [
   "Lead Source",
   "Status",
   "Assigned To",
+  "Assigned Department",
   "Notes",
 ];
 
@@ -109,6 +110,7 @@ const leadsToCsv = (leads) => {
       (lead.source && String(lead.source).trim()) || "",
       (lead.status && String(lead.status).trim()) || "new",
       (lead.assignedTo && String(lead.assignedTo).trim()) || "",
+      (lead.assignedDepartment && String(lead.assignedDepartment).trim()) || "",
       (lead.notes && String(lead.notes).trim()) || "",
     ].map(escapeCsvField);
     lines.push(row.join(","));
@@ -143,6 +145,9 @@ const HEADER_TO_FIELD = {
   "assigned to": "assignedTo",
   assignedto: "assignedTo",
   bde: "assignedTo",
+  "assigned department": "assignedDepartment",
+  assigneddepartment: "assignedDepartment",
+  department: "assignedDepartment",
   notes: "notes",
 };
 

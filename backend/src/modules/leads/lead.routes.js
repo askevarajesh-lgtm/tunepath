@@ -77,10 +77,22 @@ router.get(
   leadController.getAssignableBdeUsers,
 );
 router.get(
+  "/stats",
+  rbacMiddleware("admin", "bde", "client"),
+  permissionMiddleware("view-lead"),
+  leadController.getLeadStats,
+);
+router.get(
   "/",
   rbacMiddleware("admin", "bde", "client"),
   permissionMiddleware("view-lead"),
   leadController.getLeads,
+);
+router.get(
+  "/:id",
+  rbacMiddleware("admin", "bde", "client"),
+  permissionMiddleware("view-lead"),
+  leadController.getLeadById,
 );
 router.post(
   "/",
@@ -99,6 +111,12 @@ router.delete(
   rbacMiddleware("admin", "bde", "client"),
   permissionMiddleware("delete-lead"),
   leadController.deleteLead,
+);
+router.post(
+  "/assign",
+  rbacMiddleware("admin", "bde", "client"),
+  permissionMiddleware("edit-lead"),
+  leadController.assignLeads,
 );
 router.post(
   "/bulk-delete",

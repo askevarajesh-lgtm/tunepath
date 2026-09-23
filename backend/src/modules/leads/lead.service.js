@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Lead = require("./lead.model");
 const User = require("../auth/user.model");
+require("../departments/department.model");
 const {
   parseCsv,
   leadsToCsv,
@@ -16,13 +17,21 @@ const escapeRegex = (string) => {
 const ensureCurrentUserData = async (currentUser) => {
   if (currentUser && currentUser._id) {
     try {
-      const dbUser = await User.findById(currentUser._id).select("name email role customRoleId roleName brandId agencyId").lean();
+      const dbUser = await User.findById(currentUser._id)
+        .select("name email role customRoleId roleName brandId agencyId departmentId departmentName")
+        .populate("departmentId", "name slug")
+        .lean();
       if (dbUser) {
         if (!currentUser.name) currentUser.name = dbUser.name;
         if (!currentUser.email) currentUser.email = dbUser.email;
         if (!currentUser.role) currentUser.role = dbUser.role;
         if (currentUser.brandId === undefined) currentUser.brandId = dbUser.brandId;
         if (currentUser.agencyId === undefined) currentUser.agencyId = dbUser.agencyId;
+        
+        const deptName = dbUser.departmentName || dbUser.departmentId?.name || null;
+        currentUser.departmentName = deptName;
+        currentUser.departmentId = dbUser.departmentId?._id || dbUser.departmentId || null;
+
         if (dbUser.brandId) {
           currentUser.isClientRole = true;
           currentUser.clientUserId = dbUser.brandId;
@@ -42,11 +51,14 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
 
   const userRole = String(currentUser.role || "").toLowerCase();
 
-  // 1. Sub-users of Agency Client / Brand only see leads belonging to their client company that are assigned to them or owned by them
+  // 1. Sub-users of Agency Client / Brand only see leads belonging to their client company that are assigned to them, their department, or owned by them
   if (userRole === "user" && (currentUser.brandId || currentUser.clientUserId)) {
     const effectiveClientId = currentUser.clientUserId || currentUser.brandId;
     const userName = String(currentUser.name || "").trim();
     const userEmail = String(currentUser.email || "").trim();
+    const deptName = String(currentUser.departmentName || "").trim();
+    const deptId = currentUser.departmentId;
+
     const userMatch = [];
     if (userName) {
       userMatch.push(
@@ -59,6 +71,15 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
         { assignedTo: userEmail },
         { assignedTo: new RegExp(`^\\s*${escapeRegex(userEmail)}\\s*$`, "i") }
       );
+    }
+    if (deptName) {
+      userMatch.push(
+        { assignedDepartment: deptName },
+        { assignedDepartment: new RegExp(`^\\s*${escapeRegex(deptName)}\\s*$`, "i") }
+      );
+    }
+    if (deptId) {
+      userMatch.push({ assignedDepartmentId: deptId });
     }
     if (currentUser._id) {
       userMatch.push(
@@ -98,9 +119,11 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
   }
 
   // 4. Agency Employees / Team Members (e.g. role === "user" without brandId, role === "bde", or any custom role like Video Editor, Designer, etc.)
-  // They ONLY see leads assigned to them or created/owned by them
+  // They ONLY see leads assigned to them, their department, or created/owned by them
   const userName = String(currentUser.name || "").trim();
   const userEmail = String(currentUser.email || "").trim();
+  const deptName = String(currentUser.departmentName || "").trim();
+  const deptId = currentUser.departmentId;
   const userMatch = [];
   if (userName) {
     userMatch.push(
@@ -113,6 +136,15 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
       { assignedTo: userEmail },
       { assignedTo: new RegExp(`^\\s*${escapeRegex(userEmail)}\\s*$`, "i") }
     );
+  }
+  if (deptName) {
+    userMatch.push(
+      { assignedDepartment: deptName },
+      { assignedDepartment: new RegExp(`^\\s*${escapeRegex(deptName)}\\s*$`, "i") }
+    );
+  }
+  if (deptId) {
+    userMatch.push({ assignedDepartmentId: deptId });
   }
   if (currentUser._id) {
     userMatch.push(
@@ -127,16 +159,170 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
   };
 };
 
+const toObjectId = (id) => {
+  if (!id) return null;
+  if (id instanceof mongoose.Types.ObjectId) return id;
+  if (typeof id === 'string' && mongoose.Types.ObjectId.isValid(id)) {
+    return new mongoose.Types.ObjectId(id);
+  }
+  return id;
+};
+
+const getLeadStats = async (companyId, currentUser, query = {}) => {
+  await ensureCurrentUserData(currentUser);
+  const accessFilter = buildLeadAccessFilter(companyId, currentUser);
+  if (query.companyId || query.clientId) {
+    delete accessFilter.isClientLead;
+    accessFilter.clientId = toObjectId(query.companyId || query.clientId);
+  } else if (accessFilter.clientId) {
+    accessFilter.clientId = toObjectId(accessFilter.clientId);
+  }
+  if (accessFilter.companyId) {
+    accessFilter.companyId = toObjectId(accessFilter.companyId);
+  }
+
+  const [aggregationResult] = await Lead.aggregate([
+    { $match: accessFilter },
+    {
+      $facet: {
+        total: [{ $count: "count" }],
+        byStatus: [{ $group: { _id: { $toLower: "$status" }, count: { $sum: 1 } } }],
+        bySource: [{ $group: { _id: "$source", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+        byOwner: [{ $group: { _id: "$assignedTo", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+        byDepartment: [{ $group: { _id: "$assignedDepartment", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+        recent30Days: [
+          { $match: { createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } },
+          { $count: "count" }
+        ],
+        contactReady: [
+          {
+            $match: {
+              $or: [
+                { phoneNumber: { $exists: true, $nin: ["", null] } },
+                { email: { $exists: true, $nin: ["", null] } }
+              ]
+            }
+          },
+          { $count: "count" }
+        ],
+        phoneCount: [
+          { $match: { phoneNumber: { $exists: true, $nin: ["", null] } } },
+          { $count: "count" }
+        ],
+        emailCount: [
+          { $match: { email: { $exists: true, $nin: ["", null] } } },
+          { $count: "count" }
+        ]
+      }
+    }
+  ]);
+
+  const total = aggregationResult?.total?.[0]?.count || 0;
+  const statusMap = {};
+  (aggregationResult?.byStatus || []).forEach((s) => {
+    if (s._id) statusMap[s._id] = s.count;
+  });
+
+  const newCount = statusMap["new"] || 0;
+  const contactedCount = statusMap["contacted"] || 0;
+  const inProgressCount = statusMap["in_progress"] || 0;
+  const followUpCount = statusMap["follow_up"] || 0;
+  const convertedCount = statusMap["converted"] || 0;
+  const lostCount = statusMap["lost"] || 0;
+  const junkCount = statusMap["junk"] || 0;
+
+  const activeCount = contactedCount + inProgressCount + followUpCount;
+  
+  let assignedCount = 0;
+  let unassignedCount = 0;
+  (aggregationResult?.byOwner || []).forEach((o) => {
+    if (!o._id || o._id.trim() === "" || o._id.toLowerCase() === "unassigned") {
+      unassignedCount += o.count;
+    } else {
+      assignedCount += o.count;
+    }
+  });
+
+  return {
+    totalLeads: total,
+    newLeads: newCount,
+    activeLeads: activeCount,
+    assignedLeads: assignedCount,
+    unassignedLeads: unassignedCount,
+    convertedLeads: convertedCount,
+    lostLeads: lostCount,
+    junkLeads: junkCount,
+    followUpLeads: followUpCount,
+    contactReadyLeads: aggregationResult?.contactReady?.[0]?.count || 0,
+    phoneAddedLeads: aggregationResult?.phoneCount?.[0]?.count || 0,
+    emailAddedLeads: aggregationResult?.emailCount?.[0]?.count || 0,
+    recent30DaysLeads: aggregationResult?.recent30Days?.[0]?.count || 0,
+    statusBreakdown: aggregationResult?.byStatus || [],
+    sourceBreakdown: aggregationResult?.bySource || [],
+    ownerBreakdown: aggregationResult?.byOwner || [],
+    departmentBreakdown: aggregationResult?.byDepartment || []
+  };
+};
+
 const getLeads = async (companyId, currentUser, query = {}) => {
   await ensureCurrentUserData(currentUser);
   const accessFilter = buildLeadAccessFilter(companyId, currentUser);
-  if (query.companyId) {
+  if (query.companyId || query.clientId) {
     // If a client is selected, remove the isClientLead restriction to see their leads
     delete accessFilter.isClientLead;
-    accessFilter.clientId = query.companyId;
+    accessFilter.clientId = query.companyId || query.clientId;
   }
-  console.log("getLeads accessFilter:", JSON.stringify(accessFilter), "for user:", currentUser?.role, currentUser?.name);
-  return Lead.find(accessFilter).sort({ createdAt: -1 }).lean();
+
+  // Optional server-side filtering
+  if (query.status && query.status !== "All") {
+    accessFilter.status = new RegExp(`^${escapeRegex(query.status)}$`, "i");
+  }
+  if (query.source) {
+    accessFilter.source = query.source;
+  }
+  if (query.search && query.search.trim()) {
+    const sRegex = new RegExp(escapeRegex(query.search.trim()), "i");
+    accessFilter.$or = [
+      { fullName: sRegex },
+      { phoneNumber: sRegex },
+      { email: sRegex },
+      { companyName: sRegex }
+    ];
+  }
+
+  // By default, exclude heavy subdocuments for high-speed listing
+  let projection = "-activityLogs -leadNotes -reminders";
+  if (query.full === "true" || query.includeDetails === "true") {
+    projection = "";
+  }
+
+  let dbQuery = Lead.find(accessFilter).sort({ createdAt: -1 });
+  if (projection) {
+    dbQuery = dbQuery.select(projection);
+  }
+
+  if (query.limit && !isNaN(parseInt(query.limit))) {
+    const limit = Math.max(1, parseInt(query.limit));
+    const page = Math.max(1, parseInt(query.page) || 1);
+    const skip = (page - 1) * limit;
+    
+    const [leads, total] = await Promise.all([
+      dbQuery.skip(skip).limit(limit).lean(),
+      Lead.countDocuments(accessFilter)
+    ]);
+    return { leads, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
+
+  return dbQuery.lean();
+};
+
+const getLeadById = async (leadId, companyId, currentUser) => {
+  await ensureCurrentUserData(currentUser);
+  const accessFilter = buildLeadAccessFilter(companyId, currentUser);
+  if (accessFilter.companyId) {
+    delete accessFilter.companyId;
+  }
+  return Lead.findOne({ _id: leadId, ...accessFilter }).lean();
 };
 
 /** Active BDE users in the tenant company (for lead assignment dropdown). */
@@ -163,6 +349,8 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
     source,
     status,
     assignedTo,
+    assignedDepartment,
+    assignedDepartmentId,
     notes,
     customData,
   } = leadData;
@@ -196,6 +384,8 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
     source: String(source || "").trim(),
     status: status || "new",
     assignedTo: assignedToValue,
+    assignedDepartment: String(assignedDepartment || "").trim(),
+    assignedDepartmentId: assignedDepartmentId || null,
     ownerId: (userRole === "user" && currentUser?.brandId) ? currentUser._id : null,
     notes: String(notes || "").trim(),
     customData: customData || {},
@@ -225,16 +415,18 @@ const updateLead = async (leadId, updateData, companyId, currentUser) => {
     source,
     status,
     assignedTo,
+    assignedDepartment,
+    assignedDepartmentId,
     notes,
   } = updateData;
 
-  lead.fullName = String(fullName || "").trim();
-  lead.companyName = String(companyName || "").trim();
-  lead.phoneNumber = String(phoneNumber || "").trim();
-  lead.email = String(email || "").trim();
-  lead.projectType = String(projectType || "").trim();
-  lead.source = String(source || "").trim();
-  lead.status = status || lead.status;
+  if (fullName !== undefined) lead.fullName = String(fullName || "").trim();
+  if (companyName !== undefined) lead.companyName = String(companyName || "").trim();
+  if (phoneNumber !== undefined) lead.phoneNumber = String(phoneNumber || "").trim();
+  if (email !== undefined) lead.email = String(email || "").trim();
+  if (projectType !== undefined) lead.projectType = String(projectType || "").trim();
+  if (source !== undefined) lead.source = String(source || "").trim();
+  if (status !== undefined) lead.status = status || lead.status;
   
   const userRole = String(currentUser?.role || "").toLowerCase();
   const isAgencyAdminOrManager = [
@@ -248,8 +440,18 @@ const updateLead = async (leadId, updateData, companyId, currentUser) => {
     ? String(currentUser?.name || "").trim()
     : "";
 
-  lead.assignedTo = String(assignedTo || "").trim() || (isAgencyAdminOrManager ? lead.assignedTo : defaultAssignee);
-  lead.notes = String(notes || "").trim();
+  if (assignedTo !== undefined) {
+    lead.assignedTo = String(assignedTo || "").trim() || (isAgencyAdminOrManager ? lead.assignedTo : defaultAssignee);
+  }
+  if (assignedDepartment !== undefined) {
+    lead.assignedDepartment = String(assignedDepartment || "").trim();
+  }
+  if (assignedDepartmentId !== undefined) {
+    lead.assignedDepartmentId = assignedDepartmentId || null;
+  }
+  if (notes !== undefined) {
+    lead.notes = String(notes || "").trim();
+  }
   lead.lastInteractionAt = new Date();
 
   lead.activityLogs = [
@@ -616,11 +818,86 @@ const importLeadsFromCsvBuffer = async (buffer, companyId, userId) => {
   };
 };
 
+const assignLeads = async (leadIds, assignData, companyId, currentUser) => {
+  await ensureCurrentUserData(currentUser);
+  if (!Array.isArray(leadIds) || leadIds.length === 0) {
+    throw new Error("No lead IDs provided");
+  }
+
+  const objectIds = leadIds
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  if (objectIds.length === 0) {
+    throw new Error("No valid lead IDs provided");
+  }
+
+  const accessFilter = buildLeadAccessFilter(companyId, currentUser);
+  const leads = await Lead.find({
+    _id: { $in: objectIds },
+    ...accessFilter,
+  });
+
+  if (!leads.length) {
+    throw new Error("No matching leads found for assignment");
+  }
+
+  const { assignedDepartment, assignedDepartmentId, assignedTo } = assignData;
+
+  const updateFields = {};
+  if (assignedDepartment !== undefined) {
+    updateFields.assignedDepartment = String(assignedDepartment || "").trim();
+  }
+  if (assignedDepartmentId !== undefined) {
+    updateFields.assignedDepartmentId = assignedDepartmentId || null;
+  }
+  if (assignedTo !== undefined) {
+    updateFields.assignedTo = String(assignedTo || "").trim();
+  }
+
+  const parts = [];
+  if (updateFields.assignedDepartment !== undefined) {
+    parts.push(updateFields.assignedDepartment ? `Dept: ${updateFields.assignedDepartment}` : 'Dept: Cleared');
+  }
+  if (updateFields.assignedTo !== undefined) {
+    parts.push(updateFields.assignedTo ? `User: ${updateFields.assignedTo}` : 'User: Unassigned');
+  }
+  const logMessage = `Lead assignment updated (${parts.join(', ')})`;
+
+  const updatedLeads = [];
+  for (const lead of leads) {
+    if (updateFields.assignedDepartment !== undefined) {
+      lead.assignedDepartment = updateFields.assignedDepartment;
+    }
+    if (updateFields.assignedDepartmentId !== undefined) {
+      lead.assignedDepartmentId = updateFields.assignedDepartmentId;
+    }
+    if (updateFields.assignedTo !== undefined) {
+      lead.assignedTo = updateFields.assignedTo;
+    }
+    lead.lastInteractionAt = new Date();
+    lead.activityLogs = [
+      {
+        message: logMessage,
+        createdAt: new Date(),
+      },
+      ...(lead.activityLogs || []),
+    ];
+    await lead.save();
+    updatedLeads.push(lead);
+  }
+
+  return { updatedCount: updatedLeads.length, leads: updatedLeads };
+};
+
 module.exports = {
   getLeads,
+  getLeadStats,
+  getLeadById,
   getAssignableBdeUsers,
   createLead,
   updateLead,
+  assignLeads,
   deleteLead,
   getLeadNotes,
   addLeadNote,

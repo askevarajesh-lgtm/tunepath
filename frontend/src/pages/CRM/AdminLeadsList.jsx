@@ -1,19 +1,22 @@
 import React, { useState, useMemo } from 'react';
-import { Table, Tag, Space, Button, Typography, Input, Card, Modal, Select, Form, message, Upload, Row, Col, Tabs, Descriptions, Empty, DatePicker, Radio } from 'antd';
-import { EyeOutlined, EditOutlined, DeleteOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, FileTextOutlined, AudioOutlined, PictureOutlined, VideoCameraOutlined, FileOutlined, WhatsAppOutlined, FacebookOutlined, CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, UserAddOutlined } from '@ant-design/icons';
+import { Table, Tag, Space, Button, Typography, Input, Card, Modal, Select, Form, message, Upload, Row, Col, Tabs, Descriptions, Empty, DatePicker, Radio, Tooltip } from 'antd';
+import { EyeOutlined, EditOutlined, DeleteOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, FileTextOutlined, AudioOutlined, PictureOutlined, VideoCameraOutlined, FileOutlined, WhatsAppOutlined, FacebookOutlined, CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, UserAddOutlined, UserSwitchOutlined, ApartmentOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import { 
   useCreateLeadMutation, 
   useUpdateLeadMutation, 
   useDeleteLeadMutation, 
+  useAssignLeadsMutation,
   useGetAssignableBdeUsersQuery,
   useLazyExportLeadsCsvQuery,
   useImportLeadsCsvMutation,
   useBulkDeleteLeadsMutation,
   useAddLeadNoteMutation,
   useDeleteLeadNoteMutation,
-  useAddLeadReminderMutation
+  useAddLeadReminderMutation,
+  useGetLeadByIdQuery
 } from '../../api/leadApi';
+import { useGetDepartmentsQuery } from '../../api/settingsApi';
 import { useSyncWhatsAppLeadsMutation, useGetFacebookIntegrationsQuery, useLazyGetFacebookFormsQuery, useSyncFacebookLeadsMutation } from '../../api/integrationApi';
 import { useGetUsersDropdownQuery } from '../../api/userApi';
 import PhoneInput from '../../components/common/PhoneInput';
@@ -33,17 +36,10 @@ const CustomLabel = ({ text }) => (
   </span>
 );
 
-const AdminLeadsList = ({ leads = [], refetch }) => {
+const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const { user, role } = useAuth();
   const { canAdd, canEdit, canDelete, canView } = useActionPermissions('/crm');
 
-  const isBrandOrClient = useMemo(() => {
-    const r = (role || user?.role || '').toLowerCase();
-    const ut = (user?.userType || '').toLowerCase();
-    return r.startsWith('brand') || r === 'client' || r === 'agency_client' || ut.startsWith('brand') || ut === 'client';
-  }, [role, user]);
-
-  const canConvertClient = !isBrandOrClient;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
   const [viewingLead, setViewingLead] = useState(null);
@@ -59,11 +55,16 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
   const [leadCountryIso, setLeadCountryIso] = useState('IN');
 
   const [form] = Form.useForm();
+  const [assignForm] = Form.useForm();
   
   const [dateRangeFilter, setDateRangeFilter] = useState(null);
   const [formNameFilter, setFormNameFilter] = useState([]);
   const [statusFilter, setStatusFilter] = useState([]);
+  const [departmentFilter, setDepartmentFilter] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [assigningLeads, setAssigningLeads] = useState([]);
 
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
   const [convertingLead, setConvertingLead] = useState(null);
@@ -141,14 +142,19 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     }
   };
 
-  const currentViewingLead = viewingLead ? leads.find(l => l._id === viewingLead._id) || viewingLead : null;
+  const { data: leadDetailData, isLoading: isLeadDetailLoading } = useGetLeadByIdQuery(
+    viewingLead?._id,
+    { skip: !viewingLead?._id }
+  );
+
+  const currentViewingLead = leadDetailData?.data?.lead || (viewingLead ? leads.find(l => l._id === viewingLead._id) || viewingLead : null);
   
   const selectedClientId = useMemo(() => {
     const userStr = localStorage.getItem('user');
     if (userStr) {
       try {
         const parsed = JSON.parse(userStr);
-        if (parsed?.role === 'client' || parsed?.brandId || parsed?.clientId) {
+        if (parsed?.role === 'client' || parsed?.role === 'agency_client' || parsed?.brandId || parsed?.clientId) {
           return parsed.clientId || parsed.brandId || parsed._id;
         }
       } catch (e) {}
@@ -163,17 +169,101 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     return null;
   }, []);
 
+  const isClientContext = useMemo(() => {
+    const r = (role || user?.role || '').toLowerCase();
+    const ut = (user?.userType || '').toLowerCase();
+    const hasBrandOrClient = !!(user?.brandId || user?.clientId || selectedClientId);
+    return r.startsWith('brand') || r === 'client' || r === 'agency_client' || ut.startsWith('brand') || ut === 'client' || hasBrandOrClient;
+  }, [role, user, selectedClientId]);
+
+  const canConvertClient = useMemo(() => {
+    if (isClientContext) return false;
+    if (currentViewingLead?.isClientLead || currentViewingLead?.clientId || currentViewingLead?.companyId || currentViewingLead?.brandId) return false;
+    const r = (role || user?.role || '').toLowerCase();
+    return ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency'].includes(r);
+  }, [isClientContext, currentViewingLead, role, user]);
+
+  const isAgencyClient = useMemo(() => {
+    const r = (role || user?.role || '').toLowerCase();
+    const ut = (user?.userType || '').toLowerCase();
+    const pathname = window.location.pathname;
+
+    // Explicit agency_client role
+    if (r === 'agency_client' || ut === 'agency_client') return true;
+
+    // Under client portal route (/client/...)
+    if (pathname.startsWith('/client')) return true;
+
+    // If user has a brandId / clientId assigned and is NOT an agency/platform admin
+    if ((user?.brandId || user?.clientId) && !['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency'].includes(r)) {
+      return true;
+    }
+
+    return false;
+  }, [role, user]);
+
   const [createLead, { isLoading: isCreating }] = useCreateLeadMutation();
   const [updateLead, { isLoading: isUpdating }] = useUpdateLeadMutation();
   const [deleteLead] = useDeleteLeadMutation();
+  const [assignLeadsMutation, { isLoading: isAssigning }] = useAssignLeadsMutation();
   const [addLeadNote, { isLoading: isAddingNote }] = useAddLeadNoteMutation();
   const [deleteLeadNote] = useDeleteLeadNoteMutation();
   const [addLeadReminder, { isLoading: isAddingReminder }] = useAddLeadReminderMutation();
   const { data: bdeData } = useGetAssignableBdeUsersQuery();
   const { data: usersData, isLoading: isLoadingUsers } = useGetUsersDropdownQuery(selectedClientId ? { clientId: selectedClientId } : {});
+  const { data: departmentsData, isLoading: isLoadingDepts } = useGetDepartmentsQuery(
+    selectedClientId ? { clientId: selectedClientId } : {},
+    { skip: !isAgencyClient }
+  );
   
   const bdeUsers = bdeData?.data?.users || [];
   const allUsers = usersData?.data?.users || usersData?.data?.data || (Array.isArray(usersData?.data) ? usersData.data : []);
+  const departments = departmentsData?.data || [];
+
+  const allDepartmentNames = useMemo(() => {
+    if (!isAgencyClient) return [];
+    const set = new Set();
+    departments.forEach(d => {
+      if (d?.name) set.add(d.name.trim());
+    });
+    leads.forEach(l => {
+      if (l?.assignedDepartment) set.add(l.assignedDepartment.trim());
+    });
+    return Array.from(set).sort();
+  }, [departments, leads, isAgencyClient]);
+
+  const handleOpenAssignModal = (leadsList) => {
+    if (!leadsList || leadsList.length === 0) return;
+    setAssigningLeads(leadsList);
+    if (leadsList.length === 1) {
+      assignForm.setFieldsValue({
+        assignedDepartment: leadsList[0].assignedDepartment || undefined,
+      });
+    } else {
+      assignForm.resetFields();
+    }
+    setIsAssignModalOpen(true);
+  };
+
+  const handleAssignSubmit = async () => {
+    try {
+      const values = await assignForm.validateFields();
+      const leadIds = assigningLeads.map(l => l._id);
+      await assignLeadsMutation({
+        leadIds,
+        assignedDepartment: values.assignedDepartment || '',
+      }).unwrap();
+
+      message.success(`${leadIds.length > 1 ? `${leadIds.length} leads` : 'Lead'} assigned to department successfully`);
+      setIsAssignModalOpen(false);
+      setAssigningLeads([]);
+      assignForm.resetFields();
+      setSelectedRowKeys([]);
+      refetch?.();
+    } catch (error) {
+      message.error(error?.data?.message || error?.message || 'Failed to assign department');
+    }
+  };
 
   const [exportCsv, { isFetching: isExporting }] = useLazyExportLeadsCsvQuery();
   const [importCsv, { isLoading: isImporting }] = useImportLeadsCsvMutation();
@@ -226,7 +316,6 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     }
   };
 
-
   const getFormName = (lead) => {
     return lead?.customData?.form_name || lead?.customData?.formName || lead?.formName || '';
   };
@@ -271,14 +360,44 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Form Name</strong>, key: 'formName', render: (_, record) => getFormName(record) || '—' },
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Lead Source</strong>, dataIndex: 'source', key: 'source', render: s => <Tag color="purple" style={{ borderRadius: 6, fontWeight: 600 }}>{s}</Tag> },
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Status</strong>, dataIndex: 'status', key: 'status', render: s => <Tag color="blue" style={{ borderRadius: 6, fontWeight: 700, textTransform: 'uppercase' }}>{s}</Tag> },
+    ...(isAgencyClient ? [
+      { 
+        title: <strong style={{ color: 'var(--text-secondary)' }}>Assigned Department</strong>, 
+        dataIndex: 'assignedDepartment', 
+        key: 'assignedDepartment', 
+        render: dept => dept ? <Tag color="cyan" style={{ borderRadius: 6, fontWeight: 600 }}>{dept}</Tag> : '—' 
+      }
+    ] : []),
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Assigned To</strong>, dataIndex: 'assignedTo', key: 'assignedTo', render: a => a || '—' },
     { 
       title: <strong style={{ color: 'var(--text-secondary)' }}>Action</strong>, key: 'action', fixed: 'right',
       render: (_, record) => (
         <Space size="middle">
-          {canView && <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--accent-info)' }} onClick={() => handleOpenViewModal(record)} />}
-          {canEdit && <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--accent-secondary)' }} onClick={() => handleEditClick(record)} />}
-          {canDelete && <Button type="text" icon={<DeleteOutlined />} danger onClick={() => handleDeleteClick(record)} />}
+          {canView && (
+            <Tooltip title="View Lead">
+              <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--accent-info)' }} onClick={() => handleOpenViewModal(record)} />
+            </Tooltip>
+          )}
+          {isAgencyClient && canEdit && (
+            <Tooltip title="Assign Department">
+              <Button 
+                type="text" 
+                icon={<ApartmentOutlined />} 
+                style={{ color: '#0e4ca2', fontWeight: 600, fontSize: 16 }} 
+                onClick={() => handleOpenAssignModal([record])} 
+              />
+            </Tooltip>
+          )}
+          {canEdit && (
+            <Tooltip title="Edit Lead">
+              <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--accent-secondary)' }} onClick={() => handleEditClick(record)} />
+            </Tooltip>
+          )}
+          {canDelete && (
+            <Tooltip title="Delete Lead">
+              <Button type="text" icon={<DeleteOutlined />} danger onClick={() => handleDeleteClick(record)} />
+            </Tooltip>
+          )}
         </Space>
       )
     }
@@ -303,6 +422,11 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
       formMatch = formNameFilter.some(filterItem => formName.includes(filterItem.toLowerCase()));
     }
 
+    let departmentMatch = true;
+    if (isAgencyClient && departmentFilter && departmentFilter.length > 0) {
+      departmentMatch = departmentFilter.includes(lead.assignedDepartment);
+    }
+
     let searchMatch = true;
     if (searchQuery && searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
@@ -313,6 +437,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
       const source = (lead.source || '').toLowerCase();
       const status = (lead.status || '').toLowerCase();
       const assignedTo = (lead.assignedTo || '').toLowerCase();
+      const assignedDepartment = (lead.assignedDepartment || '').toLowerCase();
 
       searchMatch = name.includes(q) ||
                     email.includes(q) ||
@@ -320,14 +445,15 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                     formName.includes(q) ||
                     source.includes(q) ||
                     status.includes(q) ||
-                    assignedTo.includes(q);
+                    assignedTo.includes(q) ||
+                    assignedDepartment.includes(q);
     }
     let statusMatch = true;
     if (statusFilter && statusFilter.length > 0) {
       statusMatch = statusFilter.includes(lead.status);
     }
     
-    return dateMatch && formMatch && searchMatch && statusMatch;
+    return dateMatch && formMatch && searchMatch && statusMatch && departmentMatch;
   }).sort((a, b) => getActualLeadDate(b).valueOf() - getActualLeadDate(a).valueOf());
 
   const handleEditClick = (record) => {
@@ -569,7 +695,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
               placeholder="Filter by Status"
               value={statusFilter}
               onChange={val => setStatusFilter(val || [])}
-              style={{ minWidth: 200, borderRadius: 8 }}
+              style={{ minWidth: 160, borderRadius: 8 }}
               allowClear
               showSearch
             >
@@ -577,6 +703,21 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                 <Option key={status} value={status}>{status.replace(/_/g, ' ')}</Option>
               ))}
             </Select>
+            {isAgencyClient && (
+              <Select
+                mode="multiple"
+                placeholder="Filter by Department"
+                value={departmentFilter}
+                onChange={val => setDepartmentFilter(val || [])}
+                style={{ minWidth: 180, borderRadius: 8 }}
+                allowClear
+                showSearch
+              >
+                {allDepartmentNames.map(name => (
+                  <Option key={name} value={name}>{name}</Option>
+                ))}
+              </Select>
+            )}
             {canView && (
               <>
                 <Button 
@@ -598,6 +739,18 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                   <Button icon={<UploadOutlined />} loading={isImporting} style={{ borderRadius: 8, fontWeight: 600, borderColor: 'var(--border-color)' }}>Import</Button>
                 </Upload>
                 <Button icon={<DownloadOutlined />} loading={isExporting} onClick={handleExport} style={{ borderRadius: 8, fontWeight: 600, borderColor: 'var(--border-color)' }}>Export</Button>
+                {isAgencyClient && selectedRowKeys.length > 0 && canEdit && (
+                  <Button 
+                    icon={<ApartmentOutlined />} 
+                    onClick={() => {
+                      const selectedLeads = leads.filter(l => selectedRowKeys.includes(l._id));
+                      handleOpenAssignModal(selectedLeads);
+                    }}
+                    style={{ borderRadius: 8, fontWeight: 600, borderColor: '#0e4ca2', color: '#0e4ca2' }}
+                  >
+                    Assign Department ({selectedRowKeys.length})
+                  </Button>
+                )}
                 {selectedRowKeys.length > 0 && canView && (
                   <Button danger icon={<DeleteOutlined />} loading={isBulkDeleting} onClick={handleBulkDelete} style={{ borderRadius: 8, fontWeight: 600 }}>Bulk Delete ({selectedRowKeys.length})</Button>
                 )}
@@ -620,6 +773,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
           columns={columns} 
           dataSource={filteredLeads} 
           rowKey="_id"
+          loading={isLoading}
           pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
           rowSelection={{ 
             type: 'checkbox',
@@ -837,6 +991,9 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
                     <Descriptions.Item label="Lead Source"><Tag color="purple" style={{borderRadius: 4}}>{currentViewingLead?.source || '—'}</Tag></Descriptions.Item>
                     
                     <Descriptions.Item label="Status"><Tag color="blue" style={{borderRadius: 4}}>{currentViewingLead?.status || 'NEW'}</Tag></Descriptions.Item>
+                    {isAgencyClient && (
+                      <Descriptions.Item label="Assigned Department">{currentViewingLead?.assignedDepartment ? <Tag color="cyan" style={{borderRadius: 4}}>{currentViewingLead.assignedDepartment}</Tag> : '—'}</Descriptions.Item>
+                    )}
                     <Descriptions.Item label="Assigned To">{currentViewingLead?.assignedTo || '—'}</Descriptions.Item>
                     <Descriptions.Item label="Last Interaction" span={3}>{currentViewingLead?.updatedAt ? dayjs(currentViewingLead.updatedAt).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
                     
@@ -1188,6 +1345,69 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
             )}
           </div>
         )}
+      </Modal>
+
+      {/* Assign Department Modal */}
+      <Modal
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, borderRadius: 8, background: '#0e4ca2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
+              <ApartmentOutlined style={{ fontSize: 18 }} />
+            </div>
+            <div>
+              <Title level={4} style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>
+                {assigningLeads.length > 1 ? `Assign Department (${assigningLeads.length} Leads)` : 'Assign Department'}
+              </Title>
+              {assigningLeads.length === 1 && (
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  Lead: {assigningLeads[0]?.fullName || assigningLeads[0]?.companyName}
+                </Text>
+              )}
+            </div>
+          </div>
+        }
+        open={isAssignModalOpen}
+        onCancel={() => {
+          setIsAssignModalOpen(false);
+          setAssigningLeads([]);
+          assignForm.resetFields();
+        }}
+        onOk={handleAssignSubmit}
+        confirmLoading={isAssigning}
+        okText={assigningLeads.length > 1 ? `Assign ${assigningLeads.length} Leads` : 'Assign Department'}
+        cancelText="Cancel"
+        className="glassmorphism-modal"
+        okButtonProps={{ style: { background: '#0e4ca2', border: 'none', borderRadius: 6, fontWeight: 600, padding: '0 24px' } }}
+        cancelButtonProps={{ style: { borderRadius: 6, fontWeight: 600, padding: '0 24px' } }}
+        width={500}
+      >
+        <div style={{ margin: '16px 0 20px 0' }}>
+          <Text type="secondary" style={{ fontSize: 13, lineHeight: '1.5', display: 'block' }}>
+            Assign this lead to a department. The lead will be visible to all users who belong to the selected department.
+          </Text>
+        </div>
+
+        <Form form={assignForm} layout="vertical">
+          <Form.Item 
+            name="assignedDepartment" 
+            label={<CustomLabel text="Assigned Department" />}
+            rules={[{ required: true, message: 'Please select a department' }]}
+            extra="All team members in this department will see this lead."
+          >
+            <Select 
+              size="large" 
+              placeholder="Select Department" 
+              allowClear 
+              loading={isLoadingDepts} 
+              showSearch
+              style={{ borderRadius: 6 }}
+            >
+              {allDepartmentNames.map(dept => (
+                <Option key={dept} value={dept}>{dept}</Option>
+              ))}
+            </Select>
+          </Form.Item>
+        </Form>
       </Modal>
 
     </motion.div>

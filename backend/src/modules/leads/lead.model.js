@@ -145,6 +145,17 @@ const leadSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    assignedDepartment: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    assignedDepartmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Department",
+      default: null,
+      index: true,
+    },
     notes: {
       type: String,
       trim: true,
@@ -185,8 +196,11 @@ const leadSchema = new mongoose.Schema(
 );
 
 leadSchema.index({ companyId: 1, createdAt: -1 });
+leadSchema.index({ clientId: 1, createdAt: -1 });
+leadSchema.index({ clientId: 1, status: 1 });
 // Supports Google Analytics aggregations (per-client, date-ranged lead/channel queries)
 leadSchema.index({ companyId: 1, clientId: 1, createdAt: -1 });
 leadSchema.index({ companyId: 1, source: 1, createdAt: -1 });
+leadSchema.index({ companyId: 1, assignedDepartment: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Lead", leadSchema);

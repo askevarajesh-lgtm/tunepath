@@ -80,6 +80,8 @@ const createMutationHook = (method) => {
 };
 
 export const useGetLeadsQuery = createQueryHook((params) => ({ url: '/leads', params }));
+export const useGetLeadStatsQuery = createQueryHook((params) => ({ url: '/leads/stats', params }));
+export const useGetLeadByIdQuery = createQueryHook((leadId) => `/leads/${leadId}`);
 export const useGetAssignableBdeUsersQuery = createQueryHook('/leads/assignable-bde');
 export const useGetLeadNotesQuery = createQueryHook((leadId) => `/leads/${leadId}/notes`);
 
@@ -94,6 +96,8 @@ export const useBulkDeleteLeadsMutation = createMutationHook('post')((leadIds) =
   url: '/leads/bulk-delete',
   body: { leadIds }
 }));
+
+export const useAssignLeadsMutation = createMutationHook('post')('/leads/assign');
 
 export const useAddLeadNoteMutation = () => {
   const [isLoading, setIsLoading] = useState(false);

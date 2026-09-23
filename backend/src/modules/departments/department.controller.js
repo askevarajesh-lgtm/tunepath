@@ -3,7 +3,9 @@ const Department = require('./department.model');
 exports.getDepartments = async (req, res, next) => {
   try {
     let queryFilter = {};
-    if (req.user.role === 'commander_admin') {
+    if (req.query.clientId || req.query.brandId || req.query.companyId) {
+      queryFilter.brandId = req.query.clientId || req.query.brandId || req.query.companyId;
+    } else if (req.user.role === 'commander_admin') {
       queryFilter.adminId = req.user._id;
       queryFilter.agencyId = null;
       queryFilter.brandId = null;
@@ -29,7 +31,9 @@ exports.getDepartments = async (req, res, next) => {
 exports.getDepartmentsDynamic = async (req, res, next) => {
   try {
     let queryFilter = {};
-    if (req.user.role === 'commander_admin') {
+    if (req.query.clientId || req.query.brandId || req.query.companyId) {
+      queryFilter.brandId = req.query.clientId || req.query.brandId || req.query.companyId;
+    } else if (req.user.role === 'commander_admin') {
       queryFilter.adminId = req.user._id;
       queryFilter.agencyId = null;
       queryFilter.brandId = null;

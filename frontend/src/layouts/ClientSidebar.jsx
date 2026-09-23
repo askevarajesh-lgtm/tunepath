@@ -163,7 +163,7 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
     workspaceChildren.push({ key: '/client/workspace/aistudio', icon: getIcon(Bot), label: 'Ai Studio', featureId: 'aistudio', moduleGroup: 'Workspace', moduleId: 'Ai Studio' });
     workspaceChildren.push({ key: '/client/workspace/social', icon: getIcon(MessageCircle), label: 'Social Media', featureId: 'social', moduleGroup: 'Workspace', moduleId: 'Social Media' });
     workspaceChildren.push({ key: '/client/workspace/ads', icon: getIcon(Target), label: 'Performance Ads', featureId: 'ads', moduleGroup: 'Workspace', moduleId: 'Performance Ads' });
-    workspaceChildren.push({ key: '/client/workspace/crm', icon: getIcon(LineChart), label: getLabel('CRM & Leads', leadsCount), featureId: 'crm', moduleGroup: 'Workspace', moduleId: 'CRM & Leads' });
+    workspaceChildren.push({ key: '/client/workspace/crm', icon: getIcon(LineChart), label: 'CRM & Leads', featureId: 'crm', moduleGroup: 'Workspace', moduleId: 'CRM & Leads' });
     workspaceChildren.push({ key: '/client/workspace/website', icon: getIcon(Globe), label: 'Websites', featureId: 'website', moduleGroup: 'Workspace', moduleId: 'Websites' });
   } else {
     // Agency Client Flow (Primary Client & Agency Client Team Members)
@@ -172,7 +172,7 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
     workspaceChildren.push({ key: '/client/workspace/aistudio', icon: getIcon(Bot), label: 'Ai Studio', featureId: 'aistudio', moduleGroup: 'Workspace', moduleId: 'Ai Studio' });
     workspaceChildren.push({ key: '/client/workspace/social', icon: getIcon(MessageCircle), label: 'Social Media', featureId: 'social', moduleGroup: 'Workspace', moduleId: 'Social Media' });
     workspaceChildren.push({ key: '/client/workspace/ads', icon: getIcon(Target), label: 'Performance Ads', featureId: 'ads', moduleGroup: 'Workspace', moduleId: 'Performance Ads' });
-    workspaceChildren.push({ key: '/client/leads', icon: getIcon(Users), label: getLabel('CRM & Leads', leadsCount), featureId: 'crm', moduleGroup: 'Workspace', moduleId: 'CRM & Leads' });
+    workspaceChildren.push({ key: '/client/leads', icon: getIcon(Users), label: 'CRM & Leads', featureId: 'crm', moduleGroup: 'Workspace', moduleId: 'CRM & Leads' });
     workspaceChildren.push({ key: '/client/website', icon: getIcon(Globe), label: 'Websites', featureId: 'website', moduleGroup: 'Workspace', moduleId: 'Websites' });
     workspaceChildren.push(buildMarketplaceMenuItem());
   }

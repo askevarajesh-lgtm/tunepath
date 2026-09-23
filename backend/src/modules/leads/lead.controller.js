@@ -3,14 +3,46 @@ const leadService = require("./lead.service");
 const { uploadAnyFileToCloudinary, uploadBufferToCloudinary } = require("../../utils/cloudinary");
 const { validatePhoneNumber } = require("../../utils/phoneValidation");
 
-const getLeads = async (req, res) => {
+const getLeadStats = async (req, res) => {
   try {
-    const leads = await leadService.getLeads(
+    const stats = await leadService.getLeadStats(
       req.companyId,
       req.user,
       req.query,
     );
-    return sendSuccess(res, "Leads retrieved successfully", { leads });
+    return sendSuccess(res, "Lead statistics retrieved successfully", stats);
+  } catch (error) {
+    return sendError(res, 500, error.message);
+  }
+};
+
+const getLeads = async (req, res) => {
+  try {
+    const result = await leadService.getLeads(
+      req.companyId,
+      req.user,
+      req.query,
+    );
+    if (Array.isArray(result)) {
+      return sendSuccess(res, "Leads retrieved successfully", { leads: result });
+    }
+    return sendSuccess(res, "Leads retrieved successfully", result);
+  } catch (error) {
+    return sendError(res, 500, error.message);
+  }
+};
+
+const getLeadById = async (req, res) => {
+  try {
+    const lead = await leadService.getLeadById(
+      req.params.id,
+      req.companyId,
+      req.user,
+    );
+    if (!lead) {
+      return sendError(res, 404, "Lead not found");
+    }
+    return sendSuccess(res, "Lead details retrieved successfully", { lead });
   } catch (error) {
     return sendError(res, 500, error.message);
   }
@@ -315,11 +347,39 @@ const bulkDeleteLeads = async (req, res) => {
   }
 };
 
+const assignLeads = async (req, res) => {
+  try {
+    const { leadIds, assignedDepartment, assignedDepartmentId, assignedTo } = req.body;
+    if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
+      return sendError(res, 400, "leadIds array is required");
+    }
+    const result = await leadService.assignLeads(
+      leadIds,
+      { assignedDepartment, assignedDepartmentId, assignedTo },
+      req.companyId,
+      req.user,
+    );
+    return sendSuccess(
+      res,
+      `${result.updatedCount} lead(s) assigned successfully`,
+      result
+    );
+  } catch (error) {
+    if (error.message === "No matching leads found for assignment") {
+      return sendError(res, 404, error.message);
+    }
+    return sendError(res, 400, error.message);
+  }
+};
+
 module.exports = {
   getLeads,
+  getLeadStats,
+  getLeadById,
   getAssignableBdeUsers,
   createLead,
   updateLead,
+  assignLeads,
   deleteLead,
   getLeadNotes,
   addLeadNote,
