@@ -41,12 +41,16 @@ class AIOrchestrator {
   async _generateWithClaude(prompt, systemInstruction, options) {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error("Missing ANTHROPIC_API_KEY");
 
-    const response = await this.anthropic.messages.create({
-      model: "claude-sonnet-5", // Defaulting to modern Sonnet
+    const payload = {
+      model: "claude-3-5-sonnet-20240620", // Defaulting to modern Sonnet
       max_tokens: options.maxTokens || 4096,
-      system: systemInstruction,
       messages: [{ role: "user", content: prompt }]
-    });
+    };
+    if (systemInstruction) {
+      payload.system = systemInstruction;
+    }
+    
+    const response = await this.anthropic.messages.create(payload);
 
     return response.content[0].text;
   }

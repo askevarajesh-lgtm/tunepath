@@ -9,7 +9,7 @@ class KeywordIntelligenceService {
     // Attempt to find in workspace keywords module
     const keywordDoc = await Keyword.findOne({
       workspaceId,
-      keyword: targetKeyword.toLowerCase()
+      keyword: targetKeyword ? targetKeyword.toLowerCase() : ''
     }).lean();
 
     if (keywordDoc) {
@@ -42,7 +42,7 @@ class KeywordIntelligenceService {
   async getSecondaryKeywords(workspaceId, primaryKeyword) {
     const keywordDoc = await Keyword.findOne({
       workspaceId,
-      keyword: primaryKeyword.toLowerCase()
+      keyword: primaryKeyword ? primaryKeyword.toLowerCase() : ''
     }).lean();
 
     if (keywordDoc && keywordDoc.cluster) {
@@ -50,7 +50,7 @@ class KeywordIntelligenceService {
       const clusterKeywords = await Keyword.find({
         workspaceId,
         cluster: keywordDoc.cluster,
-        keyword: { $ne: primaryKeyword.toLowerCase() }
+        keyword: { $ne: primaryKeyword ? primaryKeyword.toLowerCase() : '' }
       })
       .limit(10)
       .select('keyword searchVolume')

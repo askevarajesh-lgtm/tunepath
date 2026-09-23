@@ -52,16 +52,18 @@ class AIImprovementLoopService {
     // Highly simplified mock evaluation.
     // In reality, this delegates to SEOQualityEngine.
     let score = 70;
-    const lowerContent = content.toLowerCase();
+    const lowerContent = content ? content.toLowerCase() : '';
     
-    if (lowerContent.includes(brief.keywords.primary.toLowerCase())) {
+    if (brief?.keywords?.primary && lowerContent.includes(brief.keywords.primary.toLowerCase())) {
       score += 15;
     }
     
     let secondaryFound = 0;
-    brief.keywords.secondary.forEach(kw => {
-      if (lowerContent.includes(kw.toLowerCase())) secondaryFound++;
-    });
+    if (brief?.keywords?.secondary && Array.isArray(brief.keywords.secondary)) {
+      brief.keywords.secondary.forEach(kw => {
+        if (kw && lowerContent.includes(kw.toLowerCase())) secondaryFound++;
+      });
+    }
     
     score += (secondaryFound * 2);
     

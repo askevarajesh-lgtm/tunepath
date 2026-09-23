@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Typography, Row, Col, Table, Button, Avatar, Spin, message, Tag, DatePicker, Select } from 'antd';
+import { Typography, Row, Col, Table, Button, Avatar, Spin, message, Tag, DatePicker, Select, Pagination, List } from 'antd';
 import dayjs from 'dayjs';
 import { motion } from 'framer-motion';
 import { AlertTriangle, Calendar, ExternalLink, TrendingUp, CheckSquare, Briefcase, Activity, DollarSign } from 'lucide-react';
@@ -20,15 +20,19 @@ const OverviewTab = () => {
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [selectedClient, setSelectedClient] = useState(null);
   const [allClients, setAllClients] = useState([]);
+  const [dueTodayPage, setDueTodayPage] = useState(1);
+  const [overduePage, setOverduePage] = useState(1);
+  const PAGE_SIZE = 5;
 
   useEffect(() => {
     const fetchOverview = async () => {
       try {
         setLoading(true);
-        const params = {
-          month: selectedDate.month(),
-          year: selectedDate.year()
-        };
+        const params = {};
+        if (selectedDate) {
+          params.month = selectedDate.month();
+          params.year = selectedDate.year();
+        }
         if (selectedClient) {
           params.clientId = selectedClient;
         }
@@ -101,7 +105,7 @@ const OverviewTab = () => {
 
   const renderExecutiveDashboard = () => {
     const { stats, revenueChartData, clients, team } = overviewData;
-    const currentMonthName = selectedDate.format('MMMM YYYY');
+    const currentMonthName = selectedDate ? selectedDate.format('MMMM YYYY') : dayjs().format('MMMM YYYY');
 
     const kpis = [
       { label: 'ACTIVE CLIENTS', value: stats.activeClients, sub: 'Total Managed', color: 'var(--accent-primary)', icon: <Briefcase size={20} /> },
@@ -134,10 +138,10 @@ const OverviewTab = () => {
             <DatePicker 
               picker="month" 
               value={selectedDate} 
-              onChange={(date) => { if(date) setSelectedDate(date); }} 
+              onChange={(date) => setSelectedDate(date)} 
               size="large"
               style={{ borderRadius: 8, fontWeight: 600, width: 200 }}
-              allowClear={false}
+              allowClear
             />
           </div>
         </motion.div>
@@ -287,8 +291,16 @@ const OverviewTab = () => {
   const renderOperationsDashboard = () => {
     const { stats, actionItems, upcomingDeadlines } = overviewData;
 
+    const paginatedDueToday = actionItems.tasksDueToday.slice((dueTodayPage - 1) * PAGE_SIZE, dueTodayPage * PAGE_SIZE);
+    const paginatedOverdue = actionItems.overdueTasks.slice((overduePage - 1) * PAGE_SIZE, overduePage * PAGE_SIZE);
+
+
+    const isCurrentMonth = !selectedDate || (selectedDate.month() === dayjs().month() && selectedDate.year() === dayjs().year());
+    const dueLabel = isCurrentMonth ? 'TASKS DUE TODAY' : `TASKS DUE IN ${selectedDate.format('MMM').toUpperCase()}`;
+    const dueTitle = isCurrentMonth ? 'Due Today' : `Due in ${selectedDate.format('MMMM')}`;
+
     const kpis = [
-      { label: 'TASKS DUE TODAY', value: stats.tasksDueTodayCount, sub: 'Requires action', color: 'var(--accent-primary)', icon: <Calendar size={20} /> },
+      { label: dueLabel, value: stats.tasksDueTodayCount, sub: 'Requires action', color: 'var(--accent-primary)', icon: <Calendar size={20} /> },
       { label: 'OVERDUE TASKS', value: stats.overdueTasksCount, sub: 'Past deadline', color: 'var(--accent-danger)', icon: <AlertTriangle size={20} /> },
       { label: 'AT RISK SLAs', value: stats.atRiskSlasCount, sub: 'Needs attention', color: 'var(--accent-warning)', icon: <Activity size={20} /> },
       { label: 'PENDING APPROVALS', value: stats.pendingApprovalsCount, sub: 'Awaiting review', color: 'var(--accent-secondary)', icon: <CheckSquare size={20} /> },
@@ -315,6 +327,14 @@ const OverviewTab = () => {
                 <Select.Option key={c.id} value={c.id}>{c.name}</Select.Option>
               ))}
             </Select>
+            <DatePicker 
+              picker="month" 
+              value={selectedDate} 
+              onChange={(date) => setSelectedDate(date)} 
+              size="large"
+              style={{ borderRadius: 8, fontWeight: 600, width: 200 }}
+              allowClear
+            />
           </div>
         </motion.div>
 
@@ -362,7 +382,7 @@ const OverviewTab = () => {
                   <ResponsiveContainer>
                     <ComposedChart 
                       data={[
-                        { name: 'Due Today', count: stats.tasksDueTodayCount },
+                        { name: dueTitle, count: stats.tasksDueTodayCount },
                         { name: 'Overdue', count: stats.overdueTasksCount },
                         { name: 'Pending Approvals', count: stats.pendingApprovalsCount },
                         { name: 'At Risk SLAs', count: stats.atRiskSlasCount }
@@ -386,42 +406,102 @@ const OverviewTab = () => {
                 <Title level={5} style={{ margin: '0 0 24px 0', fontWeight: 800 }}>Tasks Requiring Attention</Title>
                 
                 <div style={{ marginBottom: 24 }}>
-                  <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontWeight: 700 }}>Due Today ({actionItems.tasksDueToday.length})</Text>
-                  {actionItems.tasksDueToday.map((t, i) => (
-                    <div key={i} style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 8, border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <div>
-                         <Text style={{ fontWeight: 600, display: 'block' }}>{t.title}</Text>
-                         <Text type="secondary" style={{ fontSize: 12 }}>{t.companyId?.companyName} • Assignee: {t.assignee?.name}</Text>
-                       </div>
-                       <Button 
-                         type="primary" 
-                         size="small" 
-                         onClick={() => navigate('/agency/workspace/tasks')}
-                       >
-                         View Task
-                       </Button>
+                  <Text type="secondary" style={{ display: 'block', marginBottom: 12, fontWeight: 700 }}>{dueTitle} ({stats.tasksDueTodayCount})</Text>
+                  <List
+                    itemLayout="horizontal"
+                    dataSource={paginatedDueToday}
+                    renderItem={(t) => (
+                      <List.Item
+                        actions={[
+                          <Button type="primary" size="small" shape="round" onClick={() => navigate('/agency/workspace/tasks')}>
+                            View Task
+                          </Button>
+                        ]}
+                        style={{
+                          background: 'var(--bg-secondary)',
+                          borderRadius: 8,
+                          marginBottom: 8,
+                          padding: '12px 16px',
+                          border: '1px solid var(--border-color)',
+                          transition: 'all 0.3s',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+                          e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = 'none';
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                        }}
+                      >
+                        <List.Item.Meta
+                          title={<Text style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.title}</Text>}
+                          description={
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              <Tag color="processing" bordered={false}>{t.companyId?.companyName || 'Unknown'}</Tag>
+                              <Text type="secondary" style={{ fontSize: 12 }}>Assignee: {t.assignee?.name || 'Unassigned'}</Text>
+                            </div>
+                          }
+                        />
+                      </List.Item>
+                    )}
+                  />
+                  {actionItems.tasksDueToday.length > PAGE_SIZE && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                      <Pagination size="small" current={dueTodayPage} pageSize={PAGE_SIZE} total={actionItems.tasksDueToday.length} onChange={setDueTodayPage} />
                     </div>
-                  ))}
+                  )}
                   {actionItems.tasksDueToday.length === 0 && <Text type="secondary" style={{ fontSize: 12 }}>None</Text>}
                 </div>
 
                 <div>
-                  <Text type="danger" style={{ display: 'block', marginBottom: 12, fontWeight: 700 }}>Overdue ({actionItems.overdueTasks.length})</Text>
-                  {actionItems.overdueTasks.map((t, i) => (
-                    <div key={i} style={{ padding: 12, background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 8, border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                       <div>
-                         <Text style={{ fontWeight: 600, display: 'block' }}>{t.title}</Text>
-                         <Text type="secondary" style={{ fontSize: 12 }}>Due: {new Date(t.dueDate).toLocaleDateString()}</Text>
-                       </div>
-                       <Button 
-                         type="primary" 
-                         size="small" 
-                         onClick={() => navigate('/agency/workspace/tasks')}
-                       >
-                         View Task
-                       </Button>
+                  <Text type="danger" style={{ display: 'block', marginBottom: 12, fontWeight: 700 }}>Overdue ({stats.overdueTasksCount})</Text>
+                  <List
+                    itemLayout="horizontal"
+                    dataSource={paginatedOverdue}
+                    renderItem={(t) => (
+                      <List.Item
+                        actions={[
+                          <Button type="primary" danger size="small" shape="round" onClick={() => navigate('/agency/workspace/tasks')}>
+                            View Task
+                          </Button>
+                        ]}
+                        style={{
+                          background: 'var(--bg-secondary)',
+                          borderRadius: 8,
+                          marginBottom: 8,
+                          padding: '12px 16px',
+                          border: '1px solid var(--border-color)',
+                          transition: 'all 0.3s',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+                          e.currentTarget.style.borderColor = 'var(--accent-danger)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = 'none';
+                          e.currentTarget.style.borderColor = 'var(--border-color)';
+                        }}
+                      >
+                        <List.Item.Meta
+                          title={<Text style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{t.title}</Text>}
+                          description={
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+                              <Tag color="error" bordered={false}>
+                                <AlertTriangle size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+                                Due: {new Date(t.dueDate).toLocaleDateString()}
+                              </Tag>
+                            </div>
+                          }
+                        />
+                      </List.Item>
+                    )}
+                  />
+                  {actionItems.overdueTasks.length > PAGE_SIZE && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+                      <Pagination size="small" current={overduePage} pageSize={PAGE_SIZE} total={actionItems.overdueTasks.length} onChange={setOverduePage} />
                     </div>
-                  ))}
+                  )}
                   {actionItems.overdueTasks.length === 0 && <Text type="secondary" style={{ fontSize: 12 }}>None</Text>}
                 </div>
               </div>
@@ -429,17 +509,45 @@ const OverviewTab = () => {
             
             <Col xs={24} lg={12}>
                <div style={{ background: 'var(--bg-tertiary)', borderRadius: 16, border: '1px solid var(--border-color)', padding: 24, height: '100%' }}>
-                <Title level={5} style={{ margin: '0 0 24px 0', fontWeight: 800 }}>At Risk SLAs ({actionItems.atRiskSlas.length})</Title>
+                <Title level={5} style={{ margin: '0 0 24px 0', fontWeight: 800 }}>At Risk SLAs ({stats.atRiskSlasCount})</Title>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  {actionItems.atRiskSlas.map((s, i) => (
-                    <div key={i} style={{ padding: 16, background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-color)' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                        <Text style={{ fontWeight: 700 }}>{s.title}</Text>
-                        <Tag color="red">{s.status}</Tag>
-                      </div>
-                      <Text type="secondary" style={{ fontSize: 12 }}>Client: {s.clientId?.companyName} • Priority: {s.priority}</Text>
-                    </div>
-                  ))}
+                  <List
+                    itemLayout="horizontal"
+                    dataSource={actionItems.atRiskSlas}
+                    renderItem={(s) => (
+                      <List.Item
+                        style={{
+                          background: 'var(--bg-secondary)',
+                          borderRadius: 8,
+                          marginBottom: 8,
+                          padding: '12px 16px',
+                          border: '1px solid var(--border-color)',
+                          borderLeft: '4px solid var(--accent-warning)',
+                          transition: 'all 0.3s',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.boxShadow = 'none';
+                        }}
+                      >
+                        <List.Item.Meta
+                          title={
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <Text style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{s.title}</Text>
+                              <Tag color="warning" bordered={false} style={{ margin: 0 }}>{s.status}</Tag>
+                            </div>
+                          }
+                          description={
+                            <div style={{ marginTop: 4 }}>
+                              <Text type="secondary" style={{ fontSize: 12 }}>Client: <Text strong>{s.clientId?.companyName}</Text> • Priority: <Text strong style={{ color: s.priority === 'Critical' ? 'var(--accent-danger)' : 'inherit' }}>{s.priority}</Text></Text>
+                            </div>
+                          }
+                        />
+                      </List.Item>
+                    )}
+                  />
                   {actionItems.atRiskSlas.length === 0 && <Text type="secondary" style={{ fontSize: 12 }}>All SLAs are healthy.</Text>}
                 </div>
               </div>

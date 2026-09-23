@@ -162,8 +162,31 @@ exports.getAgencyExecutiveDashboard = async (agencyId, queryMonth, queryYear, qu
 
 exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, queryClientId) => {
   const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+  
+  let startOfPeriod;
+  let endOfPeriod;
+  let overdueThreshold;
+
+  if (queryMonth !== undefined && queryYear !== undefined) {
+    const y = parseInt(queryYear);
+    const m = parseInt(queryMonth);
+    
+    // If selected month is the current month, keep the logic to "today"
+    if (y === now.getFullYear() && m === now.getMonth()) {
+      startOfPeriod = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      endOfPeriod = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+      overdueThreshold = startOfPeriod;
+    } else {
+      // Otherwise, the period is the entire selected month
+      startOfPeriod = new Date(y, m, 1);
+      endOfPeriod = new Date(y, m + 1, 0, 23, 59, 59, 999);
+      overdueThreshold = startOfPeriod;
+    }
+  } else {
+    startOfPeriod = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    endOfPeriod = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    overdueThreshold = startOfPeriod;
+  }
   
   // Get all client IDs under this agency to query their tasks and projects
   const clientsData = await User.find({ agencyId, role: { $in: ['brand_super_admin', 'brand_manager', 'agency_client', 'client'] } }).select('_id companyName name');
@@ -179,12 +202,16 @@ exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, q
   
   const activeTasks = await Task.find(taskQuery).populate('assignedTo', 'name').populate('companyId', 'companyName');
   
-  const tasksDueToday = activeTasks.filter(t => t.dueDate && new Date(t.dueDate) >= startOfDay && new Date(t.dueDate) <= endOfDay);
-  const overdueTasks = activeTasks.filter(t => t.dueDate && new Date(t.dueDate) < startOfDay);
+  const tasksDueToday = activeTasks.filter(t => t.dueDate && new Date(t.dueDate) >= startOfPeriod && new Date(t.dueDate) <= endOfPeriod);
+  const overdueTasks = activeTasks.filter(t => t.dueDate && new Date(t.dueDate) < overdueThreshold);
   const pendingApprovals = activeTasks.filter(t => ['review', 'in_review', 'sent_for_client_review'].includes(t.status?.toLowerCase()));
 
   // SLAs
-  let slaQuery = { agencyId, status: { $ne: 'Resolved' } };
+  let slaQuery = { 
+    agencyId, 
+    status: { $ne: 'Resolved' },
+    dueDate: { $gte: startOfPeriod, $lte: endOfPeriod }
+  };
   if (queryClientId) slaQuery.clientId = queryClientId;
   const openSlas = await SlaRecord.find(slaQuery).populate('clientId', 'companyName');
   const atRiskSlas = openSlas.filter(s => s.status === 'Breached' || s.priority === 'Critical' || s.priority === 'Urgent');
@@ -203,8 +230,8 @@ exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, q
       activeProjectsCount: activeProjects.length
     },
     actionItems: {
-      tasksDueToday: tasksDueToday.slice(0, 5),
-      overdueTasks: overdueTasks.slice(0, 5),
+      tasksDueToday: tasksDueToday,
+      overdueTasks: overdueTasks,
       atRiskSlas: atRiskSlas.slice(0, 5),
       pendingApprovals: pendingApprovals.slice(0, 5)
     },
