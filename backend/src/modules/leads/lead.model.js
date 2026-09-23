@@ -21,6 +21,10 @@ const reminderSchema = new mongoose.Schema(
       enum: ["pending", "completed"],
       default: "pending",
     },
+    notificationSent: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true },
 );

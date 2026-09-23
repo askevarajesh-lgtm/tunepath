@@ -10,6 +10,7 @@ const workspaceCronService = require('./src/modules/seoWorkspace/services/worksp
 const { startInvoiceCron } = require('./src/modules/invoices/invoiceCron.service');
 const semrushRefreshWorker = require('./src/modules/semrush/refresh.job');
 const { startLeadSyncScheduler } = require('./src/modules/integrations/leadSync.scheduler');
+const { startLeadReminderScheduler } = require('./src/modules/leads/leadReminder.scheduler');
 
 const PORT = process.env.PORT || 5500;
 
@@ -28,5 +29,6 @@ connectDB().then(() => {
     startInvoiceCron();
     semrushRefreshWorker.startCron();
     startLeadSyncScheduler();
+    startLeadReminderScheduler();
   });
 });

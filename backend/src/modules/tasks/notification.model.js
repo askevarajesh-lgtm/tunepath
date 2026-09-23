@@ -23,6 +23,11 @@ const notificationSchema = new mongoose.Schema(
       ref: "SlaRecord",
       index: true,
     },
+    leadId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Lead",
+      index: true,
+    },
     type: {
       type: String,
       required: true,
@@ -60,6 +65,7 @@ const notificationSchema = new mongoose.Schema(
         "workspace_automation_triggered",
         "workspace_task_verification_failed",
         "form_submission",
+        "lead_reminder",
       ],
     },
     title: {

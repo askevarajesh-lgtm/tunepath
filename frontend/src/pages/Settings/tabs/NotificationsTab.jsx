@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Bell, Settings, Mail, Smartphone, MessageSquare } from 'lucide-react';
 import api from '../../../services/api';
 import { useAuth } from '../../../contexts/AuthContext';
+import { getNotificationRoute } from '../../../utils/notificationRoute';
 
 const { Title, Text } = Typography;
 
@@ -20,7 +21,7 @@ const itemVariants = {
 const NotificationsTab = () => {
   const [activeTab, setActiveTab] = useState('notifications');
   const navigate = useNavigate();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   
   // Notifications List State
   const [notifications, setNotifications] = useState([]);
@@ -283,30 +284,35 @@ const NotificationsTab = () => {
           selectedNotification && !selectedNotification.isRead && (
             <Button 
               key="read" 
-              type="primary" 
               onClick={() => {
                 handleMarkAsRead(selectedNotification._id);
                 setIsModalVisible(false);
               }}
             >
-              Read
+              Mark Read
+            </Button>
+          ),
+          selectedNotification && (
+            <Button
+              key="navigate"
+              type="primary"
+              onClick={() => {
+                if (!selectedNotification.isRead) {
+                  handleMarkAsRead(selectedNotification._id);
+                }
+                setIsModalVisible(false);
+                const targetRoute = getNotificationRoute(selectedNotification, role, user);
+                if (targetRoute) {
+                  navigate(targetRoute);
+                }
+              }}
+            >
+              Open Module
             </Button>
           )
         ].filter(Boolean)}
       >
         <p style={{ marginTop: 16 }}>{selectedNotification?.message}</p>
-        {selectedNotification?.type?.startsWith('sla_') && (
-          <Button 
-            type="link" 
-            style={{ padding: 0, marginTop: 16 }}
-            onClick={() => {
-              setIsModalVisible(false);
-              navigate(role.includes('brand') || role === 'client' ? '/client/sla' : '/agency/sla');
-            }}
-          >
-            Go to SLA
-          </Button>
-        )}
       </Modal>
     </>
   );

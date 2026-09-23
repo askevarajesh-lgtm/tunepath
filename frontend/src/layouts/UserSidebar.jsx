@@ -35,7 +35,7 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
   const taskManagementChildren = [];
   // Task Management is available by default for all employees unless explicitly disabled
   if (!isExplicitlyDenied('Workspace-Task Management')) {
-    taskManagementChildren.push({ key: '/user/tasks', label: 'Tasks' });
+    taskManagementChildren.push({ key: '/user/workspace/tasks', label: 'Tasks' });
   }
   if (hasPerm('Workspace-Task Analytics') || hasPerm('Task Analytics')) {
     taskManagementChildren.push({ key: '/user/workspace/tasks/analytics', label: 'Task Analytics' });
@@ -165,10 +165,18 @@ const UserSidebar = ({ collapsed, setCollapsed }) => {
 
   const getSelectedKeys = () => {
     const flatItems = flattenItems(menuItems);
+    const currentPath = location.pathname;
     const match = flatItems
       .filter((item) => item.key && item.key.startsWith('/'))
       .sort((a, b) => b.key.length - a.key.length)
-      .find((item) => location.pathname.startsWith(item.key));
+      .find((item) => {
+        if (currentPath.startsWith(item.key)) return true;
+        if ((item.key === '/user/workspace/tasks' || item.key === '/user/tasks') &&
+            (currentPath.startsWith('/user/workspace/tasks') || currentPath.startsWith('/user/tasks'))) {
+          return true;
+        }
+        return false;
+      });
     return [match?.key || '/user/dashboard'];
   };
 

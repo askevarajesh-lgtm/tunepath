@@ -256,6 +256,13 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
     return dayjs(lead?.createdAt);
   };
 
+  const handleOpenViewModal = (record) => {
+    setViewingLead(record);
+    setReminderTo(record.assignedTo || null);
+    setReminderDesc('');
+    setReminderDate(null);
+  };
+
   const columns = [
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Name</strong>, dataIndex: 'fullName', key: 'fullName', render: t => <strong style={{ color: 'var(--text-primary)' }}>{t}</strong> },
     { title: <strong style={{ color: 'var(--text-secondary)' }}>Phone Number</strong>, dataIndex: 'phoneNumber', key: 'phoneNumber' },
@@ -269,7 +276,7 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
       title: <strong style={{ color: 'var(--text-secondary)' }}>Action</strong>, key: 'action', fixed: 'right',
       render: (_, record) => (
         <Space size="middle">
-          {canView && <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--accent-info)' }} onClick={() => setViewingLead(record)} />}
+          {canView && <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--accent-info)' }} onClick={() => handleOpenViewModal(record)} />}
           {canEdit && <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--accent-secondary)' }} onClick={() => handleEditClick(record)} />}
           {canDelete && <Button type="text" icon={<DeleteOutlined />} danger onClick={() => handleDeleteClick(record)} />}
         </Space>
@@ -463,12 +470,12 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
         leadId: currentViewingLead._id,
         description: reminderDesc,
         remindAt: reminderDate.toISOString(),
-        remindTo: reminderTo || user?.name || user?.username || 'Self'
+        remindTo: reminderTo || currentViewingLead?.assignedTo || user?.name || user?.username || 'Self'
       }).unwrap();
       message.success('Reminder added successfully');
       setReminderDesc('');
       setReminderDate(null);
-      setReminderTo(null);
+      setReminderTo(currentViewingLead?.assignedTo || null);
       refetch?.();
     } catch (error) {
       message.error('Failed to add reminder');
@@ -754,7 +761,12 @@ const AdminLeadsList = ({ leads = [], refetch }) => {
           </div>
         }
         open={!!viewingLead}
-        onCancel={() => setViewingLead(null)}
+        onCancel={() => {
+          setViewingLead(null);
+          setReminderTo(null);
+          setReminderDesc('');
+          setReminderDate(null);
+        }}
         footer={null}
         width={900}
         className="glassmorphism-modal"

@@ -440,7 +440,9 @@ const addLeadReminder = async (leadId, companyId, currentUser, payload) => {
 
   const reminderObj = {
     ...payload,
-    remindTo: payload.remindTo || currentUser?.name || currentUser?.username || 'Self',
+    remindTo: payload.remindTo || lead.assignedTo || currentUser?.name || currentUser?.username || 'Self',
+    status: 'pending',
+    notificationSent: false,
   };
 
   lead.reminders.push(reminderObj);
@@ -449,6 +451,7 @@ const addLeadReminder = async (leadId, companyId, currentUser, payload) => {
     createdAt: new Date(),
   });
   await lead.save();
+
   return lead.reminders[lead.reminders.length - 1];
 };
 

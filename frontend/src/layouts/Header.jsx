@@ -16,6 +16,7 @@ import { useLayoutContext } from '../contexts/LayoutContext';
 import { useClientContext } from '../contexts/ClientContext';
 import { useTheme } from '../contexts/ThemeContext';
 import api from '../services/api';
+import { getNotificationRoute } from '../utils/notificationRoute';
 
 const { Header: AntHeader } = Layout;
 const { Text } = Typography;
@@ -43,12 +44,15 @@ const Header = ({ collapsed, setCollapsed }) => {
 
     useEffect(() => {
         fetchNotifications();
-        // In a real app we might set up an interval or websocket here
+        const intervalId = setInterval(() => {
+            fetchNotifications(true);
+        }, 30000);
+        return () => clearInterval(intervalId);
     }, []);
 
-    const fetchNotifications = async () => {
+    const fetchNotifications = async (silent = false) => {
         try {
-            setLoadingNotifs(true);
+            if (!silent) setLoadingNotifs(true);
             const res = await api.get('/tasks/notifications?limit=5');
             if (res.data?.success) {
                 setNotifications(res.data.data.notifications || []);
@@ -57,7 +61,7 @@ const Header = ({ collapsed, setCollapsed }) => {
         } catch (err) {
             console.error("Failed to load notifications", err);
         } finally {
-            setLoadingNotifs(false);
+            if (!silent) setLoadingNotifs(false);
         }
     };
 
@@ -70,30 +74,12 @@ const Header = ({ collapsed, setCollapsed }) => {
             }
             setNotifsVisible(false);
 
-            if (notification.type?.startsWith('sla_')) {
-                const basePath = role.includes('brand') || role === 'client' ? '/client/sla' : '/agency/sla';
-                navigate(basePath);
-            } else if (notification.type === 'form_submission') {
-                let basePath = '/user/workspace/website/forms';
-                if (['supreme_super_admin', 'superadmin', 'commander_admin'].includes(role)) {
-                    basePath = '/workspace/website/forms';
-                } else if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
-                    basePath = '/agency/website/forms';
-                } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) || user?.brandId) {
-                    basePath = '/client/website/forms';
-                }
-                const formId = notification.metadata?.formId;
-                const submissionId = notification.metadata?.submissionId;
-                const queryParams = new URLSearchParams();
-                queryParams.set('tab', 'submissions');
-                if (formId) queryParams.set('formId', formId);
-                if (submissionId) queryParams.set('submissionId', submissionId);
-                navigate(`${basePath}?${queryParams.toString()}`);
-            } else if (notification.taskId) {
-                // Handle task click
+            const targetRoute = getNotificationRoute(notification, role, user);
+            if (targetRoute) {
+                navigate(targetRoute);
             }
         } catch (err) {
-            console.error("Failed to mark as read", err);
+            console.error("Failed to handle notification click", err);
         }
     };
 
