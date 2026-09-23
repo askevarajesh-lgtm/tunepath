@@ -3054,11 +3054,14 @@ const requestRework = async (taskId, feedback, tenantCompanyId) => {
 const getTasksByProject = async (projectId, tenantCompanyId) => {
   // Get all client companies for this tenant
   const clientCompanyIds = await getClientCompanyIds(tenantCompanyId);
+  const allValidIds = [tenantCompanyId, ...clientCompanyIds];
 
   return await Task.find({
     projectId,
-    tenantCompanyId,
-    companyId: { $in: clientCompanyIds },
+    $or: [
+      { tenantCompanyId: { $in: allValidIds } },
+      { companyId: { $in: allValidIds } }
+    ]
   })
     .populate("companyId", "name email")
     .populate("assignedTo", "name email role")
