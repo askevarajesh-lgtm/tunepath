@@ -67,7 +67,7 @@ exports.getAnalytics = async (req, res, next) => {
 exports.generateReport = async (req, res, next) => {
     try {
         const agencyId = req.user.agencyId || req.user._id;
-        const { clientId, template, recipients, deliveryMethod } = req.body;
+        const { clientId, template, recipients, deliveryMethod, month, year, fromDate, toDate, projectId } = req.body;
         
         const report = await reportService.generateAndSendReport(
             agencyId, 
@@ -76,7 +76,8 @@ exports.generateReport = async (req, res, next) => {
             null, 
             recipients, 
             deliveryMethod, 
-            req.user._id
+            req.user._id,
+            { month, year, fromDate, toDate, projectId }
         );
 
         // Dispatch system notification

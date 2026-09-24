@@ -145,7 +145,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
     }
   };
 
-  const { data: leadDetailData, isLoading: isLeadDetailLoading } = useGetLeadByIdQuery(
+  const { data: leadDetailData, isLoading: isLeadDetailLoading, refetch: refetchLeadDetail } = useGetLeadByIdQuery(
     viewingLead?._id,
     { skip: !viewingLead?._id }
   );
@@ -584,6 +584,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       setNoteContent('');
       setNoteFile(null);
       refetch?.();
+      refetchLeadDetail?.();
     } catch (error) {
       message.error('Failed to add note');
     }
@@ -606,6 +607,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       setReminderDate(null);
       setReminderTo(currentViewingLead?.assignedTo || null);
       refetch?.();
+      refetchLeadDetail?.();
     } catch (error) {
       message.error('Failed to add reminder');
     }
@@ -616,6 +618,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       await deleteLeadNote({ leadId: currentViewingLead._id, noteId }).unwrap();
       message.success('Note deleted successfully');
       refetch?.();
+      refetchLeadDetail?.();
     } catch (error) {
       message.error('Failed to delete note');
     }

@@ -69,7 +69,7 @@ const useGetAiHistoryQuery = () => {
   const refetch = async () => {
     setIsLoading(true);
     try {
-      const response = await api.get('/ai-studio/chat/history');
+      const response = await api.get('/ai-studio/chat/history?provider=openai');
       setData(response.data?.data || []);
       setError(null);
     } catch (e) {
@@ -88,7 +88,7 @@ const useGetAiSettingsQuery = () => {
   const refetch = async () => {
     setIsLoading(true);
     try {
-      const response = await api.get('/ai-studio/settings');
+      const response = await api.get('/ai-studio/settings?module=chatgpt');
       setData(response.data?.data || {});
     } catch (e) {
       console.error(e);
@@ -126,7 +126,11 @@ const useSendAiMessageMutation = () => {
     setIsLoading(true);
     const promise = (async () => {
       try {
-        const response = await api.post('/ai-studio/chat/message', payload);
+        const response = await api.post('/ai-studio/chat/message', {
+          ...payload,
+          module: 'chatgpt',
+          provider: 'openai'
+        });
         setIsLoading(false);
         return response.data.data;
       } catch (e) {
@@ -147,7 +151,11 @@ const useUpdateAiSettingsMutation = () => {
     setIsLoading(true);
     const promise = (async () => {
       try {
-        const dataToSent = { ...payload };
+        const dataToSent = {
+          ...payload,
+          module: 'chatgpt',
+          aiProvider: 'openai'
+        };
         if (payload.apiKey !== undefined) dataToSent.openaiApiKey = payload.apiKey;
         const response = await api.post('/ai-studio/settings', dataToSent);
         setIsLoading(false);

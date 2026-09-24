@@ -16,13 +16,24 @@ exports.getSettingsStatus = async (req, res) => {
     const workspaceId = getWorkspaceId(req);
     if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    const settings = await AiSettings.findOne({ workspaceId });
+    let settings = await AiSettings.findOne({ workspaceId, module: 'marketplace' });
+    if (!settings) {
+      settings = await AiSettings.findOne({ workspaceId, module: { $exists: false } });
+    }
     let isAnthropicConfigured = false;
     let maskedAnthropicKey = '';
 
     if (settings && settings.contentAnthropicApiKey) {
       isAnthropicConfigured = true;
       const decrypted = cryptoUtils.decrypt(settings.contentAnthropicApiKey);
+      if (decrypted && decrypted.length > 8) {
+        maskedAnthropicKey = decrypted.substring(0, 7) + '...' + decrypted.substring(decrypted.length - 4);
+      } else {
+        maskedAnthropicKey = 'sk-ant-...';
+      }
+    } else if (settings && settings.anthropicApiKey) {
+      isAnthropicConfigured = true;
+      const decrypted = cryptoUtils.decrypt(settings.anthropicApiKey);
       if (decrypted && decrypted.length > 8) {
         maskedAnthropicKey = decrypted.substring(0, 7) + '...' + decrypted.substring(decrypted.length - 4);
       } else {
@@ -46,7 +57,9 @@ exports.saveSettings = async (req, res) => {
 
     if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    const updateFields = {};
+    const updateFields = {
+      module: 'marketplace'
+    };
     if (anthropicApiKey !== undefined) {
       if (anthropicApiKey.trim() !== '') {
         updateFields.contentAnthropicApiKey = cryptoUtils.encrypt(anthropicApiKey.trim());
@@ -56,7 +69,7 @@ exports.saveSettings = async (req, res) => {
     }
 
     await AiSettings.findOneAndUpdate(
-      { workspaceId },
+      { workspaceId, module: 'marketplace' },
       { $set: updateFields },
       { upsert: true, returnDocument: 'after' }
     );

@@ -128,9 +128,9 @@ const Reports = () => {
     visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
   };
 
-  // Filter reports
+  // Filter and deduplicate reports
   const filteredReports = useMemo(() => {
-    return recentSentReports.filter(report => {
+    const rawFiltered = recentSentReports.filter(report => {
       if (selectedClient !== 'all') {
         const reportClientId = typeof report.clientId === 'object' ? report.clientId?._id : report.clientId;
         if (String(reportClientId) !== String(selectedClient)) return false;
@@ -143,6 +143,24 @@ const Reports = () => {
       }
       return true;
     });
+
+    // Guard against any duplicate entries by client + template + period
+    const seen = new Set();
+    const uniqueList = [];
+    rawFiltered.forEach(r => {
+      const cId = typeof r.clientId === 'object' ? String(r.clientId?._id) : String(r.clientId);
+      const tmpl = String(r.template || r.name || '').trim();
+      const period = r.fromDate && r.toDate 
+        ? `${r.fromDate}_${r.toDate}` 
+        : (r.month && r.year ? `${r.year}_${r.month}` : dayjs(r.sentAt).format('YYYY-MM-DD'));
+      const key = `${cId}_${tmpl}_${period}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueList.push(r);
+      }
+    });
+
+    return uniqueList;
   }, [recentSentReports, selectedClient, selectedMonth]);
 
   // Compute Client Reporting Coverage for selected period
@@ -312,7 +330,7 @@ const Reports = () => {
           generateMetaCampaignCombinedPDF(leadRes, reachRes, { companyName: clientName });
           message.success('Meta Campaign PDF report downloaded');
         } else {
-          const res = await getMonthlyHighlights(clientId, month, year);
+          const res = await getMonthlyHighlights(clientId, month, year, false, record.projectId, record.fromDate, record.toDate);
           hide();
           if (res && res.status !== 'NotPublished') {
             generateMonthlyHighlightsPDF(res, { companyName: clientName }, record.template);

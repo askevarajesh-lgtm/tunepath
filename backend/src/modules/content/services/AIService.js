@@ -8,7 +8,10 @@ class AIService {
     let apiKey = null;
     let provider = 'anthropic';
     let openaiApiKey = null;
-    const settings = await AiSettings.findOne({ workspaceId });
+    let settings = await AiSettings.findOne({ workspaceId, module: 'marketplace' });
+    if (!settings) {
+      settings = await AiSettings.findOne({ workspaceId, module: { $exists: false } }) || await AiSettings.findOne({ workspaceId });
+    }
     if (settings) {
       if (settings.contentAnthropicApiKey) {
         apiKey = cryptoUtils.decrypt(settings.contentAnthropicApiKey);

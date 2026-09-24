@@ -291,7 +291,7 @@ const getLeads = async (companyId, currentUser, query = {}) => {
   }
 
   // By default, exclude heavy subdocuments for high-speed listing
-  let projection = "-activityLogs -leadNotes -reminders";
+  let projection = "-activityLogs -leadNotes";
   if (query.full === "true" || query.includeDetails === "true") {
     projection = "";
   }

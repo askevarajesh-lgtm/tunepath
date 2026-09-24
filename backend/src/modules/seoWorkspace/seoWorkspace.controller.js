@@ -96,7 +96,10 @@ exports.getSettingsStatus = async (req, res) => {
     if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const { DEFAULT_AI_PROVIDER, DEFAULT_AI_MODEL } = require('../aiCore/config/aiDefaults');
-    const settings = await AiSettings.findOne({ workspaceId });
+    let settings = await AiSettings.findOne({ workspaceId, module: 'marketplace' });
+    if (!settings) {
+      settings = await AiSettings.findOne({ workspaceId, module: { $exists: false } });
+    }
 
     let isAnthropicConfigured = false;
     let maskedAnthropicKey = '';
@@ -141,7 +144,9 @@ exports.saveSettings = async (req, res) => {
 
     if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-    const updateFields = {};
+    const updateFields = {
+      module: 'marketplace'
+    };
 
     if (anthropicApiKey !== undefined) {
       updateFields.anthropicApiKey = anthropicApiKey.trim()
@@ -164,7 +169,7 @@ exports.saveSettings = async (req, res) => {
     }
 
     await AiSettings.findOneAndUpdate(
-      { workspaceId },
+      { workspaceId, module: 'marketplace' },
       { $set: updateFields },
       { upsert: true, returnDocument: 'after' }
     );

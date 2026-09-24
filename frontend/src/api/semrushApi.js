@@ -3,8 +3,8 @@ import api from '../services/api';
 export const semrushApi = {
 
 
-  getProjects: async () => {
-    const response = await api.get('/semrush/projects');
+  getProjects: async (params) => {
+    const response = await api.get('/semrush/projects', { params });
     return response;
   },
 

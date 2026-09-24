@@ -34,6 +34,18 @@ exports.deleteSchedule = async (scheduleId, agencyId = null) => {
     return await ReportSchedule.findOneAndDelete(filter);
 };
 
+const normalizeReportTemplate = (t) => {
+    if (!t) return 'Highlights of the Month';
+    const s = String(t).trim();
+    if (s.includes('Keyword')) return 'Keywords';
+    if (s.includes('Meta Campaign') || s.includes('Lead Campaign') || s.includes('Reach Campaign')) return 'Meta Campaign';
+    if (s.includes('Meta Insights') || s.includes('Facebook') || s.includes('Instagram')) return 'Meta Insights';
+    if (s.includes('Website Traffic') || s.includes('Landing') || s.includes('City')) return 'Website Traffic';
+    if (s.includes('Social Media') || s.includes('YouTube') || s.includes('Post Insights')) return 'Social Media Post Insights';
+    if (s.includes('MOS') || s.includes('Score')) return 'MOS Score Report';
+    return s;
+};
+
 exports.getRecentSentReports = async (agencyId, user = null) => {
     const MonthlyHighlights = require('./monthlyHighlights.model');
     const User = require('../auth/user.model');
@@ -76,55 +88,100 @@ exports.getRecentSentReports = async (agencyId, user = null) => {
 
     const sentReports = await SentReport.find(sentFilter)
         .populate('clientId', 'name companyName email')
-        .sort({ sentAt: -1 })
-        .limit(50)
+        .sort({ sentAt: -1, updatedAt: -1, createdAt: -1 })
+        .limit(100)
         .lean();
 
     const monthlyReports = await MonthlyHighlights.find(monthlyFilter)
         .populate('clientId', 'name companyName email')
-        .sort({ publishedAt: -1, updatedAt: -1 })
-        .limit(50)
+        .sort({ publishedAt: -1, updatedAt: -1, createdAt: -1 })
+        .limit(100)
         .lean();
 
-    const existingKeys = new Set(sentReports.map(r => `${r.clientId?._id || r.clientId}_${r.name}`));
+    // Map to keep strictly 1 entry per (clientId + normalized template + period/date)
+    const distinctReportsMap = new Map();
 
-    monthlyReports.forEach(m => {
-        const clientObj = m.clientId;
-        const clientName = clientObj?.companyName || clientObj?.name || 'Client';
-        let dateLabel = `(${m.month}/${m.year})`;
-        if (m.fromDate && m.toDate) {
-            const fd = new Date(m.fromDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            const td = new Date(m.toDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            dateLabel = `(${fd} - ${td})`;
-        }
-        const reportType = m.reportType || 'Monthly Highlights';
-        const name = `${clientName} - ${reportType} ${dateLabel}`;
-        const key = `${clientObj?._id || m.clientId}_${name}`;
+    // 1. First populate from SentReport (authoritative audit record)
+    sentReports.forEach(r => {
+        const clientObj = r.clientId;
+        const cId = String(clientObj?._id || r.clientId || '');
+        if (!cId) return;
 
-        if (!existingKeys.has(key)) {
-            sentReports.push({
-                _id: m._id,
-                agencyId: m.agencyId || agencyId,
+        const normTemplate = normalizeReportTemplate(r.template || r.name);
+        const periodKey = r.fromDate && r.toDate 
+            ? `${new Date(r.fromDate).toISOString().split('T')[0]}_${new Date(r.toDate).toISOString().split('T')[0]}`
+            : (r.month && r.year ? `${r.year}_${r.month}` : (r.sentAt ? new Date(r.sentAt).toISOString().split('T')[0] : 'default'));
+
+        const uniqueKey = `${cId}_${normTemplate}_${periodKey}`;
+        if (!distinctReportsMap.has(uniqueKey)) {
+            const clientName = clientObj?.companyName || clientObj?.name || 'Client';
+            distinctReportsMap.set(uniqueKey, {
+                _id: r._id,
+                agencyId: r.agencyId,
                 clientId: clientObj,
-                name: name,
-                template: reportType,
-                sentAt: m.publishedAt || m.updatedAt || m.createdAt,
-                deliveredTo: clientObj?.email ? [clientObj.email] : ['Client Portal'],
-                deliveryMethod: 'Email & Portal',
-                status: 'Delivered',
-                pages: 2,
-                generatedBy: m.createdBy,
-                month: m.month,
-                year: m.year,
-                fromDate: m.fromDate,
-                toDate: m.toDate
+                name: `${clientName} - ${normTemplate}`,
+                template: normTemplate,
+                sentAt: r.sentAt || r.createdAt,
+                deliveredTo: r.deliveredTo?.length ? r.deliveredTo : (clientObj?.email ? [clientObj.email] : ['Client Portal']),
+                deliveryMethod: r.deliveryMethod || 'Email & Portal',
+                status: r.status || 'Delivered',
+                pages: r.pages || 2,
+                downloadUrl: r.downloadUrl,
+                generatedBy: r.generatedBy,
+                month: r.month,
+                year: r.year,
+                fromDate: r.fromDate,
+                toDate: r.toDate,
+                projectId: r.projectId
             });
         }
     });
 
-    sentReports.sort((a, b) => new Date(b.sentAt || 0) - new Date(a.sentAt || 0));
+    // 2. Include MonthlyHighlights published reports
+    monthlyReports.forEach(m => {
+        const clientObj = m.clientId;
+        const cId = String(clientObj?._id || m.clientId || '');
+        if (!cId) return;
 
-    return sentReports.slice(0, 50);
+        const periodKey = m.fromDate && m.toDate 
+            ? `${new Date(m.fromDate).toISOString().split('T')[0]}_${new Date(m.toDate).toISOString().split('T')[0]}`
+            : (m.month && m.year ? `${m.year}_${m.month}` : (m.publishedAt ? new Date(m.publishedAt).toISOString().split('T')[0] : 'default'));
+
+        const reportTypes = (Array.isArray(m.publishedReportTypes) && m.publishedReportTypes.length > 0)
+            ? m.publishedReportTypes
+            : ['Highlights of the Month'];
+
+        reportTypes.forEach(t => {
+            const normTemplate = normalizeReportTemplate(t);
+            const uniqueKey = `${cId}_${normTemplate}_${periodKey}`;
+            if (!distinctReportsMap.has(uniqueKey)) {
+                const clientName = clientObj?.companyName || clientObj?.name || 'Client';
+                distinctReportsMap.set(uniqueKey, {
+                    _id: m._id,
+                    agencyId: m.agencyId || agencyId,
+                    clientId: clientObj,
+                    name: `${clientName} - ${normTemplate}`,
+                    template: normTemplate,
+                    sentAt: m.publishedAt || m.updatedAt || m.createdAt,
+                    deliveredTo: clientObj?.email ? [clientObj.email] : ['Client Portal'],
+                    deliveryMethod: 'Email & Portal',
+                    status: 'Delivered',
+                    pages: 2,
+                    generatedBy: m.createdBy,
+                    month: m.month,
+                    year: m.year,
+                    fromDate: m.fromDate,
+                    toDate: m.toDate,
+                    projectId: m.projectId
+                });
+            }
+        });
+    });
+
+    const combined = Array.from(distinctReportsMap.values());
+    combined.sort((a, b) => new Date(b.sentAt || 0) - new Date(a.sentAt || 0));
+
+    return combined.slice(0, 50);
 };
 
 exports.getReportAnalytics = async (agencyId, user = null) => {
@@ -583,40 +640,89 @@ exports.getMetaReachCampaigns = async (targetId, fromDate = null, toDate = null)
 };
 
 // Generates a report (either manually triggered or via cron)
-exports.generateAndSendReport = async (agencyId, clientId, template, scheduleId = null, recipients = [], deliveryMethod = 'Email', generatedBy = null) => {
-    
+exports.generateAndSendReport = async (
+    agencyId, 
+    clientId, 
+    template, 
+    scheduleId = null, 
+    recipients = [], 
+    deliveryMethod = 'Email', 
+    generatedBy = null,
+    meta = {}
+) => {
     // 1. Fetch Client Details
     const client = await User.findById(clientId);
     if (!client) throw new Error('Client not found');
 
-    // 2. Gather Data from connected modules
-    const dummyPdfUrl = `https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf`;
-    let pages = 1;
+    const normTemplate = normalizeReportTemplate(template);
+    let pages = 2;
     if (template === 'MOS Score Report') pages = 12;
     else if (template === 'SEO & Web Analytics') pages = 7;
     else if (template === 'Lead Generation & Conversion' || template === 'Leads Performance Report') pages = 6;
     else if (template === 'Social Media Engagement') pages = 8;
-    else if (template === 'Meta Campaign Insights - Lead Campaign' || template === 'Meta Lead Campaign Report') pages = 2;
+    else if (template === 'Meta Campaign Insights - Lead Campaign' || template === 'Meta Lead Campaign Report' || normTemplate === 'Meta Campaign') pages = 2;
 
-    // 4. Send via Email/WhatsApp (Mock tracking)
-    // Normally we would invoke the email service here.
+    const dummyPdfUrl = `https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf`;
+    const clientName = client.companyName || client.name || 'Client';
+    const reportName = `${clientName} - ${normTemplate}`;
 
-    // 5. Store delivery history
-    const sentReport = new SentReport({
-        agencyId,
+    const { month, year, fromDate, toDate, projectId } = meta || {};
+
+    // 2. Look for existing SentReport for the same client and template
+    const query = {
         clientId,
-        scheduleId,
-        name: `${client.companyName || client.name} - ${template}`,
-        template,
-        deliveredTo: recipients,
-        deliveryMethod,
-        pages,
-        downloadUrl: dummyPdfUrl,
-        generatedBy,
-        status: 'Sent'
-    });
+        template: { $in: [template, normTemplate] }
+    };
+    if (agencyId) query.agencyId = agencyId;
+    if (month && year) {
+        query.month = month;
+        query.year = year;
+    } else if (fromDate && toDate) {
+        query.fromDate = new Date(fromDate);
+        query.toDate = new Date(toDate);
+    } else {
+        query.createdAt = { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) };
+    }
 
-    await sentReport.save();
+    let sentReport = await SentReport.findOne(query);
+
+    if (sentReport) {
+        sentReport.name = reportName;
+        sentReport.template = normTemplate;
+        sentReport.sentAt = new Date();
+        if (recipients && recipients.length) sentReport.deliveredTo = recipients;
+        if (deliveryMethod) sentReport.deliveryMethod = deliveryMethod;
+        sentReport.pages = pages;
+        sentReport.status = 'Delivered';
+        if (month) sentReport.month = month;
+        if (year) sentReport.year = year;
+        if (fromDate) sentReport.fromDate = fromDate;
+        if (toDate) sentReport.toDate = toDate;
+        if (projectId) sentReport.projectId = projectId;
+        if (generatedBy) sentReport.generatedBy = generatedBy;
+        await sentReport.save();
+    } else {
+        sentReport = new SentReport({
+            agencyId,
+            clientId,
+            scheduleId,
+            name: reportName,
+            template: normTemplate,
+            sentAt: new Date(),
+            deliveredTo: recipients && recipients.length ? recipients : (client.email ? [client.email] : ['Client Portal']),
+            deliveryMethod: deliveryMethod || 'Email',
+            pages,
+            downloadUrl: dummyPdfUrl,
+            generatedBy,
+            status: 'Delivered',
+            month,
+            year,
+            fromDate,
+            toDate,
+            projectId
+        });
+        await sentReport.save();
+    }
 
     return sentReport;
 };

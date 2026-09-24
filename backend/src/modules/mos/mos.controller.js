@@ -213,7 +213,13 @@ exports.generateActionPlan = async (req, res, next) => {
     const isAgency = ['agency_super_admin', 'agency_manager'].includes(req.user.role);
     const workspaceId = isAgency ? (req.user.agencyId || req.user._id) : req.user._id;
     
-    const settings = await AiSettings.findOne({ workspaceId });
+    let settings = await AiSettings.findOne({ workspaceId, module: 'marketplace' });
+    if (!settings || !settings.openaiApiKey) {
+      settings = await AiSettings.findOne({ workspaceId, module: 'chatgpt' }) ||
+                 await AiSettings.findOne({ workspaceId, module: 'ai_studio' }) ||
+                 await AiSettings.findOne({ workspaceId, module: { $exists: false } }) ||
+                 await AiSettings.findOne({ workspaceId });
+    }
     let openai = null;
     if (settings) {
       if (settings.openaiApiKey) {
