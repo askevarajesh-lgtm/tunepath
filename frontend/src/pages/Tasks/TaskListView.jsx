@@ -69,52 +69,22 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
 
   // Compute the status options based on the active department
   const statusOptions = useMemo(() => {
-    const dept = departmentFilter && departmentFilter !== "all" ? departmentFilter : "all";
-    const isShortFlow =
-      dept === "seo" ||
-      dept === "website_designing" ||
-      dept === "website-designing" ||
-      dept === "web-application-development" ||
-      dept === "web_application_development";
-    const isDM =
-      dept === "digital-marketing" ||
-      dept === "digital_marketing";
-
-    if (isShortFlow) {
-      return [
-        { value: "backlog", label: "Hold" },
-        { value: "to_do", label: "To Do" },
-        { value: "in_progress", label: "In Progress" },
-        { value: "complete", label: "Complete" },
-      ];
-    } else if (isDM) {
-      return [
-        { value: "backlog", label: "Hold" },
-        { value: "to_do", label: "To Do" },
-        { value: "in_progress", label: "In Progress" },
-        { value: "review", label: "Review" },
-        { value: "Rejected", label: "Rejected" },
-        { value: "complete", label: "Approved" },
-      ];
-    } else {
-      // "all" or unknown department: show full set (union of all statuses)
-      return [
-        { value: "backlog", label: "Hold" },
-        { value: "to_do", label: "To Do" },
-        { value: "in_progress", label: "In Progress" },
-        { value: "review", label: "Review" },
-        { value: "Rejected", label: "Rejected" },
-        { value: "complete", label: "Complete / Approved" },
-        // Legacy statuses that may still exist in DB
-        { value: "created", label: "Created (Legacy)" },
-        { value: "assigned", label: "Assigned (Legacy)" },
-        { value: "submitted", label: "Submitted (Legacy)" },
-        { value: "validated", label: "Validated (Legacy)" },
-        { value: "completed", label: "Completed (Legacy)" },
-        { value: "rejected", label: "Rejected (Legacy)" },
-      ];
-    }
-  }, [departmentFilter]);
+    return [
+      { value: "backlog", label: "Hold" },
+      { value: "to_do", label: "To Do" },
+      { value: "in_progress", label: "In Progress" },
+      { value: "review", label: "Review" },
+      { value: "Rejected", label: "Rejected" },
+      { value: "complete", label: "Complete" },
+      // Legacy statuses that may still exist in DB
+      { value: "created", label: "Created (Legacy)" },
+      { value: "assigned", label: "Assigned (Legacy)" },
+      { value: "submitted", label: "Submitted (Legacy)" },
+      { value: "validated", label: "Validated (Legacy)" },
+      { value: "completed", label: "Completed (Legacy)" },
+      { value: "rejected", label: "Rejected (Legacy)" },
+    ];
+  }, []);
 
   const { user: user } = useAuth();
   const selectedClientId = clientId || null;

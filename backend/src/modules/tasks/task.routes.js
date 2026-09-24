@@ -86,6 +86,11 @@ router.post(
   _permMiddleware("edit-task"),
   taskController.createOrUpdateWorkflowConfig,
 );
+router.delete(
+  "/workflow-config/:id",
+  _permMiddleware("edit-task"),
+  taskController.deleteWorkflowConfig,
+);
 router.get("/notification-settings", taskController.getNotificationSettings);
 router.get("/today-stats", taskController.getTodayTaskStats);
 router.get(

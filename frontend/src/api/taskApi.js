@@ -133,6 +133,7 @@ export const useUpdateTaskScreenshotMutation = createMutationHook(({ taskId, att
 export const useUpdateTasksOrderMutation = createMutationHook((updates) => ({ url: '/tasks/order/bulk', method: 'PUT', body: { updates } }));
 export const useAddCommentMutation = createMutationHook(({ taskId, ...data }) => ({ url: `/tasks/${taskId}/comments`, method: 'POST', body: data }));
 export const useCreateOrUpdateWorkflowConfigMutation = createMutationHook((data) => ({ url: '/tasks/workflow-config', method: 'POST', body: data }));
+export const useDeleteWorkflowConfigMutation = createMutationHook((id) => ({ url: `/tasks/workflow-config/${id}`, method: 'DELETE' }));
 export const useUpdateNotificationSettingsMutation = createMutationHook((data) => ({ url: '/tasks/notification-settings', method: 'PUT', body: data }));
 export const useMarkNotificationAsReadMutation = createMutationHook((id) => ({ url: `/tasks/notifications/${id}/read`, method: 'PUT' }));
 export const useMarkAllNotificationsAsReadMutation = createMutationHook(() => ({ url: '/tasks/notifications/read-all', method: 'PUT' }));

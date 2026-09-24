@@ -447,6 +447,17 @@ const createOrUpdateWorkflowConfig = async (req, res) => {
   }
 };
 
+// Delete workflow configuration
+const deleteWorkflowConfig = async (req, res) => {
+  try {
+    const { id } = req.params;
+    await taskService.deleteWorkflowConfig(id, req.companyId);
+    return sendSuccess(res, "Workflow template deleted successfully");
+  } catch (error) {
+    return sendError(res, 400, error.message);
+  }
+};
+
 // Get all workflow configurations
 const getAllWorkflowConfigs = async (req, res) => {
   try {
@@ -585,6 +596,7 @@ module.exports = {
   getWorkflowConfig,
   getAllWorkflowConfigs,
   createOrUpdateWorkflowConfig,
+  deleteWorkflowConfig,
   getNotificationSettings,
   updateNotificationSettings,
   deleteTask,
