@@ -56,6 +56,7 @@ const AgencyPackagesTab = () => {
     { type: 'website', name: 'Lead Management Integration' },
     { type: 'payment', name: 'Payment Integration' },
     { type: 'ekta', name: 'Ekta HR Integration' },
+    { type: 'ivr', name: 'Sollu IVR / Telephony' },
   ];
 
   const fetchPackages = async () => {

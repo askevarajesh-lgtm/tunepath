@@ -30,6 +30,7 @@ const AGENCY_ACCOUNT_INTEGRATIONS = [
   { type: 'website', name: 'Lead Management Integration' },
   { type: 'payment', name: 'Payment Integration' },
   { type: 'ekta', name: 'Ekta HR Integration' },
+  { type: 'ivr', name: 'Sollu IVR / Telephony' },
 ];
 
 

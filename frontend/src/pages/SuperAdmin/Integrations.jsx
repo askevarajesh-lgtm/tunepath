@@ -87,6 +87,15 @@ const ALL_INTEGRATIONS = [
     icon: <UserPlus size={24} />,
     bg: '#9B59B6',
     color: '#fff'
+  },
+  {
+    type: 'ivr',
+    name: 'Sollu IVR / Telephony',
+    category: 'Communication',
+    description: 'Outbound cloud telephony and IVR for lead dialing and recordings',
+    icon: <Phone size={24} />,
+    bg: '#10B981',
+    color: '#fff'
   }
 ];
 

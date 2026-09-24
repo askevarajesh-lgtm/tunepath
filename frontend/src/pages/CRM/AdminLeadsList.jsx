@@ -24,6 +24,8 @@ import { isValidPhoneNumber } from 'libphonenumber-js';
 import dayjs from 'dayjs';
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { useAuth } from "../../contexts/AuthContext";
+import OutboundCallButton from './components/OutboundCallButton';
+import CallHistoryTable from './components/CallHistoryTable';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -376,6 +378,12 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       title: <strong style={{ color: 'var(--text-secondary)' }}>Action</strong>, key: 'action', fixed: 'right',
       render: (_, record) => (
         <Space size="middle">
+          <OutboundCallButton
+            leadId={record._id}
+            customerPhone={record.phoneNumber || record.mobile}
+            leadName={record.fullName}
+            iconOnly={true}
+          />
           {canView && (
             <Tooltip title="View Lead">
               <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--accent-info)' }} onClick={() => handleOpenViewModal(record)} />
@@ -933,22 +941,32 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
             <Title level={4} style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>
               Lead — {currentViewingLead?.fullName}
             </Title>
-            {canConvertClient && currentViewingLead && (
-              <Button
-                type="primary"
-                icon={<UserAddOutlined />}
-                onClick={() => handleOpenConvertModal(currentViewingLead)}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  borderColor: '#10b981',
-                  borderRadius: 8,
-                  fontWeight: 700,
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
-                }}
-              >
-                Convert to Client
-              </Button>
-            )}
+            <Space>
+              {currentViewingLead && (
+                <OutboundCallButton
+                  leadId={currentViewingLead._id}
+                  customerPhone={currentViewingLead.phoneNumber || currentViewingLead.mobile}
+                  leadName={currentViewingLead.fullName}
+                  buttonType="primary"
+                />
+              )}
+              {canConvertClient && currentViewingLead && (
+                <Button
+                  type="primary"
+                  icon={<UserAddOutlined />}
+                  onClick={() => handleOpenConvertModal(currentViewingLead)}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    borderColor: '#10b981',
+                    borderRadius: 8,
+                    fontWeight: 700,
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
+                  }}
+                >
+                  Convert to Client
+                </Button>
+              )}
+            </Space>
           </div>
         }
         open={!!viewingLead}
@@ -1150,6 +1168,13 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
                     />
                   </div>
                 </div>
+              )
+            },
+            {
+              key: 'calls',
+              label: <strong style={{ fontWeight: 600 }}>Call History</strong>,
+              children: (
+                <CallHistoryTable leadId={currentViewingLead?._id} />
               )
             },
             {

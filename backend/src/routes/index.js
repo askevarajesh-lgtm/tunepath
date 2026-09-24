@@ -42,6 +42,7 @@ const proposalRoutes = require('../modules/proposals/proposal.routes');
 const invoiceRoutes = require('../modules/invoices/invoice.routes');
 const leadRoutes = require('../modules/leads/lead.routes');
 const salesPipelineRoutes = require('../modules/salesPipeline/salesPipeline.routes');
+const ivrRoutes = require('../modules/ivr/ivr.routes');
 
 // Agency Restructure Placeholder Routes
 const agencyOverviewRoutes = require('../modules/accounts/agencyOverview.routes');
@@ -150,6 +151,7 @@ router.use('/proposals', proposalRoutes);
 router.use('/invoices', invoiceRoutes);
 router.use('/leads', leadRoutes);
 router.use('/sales-pipeline', salesPipelineRoutes);
+router.use('/ivr', ivrRoutes);
 
 // Financial & Analytics Mounts
 router.use('/expenses', expenseRoutes);

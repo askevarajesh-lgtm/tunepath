@@ -27,7 +27,9 @@ const availableIntegrations = [
   { type: 'sms', name: 'SMS Gateway' },
   { type: 'email', name: 'Email (SendPulse)' },
   { type: 'website', name: 'Lead Management' },
+  { type: 'payment', name: 'Payment Integration' },
   { type: 'ekta', name: 'Ekta HR Integration' },
+  { type: 'ivr', name: 'Sollu IVR / Telephony' },
 ];
 
 const BrandBillingTab = () => {

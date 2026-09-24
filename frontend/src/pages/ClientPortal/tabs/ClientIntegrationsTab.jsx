@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Typography, Row, Col, Switch, Button, Tag, Spin } from 'antd';
 import { motion } from 'framer-motion';
-import { Globe, ArrowRight, Settings, MessageCircle, MessageSquare, Mail, CreditCard, Users } from 'lucide-react';
+import { Globe, ArrowRight, Settings, MessageCircle, MessageSquare, Mail, CreditCard, Users, Phone } from 'lucide-react';
 
 import WebsiteConfigPage from '../../integrations/WebsiteConfigPage';
 import WhatsAppConfigPage from '../../integrations/WhatsAppConfigPage';
@@ -9,6 +9,7 @@ import SmsConfigPage from '../../integrations/SmsConfigPage';
 import EmailConfigPage from '../../integrations/EmailConfigPage';
 import PaymentConfigPage from '../../integrations/PaymentConfigPage';
 import EktaHrInlineConfigPage from '../../integrations/EktaHrInlineConfigPage';
+import IvrConfigPage from '../../integrations/IvrConfigPage';
 
 import { useGetIntegrationsQuery, useUpdateIntegrationMutation, useCreateIntegrationMutation } from '../../../api/integrationApi';
 
@@ -334,10 +335,15 @@ const INTEGRATION_META = {
     title: 'Ekta HR Integration',
     description: 'Sync employee data and attendance info with Ekta HR management system',
     icon: Users
+  },
+  ivr: {
+    title: 'Sollu IVR / Telephony',
+    description: 'Configure outbound voice calls and IVR for leads using your Sollu telephony account',
+    icon: Phone
   }
 };
 
-const SUPPORTED_INTEGRATIONS = ['whatsapp', 'sms', 'email', 'website', 'ekta'];
+const SUPPORTED_INTEGRATIONS = ['whatsapp', 'sms', 'email', 'website', 'payment', 'ekta', 'ivr'];
 
 const ClientIntegrationsTab = ({ user }) => {
   const [selectedConfig, setSelectedConfig] = useState(null);
@@ -409,6 +415,8 @@ const ClientIntegrationsTab = ({ user }) => {
       case 'email': return <EmailConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
       case 'website': return <WebsiteConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
       case 'ekta': return <EktaHrInlineConfigPage clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
+      case 'payment': return <PaymentConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
+      case 'ivr': return <IvrConfigPage integrationId={id} clientId={activeClientId} onBack={() => { setSelectedConfig(null); refetch(); }} />;
       default: return null;
     }
   };
