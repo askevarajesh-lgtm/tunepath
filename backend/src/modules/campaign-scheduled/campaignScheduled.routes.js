@@ -73,10 +73,14 @@ const {
     dispatchPost,
     refreshPublishedPostMetrics,
     getPostYoutubeComments,
+    getPostAllComments,
+    replyToSocialComment,
     migrateLinkedInPublishedPostMetrics,
     migrateLegacyPosts,
     processDuePosts,
     fetchYoutubeChannelLiveStats,
+    executeMetaGraphApi,
+    createYoutubeClientForAccount,
 } = require("./campaignScheduled.service");
 
 const router = express.Router();
@@ -2384,22 +2388,64 @@ router.get("/insights-matrix", async (req, res) => {
 });
 
 router.get("/posts/:id/comments", async (req, res) => {
-    const post = await Post.findOne({
-        id: req.params.id,
-        companyId: req.companyId,
-        clientCompanyId: req.clientCompanyId || null,
+    const rawId = req.params.id;
+    const baseId = rawId && rawId.includes("_") ? rawId.split("_")[0] : rawId;
+
+    const idQueries = [{ id: rawId }, { id: baseId }];
+    if (mongoose.Types.ObjectId.isValid(rawId)) {
+        idQueries.push({ _id: rawId });
+    }
+    if (mongoose.Types.ObjectId.isValid(baseId)) {
+        idQueries.push({ _id: baseId });
+    }
+
+    let post = await Post.findOne({
+        $or: idQueries,
+        ...buildScopeQuery(req.companyId, req.clientCompanyId)
     }).lean();
+
+    if (!post) {
+        post = await Post.findOne({
+            $or: idQueries
+        }).lean();
+    }
+
     if (!post) {
         res.status(404).json({ success: false, error: "Post not found" });
         return;
     }
-    const comments = await getPostYoutubeComments(
+    const limit = Math.min(Number(req.query.limit) || 50, 100);
+    const comments = await getPostAllComments(
         post,
-        25,
+        limit,
         req.companyId,
         req.clientCompanyId,
     );
     res.json({ success: true, comments, commentCount: comments.length });
+});
+
+router.post("/comments/:commentId/reply", async (req, res) => {
+    try {
+        const { message, platform, accountId } = req.body;
+        if (!message || !message.trim()) {
+            return res.status(400).json({ success: false, error: "Reply message cannot be empty" });
+        }
+
+        const result = await replyToSocialComment({
+            commentId: req.params.commentId,
+            message: message.trim(),
+            platform,
+            accountId,
+            companyId: req.companyId,
+            clientCompanyId: req.clientCompanyId || null,
+        });
+
+        res.json({ success: true, ...result });
+    } catch (err) {
+        console.error("[Comment Reply] Error publishing reply:", err?.response?.data || err.message);
+        const errMsg = err?.response?.data?.error?.message || err.message || "Failed to publish reply";
+        res.status(500).json({ success: false, error: errMsg });
+    }
 });
 
 router.get("/accounts/:id/followers", async (req, res) => {
@@ -2511,16 +2557,22 @@ router.get("/accounts/:id/likers", async (req, res) => {
             }
         } else if (account.platform === "facebook" && account.page_id) {
             try {
-                const fbPostsRes = await axios.get(`${META_GRAPH}/${account.page_id}/published_posts`, {
-                    params: { access_token: account.access_token, fields: "id,message,created_time", limit: 25 }
-                });
-                const fbPosts = fbPostsRes.data?.data || [];
+                const fbPostsRes = await executeMetaGraphApi(
+                    (token) => axios.get(`${META_GRAPH}/${account.page_id}/published_posts`, {
+                        params: { access_token: token, fields: "id,message,created_time", limit: 25 }
+                    }),
+                    account
+                ).catch(() => null);
+                const fbPosts = fbPostsRes?.data?.data || [];
                 for (const fbPost of fbPosts) {
                     try {
-                        const rxRes = await axios.get(`${META_GRAPH}/${fbPost.id}/reactions`, {
-                            params: { access_token: account.access_token, fields: "id,name,type" }
-                        });
-                        const reactions = rxRes.data?.data || [];
+                        const rxRes = await executeMetaGraphApi(
+                            (token) => axios.get(`${META_GRAPH}/${fbPost.id}/reactions`, {
+                                params: { access_token: token, fields: "id,name,type" }
+                            }),
+                            account
+                        ).catch(() => null);
+                        const reactions = rxRes?.data?.data || [];
                         reactions.forEach((r) => {
                             likers.push({
                                 id: r.id,
@@ -2549,19 +2601,22 @@ router.get("/accounts/:id/likers", async (req, res) => {
             if (pub?.externalId) {
                 try {
                     const endpoint = `${META_GRAPH}/${pub.externalId}/likes`;
-                    const graphRes = await axios.get(endpoint, {
-                        params: { access_token: account.access_token, fields: "id,name,username" }
-                    });
-                    if (graphRes.data?.data && graphRes.data.data.length > 0) {
+                    const graphRes = await executeMetaGraphApi(
+                        (token) => axios.get(endpoint, {
+                            params: { access_token: token, fields: "id,name" }
+                        }),
+                        account
+                    ).catch(() => null);
+                    if (graphRes?.data?.data && graphRes.data.data.length > 0) {
                         graphRes.data.data.forEach((u, idx) => {
                             likers.push({
                                 id: u.id || `l-${idx}`,
-                                name: u.name || u.username || 'Social User',
-                                username: u.username ? `@${u.username}` : `@${(u.name || 'user').toLowerCase().replace(/\s+/g, '')}`,
+                                name: u.name || 'Social User',
+                                username: `@${(u.name || 'user').toLowerCase().replace(/\s+/g, '')}`,
                                 reaction: '👍 Like',
                                 postTitle: post.caption || 'Published Post',
                                 time: post.published_at ? new Date(post.published_at).toLocaleDateString() : 'Recent',
-                                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || u.username || 'User')}&background=ec4899&color=fff`
+                                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name || 'User')}&background=ec4899&color=fff`
                             });
                         });
                     }
@@ -2586,19 +2641,25 @@ router.get("/accounts/:id/comments-list", async (req, res) => {
     }
 
     let comments = [];
-    if (account.access_token) {
+    if (account.access_token || account.platform === "youtube") {
         if (account.platform === "instagram" && account.ig_user_id) {
             try {
-                const mediaRes = await axios.get(`${META_GRAPH}/${account.ig_user_id}/media`, {
-                    params: { access_token: account.access_token, fields: "id,caption,timestamp", limit: 25 }
-                });
-                const mediaList = mediaRes.data?.data || [];
+                const mediaRes = await executeMetaGraphApi(
+                    (token) => axios.get(`${META_GRAPH}/${account.ig_user_id}/media`, {
+                        params: { access_token: token, fields: "id,caption,timestamp", limit: 25 }
+                    }),
+                    account
+                ).catch(() => null);
+                const mediaList = mediaRes?.data?.data || [];
                 for (const media of mediaList) {
                     try {
-                        const commRes = await axios.get(`${META_GRAPH}/${media.id}/comments`, {
-                            params: { access_token: account.access_token, fields: "id,text,username,timestamp,from{id,username,name}" }
-                        });
-                        const comms = commRes.data?.data || [];
+                        const commRes = await executeMetaGraphApi(
+                            (token) => axios.get(`${META_GRAPH}/${media.id}/comments`, {
+                                params: { access_token: token, fields: "id,text,username,timestamp,from{id,username,name}" }
+                            }),
+                            account
+                        ).catch(() => null);
+                        const comms = commRes?.data?.data || [];
                         comms.forEach((c) => {
                             const senderName = c.username || c.from?.username || c.from?.name || account.page_name || 'Instagram User';
                             comments.push({
@@ -2608,7 +2669,8 @@ router.get("/accounts/:id/comments-list", async (req, res) => {
                                 text: c.text || c.message || '',
                                 postTitle: media.caption || 'Instagram Post',
                                 time: c.timestamp ? new Date(c.timestamp).toLocaleString() : 'Recent',
-                                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=3b82f6&color=fff`
+                                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=ec4899&color=fff`,
+                                platform: "instagram",
                             });
                         });
                     } catch (cErr) {
@@ -2620,27 +2682,51 @@ router.get("/accounts/:id/comments-list", async (req, res) => {
             }
         } else if (account.platform === "facebook" && account.page_id) {
             try {
-                const fbPostsRes = await axios.get(`${META_GRAPH}/${account.page_id}/published_posts`, {
-                    params: { access_token: account.access_token, fields: "id,message,created_time", limit: 25 }
-                });
-                const fbPosts = fbPostsRes.data?.data || [];
+                const fbPostsRes = await executeMetaGraphApi(
+                    (token) => axios.get(`${META_GRAPH}/${account.page_id}/published_posts`, {
+                        params: { access_token: token, fields: "id,message,created_time", limit: 25 }
+                    }),
+                    account
+                ).catch(() => null);
+                const fbPosts = fbPostsRes?.data?.data || [];
                 for (const fbPost of fbPosts) {
                     try {
-                        const commRes = await axios.get(`${META_GRAPH}/${fbPost.id}/comments`, {
-                            params: { access_token: account.access_token, fields: "id,message,from{id,name,username},created_time" }
-                        });
-                        const comms = commRes.data?.data || [];
+                        const commRes = await executeMetaGraphApi(
+                            (token) => axios.get(`${META_GRAPH}/${fbPost.id}/comments`, {
+                                params: { access_token: token, fields: "id,message,from,created_time,like_count,comments{id,message,from,created_time,like_count}" }
+                            }),
+                            account
+                        ).catch(() => null);
+                        const comms = commRes?.data?.data || [];
                         comms.forEach((c) => {
-                            const senderName = c.from?.name || c.from?.username || 'Facebook User';
+                            const senderName = c.from?.name || c.from?.username || account.page_name || 'Facebook User';
                             comments.push({
                                 id: c.id,
                                 name: senderName,
-                                username: c.from?.username ? `@${c.from.username}` : `@${senderName.toLowerCase().replace(/\s+/g, '')}`,
+                                username: `@${(c.from?.username || senderName).toLowerCase().replace(/\s+/g, '')}`,
                                 text: c.message || '',
                                 postTitle: fbPost.message || 'Facebook Post',
                                 time: c.created_time ? new Date(c.created_time).toLocaleString() : 'Recent',
-                                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=3b82f6&color=fff`
+                                avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=1877f2&color=fff`,
+                                platform: "facebook",
                             });
+
+                            if (c.comments?.data && Array.isArray(c.comments.data)) {
+                                c.comments.data.forEach((subC) => {
+                                    const subAuthor = subC.from?.name || subC.from?.username || 'Facebook User';
+                                    comments.push({
+                                        id: subC.id,
+                                        parentId: c.id,
+                                        name: subAuthor,
+                                        username: `@${(subC.from?.username || subAuthor).toLowerCase().replace(/\s+/g, '')}`,
+                                        text: subC.message || '',
+                                        postTitle: fbPost.message || 'Facebook Post',
+                                        time: subC.created_time ? new Date(subC.created_time).toLocaleString() : 'Recent',
+                                        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(subAuthor)}&background=1877f2&color=fff`,
+                                        platform: "facebook",
+                                    });
+                                });
+                            }
                         });
                     } catch (cErr) {
                         console.warn(`[Comments API] FB comments error for post ${fbPost.id}:`, cErr.message);
@@ -2648,6 +2734,82 @@ router.get("/accounts/:id/comments-list", async (req, res) => {
                 }
             } catch (e) {
                 console.warn("[Comments API] FB posts error:", e.message);
+            }
+        } else if (account.platform === "youtube") {
+            try {
+                if (account.page_id) {
+                    try {
+                        const youtube = await createYoutubeClientForAccount(account);
+                        const ytRes = await youtube.commentThreads.list({
+                            part: ["snippet"],
+                            allThreadsRelatedToChannelId: account.page_id,
+                            maxResults: 50,
+                            order: "time",
+                            textFormat: "plainText"
+                        });
+                        const items = ytRes.data?.items || [];
+                        const videoIds = [...new Set(items.map((i) => i.snippet?.topLevelComment?.snippet?.videoId).filter(Boolean))];
+                        const videoTitleMap = {};
+                        if (videoIds.length > 0) {
+                            try {
+                                const vRes = await youtube.videos.list({
+                                    part: ["snippet"],
+                                    id: videoIds.slice(0, 50).join(",")
+                                });
+                                (vRes.data?.items || []).forEach((v) => {
+                                    videoTitleMap[v.id] = v.snippet?.title;
+                                });
+                            } catch (_) {}
+                        }
+                        items.forEach((item) => {
+                            const top = item.snippet?.topLevelComment?.snippet || {};
+                            const vTitle = videoTitleMap[top.videoId] || account.page_name || account.username || 'YouTube Video';
+                            const authorName = top.authorDisplayName || 'YouTube User';
+                            comments.push({
+                                id: item.id || `yt-${top.videoId}-${comments.length}`,
+                                name: authorName,
+                                username: authorName.startsWith('@') ? authorName : `@${authorName}`,
+                                text: top.textDisplay || '',
+                                postTitle: vTitle,
+                                time: top.publishedAt ? new Date(top.publishedAt).toLocaleString() : 'Recent',
+                                avatar: top.authorProfileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=ef4444&color=fff`,
+                                platform: "youtube",
+                            });
+                        });
+                    } catch (ytChanErr) {
+                        console.warn("[Comments API] YouTube channel comments fetch error:", ytChanErr.message);
+                    }
+                }
+
+                if (comments.length === 0) {
+                    const posts = await getAllPosts(req.companyId, req.clientCompanyId);
+                    const ytPosts = posts.filter(
+                        (p) => p.status === "Published" && ((p.platforms || []).includes(account.id) || p.platform_publications?.[account.id])
+                    );
+                    for (const post of ytPosts) {
+                        try {
+                            const ytComments = await getPostYoutubeComments(post, 25, req.companyId, req.clientCompanyId);
+                            ytComments.forEach((c) => {
+                                if (c.accountId === account.id || !c.accountId) {
+                                    comments.push({
+                                        id: c.id,
+                                        name: c.author || 'YouTube User',
+                                        username: `@${(c.author || 'user').toLowerCase().replace(/\s+/g, '')}`,
+                                        text: c.text || '',
+                                        postTitle: post.caption || post.title || 'YouTube Video',
+                                        time: c.publishedAt ? new Date(c.publishedAt).toLocaleString() : 'Recent',
+                                        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(c.author || 'YouTube')}&background=ef4444&color=fff`,
+                                        platform: "youtube",
+                                    });
+                                }
+                            });
+                        } catch (ytErr) {
+                            console.warn("[Comments API] YouTube post comments error:", ytErr.message);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn("[Comments API] YouTube handler error:", e.message);
             }
         }
     }
