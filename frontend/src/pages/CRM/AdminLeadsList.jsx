@@ -24,6 +24,7 @@ import { isValidPhoneNumber } from 'libphonenumber-js';
 import dayjs from 'dayjs';
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { useAuth } from "../../contexts/AuthContext";
+import useCompanyIntegrations from '../../hooks/useCompanyIntegrations';
 import OutboundCallButton from './components/OutboundCallButton';
 import CallHistoryTable from './components/CallHistoryTable';
 
@@ -43,6 +44,8 @@ const DEFAULT_STATUSES = ['RNR', 'COLD', 'WARM', 'HOT', 'DROP', 'OTHER LOCATIONS
 const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const { user, role } = useAuth();
   const { canAdd, canEdit, canDelete, canView } = useActionPermissions('/crm');
+  const { isEntitled, isPlatformAdmin } = useCompanyIntegrations();
+  const isIvrEntitled = isPlatformAdmin || isEntitled('ivr');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
@@ -1178,13 +1181,15 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
                 </div>
               )
             },
-            {
-              key: 'calls',
-              label: <strong style={{ fontWeight: 600 }}>Call History</strong>,
-              children: (
-                <CallHistoryTable leadId={currentViewingLead?._id} />
-              )
-            },
+            ...(isIvrEntitled ? [
+              {
+                key: 'calls',
+                label: <strong style={{ fontWeight: 600 }}>Call History</strong>,
+                children: (
+                  <CallHistoryTable leadId={currentViewingLead?._id} />
+                )
+              }
+            ] : []),
             {
               key: 'logs',
               label: <strong style={{ fontWeight: 600 }}>Activity Logs</strong>,

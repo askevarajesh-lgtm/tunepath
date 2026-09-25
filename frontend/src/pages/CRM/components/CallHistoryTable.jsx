@@ -13,6 +13,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useGetLeadCallLogsQuery } from '../../../api/ivrApi';
+import { useTheme } from '../../../contexts/ThemeContext';
 
 const { Text } = Typography;
 
@@ -85,9 +86,17 @@ const formatSeconds = (sec) => {
 };
 
 const CallHistoryTable = ({ leadId, onRefreshTrigger }) => {
+  const { userTheme } = useTheme() || {};
+  const primaryColor = userTheme?.primaryColor || '#E1153B';
   const { data, isLoading, refetch } = useGetLeadCallLogsQuery(leadId, { skip: !leadId });
   const [selectedPayload, setSelectedPayload] = useState(null);
   const [activeAudioUrl, setActiveAudioUrl] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [leadId]);
 
   const callLogs = data?.data || [];
 
@@ -120,15 +129,18 @@ const CallHistoryTable = ({ leadId, onRefreshTrigger }) => {
     {
       title: 'Date & Time',
       key: 'dateTime',
-      width: 170,
+      width: 175,
       render: (_, record) => {
-        let displayTime = '—';
-        if (record.date && record.time) {
-          displayTime = `${record.date} ${record.time}`;
-        } else if (record.createdAt) {
-          displayTime = dayjs(record.createdAt).format('DD-MM-YYYY HH:mm');
-        }
-        return <span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>{displayTime}</span>;
+        const rawTime =
+          record.rawPayload?.time ||
+          record.createdAt ||
+          (record.date && record.time ? `${record.date} ${record.time}` : null);
+        const displayTime = rawTime ? dayjs(rawTime).format('DD-MM-YYYY HH:mm:ss') : '—';
+        return (
+          <Tooltip title={`Timestamp: ${rawTime ? dayjs(rawTime).format('DD MMM YYYY, hh:mm:ss A') : '—'}`}>
+            <span style={{ whiteSpace: 'nowrap', fontSize: 13 }}>{displayTime}</span>
+          </Tooltip>
+        );
       },
     },
     {
@@ -180,31 +192,49 @@ const CallHistoryTable = ({ leadId, onRefreshTrigger }) => {
       title: 'Duration',
       key: 'duration',
       width: 110,
-      render: (_, record) => (
-        <Tooltip title={`Call Duration: ${record.callDuration || 0}s | Total Connection: ${record.totalCallDuration || 0}s`}>
-          <Tag color="default" style={{ borderRadius: 6, fontWeight: 600, fontSize: 12 }}>
-            {formatSeconds(record.callDuration)}
-          </Tag>
-        </Tooltip>
-      ),
+      render: (_, record) => {
+        const durationSec =
+          record.callDuration ||
+          parseInt(record.rawPayload?.caller2_call_duration, 10) ||
+          0;
+        const totalDurationSec =
+          record.totalCallDuration ||
+          parseInt(record.rawPayload?.caller1_call_duration, 10) ||
+          durationSec;
+        return (
+          <Tooltip title={`Call Duration: ${durationSec}s | Total Connection: ${totalDurationSec}s`}>
+            <Tag color="default" style={{ borderRadius: 6, fontWeight: 600, fontSize: 12 }}>
+              {formatSeconds(durationSec)}
+            </Tag>
+          </Tooltip>
+        );
+      },
     },
     {
       title: 'Virtual DID',
       dataIndex: 'did',
       key: 'did',
       width: 140,
-      render: (did) => (
-        <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>
-          {did || '—'}
-        </span>
-      ),
+      render: (did, record) => {
+        const displayDid = did || record.rawPayload?.called_number || '—';
+        return (
+          <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#475569', whiteSpace: 'nowrap' }}>
+            {displayDid}
+          </span>
+        );
+      },
     },
     {
       title: 'Recording',
       key: 'recording',
       width: 140,
       render: (_, record) => {
-        const recordingUrl = record.callRecordingUrl || (record.callRecording?.startsWith('http') ? record.callRecording : null);
+        const recordingUrl =
+          record.callRecordingUrl ||
+          (record.callRecording?.startsWith('http') ? record.callRecording : null) ||
+          (typeof record.rawPayload?.data === 'string' && record.rawPayload.data.startsWith('http')
+            ? record.rawPayload.data
+            : null);
 
         if (!recordingUrl) {
           if (record.callRecording) {
@@ -226,8 +256,8 @@ const CallHistoryTable = ({ leadId, onRefreshTrigger }) => {
             icon={<PlayCircleOutlined />}
             onClick={() => setActiveAudioUrl(recordingUrl)}
             style={{
-              background: '#10b981',
-              borderColor: '#10b981',
+              background: primaryColor || '#E1153B',
+              borderColor: primaryColor || '#E1153B',
               borderRadius: 6,
               fontSize: 12,
               fontWeight: 600,
@@ -297,7 +327,24 @@ const CallHistoryTable = ({ leadId, onRefreshTrigger }) => {
         columns={columns}
         loading={isLoading}
         scroll={{ x: 1100 }}
-        pagination={{ pageSize: 5, showSizeChanger: true }}
+        pagination={{
+          current: currentPage,
+          pageSize: pageSize,
+          total: callLogs.length,
+          showSizeChanger: true,
+          pageSizeOptions: ['5', '10', '20', '50', '100'],
+          showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} records`,
+          onChange: (page, size) => {
+            setCurrentPage(page);
+            if (size && size !== pageSize) {
+              setPageSize(size);
+            }
+          },
+          onShowSizeChange: (current, size) => {
+            setCurrentPage(1);
+            setPageSize(size);
+          },
+        }}
         locale={{
           emptyText: (
             <Empty
@@ -314,7 +361,7 @@ const CallHistoryTable = ({ leadId, onRefreshTrigger }) => {
       <Modal
         title={
           <Space>
-            <CustomerServiceOutlined style={{ color: '#10b981' }} />
+            <CustomerServiceOutlined style={{ color: primaryColor || '#E1153B' }} />
             <span>Call Recording Playback</span>
           </Space>
         }

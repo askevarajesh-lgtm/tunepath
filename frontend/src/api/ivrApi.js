@@ -93,14 +93,29 @@ export const useGetAllCallLogsQuery = (params = {}, options = {}) => {
 /**
  * Fetch live status of a specific call (for active dialer polling)
  */
-export const getCallStatusApi = async (callId, { leadId, customerPhone } = {}) => {
+export const getCallStatusApi = async (callId) => {
+  if (!callId || callId === 'undefined' || callId === 'null') return null;
   try {
-    const params = {};
-    if (leadId) params.leadId = leadId;
-    if (customerPhone) params.customerPhone = customerPhone;
-    const response = await api.get(`/ivr/calls/status/${callId || 'recent'}`, { params });
+    const response = await api.get(`/ivr/calls/status/${callId}`);
     return response.data;
   } catch (err) {
     return null;
   }
 };
+
+/**
+ * End / Disconnect Call from CRM frontend
+ */
+export const endCallApi = async (callId, { leadId, customerPhone, duration } = {}) => {
+  try {
+    const response = await api.post(`/ivr/calls/${callId || 'recent'}/end`, {
+      leadId,
+      customerPhone,
+      duration,
+    });
+    return response.data;
+  } catch (err) {
+    return null;
+  }
+};
+

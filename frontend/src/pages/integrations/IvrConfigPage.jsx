@@ -57,12 +57,12 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
 
       form.setFieldsValue({
         authType: detectedAuthType,
-        baseUrl: config.baseUrl || "https://app.sollu.in",
+        baseUrl: config.baseUrl || "",
         apiKey: config.apiKey || "",
         bearerToken: config.bearerToken || "",
-        did: config.did || "914443126059",
-        outboundEndpoint: config.outboundEndpoint || "/api/clicktocall",
-        callbackUrl: config.callbackUrl || "outboundcallback",
+        did: config.did || "",
+        outboundEndpoint: config.outboundEndpoint || "",
+        callbackUrl: config.callbackUrl || "",
         recordingBaseUrl: config.recordingBaseUrl || "",
         webhookSecret: config.webhookSecret || "",
         isActive: integration.isActive !== false,
@@ -70,10 +70,14 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
     } else {
       form.setFieldsValue({
         authType: "apiKey",
-        baseUrl: "https://app.sollu.in",
-        did: "914443126059",
-        outboundEndpoint: "/api/clicktocall",
-        callbackUrl: "outboundcallback",
+        baseUrl: "",
+        apiKey: "",
+        bearerToken: "",
+        did: "",
+        outboundEndpoint: "",
+        callbackUrl: "",
+        recordingBaseUrl: "",
+        webhookSecret: "",
         isActive: true,
       });
     }
@@ -88,12 +92,12 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
         ...(clientId ? { clientId } : {}),
         config: {
           authType: values.authType,
-          baseUrl: (values.baseUrl || "https://app.sollu.in").trim(),
+          baseUrl: (values.baseUrl || "").trim(),
           apiKey: values.authType === "apiKey" ? (values.apiKey || "").trim() : "",
           bearerToken: values.authType === "bearer" ? (values.bearerToken || "").trim() : "",
           did: (values.did || "").trim(),
-          outboundEndpoint: (values.outboundEndpoint || "/api/clicktocall").trim(),
-          callbackUrl: (values.callbackUrl || "outboundcallback").trim(),
+          outboundEndpoint: (values.outboundEndpoint || "").trim(),
+          callbackUrl: (values.callbackUrl || "").trim(),
           recordingBaseUrl: (values.recordingBaseUrl || "").trim(),
           webhookSecret: (values.webhookSecret || "").trim(),
         },
@@ -226,9 +230,8 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
                 name="baseUrl"
                 label={<strong>Sollu API Base URL</strong>}
                 rules={[{ required: true, message: "Please enter Sollu API Base URL" }]}
-                tooltip="e.g. https://app.sollu.in"
               >
-                <Input placeholder="https://app.sollu.in" size="large" />
+                <Input size="large" />
               </Form.Item>
             </Col>
 
@@ -252,7 +255,7 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
                   label={<strong>Sollu API Key</strong>}
                   rules={[{ required: true, message: "Please enter Sollu API Key" }]}
                 >
-                  <Input.Password placeholder="e.g. 3C26FBD712C98192F8CE3CE9DD4" size="large" />
+                  <Input.Password size="large" />
                 </Form.Item>
               </Col>
             ) : (
@@ -262,7 +265,7 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
                   label={<strong>Sollu Bearer Token</strong>}
                   rules={[{ required: true, message: "Please enter Sollu Bearer Token" }]}
                 >
-                  <Input.Password placeholder="Enter your Bearer Token" size="large" />
+                  <Input.Password size="large" />
                 </Form.Item>
               </Col>
             )}
@@ -277,10 +280,9 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
               <Form.Item
                 name="did"
                 label={<strong>Virtual Number / Caller DID</strong>}
-                tooltip="Fallback caller ID or DID (e.g. 914443126059)"
                 rules={[{ required: true, message: "Please specify Caller DID" }]}
               >
-                <Input placeholder="e.g. 914443126059" size="large" />
+                <Input size="large" />
               </Form.Item>
             </Col>
 
@@ -288,9 +290,8 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
               <Form.Item
                 name="outboundEndpoint"
                 label={<strong>Outbound Calling Endpoint</strong>}
-                tooltip="Endpoint on Sollu API (default: /api/clicktocall)"
               >
-                <Input placeholder="/api/clicktocall" size="large" />
+                <Input size="large" />
               </Form.Item>
             </Col>
 
@@ -298,9 +299,8 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
               <Form.Item
                 name="callbackUrl"
                 label={<strong>Callback URL Param / Identifier</strong>}
-                tooltip="Sollu requires callback_url parameter (default: outboundcallback or full webhook URL)"
               >
-                <Input placeholder="outboundcallback" size="large" />
+                <Input size="large" />
               </Form.Item>
             </Col>
 
@@ -308,9 +308,8 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
               <Form.Item
                 name="recordingBaseUrl"
                 label={<strong>Recording CDN / Base URL (Optional)</strong>}
-                tooltip="If Sollu webhook sends filenames (e.g. abcd.mp3) instead of full URLs"
               >
-                <Input placeholder="https://recordings.sollu.com/" size="large" />
+                <Input size="large" />
               </Form.Item>
             </Col>
 
@@ -318,9 +317,8 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
               <Form.Item
                 name="webhookSecret"
                 label={<strong>Webhook Secret Key (Optional)</strong>}
-                tooltip="Shared secret to verify Sollu webhook authenticity"
               >
-                <Input.Password placeholder="Enter webhook secret token" size="large" />
+                <Input.Password size="large" />
               </Form.Item>
             </Col>
 

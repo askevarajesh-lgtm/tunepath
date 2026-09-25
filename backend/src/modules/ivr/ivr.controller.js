@@ -201,12 +201,13 @@ exports.handleSolluWebhook = async (req, res) => {
       payload.sid ||
       payload.CallSid ||
       payload.uniqueid ||
+      payload.cbreferenceId ||
       `SOLLU-WH-${Date.now()}`;
 
     const rawCustomerPhone =
+      payload.caller2 ||
       payload.customer_phone ||
       payload.customerPhone ||
-      payload.caller2 ||
       payload.CustomerNumber ||
       payload.called ||
       payload.phone ||
@@ -214,9 +215,9 @@ exports.handleSolluWebhook = async (req, res) => {
       '';
 
     const rawAgentPhone =
+      payload.caller1 ||
       payload.agent_phone ||
       payload.agentPhone ||
-      payload.caller1 ||
       payload.AgentNumber ||
       '';
 
@@ -226,7 +227,15 @@ exports.handleSolluWebhook = async (req, res) => {
     const direction = (payload.Direction || payload.direction || 'outbound').toLowerCase();
     
     // Normalize status into consistent CRM labels
-    let rawStatus = payload.status || payload.CallStatus || payload.dialstatus || payload.call_status || '';
+    let rawStatus =
+      payload.caller2_status ||
+      payload.status ||
+      payload.CallStatus ||
+      payload.dialstatus ||
+      payload.call_status ||
+      payload.caller1_status ||
+      '';
+
     let normalizedStatus = 'Answered';
     const statusUpper = String(rawStatus).toUpperCase();
     if (
@@ -238,22 +247,77 @@ exports.handleSolluWebhook = async (req, res) => {
       normalizedStatus = 'Answered';
     } else if (statusUpper.includes('BUSY')) {
       normalizedStatus = 'Busy';
-    } else if (statusUpper.includes('NOANSWER') || statusUpper.includes('NO ANSWER')) {
+    } else if (
+      statusUpper.includes('NOANSWER') ||
+      statusUpper.includes('NO ANSWER') ||
+      statusUpper.includes('NO-ANSWER') ||
+      statusUpper.includes('UNANSWERED')
+    ) {
       normalizedStatus = 'No Answer';
     } else if (statusUpper.includes('CANCEL')) {
       normalizedStatus = 'Cancelled';
     } else if (statusUpper.includes('FAIL') || statusUpper.includes('CONGESTION')) {
       normalizedStatus = 'Failed';
     } else if (rawStatus) {
-      normalizedStatus = rawStatus;
+      normalizedStatus = rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
     }
 
-    const date = payload.date || payload.call_date || '';
+    const date = payload.date || payload.call_date || payload.StartTime || payload.start_time || '';
     const time = payload.time || payload.call_time || '';
-    const callDuration = parseInt(payload.call_duration || payload.callDuration || payload.duration || payload.CallDuration || 0, 10) || 0;
-    const totalCallDuration = parseInt(payload.total_call_duration || payload.totalCallDuration || payload.total_duration || 0, 10) || callDuration;
-    const did = payload.did || payload.virtual_number || payload.VirtualNumber || payload.exophone || '';
-    const callRecording = payload.call_recording || payload.callRecording || payload.recording_url || payload.recordingurl || payload.audio_url || payload.RecordingUrl || '';
+    const callDuration =
+      parseInt(
+        payload.caller2_call_duration ||
+          payload.call_duration ||
+          payload.callDuration ||
+          payload.duration ||
+          payload.CallDuration ||
+          payload.talk_time ||
+          payload.talktime ||
+          payload.billsec ||
+          payload.Duration ||
+          0,
+        10
+      ) || 0;
+    const totalCallDuration =
+      parseInt(
+        payload.caller1_call_duration ||
+          payload.total_call_duration ||
+          payload.totalCallDuration ||
+          payload.total_duration ||
+          payload.TotalDuration ||
+          0,
+        10
+      ) || callDuration;
+    const did =
+      payload.called_number ||
+      payload.did ||
+      payload.virtual_number ||
+      payload.VirtualNumber ||
+      payload.exophone ||
+      '';
+
+    // In Sollu Telephony, the recording audio URL is sent in payload.data
+    const callRecording =
+      (typeof payload.data === 'string' &&
+      (payload.data.includes('http') ||
+        payload.data.includes('.mp3') ||
+        payload.data.includes('.wav') ||
+        payload.data.includes('recording'))
+        ? payload.data
+        : '') ||
+      payload.call_recording ||
+      payload.callRecording ||
+      payload.recording_url ||
+      payload.recordingurl ||
+      payload.audio_url ||
+      payload.RecordingUrl ||
+      payload.recording ||
+      payload.record_url ||
+      payload.recording_path ||
+      payload.filename ||
+      payload.record_file ||
+      (typeof payload.data === 'string' && payload.data.trim().length > 0 ? payload.data : '') ||
+      '';
 
     const calledAgents = Array.isArray(payload.calledAgents)
       ? payload.calledAgents.map((a) => ({
@@ -263,8 +327,15 @@ exports.handleSolluWebhook = async (req, res) => {
       : [];
 
     // 1. Check if a call log already exists:
-    // First, search by exact externalCallId
-    let callLog = await CallLog.findOne({ callId: externalCallId });
+    // First, search by exact externalCallId or match against rawPayload call identifiers
+    let callLog = await CallLog.findOne({
+      $or: [
+        { callId: externalCallId },
+        { 'rawPayload.callId': externalCallId },
+        { 'rawPayload.sid': externalCallId },
+        { 'rawPayload.response.message': externalCallId },
+      ],
+    });
 
     // If not found by externalCallId, look for an 'Initiated' call log for this customer phone created in last 15 minutes
     if (!callLog && normalizedCustomerPhone) {
@@ -489,37 +560,27 @@ exports.getAllCallLogs = async (req, res) => {
 exports.getCallStatus = async (req, res) => {
   try {
     const { callId } = req.params;
-    const { leadId, customerPhone } = req.query;
 
-    let callLog = null;
-    if (callId && callId !== 'undefined' && callId !== 'null') {
-      callLog = await CallLog.findOne({ callId }).lean();
+    if (!callId || callId === 'undefined' || callId === 'null' || callId === 'recent') {
+      return res.status(200).json({
+        success: true,
+        data: {
+          callId: callId || '',
+          status: 'Initiated',
+          isEnded: false,
+          callDuration: 0,
+        },
+      });
     }
 
-    if (!callLog && leadId && mongoose.Types.ObjectId.isValid(leadId)) {
-      // Find the most recent call log created in the last 15 minutes for this lead
-      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-      callLog = await CallLog.findOne({
-        leadId,
-        createdAt: { $gte: fifteenMinsAgo },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-    }
-
-    if (!callLog && customerPhone) {
-      const normalized = solluService.normalizePhoneNumber(customerPhone);
-      const last10 = normalized ? normalized.slice(-10) : '';
-      if (last10) {
-        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
-        callLog = await CallLog.findOne({
-          customerPhone: { $regex: `${last10}$`, $options: 'i' },
-          createdAt: { $gte: fifteenMinsAgo },
-        })
-          .sort({ createdAt: -1 })
-          .lean();
-      }
-    }
+    const callLog = await CallLog.findOne({
+      $or: [
+        { callId },
+        { 'rawPayload.callId': callId },
+        { 'rawPayload.sid': callId },
+        { 'rawPayload.response.message': callId },
+      ],
+    }).lean();
 
     if (!callLog) {
       return res.status(200).json({
@@ -534,6 +595,15 @@ exports.getCallStatus = async (req, res) => {
     }
 
     const statusUpper = (callLog.status || '').toUpperCase();
+    const hasWebhookData = !!(
+      callLog.rawPayload &&
+      (callLog.rawPayload.caller1_status ||
+        callLog.rawPayload.caller2_status ||
+        callLog.rawPayload.data ||
+        callLog.rawPayload.caller1_call_duration ||
+        callLog.rawPayload.caller2_call_duration)
+    );
+
     const isEnded =
       [
         'COMPLETED',
@@ -543,12 +613,14 @@ exports.getCallStatus = async (req, res) => {
         'BUSY',
         'NOANSWER',
         'NO ANSWER',
+        'NO-ANSWER',
         'CANCEL',
         'CANCELLED',
         'MISSED',
         'ANSWER',
         'ANSWERED',
       ].includes(statusUpper) ||
+      hasWebhookData ||
       (callLog.callDuration > 0 &&
         !['INITIATED', 'RINGING', 'IN_PROGRESS', 'IN PROGRESS', 'ACTIVE'].includes(statusUpper));
 
@@ -560,11 +632,73 @@ exports.getCallStatus = async (req, res) => {
         isEnded: !!isEnded,
         callDuration: callLog.callDuration || 0,
         totalCallDuration: callLog.totalCallDuration || 0,
-        callRecordingUrl: callLog.callRecordingUrl || '',
+        callRecordingUrl: callLog.callRecordingUrl || (typeof callLog.rawPayload?.data === 'string' ? callLog.rawPayload.data : ''),
       },
     });
   } catch (error) {
     console.error('[IVR Controller] Get Call Status Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * End / Disconnect Call from CRM UI
+ * POST /api/ivr/calls/:callId/end
+ */
+exports.endCall = async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { leadId, customerPhone, duration = 0 } = req.body;
+
+    let callLog = null;
+    if (callId && callId !== 'undefined' && callId !== 'null' && callId !== 'recent') {
+      callLog = await CallLog.findOne({
+        $or: [
+          { callId },
+          { 'rawPayload.callId': callId },
+          { 'rawPayload.sid': callId },
+          { 'rawPayload.response.message': callId },
+        ],
+      });
+    }
+
+    if (!callLog && leadId && mongoose.Types.ObjectId.isValid(leadId)) {
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+      callLog = await CallLog.findOne({
+        leadId,
+        createdAt: { $gte: fifteenMinsAgo },
+      }).sort({ createdAt: -1 });
+    }
+
+    if (!callLog && customerPhone) {
+      const normalized = solluService.normalizePhoneNumber(customerPhone);
+      const last10 = normalized ? normalized.slice(-10) : '';
+      if (last10) {
+        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+        callLog = await CallLog.findOne({
+          customerPhone: { $regex: `${last10}$`, $options: 'i' },
+          createdAt: { $gte: fifteenMinsAgo },
+        }).sort({ createdAt: -1 });
+      }
+    }
+
+    if (callLog) {
+      if (callLog.status === 'Initiated') {
+        callLog.status = duration > 0 ? 'Answered' : 'Cancelled';
+      }
+      if (duration > 0 && (!callLog.callDuration || callLog.callDuration === 0)) {
+        callLog.callDuration = duration;
+      }
+      await callLog.save();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Call marked as disconnected',
+      data: callLog,
+    });
+  } catch (error) {
+    console.error('[IVR Controller] End Call Error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };

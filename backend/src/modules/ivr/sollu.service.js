@@ -21,7 +21,7 @@ function resolveRecordingUrl(recordingField, customBaseUrl = '') {
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed;
   }
-  const baseUrl = (customBaseUrl || process.env.SOLLU_RECORDING_BASE_URL || '').replace(/\/+$/, '');
+  const baseUrl = (customBaseUrl || process.env.SOLLU_RECORDING_BASE_URL || 'https://app.sollu.in').replace(/\/+$/, '');
   if (baseUrl) {
     return `${baseUrl}/${trimmed.replace(/^\/+/, '')}`;
   }
@@ -51,14 +51,24 @@ function formatSolluPhone(rawPhone) {
  * Initiates an Outbound Call via Sollu Telephony API.
  * 
  * Sollu API URL Format:
- * https://app.sollu.in/api/clicktocall?apikey=...&caller1=098849xxx&caller2=0988415xxxx&callback_url=outboundcallback
+ * https://app.sollu.in/api/clicktocall?apikey=...&caller1=098849xxx&caller2=0988415xxxx&callback_url=https://...
  */
 async function initiateOutboundCall({ customerPhone, agentPhone, did, leadId, ivrConfig = {}, metadata = {} }) {
   const baseUrl = (ivrConfig.baseUrl || process.env.SOLLU_API_BASE_URL || 'https://app.sollu.in').trim();
   const apiKey = (ivrConfig.apiKey || process.env.SOLLU_API_KEY || '').trim();
   const outboundEndpoint = (ivrConfig.outboundEndpoint || process.env.SOLLU_OUTBOUND_ENDPOINT || '/api/clicktocall').trim();
   const callerDid = did || ivrConfig.did || process.env.SOLLU_DID || '914443126059';
-  const callbackUrl = (ivrConfig.callbackUrl || process.env.SOLLU_CALLBACK_URL || 'outboundcallback').trim();
+
+  // Resolve public webhook callback URL (ensuring full public URL is supplied to Sollu)
+  let rawCallbackUrl = (ivrConfig.callbackUrl || process.env.SOLLU_CALLBACK_URL || 'https://varsity-unscrew-refusal.ngrok-free.dev/api/ivr/webhook').trim();
+  if (!rawCallbackUrl.startsWith('http://') && !rawCallbackUrl.startsWith('https://')) {
+    const publicHost = 'https://varsity-unscrew-refusal.ngrok-free.dev';
+    if (rawCallbackUrl === 'outboundcallback' || rawCallbackUrl === 'callback' || rawCallbackUrl === 'webhook') {
+      rawCallbackUrl = `${publicHost}/api/ivr/${rawCallbackUrl}`;
+    } else {
+      rawCallbackUrl = `${publicHost}/${rawCallbackUrl.replace(/^\/+/, '')}`;
+    }
+  }
 
   const formattedCustomerPhone = formatSolluPhone(customerPhone);
   const formattedAgentPhone = formatSolluPhone(agentPhone) || formatSolluPhone(callerDid);
@@ -92,10 +102,10 @@ async function initiateOutboundCall({ customerPhone, agentPhone, did, leadId, iv
     apikey: apiKey,
     caller1: formattedAgentPhone,
     caller2: formattedCustomerPhone,
-    callback_url: callbackUrl,
+    callback_url: rawCallbackUrl,
   };
 
-  console.log(`[Sollu IVR Service] Initiating outbound call: caller1 (Agent)=${formattedAgentPhone}, caller2 (Lead)=${formattedCustomerPhone} via ${targetUrl}`);
+  console.log(`[Sollu IVR Service] Initiating outbound call: caller1 (Agent)=${formattedAgentPhone}, caller2 (Lead)=${formattedCustomerPhone}, callback=${rawCallbackUrl} via ${targetUrl}`);
 
   try {
     const response = await axios.get(targetUrl, {

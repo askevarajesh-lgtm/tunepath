@@ -22,12 +22,11 @@ const OutboundCallButton = ({
 
   const isIvrEntitled = isPlatformAdmin || isEntitled('ivr');
 
-  const handleOpenDialer = () => {
-    if (!isIvrEntitled) {
-      message.warning('IVR Telephony is not included in your current package. Please contact your administrator.');
-      return;
-    }
+  if (!isIvrEntitled) {
+    return null;
+  }
 
+  const handleOpenDialer = () => {
     if (!customerPhone && !leadId) {
       message.error('No phone number available for this lead.');
       return;
