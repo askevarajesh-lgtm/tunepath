@@ -75,7 +75,12 @@ function getAiWorkspaceId(workspaceId, user) {
 
 async function getClaudeClient(workspaceId, user) {
   const aiWorkspaceId = getAiWorkspaceId(workspaceId, user);
-  const settings = await AiSettings.findOne({ workspaceId: aiWorkspaceId });
+  let settings = await AiSettings.findOne({ workspaceId: aiWorkspaceId, module: 'marketplace' });
+  if (!settings || (!settings.anthropicApiKey && !settings.contentAnthropicApiKey)) {
+    settings = await AiSettings.findOne({ workspaceId: aiWorkspaceId, module: 'claude' }) ||
+               await AiSettings.findOne({ workspaceId: aiWorkspaceId, module: { $exists: false } }) ||
+               await AiSettings.findOne({ workspaceId: aiWorkspaceId });
+  }
   if (!settings) {
     throw new Error('AI Settings not found for this workspace. Please configure your Claude API key in AI Settings.');
   }

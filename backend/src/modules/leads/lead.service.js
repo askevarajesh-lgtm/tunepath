@@ -431,16 +431,21 @@ const getLeads = async (companyId, currentUser, query = {}) => {
   if (query.search && query.search.trim()) {
     const sRegex = new RegExp(escapeRegex(query.search.trim()), "i");
     accessFilter.$or = [
-      ...(accessFilter.$or || []),
       { fullName: sRegex },
       { phoneNumber: sRegex },
       { email: sRegex },
       { companyName: sRegex }
     ];
+    if (accessFilter.$or) {
+      accessFilter.$and = [{ $or: accessFilter.$or }, { $or: searchOr }];
+      delete accessFilter.$or;
+    } else {
+      accessFilter.$or = searchOr;
+    }
   }
 
   // By default, exclude heavy subdocuments for high-speed listing
-  let projection = "-activityLogs -leadNotes -reminders";
+  let projection = "-activityLogs -leadNotes";
   if (query.full === "true" || query.includeDetails === "true") {
     projection = "";
   }

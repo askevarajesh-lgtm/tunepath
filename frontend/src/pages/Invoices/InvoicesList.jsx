@@ -22,6 +22,11 @@ const InvoicesList = () => {
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState(undefined);
   const [selectedMonth, setSelectedMonth] = useState(null);
 
+  // Pagination states
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [total, setTotal] = useState(0);
+
   const { canAdd, canEdit, canDelete, canView } = useActionPermissions('/invoices');
 
   const handleView = (invoice) => {
@@ -34,7 +39,7 @@ const InvoicesList = () => {
 
   useEffect(() => {
     fetchInvoices();
-  }, [searchText, selectedClient, selectedInvoiceStatus, selectedPaymentStatus, selectedMonth]);
+  }, [searchText, selectedClient, selectedInvoiceStatus, selectedPaymentStatus, selectedMonth, page, limit]);
 
   const fetchClients = async () => {
     try {
@@ -50,7 +55,7 @@ const InvoicesList = () => {
   const fetchInvoices = async () => {
     try {
       setLoading(true);
-      const params = {};
+      const params = { page, limit };
       if (searchText.trim()) params.search = searchText.trim();
       if (selectedClient && selectedClient !== 'all') params.clientId = selectedClient;
       if (selectedInvoiceStatus && selectedInvoiceStatus !== 'all') params.invoiceStatus = selectedInvoiceStatus;
@@ -60,6 +65,7 @@ const InvoicesList = () => {
       const res = await api.get('/invoices', { params });
       if (res.data?.success) {
         setInvoices(res.data.data || []);
+        setTotal(res.data.total || 0);
       }
     } catch (error) {
       console.error('Failed to fetch invoices:', error);
@@ -75,6 +81,7 @@ const InvoicesList = () => {
     setSelectedInvoiceStatus(undefined);
     setSelectedPaymentStatus(undefined);
     setSelectedMonth(null);
+    setPage(1);
   };
 
   const handleDelete = async (id) => {
@@ -156,7 +163,7 @@ const InvoicesList = () => {
               placeholder="Search Invoice #..."
               prefix={<SearchOutlined />}
               value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
+              onChange={(e) => { setSearchText(e.target.value); setPage(1); }}
               allowClear
             />
           </Col>
@@ -165,7 +172,7 @@ const InvoicesList = () => {
               style={{ width: '100%' }}
               placeholder="Filter by Client"
               value={selectedClient}
-              onChange={(val) => setSelectedClient(val)}
+              onChange={(val) => { setSelectedClient(val); setPage(1); }}
               allowClear
               showSearch
               optionFilterProp="children"
@@ -183,7 +190,7 @@ const InvoicesList = () => {
               style={{ width: '100%' }}
               placeholder="Invoice Status"
               value={selectedInvoiceStatus}
-              onChange={(val) => setSelectedInvoiceStatus(val)}
+              onChange={(val) => { setSelectedInvoiceStatus(val); setPage(1); }}
               allowClear
             >
               <Select.Option value="all">All Invoice Statuses</Select.Option>
@@ -199,7 +206,7 @@ const InvoicesList = () => {
               style={{ width: '100%' }}
               placeholder="Payment Status"
               value={selectedPaymentStatus}
-              onChange={(val) => setSelectedPaymentStatus(val)}
+              onChange={(val) => { setSelectedPaymentStatus(val); setPage(1); }}
               allowClear
             >
               <Select.Option value="all">All Payment Statuses</Select.Option>
@@ -214,7 +221,7 @@ const InvoicesList = () => {
               style={{ width: '100%' }}
               placeholder="Filter by Month"
               value={selectedMonth}
-              onChange={(date) => setSelectedMonth(date)}
+              onChange={(date) => { setSelectedMonth(date); setPage(1); }}
               format="MMM YYYY"
             />
           </Col>
@@ -256,6 +263,17 @@ const InvoicesList = () => {
             )}
           ]} 
           dataSource={invoices} 
+          pagination={{
+            current: page,
+            pageSize: limit,
+            total: total,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100', '200'],
+            onChange: (p, size) => {
+              setPage(p);
+              setLimit(size);
+            }
+          }}
         />
       </Card>
     </div>

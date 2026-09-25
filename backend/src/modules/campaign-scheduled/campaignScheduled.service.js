@@ -1556,107 +1556,163 @@ async function fetchYoutubeChannelLiveStats(account) {
   let liveLikes = 0;
   let liveComments = 0;
   let liveViews = 0;
+  let directCommentCount = 0;
 
-  let accessToken = null;
+  let youtubeClient = null;
   try {
-    accessToken = await getValidAccessToken(account);
+    youtubeClient = await createYoutubeClientForAccount(account);
   } catch (e) {}
 
+  let accessToken = null;
+  if (!youtubeClient) {
+    try {
+      accessToken = await getValidAccessToken(account);
+    } catch (e) {}
+  }
+
   const apiKey = process.env.YOUTUBE_API_KEY || process.env.GOOGLE_API_KEY || "";
-  let channelItems = [];
-
-  // Attempt 1: Using OAuth access token with mine=true
-  if (accessToken) {
-    try {
-      const chRes = await axios.get("https://www.googleapis.com/youtube/v3/channels", {
-        params: { part: "snippet,statistics,contentDetails", mine: true },
-        headers: { Authorization: `Bearer ${accessToken}` },
-        timeout: 1500,
-      });
-      if (chRes.data?.items?.length > 0) {
-        channelItems = chRes.data.items;
-      }
-    } catch (e) {}
-  }
-
-  // Attempt 2: Using page_id if set
-  if (channelItems.length === 0 && account.page_id) {
-    try {
-      const params = { part: "snippet,statistics,contentDetails", id: account.page_id };
-      if (apiKey) params.key = apiKey;
-      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
-      const chRes = await axios.get("https://www.googleapis.com/youtube/v3/channels", { params, headers, timeout: 1500 });
-      if (chRes.data?.items?.length > 0) {
-        channelItems = chRes.data.items;
-      }
-    } catch (e) {}
-  }
-
-  // Attempt 3: Using username / handle name
-  if (channelItems.length === 0 && (account.username || account.page_name)) {
-    try {
-      let handle = (account.username || account.page_name).trim();
-      if (!handle.startsWith("@")) handle = `@${handle}`;
-      const params = { part: "snippet,statistics,contentDetails", forHandle: handle };
-      if (apiKey) params.key = apiKey;
-      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
-      const chRes = await axios.get("https://www.googleapis.com/youtube/v3/channels", { params, headers, timeout: 1500 });
-      if (chRes.data?.items?.length > 0) {
-        channelItems = chRes.data.items;
-      }
-    } catch (e) {}
-  }
-
   let uploadsPlaylistId = null;
-  if (channelItems.length > 0) {
-    const item = channelItems[0];
-    const subCount = Number(item.statistics?.subscriberCount);
-    if (!isNaN(subCount) && subCount >= 0) {
-      subscribers = subCount;
+
+  if (youtubeClient) {
+    try {
+      // 1. Channel Details
+      let chRes = null;
+      if (account.page_id) {
+        chRes = await youtubeClient.channels.list({
+          part: ["snippet,statistics,contentDetails"],
+          id: [account.page_id],
+        });
+      }
+      if (!chRes?.data?.items?.length) {
+        chRes = await youtubeClient.channels.list({
+          part: ["snippet,statistics,contentDetails"],
+          mine: true,
+        });
+      }
+      const item = chRes?.data?.items?.[0];
+      if (item) {
+        const subCount = Number(item.statistics?.subscriberCount);
+        if (!isNaN(subCount) && subCount >= 0) {
+          subscribers = subCount;
+        }
+        uploadsPlaylistId = item.contentDetails?.relatedPlaylists?.uploads || null;
+      }
+
+      // 2. Direct Comment Threads Count for Channel
+      if (account.page_id) {
+        try {
+          const ctRes = await youtubeClient.commentThreads.list({
+            part: ["snippet"],
+            allThreadsRelatedToChannelId: account.page_id,
+            maxResults: 100,
+          });
+          const ctItems = ctRes.data?.items || [];
+          ctItems.forEach((it) => {
+            directCommentCount += 1 + Number(it.snippet?.totalReplyCount || 0);
+          });
+        } catch (ctErr) {
+          console.warn("[YouTube Live Stats] Comment threads count error:", ctErr.message);
+        }
+      }
+
+      // 3. Paginated Video Metrics from Uploads Playlist
+      if (uploadsPlaylistId) {
+        let videoIds = [];
+        let nextPageToken = undefined;
+        while (videoIds.length < 150) {
+          const plRes = await youtubeClient.playlistItems.list({
+            part: ["contentDetails"],
+            playlistId: uploadsPlaylistId,
+            maxResults: 50,
+            pageToken: nextPageToken,
+          });
+          const vItems = plRes.data?.items || [];
+          vItems.forEach((v) => {
+            if (v.contentDetails?.videoId) videoIds.push(v.contentDetails.videoId);
+          });
+          nextPageToken = plRes.data?.nextPageToken;
+          if (!nextPageToken || vItems.length === 0) break;
+        }
+
+        for (let i = 0; i < videoIds.length; i += 50) {
+          const chunk = videoIds.slice(i, i + 50);
+          const vRes = await youtubeClient.videos.list({
+            part: ["statistics"],
+            id: chunk,
+          });
+          (vRes.data?.items || []).forEach((v) => {
+            liveLikes += Number(v.statistics?.likeCount || 0);
+            liveComments += Number(v.statistics?.commentCount || 0);
+            liveViews += Number(v.statistics?.viewCount || 0);
+          });
+        }
+      }
+    } catch (ytClientErr) {
+      console.warn("[YouTube Live Stats] Client stats error:", ytClientErr.message);
     }
-    uploadsPlaylistId = item.contentDetails?.relatedPlaylists?.uploads || null;
   }
 
-  // Fetch video metrics for channel
-  let videoIds = [];
-  if (uploadsPlaylistId) {
-    try {
-      const params = { part: "contentDetails", playlistId: uploadsPlaylistId, maxResults: 25 };
-      if (apiKey) params.key = apiKey;
-      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
-      const plRes = await axios.get("https://www.googleapis.com/youtube/v3/playlistItems", { params, headers, timeout: 1500 });
-      if (plRes.data?.items) {
-        videoIds = plRes.data.items.map((it) => it.contentDetails?.videoId).filter(Boolean);
-      }
-    } catch (e) {}
+  // Fallback if client wasn't available or returned no metrics
+  if (liveLikes === 0 && liveComments === 0 && directCommentCount === 0) {
+    let channelItems = [];
+    if (accessToken) {
+      try {
+        const chRes = await axios.get("https://www.googleapis.com/youtube/v3/channels", {
+          params: { part: "snippet,statistics,contentDetails", mine: true },
+          headers: { Authorization: `Bearer ${accessToken}` },
+          timeout: 4000,
+        });
+        if (chRes.data?.items?.length > 0) channelItems = chRes.data.items;
+      } catch (e) {}
+    }
+
+    if (channelItems.length === 0 && account.page_id) {
+      try {
+        const params = { part: "snippet,statistics,contentDetails", id: account.page_id };
+        if (apiKey) params.key = apiKey;
+        const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+        const chRes = await axios.get("https://www.googleapis.com/youtube/v3/channels", { params, headers, timeout: 4000 });
+        if (chRes.data?.items?.length > 0) channelItems = chRes.data.items;
+      } catch (e) {}
+    }
+
+    if (channelItems.length > 0) {
+      const item = channelItems[0];
+      const subCount = Number(item.statistics?.subscriberCount);
+      if (!isNaN(subCount) && subCount >= 0) subscribers = subCount;
+      uploadsPlaylistId = item.contentDetails?.relatedPlaylists?.uploads || uploadsPlaylistId;
+    }
+
+    let videoIds = [];
+    if (uploadsPlaylistId) {
+      try {
+        const params = { part: "contentDetails", playlistId: uploadsPlaylistId, maxResults: 50 };
+        if (apiKey) params.key = apiKey;
+        const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+        const plRes = await axios.get("https://www.googleapis.com/youtube/v3/playlistItems", { params, headers, timeout: 4000 });
+        if (plRes.data?.items) {
+          videoIds = plRes.data.items.map((it) => it.contentDetails?.videoId).filter(Boolean);
+        }
+      } catch (e) {}
+    }
+
+    if (videoIds.length > 0) {
+      try {
+        const params = { part: "statistics", id: videoIds.slice(0, 50).join(",") };
+        if (apiKey) params.key = apiKey;
+        const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
+        const vRes = await axios.get("https://www.googleapis.com/youtube/v3/videos", { params, headers, timeout: 4000 });
+        const vItems = vRes.data?.items || [];
+        vItems.forEach((v) => {
+          liveLikes += Number(v.statistics?.likeCount || 0);
+          liveComments += Number(v.statistics?.commentCount || 0);
+          liveViews += Number(v.statistics?.viewCount || 0);
+        });
+      } catch (e) {}
+    }
   }
 
-  if (videoIds.length === 0 && account.page_id) {
-    try {
-      const params = { part: "id", channelId: account.page_id, maxResults: 25, type: "video", order: "date" };
-      if (apiKey) params.key = apiKey;
-      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
-      const srRes = await axios.get("https://www.googleapis.com/youtube/v3/search", { params, headers, timeout: 1500 });
-      if (srRes.data?.items) {
-        videoIds = srRes.data.items.map((it) => it.id?.videoId).filter(Boolean);
-      }
-    } catch (e) {}
-  }
-
-  if (videoIds.length > 0) {
-    try {
-      const params = { part: "statistics", id: videoIds.join(",") };
-      if (apiKey) params.key = apiKey;
-      const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
-      const vRes = await axios.get("https://www.googleapis.com/youtube/v3/videos", { params, headers, timeout: 1500 });
-      const vItems = vRes.data?.items || [];
-      vItems.forEach((v) => {
-        liveLikes += Number(v.statistics?.likeCount || 0);
-        liveComments += Number(v.statistics?.commentCount || 0);
-        liveViews += Number(v.statistics?.viewCount || 0);
-      });
-    } catch (e) {}
-  }
+  liveComments = Math.max(liveComments, directCommentCount);
 
   // Persist updated subscriber count to account in DB if changed
   if (subscribers > 0 && subscribers !== account.followers) {
@@ -1963,65 +2019,113 @@ async function getFacebookPostMetrics(account, externalId) {
   if (!account || !externalId) return { likes: 0, comments: 0, shares: 0 };
 
   try {
-    let postRes = { data: {} };
-    try {
-      postRes = await axios.get(`${META_GRAPH}/${externalId}`, {
-        params: {
-          fields: "message,created_time,shares",
-          access_token: account.access_token,
-        },
-      });
-    } catch (e0) {}
-
-    let likesCount = 0;
-    try {
-      const rxRes = await axios.get(`${META_GRAPH}/${externalId}/reactions`, {
-        params: {
-          summary: "true",
-          access_token: account.access_token,
-        },
-      });
-      likesCount = rxRes.data?.summary?.total_count || 0;
-    } catch (e1) {
-      try {
-        const likesRes = await axios.get(`${META_GRAPH}/${externalId}/likes`, {
-          params: {
-            summary: "true",
-            access_token: account.access_token,
-          },
-        });
-        likesCount = likesRes.data?.summary?.total_count || 0;
-      } catch (e2) {}
+    const idCandidates = [externalId];
+    if (account.page_id && !String(externalId).includes("_")) {
+      idCandidates.push(`${account.page_id}_${externalId}`);
     }
 
+    let likesCount = 0;
     let totalComments = 0;
-    try {
-      const commentsRes = await axios.get(
-        `${META_GRAPH}/${externalId}/comments`,
-        {
-          params: {
-            fields:
-              "message,from,created_time,comments.limit(50){message,from,created_time}",
-            access_token: account.access_token,
-          },
-        },
-      );
+    let sharesCount = 0;
+    let resolvedUrl = `https://www.facebook.com/${externalId}`;
 
-      if (commentsRes.data?.data && commentsRes.data.data.length > 0) {
-        commentsRes.data.data.forEach((comment) => {
-          totalComments++;
-          if (comment.comments && comment.comments.data) {
-            totalComments += comment.comments.data.length;
-          }
-        });
+    for (const candId of idCandidates) {
+      try {
+        const postRes = await executeMetaGraphApi(
+          (token) =>
+            axios.get(`${META_GRAPH}/${candId}`, {
+              params: {
+                fields: "message,created_time,shares,permalink_url",
+                access_token: token,
+              },
+            }),
+          account,
+        );
+        if (postRes.data?.shares?.count) {
+          sharesCount = postRes.data.shares.count;
+        }
+        if (postRes.data?.permalink_url) {
+          resolvedUrl = postRes.data.permalink_url;
+        }
+      } catch (e0) {}
+
+      // Reactions / Likes summary
+      try {
+        const rxRes = await executeMetaGraphApi(
+          (token) =>
+            axios.get(`${META_GRAPH}/${candId}/reactions`, {
+              params: {
+                summary: "total_count",
+                access_token: token,
+              },
+            }),
+          account,
+        );
+        likesCount = rxRes.data?.summary?.total_count || 0;
+      } catch (e1) {
+        try {
+          const likesRes = await executeMetaGraphApi(
+            (token) =>
+              axios.get(`${META_GRAPH}/${candId}/likes`, {
+                params: {
+                  summary: "true",
+                  access_token: token,
+                },
+              }),
+            account,
+          );
+          likesCount = likesRes.data?.summary?.total_count || 0;
+        } catch (e2) {}
       }
-    } catch (cErr) {}
+
+      // Comments summary
+      try {
+        const commentsRes = await executeMetaGraphApi(
+          (token) =>
+            axios.get(`${META_GRAPH}/${candId}/comments`, {
+              params: {
+                summary: "true",
+                filter: "stream",
+                access_token: token,
+              },
+            }),
+          account,
+        );
+
+        if (typeof commentsRes.data?.summary?.total_count === "number") {
+          totalComments = commentsRes.data.summary.total_count;
+        } else if (commentsRes.data?.data && Array.isArray(commentsRes.data.data)) {
+          totalComments = commentsRes.data.data.length;
+        }
+      } catch (cErr) {
+        try {
+          const commentsRes = await executeMetaGraphApi(
+            (token) =>
+              axios.get(`${META_GRAPH}/${candId}/comments`, {
+                params: {
+                  fields: "id",
+                  access_token: token,
+                  limit: 100,
+                },
+              }),
+            account,
+          );
+          if (commentsRes.data?.data) {
+            totalComments = commentsRes.data.data.length;
+          }
+        } catch (cErr2) {}
+      }
+
+      if (likesCount > 0 || totalComments > 0 || sharesCount > 0) {
+        break;
+      }
+    }
 
     return {
       likes: likesCount,
       comments: totalComments,
-      shares: postRes.data?.shares?.count || 0,
-      url: `https://www.facebook.com/${externalId}`,
+      shares: sharesCount,
+      url: resolvedUrl,
     };
   } catch (err) {
     console.error(
@@ -2405,6 +2509,387 @@ async function getPostYoutubeComments(
   }
 
   return comments.slice(0, limit);
+}
+
+async function getPostAllComments(
+  post,
+  limit = 50,
+  companyId = post?.companyId,
+  clientCompanyId = post?.clientCompanyId || null,
+) {
+  if (!post) return [];
+  const publications = post.platform_publications || {};
+  const platformIds = new Set([
+    ...Object.keys(publications),
+    ...(Array.isArray(post.platforms) ? post.platforms : []),
+  ]);
+  const comments = [];
+
+  // 1. YouTube comments
+  try {
+    const ytComments = await getPostYoutubeComments(
+      post,
+      limit,
+      companyId,
+      clientCompanyId,
+    );
+    ytComments.forEach((c) => {
+      comments.push({
+        id: c.id,
+        platform: "youtube",
+        author: c.author || "YouTube User",
+        username: `@${(c.author || "user").toLowerCase().replace(/\s+/g, "")}`,
+        text: c.text || "",
+        publishedAt: c.publishedAt,
+        likeCount: c.likeCount || 0,
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(c.author || "YouTube")}&background=ef4444&color=fff`,
+        accountId: c.accountId,
+      });
+    });
+  } catch (err) {
+    console.warn("[Comments] Error fetching YouTube comments:", err.message);
+  }
+
+  // 2. Platform publications (Instagram, Facebook)
+  for (const accountId of platformIds) {
+    const pub = publications[accountId] || {};
+    let externalId =
+      pub?.externalId ||
+      pub?.id ||
+      pub?.media_id ||
+      post?.external_id ||
+      post?.externalId ||
+      null;
+
+    const account = await Account.findOne({
+      id: accountId,
+      ...buildScopeQuery(companyId, clientCompanyId),
+    }).lean();
+    if (!account || !account.access_token) continue;
+
+    const isInstagram =
+      pub.platform === "instagram" || account.platform === "instagram";
+    const isFacebook =
+      pub.platform === "facebook" || account.platform === "facebook";
+
+    if (isInstagram) {
+      try {
+        let mediaIdToFetch = externalId;
+
+        // Fallback: If externalId is missing or composite, find media by caption from user's recent IG media
+        if (!mediaIdToFetch && account.ig_user_id) {
+          const recentMediaRes = await axios.get(
+            `${META_GRAPH}/${account.ig_user_id}/media`,
+            {
+              params: {
+                fields: "id,caption,timestamp",
+                access_token: account.access_token,
+                limit: 25,
+              },
+              timeout: 3000,
+            },
+          ).catch(() => null);
+
+          const list = recentMediaRes?.data?.data || [];
+          const postCaption = (post.caption || post.content || "").trim().toLowerCase();
+          const match = list.find((m) => {
+            const mCap = (m.caption || "").trim().toLowerCase();
+            return (
+              (postCaption && mCap && (mCap.includes(postCaption) || postCaption.includes(mCap))) ||
+              (post.created_at && Math.abs(new Date(m.timestamp) - new Date(post.created_at)) < 3600000)
+            );
+          });
+          if (match) mediaIdToFetch = match.id;
+        }
+
+        if (mediaIdToFetch) {
+          let comms = [];
+          try {
+            const mediaRes = await axios.get(
+              `${META_GRAPH}/${mediaIdToFetch}/comments`,
+              {
+                params: {
+                  fields: "id,text,username,timestamp,like_count,from{id,username,name}",
+                  access_token: account.access_token,
+                  limit: Math.min(limit, 50),
+                },
+                timeout: 3000,
+              },
+            );
+            comms = mediaRes.data?.data || [];
+          } catch (firstErr) {
+            // Fallback without from{...} if older graph version rejects subfield
+            const mediaRes = await axios.get(
+              `${META_GRAPH}/${mediaIdToFetch}/comments`,
+              {
+                params: {
+                  fields: "id,text,username,timestamp,like_count,from",
+                  access_token: account.access_token,
+                  limit: Math.min(limit, 50),
+                },
+                timeout: 3000,
+              },
+            ).catch(() => null);
+            comms = mediaRes?.data?.data || [];
+          }
+
+          for (const c of comms) {
+            let uname =
+              c.username ||
+              c.from?.username ||
+              c.from?.name ||
+              c.user?.username ||
+              c.owner?.username ||
+              null;
+
+            // If username is still not resolved, query comment directly
+            if (!uname && c.id) {
+              try {
+                const singleRes = await axios.get(`${META_GRAPH}/${c.id}`, {
+                  params: {
+                    fields: "id,username,from",
+                    access_token: account.access_token,
+                  },
+                  timeout: 2000,
+                });
+                uname = singleRes.data?.username || singleRes.data?.from?.username || singleRes.data?.from?.name || null;
+              } catch (singleErr) {}
+            }
+
+            const displayName = uname || "Instagram User";
+            const handle = uname ? `@${uname}` : `@user_${String(c.id).slice(-4)}`;
+
+            comments.push({
+              id: c.id,
+              platform: "instagram",
+              author: displayName,
+              username: handle,
+              text: c.text || "",
+              publishedAt: c.timestamp || null,
+              likeCount: c.like_count || 0,
+              avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=ec4899&color=fff`,
+              accountId: account.id,
+            });
+          }
+        }
+      } catch (igErr) {
+        console.warn(
+          `[Comments] IG comments error for ${externalId || account.id}:`,
+          igErr.message,
+        );
+      }
+    } else if (isFacebook) {
+      try {
+        let fbPostIdToFetch = externalId;
+
+        // Fallback: If externalId missing, find post by message from recent FB posts
+        if (!fbPostIdToFetch && account.page_id) {
+          const recentFbRes = await executeMetaGraphApi(
+            (token) =>
+              axios.get(`${META_GRAPH}/${account.page_id}/published_posts`, {
+                params: {
+                  fields: "id,message,created_time",
+                  access_token: token,
+                  limit: 25,
+                },
+                timeout: 5000,
+              }),
+            account,
+          ).catch(() => null);
+
+          const list = recentFbRes?.data?.data || [];
+          const postMsg = (post.caption || post.content || "").trim().toLowerCase();
+          const match = list.find((p) => {
+            const pMsg = (p.message || "").trim().toLowerCase();
+            return (
+              (postMsg && pMsg && (pMsg.includes(postMsg) || postMsg.includes(pMsg))) ||
+              (post.created_at && Math.abs(new Date(p.created_time) - new Date(post.created_at)) < 3600000)
+            );
+          });
+          if (match) fbPostIdToFetch = match.id;
+        }
+
+        if (fbPostIdToFetch) {
+          const idCandidates = [fbPostIdToFetch];
+          if (account.page_id && !String(fbPostIdToFetch).includes("_")) {
+            idCandidates.push(`${account.page_id}_${fbPostIdToFetch}`);
+          }
+
+          let comms = [];
+          for (const candId of idCandidates) {
+            try {
+              const fbRes = await executeMetaGraphApi(
+                (token) =>
+                  axios.get(`${META_GRAPH}/${candId}/comments`, {
+                    params: {
+                      fields:
+                        "id,message,from,created_time,like_count,comment_count,comments{id,message,from,created_time,like_count}",
+                      access_token: token,
+                      limit: Math.min(limit, 50),
+                    },
+                    timeout: 5000,
+                  }),
+                account,
+              );
+              if (fbRes.data?.data && fbRes.data.data.length > 0) {
+                comms = fbRes.data.data;
+                break;
+              } else if (fbRes.data?.data) {
+                comms = fbRes.data.data;
+              }
+            } catch (err) {
+              try {
+                const fbRes = await executeMetaGraphApi(
+                  (token) =>
+                    axios.get(`${META_GRAPH}/${candId}/comments`, {
+                      params: {
+                        fields: "id,message,from,created_time,like_count",
+                        access_token: token,
+                        limit: Math.min(limit, 50),
+                      },
+                      timeout: 5000,
+                    }),
+                  account,
+                );
+                if (fbRes.data?.data) {
+                  comms = fbRes.data.data;
+                  break;
+                }
+              } catch (innerErr) {}
+            }
+          }
+
+          comms.forEach((c) => {
+            const authorName =
+              c.from?.name || c.from?.username || "Facebook User";
+            const uname =
+              c.from?.username ||
+              authorName.toLowerCase().replace(/\s+/g, "");
+            comments.push({
+              id: c.id,
+              platform: "facebook",
+              author: authorName,
+              username: `@${uname}`,
+              text: c.message || "",
+              publishedAt: c.created_time || null,
+              likeCount: c.like_count || 0,
+              avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=1877f2&color=fff`,
+              accountId: account.id,
+            });
+
+            if (c.comments?.data && Array.isArray(c.comments.data)) {
+              c.comments.data.forEach((subC) => {
+                const subAuthor =
+                  subC.from?.name || subC.from?.username || "Facebook User";
+                const subUname =
+                  subC.from?.username ||
+                  subAuthor.toLowerCase().replace(/\s+/g, "");
+                comments.push({
+                  id: subC.id,
+                  parentId: c.id,
+                  platform: "facebook",
+                  author: subAuthor,
+                  username: `@${subUname}`,
+                  text: subC.message || "",
+                  publishedAt: subC.created_time || null,
+                  likeCount: subC.like_count || 0,
+                  avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(subAuthor)}&background=1877f2&color=fff`,
+                  accountId: account.id,
+                });
+              });
+            }
+          });
+        }
+      } catch (fbErr) {
+        console.warn(
+          `[Comments] FB comments error for ${externalId || account.id}:`,
+          fbErr.message,
+        );
+      }
+    }
+  }
+
+  return comments.slice(0, limit);
+}
+
+async function replyToSocialComment({
+  commentId,
+  message,
+  platform,
+  accountId,
+  companyId,
+  clientCompanyId = null,
+}) {
+  if (!commentId || !message) {
+    throw new Error("Missing commentId or message");
+  }
+
+  let account = null;
+  if (accountId) {
+    account = await Account.findOne({
+      id: accountId,
+      ...buildScopeQuery(companyId, clientCompanyId),
+    }).lean();
+  }
+  if (!account && platform) {
+    account = await Account.findOne({
+      platform,
+      access_token: { $exists: true, $ne: "" },
+      ...buildScopeQuery(companyId, clientCompanyId),
+    }).lean();
+  }
+  if (!account) {
+    account = await Account.findOne({
+      access_token: { $exists: true, $ne: "" },
+      ...buildScopeQuery(companyId, clientCompanyId),
+    }).lean();
+  }
+
+  if (!account) {
+    throw new Error("No connected social account found to publish reply");
+  }
+
+  const effectivePlatform = platform || account.platform;
+
+  if (effectivePlatform === "instagram") {
+    const res = await executeMetaGraphApi(
+      (token) =>
+        axios.post(`${META_GRAPH}/${commentId}/replies`, null, {
+          params: {
+            message: message,
+            access_token: token,
+          },
+        }),
+      account,
+    );
+    return { success: true, replyId: res.data?.id, platform: "instagram" };
+  } else if (effectivePlatform === "facebook") {
+    const res = await executeMetaGraphApi(
+      (token) =>
+        axios.post(`${META_GRAPH}/${commentId}/comments`, null, {
+          params: {
+            message: message,
+            access_token: token,
+          },
+        }),
+      account,
+    );
+    return { success: true, replyId: res.data?.id, platform: "facebook" };
+  } else if (effectivePlatform === "youtube") {
+    const youtube = await createYoutubeClientForAccount(account);
+    const res = await youtube.comments.insert({
+      part: ["snippet"],
+      requestBody: {
+        snippet: {
+          parentId: commentId,
+          textOriginal: message,
+        },
+      },
+    });
+    return { success: true, replyId: res.data?.id, platform: "youtube" };
+  } else {
+    throw new Error(`Platform ${effectivePlatform} does not support API comment replies`);
+  }
 }
 
 function hasLinkedInPublication(post) {
@@ -2980,11 +3465,16 @@ module.exports = {
   dispatchPost,
   refreshPublishedPostMetrics,
   getPostYoutubeComments,
+  getPostAllComments,
+  replyToSocialComment,
   migrateLinkedInPublishedPostMetrics,
   processDuePosts,
   startCampaignScheduler,
   getValidAccessToken,
   refreshYoutubeAccessToken,
   fetchYoutubeChannelLiveStats,
+  executeMetaGraphApi,
+  createYoutubeClientForAccount,
+  refreshFacebookPageToken,
   migrateLegacyPosts,
 };

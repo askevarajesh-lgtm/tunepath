@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
 import {
   Table, Button, Space, Tag, Input, Modal, Switch,
-  Card, Tabs, Typography, Form, Select, Checkbox, Popconfirm, message
+  Card, Tabs, Typography, Form, Select, Checkbox, Popconfirm, message,
+  Segmented, Row, Col, Dropdown, Pagination, Empty, Tooltip, Spin
 } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, EyeOutlined,
-  LoginOutlined, StopOutlined, CheckCircleOutlined, ApiOutlined, SafetyCertificateOutlined
+  LoginOutlined, StopOutlined, CheckCircleOutlined, ApiOutlined, SafetyCertificateOutlined,
+  AppstoreOutlined, UnorderedListOutlined, MoreOutlined
 } from '@ant-design/icons';
 import { motion } from 'framer-motion';
-import { Search } from 'lucide-react';
+import { Search, Mail, Phone } from 'lucide-react';
 import api from '../../../services/api';
 import { useAuth } from '../../../contexts/AuthContext';
 import PhoneInput from '../../../components/common/PhoneInput';
@@ -31,6 +33,46 @@ const getRoleColor = (role) => {
     client: 'default'
   };
   return colors[role] || 'default';
+};
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return '-';
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: '2-digit',
+      year: 'numeric'
+    });
+  } catch (e) {
+    return '-';
+  }
+};
+
+const getInitials = (name) => {
+  if (!name) return 'U';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+};
+
+const getAvatarBg = (name = '') => {
+  const gradients = [
+    'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+    'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)',
+    'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)',
+    'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+    'linear-gradient(135deg, #8b5cf6 0%, #d946ef 100%)'
+  ];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return gradients[Math.abs(hash) % gradients.length];
 };
 
 const UserManagementTab = () => {
@@ -203,8 +245,13 @@ const UserManagementTab = () => {
     fetchData();
   }, []);
 
+  // View mode & pagination for users
+  const [viewMode, setViewMode] = useState('card');
+  const [userPage, setUserPage] = useState(1);
+  const [userPageSize, setUserPageSize] = useState(8);
+
   // Handlers
-  const handleToggleUserStatus = async (record, isClient = false) => {
+  const handleToggleUserStatus = async (record) => {
     try {
       await api.put(`/users/${record._id}`, { isActive: !record.isActive });
       message.success('Status updated');
@@ -214,7 +261,7 @@ const UserManagementTab = () => {
     }
   };
 
-  const handleDeleteUser = async (id, isClient = false) => {
+  const handleDeleteUser = async (id) => {
     try {
       await api.delete(`/users/${id}`);
       message.success('User deleted');
@@ -245,6 +292,71 @@ const UserManagementTab = () => {
       message.error(err.response?.data?.error || 'Failed to login as user');
     }
   };
+
+  const handleOpenEditUser = (record) => {
+    setUserModal({ open: true, record });
+    let formRole = record.role;
+    if (record.customRoleId) {
+      const customRole = roles.find(r => r._id === record.customRoleId);
+      if (customRole) formRole = customRole.roleKey || customRole._id;
+    }
+    setUserCountryCode(record.countryCode || '91');
+    setUserCountryIso('');
+    userForm.setFieldsValue({
+      ...record,
+      role: formRole,
+      status: record.isActive ? 'active' : 'inactive',
+      viewAllClients: record.viewAllClients || false
+    });
+  };
+
+  const handleOpenViewUser = (record) => {
+    setViewUserModal({ open: true, record });
+  };
+
+  const getDisplayRole = (record) => {
+    let displayRole = record.roleName || record.role;
+    if (record.customRoleId) {
+      const customRole = roles.find(r => r._id === record.customRoleId);
+      if (customRole) displayRole = customRole.roleName || customRole.roleKey || displayRole;
+    }
+    if (!displayRole) displayRole = 'Member';
+    return typeof displayRole === 'string' ? displayRole.replace(/_/g, ' ') : 'Member';
+  };
+
+  const getCardMenuItems = (record) => [
+    {
+      key: 'login-as-user',
+      icon: <LoginOutlined style={{ color: 'var(--accent-primary)' }} />,
+      label: 'Login as User',
+      onClick: () => handleImpersonate(record)
+    },
+    {
+      key: 'toggle-status',
+      icon: record.isActive ? <StopOutlined style={{ color: '#ef4444' }} /> : <CheckCircleOutlined style={{ color: '#10b981' }} />,
+      label: record.isActive ? 'Deactivate User' : 'Activate User',
+      onClick: () => handleToggleUserStatus(record)
+    },
+    {
+      type: 'divider'
+    },
+    {
+      key: 'delete',
+      icon: <DeleteOutlined />,
+      label: 'Delete User',
+      danger: true,
+      onClick: () => {
+        Modal.confirm({
+          title: 'Delete User',
+          content: `Are you sure you want to delete ${record.name}?`,
+          okText: 'Delete',
+          okType: 'danger',
+          cancelText: 'Cancel',
+          onOk: () => handleDeleteUser(record._id)
+        });
+      }
+    }
+  ];
 
   // User Columns
   const userColumns = [
@@ -281,25 +393,9 @@ const UserManagementTab = () => {
       title: <strong style={{ color: 'var(--text-secondary)' }}>ACTIONS</strong>, key: 'actions', align: 'right', fixed: 'right',
       render: (_, record) => (
         <Space size="middle">
-          <Button type="text" icon={<EyeOutlined />} onClick={() => setViewUserModal({ open: true, record })} style={{ color: 'var(--accent-info)', fontWeight: 600 }}>View</Button>
+          <Button type="text" icon={<EyeOutlined />} onClick={() => handleOpenViewUser(record)} style={{ color: 'var(--accent-info)', fontWeight: 600 }}>View</Button>
           <Button type="text" icon={<LoginOutlined />} onClick={() => handleImpersonate(record)} style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Login as User</Button>
-          <Button type="text" icon={<EditOutlined />} onClick={() => {
-            setUserModal({ open: true, record });
-            let formRole = record.role;
-            if (record.customRoleId) {
-              const customRole = roles.find(r => r._id === record.customRoleId);
-              if (customRole) formRole = customRole.roleKey || customRole._id;
-            }
-            setUserCountryCode(record.countryCode || '91');
-            // Reset ISO to let PhoneInput determine it based on country code
-            setUserCountryIso('');
-            userForm.setFieldsValue({
-              ...record,
-              role: formRole,
-              status: record.isActive ? 'active' : 'inactive',
-              viewAllClients: record.viewAllClients || false
-            });
-          }} style={{ color: 'var(--accent-secondary)', fontWeight: 600 }}>Edit</Button>
+          <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenEditUser(record)} style={{ color: 'var(--accent-secondary)', fontWeight: 600 }}>Edit</Button>
           <Popconfirm title="Delete this user?" onConfirm={() => handleDeleteUser(record._id)}>
             <Button type="text" danger icon={<DeleteOutlined />} style={{ fontWeight: 600 }}>Delete</Button>
           </Popconfirm>
@@ -307,7 +403,6 @@ const UserManagementTab = () => {
       )
     }
   ];
-
 
   // Department Columns
   const deptColumns = [
@@ -530,31 +625,348 @@ const UserManagementTab = () => {
               label: <strong style={{ fontWeight: 600 }}>User</strong>,
               children: (
                 <div>
-                  <div style={{ padding: '24px 24px 0 24px' }}>
+                  <div style={{ padding: '24px 24px 16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
                     <Input
                       placeholder="Search users by name or email..."
                       value={userSearch}
-                      onChange={e => setUserSearch(e.target.value)}
+                      onChange={e => {
+                        setUserSearch(e.target.value);
+                        setUserPage(1);
+                      }}
                       prefix={<Search size={16} color="var(--text-tertiary)" />}
-                      style={{ borderRadius: 10, maxWidth: 400, height: 44, fontWeight: 500 }}
+                      style={{ borderRadius: 10, maxWidth: 380, height: 42, fontWeight: 500, background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+                      allowClear
                     />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <Segmented
+                        value={viewMode}
+                        onChange={setViewMode}
+                        options={[
+                          { label: 'Card View', value: 'card', icon: <AppstoreOutlined /> },
+                          { label: 'List View', value: 'list', icon: <UnorderedListOutlined /> }
+                        ]}
+                        style={{ background: 'var(--bg-tertiary)', padding: 3, borderRadius: 8, fontWeight: 600 }}
+                      />
+                    </div>
                   </div>
-                  <Table
-                    columns={userColumns}
-                    dataSource={filteredUsers}
-                    rowKey="_id"
-                    pagination={{
-                      defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'],
-                      showSizeChanger: true,
-                      pageSizeOptions: ['10', '20', '50'],
-                      showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
-                      position: ['bottomCenter']
-                    }}
-                    style={{ padding: 24 }}
-                    rowClassName={() => 'hover-bg'}
-                    scroll={{ x: 'max-content' }}
-                    loading={loading}
-                  />
+
+                  {viewMode === 'card' ? (
+                    <div style={{ padding: '0 24px 24px 24px' }}>
+                      {loading ? (
+                        <div style={{ textAlign: 'center', padding: '64px 0' }}>
+                          <Spin size="large" />
+                        </div>
+                      ) : filteredUsers.length === 0 ? (
+                        <div style={{ padding: '64px 0', textAlign: 'center' }}>
+                          <Empty description="No users found" />
+                        </div>
+                      ) : (
+                        <>
+                          <Row gutter={[20, 20]}>
+                            {filteredUsers.slice((userPage - 1) * userPageSize, userPage * userPageSize).map((u) => (
+                              <Col xs={24} sm={12} md={12} lg={8} xl={6} key={u._id}>
+                                <div
+                                  style={{
+                                    background: 'var(--bg-secondary)',
+                                    border: '1px solid var(--border-color)',
+                                    borderRadius: 16,
+                                    padding: '20px',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    justifyContent: 'space-between',
+                                    minHeight: 320,
+                                    boxShadow: 'var(--shadow-sm)',
+                                    transition: 'all 0.2s ease'
+                                  }}
+                                  className="hover-card-elevation"
+                                >
+                                  <div>
+                                    {/* Top Header: Profile (Avatar + Name + Role) on Left, Status + 3-dots Menu on Right */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 16 }}>
+                                      {/* Left: Avatar + Name + Role */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                                        {u.avatar ? (
+                                          <img
+                                            src={u.avatar}
+                                            alt={u.name}
+                                            style={{
+                                              width: 44,
+                                              height: 44,
+                                              borderRadius: '50%',
+                                              objectFit: 'cover',
+                                              flexShrink: 0,
+                                              border: '1px solid var(--border-color)'
+                                            }}
+                                          />
+                                        ) : (
+                                          <div
+                                            style={{
+                                              width: 44,
+                                              height: 44,
+                                              borderRadius: '50%',
+                                              background: getAvatarBg(u.name),
+                                              color: '#ffffff',
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'center',
+                                              fontWeight: 700,
+                                              fontSize: 16,
+                                              flexShrink: 0,
+                                              boxShadow: '0 2px 4px rgba(0,0,0,0.06)'
+                                            }}
+                                          >
+                                            {getInitials(u.name)}
+                                          </div>
+                                        )}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <Tooltip title={u.name}>
+                                            <div
+                                              style={{
+                                                fontSize: 15,
+                                                fontWeight: 700,
+                                                color: 'var(--text-primary)',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                textTransform: 'capitalize',
+                                                lineHeight: '1.3'
+                                              }}
+                                            >
+                                              {u.name}
+                                            </div>
+                                          </Tooltip>
+                                          <Tooltip title={getDisplayRole(u)}>
+                                            <div
+                                              style={{
+                                                fontSize: 13,
+                                                fontWeight: 400,
+                                                color: 'var(--text-secondary)',
+                                                marginTop: 2,
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                                textTransform: 'capitalize',
+                                                lineHeight: '1.3'
+                                              }}
+                                            >
+                                              {getDisplayRole(u)}
+                                            </div>
+                                          </Tooltip>
+                                        </div>
+                                      </div>
+
+                                      {/* Right: Status Pill + 3-dots Menu */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, paddingTop: 2 }}>
+                                        <span
+                                          style={{
+                                            fontSize: 11,
+                                            fontWeight: 700,
+                                            letterSpacing: '0.4px',
+                                            padding: '2px 9px',
+                                            borderRadius: 9999,
+                                            background: u.isActive ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                            color: u.isActive ? '#10b981' : '#ef4444',
+                                            textTransform: 'uppercase'
+                                          }}
+                                        >
+                                          {u.isActive ? 'ACTIVE' : 'INACTIVE'}
+                                        </span>
+                                        <Dropdown menu={{ items: getCardMenuItems(u) }} trigger={['click']} placement="bottomRight">
+                                          <Button
+                                            type="text"
+                                            icon={<MoreOutlined style={{ fontSize: 18, color: 'var(--text-tertiary)' }} />}
+                                            style={{
+                                              width: 24,
+                                              height: 24,
+                                              padding: 0,
+                                              display: 'flex',
+                                              alignItems: 'center',
+                                              justifyContent: 'center',
+                                              borderRadius: 6
+                                            }}
+                                          />
+                                        </Dropdown>
+                                      </div>
+                                    </div>
+
+                                    {/* Department & Date of Joining */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+                                      <div>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 2 }}>
+                                          DEPARTMENT
+                                        </div>
+                                        <Tooltip title={u.departmentName || '-'}>
+                                          <div
+                                            style={{
+                                              fontSize: 13,
+                                              fontWeight: 600,
+                                              color: 'var(--text-primary)',
+                                              overflow: 'hidden',
+                                              textOverflow: 'ellipsis',
+                                              whiteSpace: 'nowrap'
+                                            }}
+                                          >
+                                            {u.departmentName || '-'}
+                                          </div>
+                                        </Tooltip>
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 2 }}>
+                                          DATE OF JOINING
+                                        </div>
+                                        <div
+                                          style={{
+                                            fontSize: 13,
+                                            fontWeight: 600,
+                                            color: 'var(--text-primary)',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap'
+                                          }}
+                                        >
+                                          {formatDate(u.createdAt)}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Gray Contact Card */}
+                                    <div
+                                      style={{
+                                        background: 'var(--bg-tertiary)',
+                                        border: '1px solid var(--border-color)',
+                                        borderRadius: 14,
+                                        padding: '12px 16px',
+                                        marginBottom: 16,
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: 8
+                                      }}
+                                    >
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                                        <Mail size={15} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
+                                        <Tooltip title={u.email}>
+                                          <span
+                                            style={{
+                                              fontSize: 12.5,
+                                              fontWeight: 500,
+                                              color: 'var(--text-secondary)',
+                                              overflow: 'hidden',
+                                              textOverflow: 'ellipsis',
+                                              whiteSpace: 'nowrap'
+                                            }}
+                                          >
+                                            {u.email}
+                                          </span>
+                                        </Tooltip>
+                                      </div>
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                                        <Phone size={15} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
+                                        <span
+                                          style={{
+                                            fontSize: 12.5,
+                                            fontWeight: 500,
+                                            color: u.phone ? 'var(--text-secondary)' : 'var(--text-tertiary)',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap'
+                                          }}
+                                        >
+                                          {u.phone ? (u.countryCode ? `+${u.countryCode} ` : '') + u.phone : 'No phone number'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Bottom Action Pill Buttons (Matching Reference) */}
+                                  <div style={{ display: 'flex', gap: 10, marginTop: 'auto' }}>
+                                    <Button
+                                      onClick={() => handleOpenEditUser(u)}
+                                      style={{
+                                        flex: 1,
+                                        height: 38,
+                                        borderRadius: 9999,
+                                        background: 'rgba(59, 130, 246, 0.15)',
+                                        borderColor: 'transparent',
+                                        color: 'var(--accent-primary)',
+                                        fontWeight: 600,
+                                        fontSize: 13,
+                                        boxShadow: 'none'
+                                      }}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      type="primary"
+                                      onClick={() => handleOpenViewUser(u)}
+                                      style={{
+                                        flex: 1,
+                                        height: 38,
+                                        borderRadius: 9999,
+                                        background: 'var(--accent-primary)',
+                                        borderColor: 'var(--accent-primary)',
+                                        color: '#ffffff',
+                                        fontWeight: 600,
+                                        fontSize: 13,
+                                        boxShadow: '0 2px 6px rgba(59, 130, 246, 0.3)'
+                                      }}
+                                    >
+                                      View
+                                    </Button>
+                                  </div>
+                                </div>
+                              </Col>
+                            ))}
+                          </Row>
+
+                          {/* Pagination Footer (Matching Reference) */}
+                          <div
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              marginTop: 24,
+                              padding: '0 4px',
+                              flexWrap: 'wrap',
+                              gap: 12
+                            }}
+                          >
+                            <Text type="secondary" style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>
+                              Showing {filteredUsers.length === 0 ? 0 : (userPage - 1) * userPageSize + 1} to {Math.min(userPage * userPageSize, filteredUsers.length)} of {filteredUsers.length} entries
+                            </Text>
+                            <Pagination
+                              current={userPage}
+                              pageSize={userPageSize}
+                              total={filteredUsers.length}
+                              onChange={(page, pageSize) => {
+                                setUserPage(page);
+                                setUserPageSize(pageSize);
+                              }}
+                              showSizeChanger
+                              pageSizeOptions={['8', '12', '16', '24', '48']}
+                              showLessItems
+                            />
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <Table
+                      columns={userColumns}
+                      dataSource={filteredUsers}
+                      rowKey="_id"
+                      pagination={{
+                        defaultPageSize: 10,
+                        showSizeChanger: true,
+                        pageSizeOptions: ['10', '20', '50', '100'],
+                        showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
+                        position: ['bottomCenter']
+                      }}
+                      style={{ padding: 24 }}
+                      rowClassName={() => 'hover-bg'}
+                      scroll={{ x: 'max-content' }}
+                      loading={loading}
+                    />
+                  )}
                 </div>
               )
             },
@@ -569,7 +981,7 @@ const UserManagementTab = () => {
                       value={deptSearch}
                       onChange={e => setDeptSearch(e.target.value)}
                       prefix={<Search size={16} color="var(--text-tertiary)" />}
-                      style={{ borderRadius: 10, maxWidth: 400, height: 44, fontWeight: 500 }}
+                      style={{ borderRadius: 10, maxWidth: 400, height: 44, fontWeight: 500, background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                     />
                     <Button type="primary" icon={<PlusOutlined />} onClick={() => { setDeptModal({ open: true, record: null }); deptForm.resetFields(); deptForm.setFieldsValue({ status: 'active' }); }} style={{ background: 'var(--accent-primary)', border: 'none', borderRadius: 8, fontWeight: 700, height: 40, padding: '0 24px' }}>
                       Add Department
@@ -605,7 +1017,7 @@ const UserManagementTab = () => {
                       value={roleSearch}
                       onChange={e => setRoleSearch(e.target.value)}
                       prefix={<Search size={16} color="var(--text-tertiary)" />}
-                      style={{ borderRadius: 10, maxWidth: 400, height: 44, fontWeight: 500 }}
+                      style={{ borderRadius: 10, maxWidth: 400, height: 44, fontWeight: 500, background: 'var(--bg-tertiary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
                     />
                     <Button type="primary" icon={<PlusOutlined />} onClick={() => { setRoleModal({ open: true, record: null }); roleForm.resetFields(); roleForm.setFieldsValue({ status: 'active' }); }} style={{ background: 'var(--accent-primary)', border: 'none', borderRadius: 8, fontWeight: 700, height: 40, padding: '0 24px' }}>
                       Add Role
@@ -986,6 +1398,12 @@ const UserManagementTab = () => {
               <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>{viewUserModal.record.email}</div>
             </div>
             <div>
+              <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Phone Number</Text>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>
+                {viewUserModal.record.phone ? (viewUserModal.record.countryCode ? `+${viewUserModal.record.countryCode} ` : '') + viewUserModal.record.phone : '-'}
+              </div>
+            </div>
+            <div>
               <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Role</Text>
               <div style={{ marginTop: 4 }}>
                 <Tag color={getRoleColor(viewUserModal.record.role)} style={{ borderRadius: 6, fontWeight: 700, padding: '2px 8px' }}>
@@ -996,6 +1414,10 @@ const UserManagementTab = () => {
             <div>
               <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Department</Text>
               <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>{viewUserModal.record.departmentName || '-'}</div>
+            </div>
+            <div>
+              <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Date of Joining</Text>
+              <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text-primary)' }}>{formatDate(viewUserModal.record.createdAt)}</div>
             </div>
             <div>
               <Text type="secondary" style={{ fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>Status</Text>
@@ -1011,6 +1433,7 @@ const UserManagementTab = () => {
                 {viewUserModal.record.viewAllClients ? 'Can View All Clients' : 'Assigned Clients Only'}
               </div>
             </div>
+
           </div>
         )}
       </Modal>

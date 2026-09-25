@@ -157,28 +157,27 @@ exports.getBrands = async (req, res, next) => {
         { email: searchRegex }
       ];
     }
-    
-    // Support filtering by status if provided
+
     if (req.query.status) {
-       filter.status = req.query.status;
+      filter.status = req.query.status;
     }
 
-    // Pagination setup
-    const page = parseInt(req.query.page) || 1;
-    // Default to a large limit for backwards compatibility with dropdowns, 
-    // unless explicitly requested to paginate by the frontend list view
-    const limit = req.query.limit ? parseInt(req.query.limit) : (req.query.page ? 10 : 1000);
-    const skip = (page - 1) * limit;
+    const page = req.query.page ? parseInt(req.query.page, 10) : null;
+    const limit = req.query.limit ? parseInt(req.query.limit, 10) : null;
 
-    const totalCount = await User.countDocuments(filter);
+    const totalBrands = await User.countDocuments(filter);
 
-    const brands = await User.find(filter)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
+    let brandsQuery = User.find(filter).sort({ createdAt: -1 })
       .populate('createdBy', 'name role roleName')
       .populate('assignedUsers', 'name email role roleName')
       .lean();
+
+    if (page && limit) {
+      const skip = (page - 1) * limit;
+      brandsQuery = brandsQuery.skip(skip).limit(limit);
+    }
+
+    const brands = await brandsQuery;
 
     const brandIds = brands.map(b => b._id);
     
@@ -223,10 +222,13 @@ exports.getBrands = async (req, res, next) => {
       success: true, 
       count: data.length, 
       data,
-      total: totalCount,
-      page,
-      limit,
-      totalPages: Math.ceil(totalCount / limit)
+      total: totalBrands,
+      pagination: {
+        total: totalBrands,
+        page: page || 1,
+        limit: limit || totalBrands,
+        pages: limit ? Math.ceil(totalBrands / limit) : 1
+      }
     });
   } catch (error) {
     next(error);

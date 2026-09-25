@@ -42,6 +42,9 @@ const KeywordsTab = () => {
 
   // Tracked Keywords State
   const [keywords, setKeywords] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('All');
   const [intentFilter, setIntentFilter] = useState('All');
@@ -79,8 +82,35 @@ const KeywordsTab = () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await seoWorkspaceApi.getKeywords({ projectId, status: statusFilter !== 'All' ? statusFilter : undefined });
-      setKeywords(Array.isArray(data) ? data : []);
+      const params = {
+        projectId,
+        page: currentPage,
+        limit: pageSize
+      };
+      
+      if (statusFilter !== 'All') params.status = statusFilter;
+      if (intentFilter !== 'All') params.intent = intentFilter;
+      if (searchText.trim()) params.search = searchText.trim();
+      
+      if (activeTab === 'tracked') {
+        params.verificationStatusNot = 'CANDIDATE';
+      } else if (activeTab === 'opportunities') {
+        params.verificationStatus = 'CANDIDATE';
+      } else if (activeTab === 'not_ranking') {
+        params.verificationStatus = 'NOT_RANKING';
+      } else if (activeTab === 'unverified') {
+        params.verificationStatus = 'UNVERIFIED';
+      }
+
+      const res = await seoWorkspaceApi.getKeywords(params);
+      
+      if (res.data) {
+        setKeywords(res.data);
+        setTotal(res.total || 0);
+      } else {
+        setKeywords(Array.isArray(res) ? res : []);
+        setTotal(res.length || 0);
+      }
     } catch (err) {
       setError(err?.response?.data?.error || 'Failed to load keywords');
     } finally {
@@ -110,7 +140,12 @@ const KeywordsTab = () => {
         loadClusters();
       }
     }
-  }, [projectId, statusFilter, activeTab]);
+  }, [projectId, statusFilter, intentFilter, searchText, activeTab, currentPage, pageSize]);
+
+  // Reset pagination on tab change or search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchText, statusFilter, intentFilter]);
 
   const runResearch = async () => {
     setRunning(true);
@@ -156,7 +191,7 @@ const KeywordsTab = () => {
     if (projectId) {
       loadDistribution();
     }
-  }, [projectId, keywords]);
+  }, [projectId, activeTab]);
 
   const fetchRelated = async () => {
     if (!relatedInput.trim()) return;
@@ -184,30 +219,10 @@ const KeywordsTab = () => {
     }
   };
 
-  const filteredKeywords = useMemo(() => {
-    let baseList = keywords;
-    if (activeTab === 'tracked') {
-      // Show all keywords that are actively being tracked (not just opportunities)
-      baseList = keywords.filter(k => k.verificationStatus !== 'CANDIDATE');
-    } else if (activeTab === 'opportunities') {
-      baseList = keywords.filter(k => k.verificationStatus === 'CANDIDATE');
-    } else if (activeTab === 'not_ranking') {
-      baseList = keywords.filter(k => k.verificationStatus === 'NOT_RANKING');
-    } else if (activeTab === 'unverified') {
-      baseList = keywords.filter(k => k.verificationStatus === 'UNVERIFIED');
-    }
-
-    return baseList.filter(k => {
-      const matchesSearch = k.keyword.toLowerCase().includes(searchText.toLowerCase());
-      const matchesIntent = intentFilter === 'All' || k.metrics?.intent === intentFilter;
-      return matchesSearch && matchesIntent;
-    });
-  }, [keywords, searchText, intentFilter, activeTab]);
-
   const handleExport = () => {
-    if (!filteredKeywords.length) return message.warning('No data to export');
+    if (!keywords.length) return message.warning('No data to export');
     const csvHeader = 'Keyword,Status,Volume,CPC,KD,Intent,Current Rank,Best Rank,Cluster\n';
-    const csvData = filteredKeywords.map(k =>
+    const csvData = keywords.map(k =>
       `"${k.keyword}","${k.status}","${k.metrics?.searchVolume || 0}","${k.metrics?.cpc || 0}","${k.metrics?.keywordDifficulty || 0}","${k.metrics?.intent || 'unknown'}","${k.ranking?.currentRank || ''}","${k.ranking?.bestRank || ''}","${k.cluster || k.parentKeyword || ''}"`
     ).join('\n');
     const blob = new Blob([csvHeader + csvData], { type: 'text/csv' });
@@ -460,23 +475,27 @@ const KeywordsTab = () => {
                 size="middle"
                 tableLayout="fixed"
                 loading={loading}
-                dataSource={filteredKeywords}
+                dataSource={keywords}
                 columns={columns}
                 sticky={true}
                 scroll={{ x: 'max-content' }}
-                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
-                rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
-                footer={() => {
-                  const baseLength = keywords.filter(k => k.verificationStatus !== 'CANDIDATE').length;
-                  const hiddenCount = baseLength - filteredKeywords.length;
-                  return hiddenCount > 0 ? (
-                    <Text type="secondary">
-                      Showing {filteredKeywords.length} of {baseLength} tracked keywords. {hiddenCount} keywords are hidden due to active filters.
-                    </Text>
-                  ) : (
-                    <Text type="secondary">Showing all {baseLength} tracked keywords.</Text>
-                  );
+                pagination={{ 
+                  current: currentPage,
+                  pageSize: pageSize,
+                  total: total,
+                  showSizeChanger: true, 
+                  pageSizeOptions: ['10', '20', '50', '100', '200'] 
                 }}
+                onChange={(pagination) => {
+                  setCurrentPage(pagination.current);
+                  setPageSize(pagination.pageSize);
+                }}
+                rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
+                footer={() => (
+                  <Text type="secondary">
+                    Showing {keywords.length} of {total} tracked keywords.
+                  </Text>
+                )}
                 locale={{ emptyText: <Empty description="No keywords found. Switch to the Discovery tab to find opportunities." /> }}
               />
             </div>
@@ -498,11 +517,21 @@ const KeywordsTab = () => {
                 size="middle"
                 tableLayout="fixed"
                 loading={loading}
-                dataSource={filteredKeywords}
+                dataSource={keywords}
                 columns={columns}
                 sticky={true}
                 scroll={{ x: 'max-content' }}
-                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '500'] }}
+                pagination={{ 
+                  current: currentPage,
+                  pageSize: pageSize,
+                  total: total,
+                  showSizeChanger: true, 
+                  pageSizeOptions: ['20', '50', '100', '500'] 
+                }}
+                onChange={(pagination) => {
+                  setCurrentPage(pagination.current);
+                  setPageSize(pagination.pageSize);
+                }}
                 rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
                 locale={{ emptyText: <Empty description="No keywords found." /> }}
               />
@@ -525,11 +554,21 @@ const KeywordsTab = () => {
                 size="middle"
                 tableLayout="fixed"
                 loading={loading}
-                dataSource={filteredKeywords}
+                dataSource={keywords}
                 columns={columns}
                 sticky={true}
                 scroll={{ x: 'max-content' }}
-                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '500'] }}
+                pagination={{ 
+                  current: currentPage,
+                  pageSize: pageSize,
+                  total: total,
+                  showSizeChanger: true, 
+                  pageSizeOptions: ['20', '50', '100', '500'] 
+                }}
+                onChange={(pagination) => {
+                  setCurrentPage(pagination.current);
+                  setPageSize(pagination.pageSize);
+                }}
                 rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
                 locale={{ emptyText: <Empty description="No keywords found." /> }}
               />
@@ -556,11 +595,21 @@ const KeywordsTab = () => {
                 size="middle"
                 tableLayout="fixed"
                 loading={loading}
-                dataSource={filteredKeywords}
+                dataSource={keywords}
                 columns={columns}
                 sticky={true}
                 scroll={{ x: 'max-content' }}
-                pagination={{ defaultPageSize: 20, showSizeChanger: true, pageSizeOptions: ['20', '50', '100', '500'] }}
+                pagination={{ 
+                  current: currentPage,
+                  pageSize: pageSize,
+                  total: total,
+                  showSizeChanger: true, 
+                  pageSizeOptions: ['20', '50', '100', '500'] 
+                }}
+                onChange={(pagination) => {
+                  setCurrentPage(pagination.current);
+                  setPageSize(pagination.pageSize);
+                }}
                 rowSelection={{ selectedRowKeys, onChange: setSelectedRowKeys }}
                 locale={{ emptyText: <Empty description="No keyword candidates found." /> }}
               />
@@ -669,7 +718,7 @@ const KeywordsTab = () => {
               </Space>
             </Card>
 
-            <Table
+              <Table
               rowKey="_id"
               size="small"
               dataSource={keywords.filter(k => k.cannibalization?.isCannibalized)}

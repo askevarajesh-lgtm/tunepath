@@ -28,6 +28,7 @@ import {
 } from "@ant-design/icons";
 import {
   useCreateOrUpdateWorkflowConfigMutation,
+  useDeleteWorkflowConfigMutation,
   useGetAllWorkflowConfigsQuery,
 } from "../../api/taskApi";
 import { useGetDepartmentsDynamicQuery, useGetRolesQuery } from "../../api/accessControlApi";
@@ -88,12 +89,14 @@ const WorkflowTemplateManager = () => {
 
   const [createOrUpdateWorkflow, { isLoading: isSaving }] =
     useCreateOrUpdateWorkflowConfigMutation();
+  const [deleteWorkflow, { isLoading: isDeleting }] =
+    useDeleteWorkflowConfigMutation();
 
   const allConfigs = allConfigsData?.data?.configs || [];
 
   // Department options from dynamic departments
   const departmentOptions = useMemo(() => {
-    return departments
+    const opts = departments
       .filter((d) => {
         // Hide "General" from non-admin/client roles
         if (d.slug === "general" || d.name?.toLowerCase() === "general") {
@@ -106,7 +109,17 @@ const WorkflowTemplateManager = () => {
         label: dept.name,
         color: "var(--accent-primary)",
       }));
-  }, [departments, userRole]);
+
+    if (isGlobalRole) {
+      opts.unshift({
+        value: "all",
+        label: "All Departments (Default Workflow)",
+        color: "#1890ff",
+      });
+    }
+
+    return opts;
+  }, [departments, userRole, isGlobalRole]);
 
   // Initialize with default statuses
   useEffect(() => {
@@ -157,7 +170,7 @@ const WorkflowTemplateManager = () => {
     if (editingTemplate) {
       const template = allConfigs.find((c) => c._id === editingTemplate);
       if (template) {
-        setSelectedDepartment(template.projectType);
+        setSelectedDepartment(template.projectType || "all");
         setTemplateColor(template.color || "var(--accent-primary)");
         if (template.statuses && template.statuses.length > 0) {
           // Sort by order and add stable keys if missing
@@ -304,14 +317,16 @@ const WorkflowTemplateManager = () => {
 
       await createOrUpdateWorkflow({
         ...values,
+        id: editingTemplate || undefined,
+        _id: editingTemplate || undefined,
         projectId: null, // Department templates don't have projectId
-        projectType: selectedDepartment,
+        projectType: selectedDepartment === "all" ? null : selectedDepartment,
         color: templateColor,
         statuses: orderedStatuses,
         isActive: true,
       }).unwrap();
 
-      notifySuccess('workflow-template', editingTemplate || 'global', "Workflow template saved successfully");
+      notifySuccess('workflow-template', editingTemplate || 'global', editingTemplate ? "Workflow template updated successfully" : "Workflow template saved successfully");
       handleReset();
       refetchConfigs();
     } catch (error) {
@@ -321,15 +336,40 @@ const WorkflowTemplateManager = () => {
 
   const handleEdit = (template) => {
     setEditingTemplate(template._id);
+    setSelectedDepartment(template.projectType || "all");
+    setTemplateColor(template.color || "var(--accent-primary)");
+    if (template.statuses && template.statuses.length > 0) {
+      const sortedStatuses = [...template.statuses]
+        .sort((a, b) => a.order - b.order)
+        .map((s) => ({
+          ...s,
+          _key:
+            s._key ||
+            s.id ||
+            `st_${Math.random().toString(36).substr(2, 9)}`,
+        }));
+      setStatuses(sortedStatuses);
+    }
+    form.setFieldsValue({
+      name: template.name,
+    });
+    // Smooth scroll to top of card form
+    const cardEl = document.querySelector(".workflow-template-form-card");
+    if (cardEl) {
+      cardEl.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
   };
 
   const handleDelete = async (templateId) => {
     try {
-      // TODO: Implement delete mutation
-      notifySuccess('workflow-template', templateId || 'global', "Delete functionality will be implemented");
+      await deleteWorkflow(templateId).unwrap();
+      notifySuccess('workflow-template', templateId || 'global', "Workflow template deleted successfully");
+      if (editingTemplate === templateId) {
+        handleReset();
+      }
       refetchConfigs();
     } catch (error) {
-      notifyError('workflow-template', templateId || 'global', "Failed to delete template");
+      notifyError('workflow-template', templateId || 'global', error?.data?.message || "Failed to delete template");
     }
   };
 
@@ -349,7 +389,7 @@ const WorkflowTemplateManager = () => {
   // Filter templates by department (projectType)
   const departmentTemplates = useMemo(() => {
     let list = allConfigs.filter(
-      (config) => config.projectType && !config.projectId,
+      (config) => !config.projectId,
     );
 
     const activeFilter = filterDepartment || (!isGlobalRole ? userDepartmentSlug : null);
@@ -357,7 +397,7 @@ const WorkflowTemplateManager = () => {
     if (activeFilter && activeFilter !== "all") {
       const normFilter = activeFilter.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
       list = list.filter((config) => {
-        if (!config.projectType) return false;
+        if (!config.projectType) return true; // Show global default template in filtered views as well
         const normConfig = config.projectType.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
         return normConfig === normFilter || normConfig.includes(normFilter) || normFilter.includes(normConfig);
       });
@@ -390,6 +430,9 @@ const WorkflowTemplateManager = () => {
       title: "Department",
       key: "department",
       render: (_, record) => {
+        if (!record.projectType || record.projectType === "all") {
+          return <Tag color="blue">All Departments (Default)</Tag>;
+        }
         const pType = String(record.projectType || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
         const deptOption = departmentOptions.find((o) => {
           if (!record.projectType) return false;
@@ -468,6 +511,23 @@ const WorkflowTemplateManager = () => {
               onClick={() => handleEdit(record)}
             />
           </Tooltip>
+          <Popconfirm
+            title="Delete Workflow Template"
+            description={`Are you sure you want to delete template "${record.name}"?`}
+            onConfirm={() => handleDelete(record._id)}
+            okText="Yes, Delete"
+            cancelText="Cancel"
+            okButtonProps={{ danger: true }}
+          >
+            <Tooltip title="Delete Template">
+              <Button
+                type="link"
+                danger
+                icon={<DeleteOutlined />}
+                loading={isDeleting}
+              />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -476,7 +536,8 @@ const WorkflowTemplateManager = () => {
   return (
     <div style={{ width: "100%" }}>
       <Card
-        title="Create Department Workflow Template"
+        className="workflow-template-form-card"
+        title={editingTemplate ? "Edit Department Workflow Template" : "Create Department Workflow Template"}
         style={{ marginBottom: 24 }}
         size={isMobile ? "small" : "default"}
       >
@@ -666,7 +727,9 @@ const WorkflowTemplateManager = () => {
           <Button type="primary" onClick={handleSave} loading={isSaving}>
             {editingTemplate ? "Update Template" : "Save Template"}
           </Button>
-          <Button onClick={handleReset}>Reset</Button>
+          <Button onClick={handleReset}>
+            {editingTemplate ? "Cancel Edit" : "Reset"}
+          </Button>
         </Space>
       </Card>
 

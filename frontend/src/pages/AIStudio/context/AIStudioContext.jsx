@@ -19,12 +19,15 @@ export const AIStudioProvider = ({ children }) => {
 
   const checkApiKeyStatus = async () => {
     try {
-      const response = await api.get('/ai-studio/settings');
+      const response = await api.get('/ai-studio/settings?module=ai_studio');
       if (response.data.success) {
         const data = response.data.data;
-        setIsApiKeyConfigured(data.isConfigured);
-        if (data.isConfigured) {
-          setApiKey(data.maskedKey);
+        const configured = data.isConfigured || data.isOpenAiConfigured;
+        setIsApiKeyConfigured(configured);
+        if (configured) {
+          setApiKey(data.maskedOpenAiKey || data.maskedKey);
+        } else {
+          setApiKey('');
         }
       }
     } catch (error) {
@@ -34,7 +37,11 @@ export const AIStudioProvider = ({ children }) => {
 
   const saveApiKey = async (payload) => {
     try {
-      const response = await api.post('/ai-studio/settings', payload);
+      const response = await api.post('/ai-studio/settings', {
+        ...payload,
+        module: 'ai_studio',
+        aiProvider: 'openai'
+      });
       if (response.data.success) {
         message.success('API Settings saved securely');
         await checkApiKeyStatus();

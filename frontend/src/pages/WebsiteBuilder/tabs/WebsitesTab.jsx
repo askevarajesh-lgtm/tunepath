@@ -2015,7 +2015,7 @@ const AiSettingsModal = ({ open, onCancel }) => {
         setFetching(true);
         try {
           const token = localStorage.getItem("token");
-          const res = await fetch("/api/ai-studio/settings", {
+          const res = await fetch("/api/ai-studio/settings?module=marketplace", {
             headers: { "Authorization": token ? `Bearer ${token}` : "" }
           });
           const data = await res.json();
@@ -2038,7 +2038,10 @@ const AiSettingsModal = ({ open, onCancel }) => {
     try {
       const token = localStorage.getItem("token");
       
-      const payload = {};
+      const payload = {
+        module: 'marketplace',
+        aiProvider: 'anthropic'
+      };
       if (anthropicApiKey && !anthropicApiKey.includes("...")) {
         payload.anthropicApiKey = anthropicApiKey;
       }

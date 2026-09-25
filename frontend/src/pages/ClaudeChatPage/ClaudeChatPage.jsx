@@ -95,11 +95,12 @@ const ClaudeChatPage = () => {
   // Fetch Settings Status
   const fetchSettings = async () => {
     try {
-      const res = await api.get('/ai-studio/settings');
+      const res = await api.get('/ai-studio/settings?module=claude');
       if (res.data?.success) {
-        const { isAnthropicConfigured, maskedAnthropicKey } = res.data.data;
+        const { isAnthropicConfigured, maskedAnthropicKey, model } = res.data.data;
         setIsAnthropicConfigured(!!isAnthropicConfigured);
         setMaskedKey(maskedAnthropicKey || '');
+        if (model) setSelectedModel(model);
       }
     } catch (err) {
       console.error('Failed to fetch AI settings status:', err);
@@ -252,6 +253,7 @@ const ClaudeChatPage = () => {
         content: textToSend,
         attachment: pendingAttachment || undefined,
         provider: 'anthropic',
+        module: 'claude',
         model: selectedModel
       });
 
@@ -321,8 +323,10 @@ const ClaudeChatPage = () => {
     setSavingSettings(true);
     try {
       const res = await api.post('/ai-studio/settings', {
+        module: 'claude',
         anthropicApiKey: anthropicApiKeyInput.trim(),
-        aiProvider: 'anthropic'
+        aiProvider: 'anthropic',
+        model: selectedModel || 'claude-sonnet-5'
       });
       if (res.data?.success) {
         message.success('Anthropic API key saved successfully!');

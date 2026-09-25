@@ -42,7 +42,11 @@ const saveSettings = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Unauthorized: No workspace context' });
     }
 
-    const updateFields = {};
+    const targetModule = req.body.module || req.query?.module || (aiProvider === 'anthropic' && !openaiApiKey ? 'claude' : 'ai_studio');
+
+    const updateFields = {
+      module: targetModule
+    };
 
     if (openaiApiKey !== undefined) {
       if (openaiApiKey.trim() !== '') {
@@ -62,8 +66,10 @@ const saveSettings = async (req, res) => {
 
     if (aiProvider !== undefined) {
       updateFields.aiProvider = aiProvider;
+    } else {
+      if (targetModule === 'claude') updateFields.aiProvider = 'anthropic';
+      if (targetModule === 'chatgpt' || targetModule === 'ai_studio') updateFields.aiProvider = 'openai';
     }
-
 
     if (isEnabled !== undefined) {
       updateFields.isEnabled = isEnabled;
@@ -71,10 +77,14 @@ const saveSettings = async (req, res) => {
 
     if (model !== undefined) {
       updateFields.model = model;
+    } else {
+      if (targetModule === 'claude') updateFields.model = 'claude-sonnet-5';
+      if (targetModule === 'chatgpt') updateFields.model = 'gpt-4o-mini';
+      if (targetModule === 'ai_studio') updateFields.model = 'gpt-image-2';
     }
 
     await AiSettings.findOneAndUpdate(
-      { workspaceId },
+      { workspaceId, module: targetModule },
       { $set: updateFields },
       { upsert: true, returnDocument: 'after' }
     );
@@ -92,14 +102,22 @@ const getSettingsStatus = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Unauthorized: No workspace context' });
     }
 
-    const settings = await AiSettings.findOne({ workspaceId });
+    const targetModule = req.query?.module || req.body?.module || 'ai_studio';
+
+    let settings = await AiSettings.findOne({ workspaceId, module: targetModule });
+    if (!settings && targetModule === 'marketplace') {
+      settings = await AiSettings.findOne({ workspaceId, module: { $exists: false } });
+    }
+
     let isConfigured = false;
+    let isOpenAiConfigured = false;
     let isAnthropicConfigured = false;
     let maskedKey = '';
+    let maskedOpenAiKey = '';
     let maskedAnthropicKey = '';
     let isEnabled = true;
-    let model = DEFAULT_AI_MODEL;
-    let aiProvider = DEFAULT_AI_PROVIDER;
+    let model = targetModule === 'claude' ? 'claude-sonnet-5' : (targetModule === 'chatgpt' ? 'gpt-4o-mini' : DEFAULT_AI_MODEL);
+    let aiProvider = targetModule === 'claude' ? 'anthropic' : (targetModule === 'chatgpt' ? 'openai' : DEFAULT_AI_PROVIDER);
 
     if (settings) {
       if (settings.isEnabled !== undefined) isEnabled = settings.isEnabled;
@@ -108,19 +126,21 @@ const getSettingsStatus = async (req, res) => {
       
       if (settings.openaiApiKey) {
         isConfigured = true;
+        isOpenAiConfigured = true;
         const decrypted = cryptoUtils.decrypt(settings.openaiApiKey);
         if (decrypted && decrypted.length > 8) {
           maskedKey = decrypted.substring(0, 4) + '...' + decrypted.substring(decrypted.length - 4);
         } else {
           maskedKey = 'sk-...';
         }
+        maskedOpenAiKey = maskedKey;
       }
 
       if (settings.anthropicApiKey) {
         isAnthropicConfigured = true;
         const decrypted = cryptoUtils.decrypt(settings.anthropicApiKey);
         if (decrypted && decrypted.length > 8) {
-          maskedAnthropicKey = decrypted.substring(0, 4) + '...' + decrypted.substring(decrypted.length - 4);
+          maskedAnthropicKey = decrypted.substring(0, 7) + '...' + decrypted.substring(decrypted.length - 4);
         } else {
           maskedAnthropicKey = 'sk-ant-...';
         }
@@ -130,9 +150,14 @@ const getSettingsStatus = async (req, res) => {
     return res.status(200).json({ 
       success: true, 
       data: { 
-        isConfigured, 
+        module: targetModule,
+        isConfigured: targetModule === 'claude' ? isAnthropicConfigured : isConfigured, 
+        isOpenAiConfigured,
         isAnthropicConfigured,
+        hasCustomKey: targetModule === 'claude' ? isAnthropicConfigured : isConfigured,
+        maskedApiKey: targetModule === 'claude' ? maskedAnthropicKey : maskedKey,
         maskedKey, 
+        maskedOpenAiKey,
         maskedAnthropicKey,
         aiProvider,
         isEnabled, 
@@ -155,7 +180,10 @@ const generateImage = async (req, res) => {
     let apiKey = null;
 
     if (workspaceId) {
-      const settings = await AiSettings.findOne({ workspaceId });
+      let settings = await AiSettings.findOne({ workspaceId, module: 'ai_studio' });
+      if (!settings || !settings.openaiApiKey) {
+        settings = await AiSettings.findOne({ workspaceId, module: 'chatgpt' }) || await AiSettings.findOne({ workspaceId });
+      }
       if (settings && settings.openaiApiKey) {
         apiKey = cryptoUtils.decrypt(settings.openaiApiKey);
       }
@@ -364,15 +392,25 @@ const deleteConversation = async (req, res) => {
 
 const sendMessage = async (req, res) => {
   try {
-    const { sessionId, content, attachment, provider = 'openai', model } = req.body;
+    const { sessionId, content, attachment, provider = 'openai', model, module: reqModule } = req.body;
     const workspaceId = getAiWorkspaceId(req);
     const createdBy = req.user?._id;
 
     if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized: No workspace context' });
     if (!content) return res.status(400).json({ success: false, message: 'Message content is required' });
 
+    const targetModule = reqModule || (provider === 'anthropic' ? 'claude' : 'chatgpt');
+
     // 1. Get settings and API Key
-    const settings = await AiSettings.findOne({ workspaceId });
+    let settings = await AiSettings.findOne({ workspaceId, module: targetModule });
+    if (!settings) {
+      if (provider === 'anthropic') {
+        settings = await AiSettings.findOne({ workspaceId, module: 'marketplace' }) || await AiSettings.findOne({ workspaceId });
+      } else {
+        settings = await AiSettings.findOne({ workspaceId, module: 'ai_studio' }) || await AiSettings.findOne({ workspaceId });
+      }
+    }
+
     if (settings && settings.isEnabled === false) {
       return res.status(403).json({ success: false, message: 'AI Assistant is currently disabled' });
     }
@@ -389,7 +427,7 @@ const sendMessage = async (req, res) => {
         });
       }
 
-      const selectedModel = model || settings?.model || 'claude-3-5-sonnet-latest';
+      const selectedModel = model || settings?.model || 'claude-sonnet-5';
 
       // Fetch or create conversation
       let conversation;
@@ -616,14 +654,23 @@ const sendMessage = async (req, res) => {
 
 const streamMessage = async (req, res) => {
   try {
-    const { sessionId, content, attachment, provider = 'anthropic', model } = req.body;
+    const { sessionId, content, attachment, provider = 'anthropic', model, module: reqModule } = req.body;
     const workspaceId = getAiWorkspaceId(req);
     const createdBy = req.user?._id;
 
     if (!workspaceId) return res.status(401).json({ success: false, message: 'Unauthorized: No workspace context' });
     if (!content) return res.status(400).json({ success: false, message: 'Message content is required' });
 
-    const settings = await AiSettings.findOne({ workspaceId });
+    const targetModule = reqModule || (provider === 'anthropic' ? 'claude' : 'chatgpt');
+    let settings = await AiSettings.findOne({ workspaceId, module: targetModule });
+    if (!settings) {
+      if (provider === 'anthropic') {
+        settings = await AiSettings.findOne({ workspaceId, module: 'marketplace' }) || await AiSettings.findOne({ workspaceId });
+      } else {
+        settings = await AiSettings.findOne({ workspaceId, module: 'ai_studio' }) || await AiSettings.findOne({ workspaceId });
+      }
+    }
+
     if (settings && settings.isEnabled === false) {
       return res.status(403).json({ success: false, message: 'AI Assistant is currently disabled' });
     }

@@ -17,7 +17,10 @@ class AgentOrchestrator {
     const AiSettings = require('../../aiStudio/models/aiSettings.model');
     const cryptoUtils = require('../../../utils/crypto');
     const AiClientWrapper = require('../../../utils/aiClientWrapper');
-    const settings = await AiSettings.findOne({ workspaceId });
+    let settings = await AiSettings.findOne({ workspaceId, module: 'marketplace' });
+    if (!settings) {
+      settings = await AiSettings.findOne({ workspaceId, module: { $exists: false } }) || await AiSettings.findOne({ workspaceId });
+    }
     if (settings) {
       if (settings.anthropicApiKey) {
         return new AiClientWrapper(cryptoUtils.decrypt(settings.anthropicApiKey), 'anthropic');

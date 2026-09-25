@@ -35,14 +35,24 @@ function buildScopedUrl(path, clientCompanyId) {
 
 async function request(path, options = {}) {
   const clientCompanyId = options.clientCompanyId || null;
-  const { clientCompanyId: _omit, ...rest } = options;
+  const { clientCompanyId: _omit, body, headers, ...rest } = options;
+
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+  const reqHeaders = getAuthHeaders({
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+    ...(headers || {}),
+  });
+
+  const formattedBody =
+    body && typeof body === "object" && !isFormData
+      ? JSON.stringify(body)
+      : body;
+
   const res = await fetch(buildScopedUrl(path, clientCompanyId), {
     credentials: "include",
     cache: "no-store",
-    headers: getAuthHeaders({
-      "Content-Type": "application/json",
-      ...(rest.headers || {}),
-    }),
+    headers: reqHeaders,
+    body: formattedBody,
     ...rest,
   });
 
@@ -99,11 +109,13 @@ export const campaignScheduledApi = {
     const data = await request("/posts", { clientCompanyId });
     return (data.posts || []).map(normalizePost);
   },
-  async getAnalytics(clientCompanyId = null) {
-    return request("/analytics", { clientCompanyId });
+  async getAnalytics(clientCompanyId = null, forceRefresh = false) {
+    const query = forceRefresh ? "?forceRefresh=true" : "";
+    return request(`/analytics${query}`, { clientCompanyId });
   },
-  async getInsightsMatrix(clientCompanyId = null) {
-    return request("/insights-matrix", { clientCompanyId });
+  async getInsightsMatrix(clientCompanyId = null, forceRefresh = false) {
+    const query = forceRefresh ? "?forceRefresh=true" : "";
+    return request(`/insights-matrix${query}`, { clientCompanyId });
   },
   async getAccountFollowers(accountId, clientCompanyId = null) {
     return request(`/accounts/${accountId}/followers`, { clientCompanyId });
@@ -127,6 +139,13 @@ export const campaignScheduledApi = {
       comments: data.comments || [],
       commentCount: Number(data.commentCount) || 0,
     };
+  },
+  async replyToComment(commentId, payload, clientCompanyId = null) {
+    return request(`/comments/${commentId}/reply`, {
+      method: "POST",
+      body: payload,
+      clientCompanyId,
+    });
   },
   async createPost(payload, mediaFile = null, clientCompanyId = null) {
     const { platformMediaFiles, thumbnailFile, platformThumbnailFiles, ...restPayload } = payload;

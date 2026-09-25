@@ -129,6 +129,31 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   const [socialMediaPostInsights, setSocialMediaPostInsights] = useState({ videoCount: 0, postCount: 0, totalCount: 0 });
   const [youTubeReportList, setYouTubeReportList] = useState([]);
 
+  // SEO/AEO/GEO projects filtered by selected client
+  const clientSeoProjects = React.useMemo(() => {
+    if (!selectedClient || selectedClient === 'all') return seoProjects;
+    const directMatches = seoProjects.filter(p => String(p.clientId) === String(selectedClient));
+    if (directMatches.length > 0) return directMatches;
+
+    // Fallback match by company / client name or domain if clientId was not stored
+    const clientObj = clients.find(c => String(c._id) === String(selectedClient));
+    if (clientObj) {
+      const clientName = (clientObj.companyName || clientObj.name || clientObj.brandName || '').toLowerCase().trim();
+      const clientDomain = (clientObj.domain || clientObj.website || '').toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '').trim();
+      
+      const matched = seoProjects.filter(p => {
+        const pName = (p.name || '').toLowerCase().trim();
+        const pDomain = (p.domain || '').toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '').trim();
+        if (clientDomain && pDomain && (pDomain.includes(clientDomain) || clientDomain.includes(pDomain))) return true;
+        if (clientName && pName && (pName.includes(clientName) || clientName.includes(pName))) return true;
+        return false;
+      });
+      if (matched.length > 0) return matched;
+    }
+
+    return seoProjects;
+  }, [seoProjects, selectedClient, clients]);
+
   // Fetch SEO/AEO/GEO projects from Semrush module
   useEffect(() => {
     const fetchSeoProjects = async () => {
@@ -179,11 +204,23 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
           });
         }
       }
-      if (normType !== 'Keywords') {
-        setSelectedProjectId(null);
-      }
     }
   }, [visible, defaultClientId, headerSelectedClient, clients, defaultReportType, defaultDate]);
+
+  useEffect(() => {
+    if (visible && (reportType === 'Keywords' || reportType.includes('Keyword'))) {
+      if (clientSeoProjects.length > 0) {
+        const exists = clientSeoProjects.some(p => String(p._id) === String(selectedProjectId));
+        if (!exists) {
+          setSelectedProjectId(clientSeoProjects[0]._id);
+        }
+      } else {
+        setSelectedProjectId(null);
+      }
+    } else if (reportType !== 'Keywords') {
+      setSelectedProjectId(null);
+    }
+  }, [visible, clientSeoProjects, reportType, selectedProjectId]);
 
   const cachedMonthlyHighlightsRef = React.useRef(null);
   const cachedMetaCampaignRef = React.useRef({});
@@ -281,13 +318,60 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
     }
   };
 
+  const handleClientChange = (clientId) => {
+    setSelectedClient(clientId);
+    if (reportType === 'Keywords' || reportType.includes('Keyword')) {
+      const direct = seoProjects.filter(p => String(p.clientId) === String(clientId));
+      let nextProjId = null;
+      if (direct.length > 0) {
+        nextProjId = direct[0]._id;
+      } else {
+        const clientObj = clients.find(c => String(c._id) === String(clientId));
+        if (clientObj) {
+          const cName = (clientObj.companyName || clientObj.name || clientObj.brandName || '').toLowerCase().trim();
+          const cDom = (clientObj.domain || clientObj.website || '').toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '').trim();
+          const matched = seoProjects.find(p => {
+            const pName = (p.name || '').toLowerCase().trim();
+            const pDomain = (p.domain || '').toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '').trim();
+            return (cDom && pDomain && (pDomain.includes(cDom) || cDom.includes(pDomain))) || (cName && pName && (pName.includes(cName) || cName.includes(pName)));
+          });
+          if (matched) nextProjId = matched._id;
+        }
+      }
+      if (!nextProjId && seoProjects.length > 0) {
+        nextProjId = seoProjects[0]._id;
+      }
+      setSelectedProjectId(nextProjId);
+      if (nextProjId) {
+        loadData(clientId, reportDateRange, false, nextProjId, reportType);
+      } else {
+        setKeywordRankingList([]);
+        setKeywordDetailsList([]);
+      }
+    } else {
+      loadData(clientId, reportDateRange, false, null, reportType);
+    }
+  };
+
   const handleReportTypeChange = (newType) => {
     setReportType(newType);
-    if (newType === 'Keywords') {
-      setKeywordRankingList([]);
-      setKeywordDetailsList([]);
+    if (newType === 'Keywords' || newType.includes('Keyword')) {
+      let projId = selectedProjectId;
+      if (!projId || !clientSeoProjects.some(p => String(p._id) === String(projId))) {
+        projId = clientSeoProjects.length > 0 ? clientSeoProjects[0]._id : (seoProjects.length > 0 ? seoProjects[0]._id : null);
+        setSelectedProjectId(projId);
+      }
+      if (projId && selectedClient) {
+        loadData(selectedClient, reportDateRange, false, projId, newType);
+      } else {
+        setKeywordRankingList([]);
+        setKeywordDetailsList([]);
+      }
     } else {
       setSelectedProjectId(null);
+      if (selectedClient) {
+        loadData(selectedClient, reportDateRange, false, null, newType);
+      }
     }
   };
 
@@ -453,21 +537,35 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
   };
 
   const getSelectedClientInfo = () => {
+    let clientObj = null;
+    if (selectedClient && selectedClient !== 'all') {
+      clientObj = clients.find(c => String(c._id) === String(selectedClient));
+    }
     if (reportType === 'Keywords' || reportType.includes('Keyword')) {
       if (selectedProjectId) {
         const proj = seoProjects.find(p => String(p._id) === String(selectedProjectId));
         if (proj) {
+          if (clientObj) {
+            return {
+              ...clientObj,
+              _id: clientObj._id,
+              name: clientObj.companyName || clientObj.name || proj.name,
+              companyName: clientObj.companyName || clientObj.name || proj.name,
+              domain: proj.domain || clientObj.domain || clientObj.website
+            };
+          }
           const clientFromProj = clients.find(c => String(c._id) === String(proj.clientId));
           if (clientFromProj) {
             return {
               ...clientFromProj,
-              name: proj.name || clientFromProj.name,
-              companyName: proj.name || clientFromProj.companyName,
-              domain: proj.domain || clientFromProj.domain
+              _id: clientFromProj._id,
+              name: clientFromProj.companyName || clientFromProj.name || proj.name,
+              companyName: clientFromProj.companyName || clientFromProj.name || proj.name,
+              domain: proj.domain || clientFromProj.domain || clientFromProj.website
             };
           }
           return {
-            _id: proj._id,
+            _id: (clients.length > 0 ? clients[0]._id : proj._id),
             name: proj.name,
             companyName: proj.name,
             domain: proj.domain,
@@ -477,8 +575,7 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       }
     }
     if (selectedClient === 'all') return { name: 'All Clients', companyName: 'All Clients' };
-    const found = clients.find(c => String(c._id) === String(selectedClient));
-    return found || { name: 'Client', companyName: 'Client' };
+    return clientObj || (clients.length > 0 ? clients[0] : { name: 'Client', companyName: 'Client' });
   };
 
   const handleDownloadPDF = async () => {
@@ -551,12 +648,12 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
 
   const handlePublishAndSend = async () => {
     const isKeywordReport = reportType === 'Keywords' || reportType.includes('Keyword');
-    if (isKeywordReport && !selectedProjectId) {
-      message.warning('Please select an SEO/AEO/GEO project to send the Keywords report.');
+    if (!selectedClient || selectedClient === 'all') {
+      message.warning('Please select a specific client account to send the report.');
       return;
     }
-    if (!isKeywordReport && (!selectedClient || selectedClient === 'all')) {
-      message.warning('Please select a specific client account to send the report.');
+    if (isKeywordReport && !selectedProjectId) {
+      message.warning('Please select an SEO/AEO/GEO project to send the Keywords report.');
       return;
     }
 
@@ -567,7 +664,7 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
         ? selectedClient 
         : (clientInfo._id || (clients.length > 0 ? clients[0]._id : null));
 
-      const recipientEmail = clientInfo.email || `${clientInfo.companyName || clientInfo.name}@client.com`;
+      const recipientEmail = clientInfo.email || `${(clientInfo.companyName || clientInfo.name || 'client').toLowerCase().replace(/[^a-z0-9]/g, '')}@client.com`;
 
       // Save database state for non-standalone Meta Lead/Reach reports
       if (reportType !== 'Meta Campaign Insights – Lead Campaign' && reportType !== 'Meta Campaign Insights – Reach Campaign') {
@@ -721,7 +818,7 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       }
       footer={
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 4px' }}>
-          <Button icon={<RefreshCw size={15} className={syncing ? 'spin' : ''} />} onClick={() => loadData(selectedClient, selectedDate, true, selectedProjectId)} disabled={loading || saving || ((reportType === 'Keywords' || reportType.includes('Keyword')) && !selectedProjectId)} style={{ borderRadius: 8 }}>
+          <Button icon={<RefreshCw size={15} className={syncing ? 'spin' : ''} />} onClick={() => loadData(selectedClient, reportDateRange, true, selectedProjectId)} disabled={loading || saving || ((reportType === 'Keywords' || reportType.includes('Keyword')) && !selectedProjectId)} style={{ borderRadius: 8 }}>
             Auto-Refetch Data
           </Button>
           <Space size="middle">
@@ -738,59 +835,25 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
       destroyOnClose
     >
       <Spin spinning={loading}>
-        {/* TOP CONTROLS: Client Account / SEO Project, Report Type, Report Period */}
+        {/* TOP CONTROLS: Client Account, Report Type, Report Period */}
         <Card style={{ marginBottom: 20, borderRadius: 14, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }} bodyStyle={{ padding: 18 }}>
           <Row gutter={[16, 16]} align="middle">
             <Col xs={24} md={7}>
-              {reportType === 'Keywords' || reportType.includes('Keyword') ? (
-                <>
-                  <Text style={{ fontWeight: 600, display: 'block', marginBottom: 6, fontSize: 13 }}>SEO/AEO/GEO Project</Text>
-                  <Select
-                    style={{ width: '100%' }}
-                    value={selectedProjectId}
-                    onChange={(val) => {
-                      setSelectedProjectId(val);
-                      const proj = seoProjects.find(p => String(p._id) === String(val));
-                      if (proj?.clientId) {
-                        setSelectedClient(proj.clientId);
-                      }
-                      loadData(proj?.clientId || selectedClient, selectedDate, false, val);
-                    }}
-                    showSearch
-                    placeholder="Select SEO/AEO/GEO project..."
-                    optionFilterProp="children"
-                    loading={loadingProjects}
-                    notFoundContent="No SEO/AEO/GEO projects found"
-                  >
-                    {seoProjects.map(p => (
-                      <Option key={p._id} value={p._id}>
-                        <div style={{ display: 'flex', flexDirection: 'column' }}>
-                          <span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span>
-                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{p.domain}</span>
-                        </div>
-                      </Option>
-                    ))}
-                  </Select>
-                </>
-              ) : (
-                <>
-                  <Text style={{ fontWeight: 600, display: 'block', marginBottom: 6, fontSize: 13 }}>Client Account</Text>
-                  <Select
-                    style={{ width: '100%' }}
-                    value={selectedClient}
-                    onChange={setSelectedClient}
-                    showSearch
-                    placeholder="Select client account..."
-                    optionFilterProp="children"
-                  >
-                    {clients.map(c => (
-                      <Option key={c._id} value={c._id}>
-                        {c.companyName || c.name || c.brandName || 'Unnamed Client'}
-                      </Option>
-                    ))}
-                  </Select>
-                </>
-              )}
+              <Text style={{ fontWeight: 600, display: 'block', marginBottom: 6, fontSize: 13 }}>Client Account</Text>
+              <Select
+                style={{ width: '100%' }}
+                value={selectedClient}
+                onChange={handleClientChange}
+                showSearch
+                placeholder="Select client account..."
+                optionFilterProp="children"
+              >
+                {clients.map(c => (
+                  <Option key={c._id} value={c._id}>
+                    {c.companyName || c.name || c.brandName || 'Unnamed Client'}
+                  </Option>
+                ))}
+              </Select>
             </Col>
 
             <Col xs={24} md={11}>
@@ -852,6 +915,51 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
               </div>
             </Col>
           </Row>
+
+          {/* DEDICATED SEO/AEO/GEO PROJECT SELECTOR UNDER CLIENT FOR KEYWORDS REPORT */}
+          {(reportType === 'Keywords' || reportType.includes('Keyword')) && (
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px dashed var(--border-color)' }}>
+              <Row gutter={[16, 16]} align="middle">
+                <Col xs={24} md={10}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <Text style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
+                      SEO / AEO / GEO Project
+                    </Text>
+                    <Tag color="blue" style={{ fontSize: 11, borderRadius: 4 }}>
+                      {clientSeoProjects.length} {clientSeoProjects.length === 1 ? 'Project' : 'Projects'} Available
+                    </Tag>
+                  </div>
+                  <Select
+                    style={{ width: '100%' }}
+                    value={selectedProjectId}
+                    onChange={(val) => {
+                      setSelectedProjectId(val);
+                      loadData(selectedClient, reportDateRange, false, val, reportType);
+                    }}
+                    showSearch
+                    placeholder="Select SEO/AEO/GEO project..."
+                    optionFilterProp="children"
+                    loading={loadingProjects}
+                    notFoundContent="No SEO/AEO/GEO projects found for this client"
+                  >
+                    {clientSeoProjects.map(p => (
+                      <Option key={p._id} value={p._id}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontWeight: 600, fontSize: 13 }}>{p.name}</span>
+                          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{p.domain}</span>
+                        </div>
+                      </Option>
+                    ))}
+                  </Select>
+                </Col>
+                <Col xs={24} md={14}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    Organic keyword ranking details and overview are pulled directly from the selected SEO/AEO/GEO project configured for this client.
+                  </Text>
+                </Col>
+              </Row>
+            </div>
+          )}
         </Card>
 
         {/* DYNAMIC FORM/TABLE RENDERING FOR THE EXACT SELECTED REPORT TYPE */}

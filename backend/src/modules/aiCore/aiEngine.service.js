@@ -10,7 +10,11 @@ const { DEFAULT_AI_MODEL } = require('./config/aiDefaults');
 async function getClient(workspaceId) {
   if (!workspaceId) throw new Error('AI Engine: workspaceId is required to resolve an AI client.');
 
-  const settings = await AiSettings.findOne({ workspaceId });
+  let settings = await AiSettings.findOne({ workspaceId, module: 'marketplace' });
+  if (!settings) {
+    settings = await AiSettings.findOne({ workspaceId, module: { $exists: false } }) || await AiSettings.findOne({ workspaceId });
+  }
+
   if (settings) {
     const provider = settings.aiProvider || (settings.anthropicApiKey ? 'anthropic' : 'openai');
     

@@ -1860,14 +1860,14 @@ const KanbanBoard = ({
     }
 
     // 2. Check for custom workflow config from DB (for project or specific query)
-    if (!hasDbConfig && workflowConfig?.statuses && workflowConfig.statuses.length > 0 && !workflowConfig.defaultStatuses) {
+    if (!hasDbConfig && workflowConfig?.statuses && workflowConfig.statuses.length > 0) {
       result = [...workflowConfig.statuses];
       hasDbConfig = true;
     }
 
     // 3. Search in allWorkflowConfigs for global default workflow (no project, no projectType)
     if (
-      result.length === 0 &&
+      !hasDbConfig &&
       allWorkflowConfigs.length > 0
     ) {
       const defaultWorkflow = allWorkflowConfigs.find(
@@ -1879,32 +1879,19 @@ const KanbanBoard = ({
       }
     }
 
-    // 4. Default Fallback if no custom workflow configured (Smart per-department default)
+    // 4. Default Fallback if no custom workflow configured
     if (result.length === 0) {
-      const normEff = (effectiveDept || "").toLowerCase();
-      if (normEff === "digital-marketing" || normEff === "dm" || normEff === "all") {
-        result = [
-          { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
-          { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
-          { id: "in_progress", name: "In Progress", color: "#faad14", order: 2 },
-          { id: "review", name: "Review", color: "#722ed1", order: 3 },
-          { id: "Rejected", name: "Rejected", color: "#ff4d4f", order: 4 },
-          { id: "complete", name: "Complete", color: "#52c41a", order: 5 },
-        ];
-      } else {
-        result = [
-          { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
-          { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
-          { id: "in_progress", name: "In Progress", color: "#faad14", order: 2 },
-          { id: "complete", name: "Complete", color: "#52c41a", order: 3 },
-        ];
-      }
+      result = [
+        { id: "backlog", name: "Hold", color: "#8c8c8c", order: 0 },
+        { id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
+        { id: "in_progress", name: "In Progress", color: "#faad14", order: 2 },
+        { id: "review", name: "Review", color: "#722ed1", order: 3 },
+        { id: "Rejected", name: "Rejected", color: "#ff4d4f", order: 4 },
+        { id: "complete", name: "Complete", color: "#52c41a", order: 5 },
+      ];
     }
 
-    const normalizedDept = effectiveDept?.toLowerCase();
-    const isDigitalMarketing = normalizedDept === "digital-marketing";
-
-    // Ensure 'Rejected' column is included in board statuses after completion column for 4-step workflows if missing
+    // Ensure 'Rejected' column is included in board statuses if missing
     const hasRejectedStatus = result.some(
       (s) =>
         (s.id || "").toLowerCase() === "rejected" ||
@@ -1921,7 +1908,7 @@ const KanbanBoard = ({
       });
     }
 
-    // Return the exact workflow statuses from DB (or fallback) in their exact configured order, ensuring completion status displays as 'Complete' and appears at the end
+    // Return the exact workflow statuses from DB (or fallback) in their exact configured order
     return result
       .map((status) => {
         let displayName = status.name;
@@ -1932,7 +1919,7 @@ const KanbanBoard = ({
           (status.name || "").toLowerCase() === "done" ||
           (status.name || "").toLowerCase() === "complete"
         ) {
-          displayName = isDigitalMarketing ? "Approved" : "Complete";
+          displayName = status.name || "Complete";
         }
         return {
           ...status,
@@ -2100,35 +2087,45 @@ const KanbanBoard = ({
       wfConfig = workflowConfig;
     }
 
+    if (!wfConfig || !wfConfig.statuses || wfConfig.statuses.length === 0) {
+      const globalDefault = allWorkflowConfigs.find((c) => !c.projectId && !c.projectType);
+      if (globalDefault?.statuses?.length > 0) {
+        wfConfig = globalDefault;
+      }
+    }
+
     if (!wfConfig || !wfConfig.statuses || wfConfig.statuses.length === 0)
       return statuses.map((s) => s.id);
 
     const sortedStatuses = [...wfConfig.statuses].sort(
       (a, b) => (a.order ?? 0) - (b.order ?? 0),
     );
-    const currentStatusIndex = sortedStatuses.findIndex(
+
+    const isRejectedStatus = (s) => {
+      if (!s) return false;
+      const sId = String(s.id || "").toLowerCase();
+      const sName = String(s.name || "").toLowerCase();
+      return sId === "rejected" || sName === "rejected";
+    };
+
+    const progressiveStatuses = sortedStatuses.filter((s) => !isRejectedStatus(s));
+    const currentProgIndex = progressiveStatuses.findIndex(
       (s) => s.id === currentStatusId || (s.id === "done" && currentStatusId === "complete") || (s.id === "complete" && currentStatusId === "done"),
     );
-    if (currentStatusIndex === -1) return statuses.map((s) => s.id);
+
     const validStatusIds = new Set();
     validStatusIds.add(currentStatusId);
     if (currentStatusId === "done") validStatusIds.add("complete");
     if (currentStatusId === "complete") validStatusIds.add("done");
 
-    // Add adjacent workflow steps (next step and previous step)
-    if (currentStatusIndex + 1 < sortedStatuses.length) {
-      validStatusIds.add(sortedStatuses[currentStatusIndex + 1].id);
-    }
-    if (currentStatusIndex - 1 >= 0) {
-      validStatusIds.add(sortedStatuses[currentStatusIndex - 1].id);
-    }
-
-    // Allow in_progress to move to complete/done/completed/validated
-    if (currentStatusId === "in_progress") {
-      validStatusIds.add("complete");
-      validStatusIds.add("done");
-      validStatusIds.add("completed");
-      validStatusIds.add("validated");
+    // Progressive flow: allow next progressive status and any previous progressive status (rework)
+    if (currentProgIndex !== -1) {
+      if (currentProgIndex + 1 < progressiveStatuses.length) {
+        validStatusIds.add(progressiveStatuses[currentProgIndex + 1].id);
+      }
+      for (let i = 0; i <= currentProgIndex; i++) {
+        validStatusIds.add(progressiveStatuses[i].id);
+      }
     }
 
     // Allow jumping from 'backlog' (Hold) to 'in_progress' or 'to_do'
@@ -2140,6 +2137,19 @@ const KanbanBoard = ({
     // Allow to_do to move to in_progress
     if (currentStatusId === "to_do" || currentStatusId === "assigned") {
       validStatusIds.add("in_progress");
+    }
+
+    // Moving TO Rejected is allowed from In Progress or beyond
+    if (currentStatusId !== "backlog" && currentStatusId !== "hold" && currentStatusId !== "to_do") {
+      validStatusIds.add("Rejected");
+      validStatusIds.add("rejected");
+    }
+
+    // Moving FROM Rejected allows going back to In Progress, To Do, Review
+    if (currentStatusId === "Rejected" || currentStatusId === "rejected") {
+      validStatusIds.add("in_progress");
+      validStatusIds.add("to_do");
+      validStatusIds.add("review");
     }
 
     // Ensure all completion status aliases are consistently included if any completion status is valid

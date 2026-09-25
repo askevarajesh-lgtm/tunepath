@@ -40,7 +40,7 @@ const CustomLabel = ({ text }) => (
 
 const DEFAULT_STATUSES = ['RNR', 'COLD', 'WARM', 'HOT', 'DROP', 'OTHER LOCATIONS', 'SV DONE', 'NOT REACHABLE', 'BOOKING DONE'];
 
-const AdminLeadsList = () => {
+const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const { user, role } = useAuth();
   const { canAdd, canEdit, canDelete, canView } = useActionPermissions('/crm');
 
@@ -67,34 +67,9 @@ const AdminLeadsList = () => {
   const [statusFilter, setStatusFilter] = useState([]);
   const [departmentFilter, setDepartmentFilter] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   
-  const [page, setPage] = useState(1);
-  const [limit, setLimit] = useState(10);
-  const [activeTab, setActiveTab] = useState('all');
-
-  React.useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearchQuery(searchQuery);
-      setPage(1); // Reset page on search
-    }, 500);
-    return () => clearTimeout(handler);
-  }, [searchQuery]);
-
-  const { data: leadsData, isLoading, refetch } = useGetLeadsQuery({
-    page,
-    limit,
-    search: debouncedSearchQuery,
-    status: statusFilter?.join(','),
-    department: departmentFilter?.join(','),
-    formName: formNameFilter?.join(','),
-    startDate: dateRangeFilter?.[0]?.startOf('day')?.toISOString(),
-    endDate: dateRangeFilter?.[1]?.endOf('day')?.toISOString(),
-    hasReminders: activeTab === 'reminders' ? 'true' : undefined
-  });
-  
-  const leads = leadsData?.data?.leads || leadsData?.leads || [];
-  const totalServerCount = leadsData?.data?.total || leadsData?.total || 0;
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assigningLeads, setAssigningLeads] = useState([]);
@@ -175,7 +150,7 @@ const AdminLeadsList = () => {
     }
   };
 
-  const { data: leadDetailData, isLoading: isLeadDetailLoading } = useGetLeadByIdQuery(
+  const { data: leadDetailData, isLoading: isLeadDetailLoading, refetch: refetchLeadDetail } = useGetLeadByIdQuery(
     viewingLead?._id,
     { skip: !viewingLead?._id }
   );
@@ -260,7 +235,7 @@ const AdminLeadsList = () => {
     departments.forEach(d => {
       if (d?.name) set.add(d.name.trim());
     });
-    leads.forEach(l => {
+    (leads || []).forEach(l => {
       if (l?.assignedDepartment) set.add(l.assignedDepartment.trim());
     });
     return Array.from(set).sort();
@@ -302,7 +277,8 @@ const AdminLeadsList = () => {
   const [exportCsv, { isFetching: isExporting }] = useLazyExportLeadsCsvQuery();
   const [importCsv, { isLoading: isImporting }] = useImportLeadsCsvMutation();
   const [syncWhatsApp, { isLoading: isSyncingWhatsApp }] = useSyncWhatsAppLeadsMutation();
-  const [bulkDeleteLeads, { isLoading: isBulkDeleting }] = useBulkDeleteLeadsMutation();  // activeTab already declared
+  const [bulkDeleteLeads, { isLoading: isBulkDeleting }] = useBulkDeleteLeadsMutation();
+  const [activeTab, setActiveTab] = useState('all');
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [isFbSyncModalOpen, setIsFbSyncModalOpen] = useState(false);
   const [selectedFbPageId, setSelectedFbPageId] = useState(null);
@@ -421,7 +397,31 @@ const AdminLeadsList = () => {
     }
   ];
 
+  const queryParams = useMemo(() => {
+    const params = {
+      page: currentPage,
+      limit: pageSize,
+    };
+    if (activeTab === 'reminders') params.filter = 'reminder';
+    if (searchQuery && searchQuery.trim()) params.search = searchQuery.trim();
+    if (statusFilter && statusFilter.length > 0) params.status = statusFilter[0]; // Supports single status on server for now
+    if (departmentFilter && departmentFilter.length > 0) params.department = departmentFilter[0];
+    if (formNameFilter && formNameFilter.length > 0) params.formName = formNameFilter[0];
+    if (dateRangeFilter && dateRangeFilter.length === 2) {
+      params.startDate = dateRangeFilter[0].toISOString();
+      params.endDate = dateRangeFilter[1].toISOString();
+    }
+    return params;
+  }, [currentPage, pageSize, activeTab, searchQuery, statusFilter, departmentFilter, formNameFilter, dateRangeFilter]);
 
+  const { data: serverLeadsData, isLoading: isServerLeadsLoading, refetch: refetchServerLeads } = useGetLeadsQuery(queryParams, { skip: !activeTab });
+  
+  const serverLeads = serverLeadsData?.data?.leads || serverLeadsData?.leads || [];
+  const serverTotal = serverLeadsData?.data?.total || serverLeadsData?.total || 0;
+
+  const displayLeads = serverLeads;
+
+  const filteredLeads = serverLeads.length > 0 ? serverLeads : (leads || []);
 
   const handleEditClick = (record) => {
     setEditingLead(record);
@@ -476,6 +476,8 @@ const AdminLeadsList = () => {
         setLeadCountryIso('IN');
       } catch (error) {
         message.error(error?.data?.message || error.message || 'Failed to save lead');
+      } finally {
+        refetchServerLeads?.();
       }
     });
   };
@@ -548,6 +550,7 @@ const AdminLeadsList = () => {
       setNoteContent('');
       setNoteFile(null);
       refetch?.();
+      refetchLeadDetail?.();
     } catch (error) {
       message.error('Failed to add note');
     }
@@ -570,6 +573,7 @@ const AdminLeadsList = () => {
       setReminderDate(null);
       setReminderTo(currentViewingLead?.assignedTo || null);
       refetch?.();
+      refetchLeadDetail?.();
     } catch (error) {
       message.error('Failed to add reminder');
     }
@@ -580,6 +584,7 @@ const AdminLeadsList = () => {
       await deleteLeadNote({ leadId: currentViewingLead._id, noteId }).unwrap();
       message.success('Note deleted successfully');
       refetch?.();
+      refetchLeadDetail?.();
     } catch (error) {
       message.error('Failed to delete note');
     }
@@ -735,19 +740,19 @@ const AdminLeadsList = () => {
         
         <Table 
           columns={columns} 
-          dataSource={leads} 
+          dataSource={displayLeads} 
           rowKey="_id"
-          loading={isLoading}
-          onChange={(pagination) => {
-            setPage(pagination.current);
-            setLimit(pagination.pageSize);
-          }}
+          loading={isLoading || isServerLeadsLoading}
           pagination={{ 
-            current: page,
-            pageSize: limit,
-            total: totalServerCount,
+            current: currentPage,
+            pageSize: pageSize,
+            total: serverTotal,
             showSizeChanger: true, 
             pageSizeOptions: ['10', '20', '50', '100', '200'] 
+          }}
+          onChange={(pagination) => {
+            setCurrentPage(pagination.current);
+            setPageSize(pagination.pageSize);
           }}
           rowSelection={{ 
             type: 'checkbox',

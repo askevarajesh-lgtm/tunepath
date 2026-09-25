@@ -55,11 +55,14 @@ const MeetingsPage = () => {
 
   // Tabs state
   const [activeTab, setActiveTab] = useState('list');
+  const [calendarDate, setCalendarDate] = useState(dayjs());
 
   // Filters state
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
 
   // Drawers and Modals state
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -87,12 +90,24 @@ const MeetingsPage = () => {
 
   const [form] = Form.useForm();
 
-  // Queries
   const { data: meetingsResponse, refetch: refetchMeetings, isLoading: isLoadingMeetings } = useGetMeetingsQuery({
     search,
     status: statusFilter,
-    meetingType: typeFilter
+    meetingType: typeFilter,
+    limit,
+    skip: (page - 1) * limit
   });
+
+  const calendarStartDate = calendarDate.startOf('month').subtract(7, 'day').format('YYYY-MM-DD');
+  const calendarEndDate = calendarDate.endOf('month').add(7, 'day').format('YYYY-MM-DD');
+  
+  const { data: calendarResponse } = useGetMeetingsQuery({
+    startDate: calendarStartDate,
+    endDate: calendarEndDate,
+    limit: 500
+  }, { skip: activeTab !== 'calendar' });
+  
+  const calendarMeetings = calendarResponse?.data?.meetings || [];
   
   const { data: analyticsResponse, refetch: refetchAnalytics } = useGetMeetingAnalyticsQuery({});
   
@@ -436,7 +451,7 @@ const MeetingsPage = () => {
   // Render Calendar events
   const getCalendarListData = (value) => {
     const dateStr = value.format('YYYY-MM-DD');
-    return meetings.filter(m => dayjs(m.date).format('YYYY-MM-DD') === dateStr);
+    return calendarMeetings.filter(m => dayjs(m.date).format('YYYY-MM-DD') === dateStr);
   };
 
   const calendarDateCellRender = (value) => {
@@ -706,13 +721,13 @@ const MeetingsPage = () => {
                     placeholder="Search by title, agenda..."
                     prefix={<SearchOutlined />}
                     value={search}
-                    onChange={e => setSearch(e.target.value)}
+                    onChange={e => { setSearch(e.target.value); setPage(1); }}
                     style={{ width: 280, borderRadius: '8px' }}
                   />
                   <Select
                     placeholder="Filter by Status"
                     value={statusFilter}
-                    onChange={setStatusFilter}
+                    onChange={val => { setStatusFilter(val); setPage(1); }}
                     style={{ width: 180 }}
                     allowClear
                   >
@@ -726,7 +741,7 @@ const MeetingsPage = () => {
                   <Select
                     placeholder="Filter by Type"
                     value={typeFilter}
-                    onChange={setTypeFilter}
+                    onChange={val => { setTypeFilter(val); setPage(1); }}
                     style={{ width: 180 }}
                     allowClear
                   >
@@ -745,7 +760,17 @@ const MeetingsPage = () => {
                   dataSource={meetings}
                   rowKey="_id"
                   loading={isLoadingMeetings}
-                  pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+                  pagination={{ 
+                    current: page,
+                    pageSize: limit,
+                    total: meetingsResponse?.data?.total || 0,
+                    showSizeChanger: true, 
+                    pageSizeOptions: ['10', '20', '50', '100', '200'],
+                    onChange: (p, size) => {
+                      setPage(p);
+                      setLimit(size);
+                    }
+                  }}
                 />
               </Card>
             )
@@ -757,6 +782,8 @@ const MeetingsPage = () => {
               <Card style={{ borderRadius: '12px', padding: '16px' }}>
                 <Calendar 
                   dateCellRender={calendarDateCellRender}
+                  onPanelChange={(date) => setCalendarDate(date)}
+                  onChange={(date) => setCalendarDate(date)}
                 />
               </Card>
             )

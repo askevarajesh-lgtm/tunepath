@@ -78,39 +78,80 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
   const [dateRangeFilter, setDateRangeFilter] = useState("30"); // 7, 30, 90, all
 
   const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [detailModalType, setDetailModalType] = useState("followers"); // 'followers' | 'likers' | 'comments'
+  const [detailModalType, setDetailModalType] = useState("followers"); // 'followers' | 'comments'
   const [detailModalAccount, setDetailModalAccount] = useState(null);
   const [detailModalData, setDetailModalData] = useState([]);
   const [detailModalLoading, setDetailModalLoading] = useState(false);
-  const [replyText, setReplyText] = useState("");
 
   const openDetailModal = async (type, accountRecord) => {
     setDetailModalType(type);
     setDetailModalAccount(accountRecord);
+    setDetailModalData([]);
     setDetailModalOpen(true);
     setDetailModalLoading(true);
     try {
       if (type === "followers") {
         const res = await campaignScheduledApi.getAccountFollowers(accountRecord.accountId, activeClientId);
         setDetailModalData(res.followers || []);
-      } else if (type === "likers") {
-        const res = await campaignScheduledApi.getAccountLikers(accountRecord.accountId, activeClientId);
-        setDetailModalData(res.likers || []);
       } else if (type === "comments") {
         const res = await campaignScheduledApi.getAccountCommentsList(accountRecord.accountId, activeClientId);
-        setDetailModalData(res.comments || []);
+        const commentsList = res.comments || [];
+        const targetPlatform = accountRecord.platform?.toLowerCase();
+        const filtered = commentsList.filter((c) => {
+          if (c.platform && targetPlatform && c.platform.toLowerCase() !== targetPlatform) {
+            return false;
+          }
+          return true;
+        });
+        setDetailModalData(filtered);
       }
     } catch (err) {
       console.error(`Failed loading ${type}:`, err);
+      setDetailModalData([]);
     } finally {
       setDetailModalLoading(false);
     }
   };
 
-  const handleSendReply = (item) => {
-    if (!replyText.trim()) return;
-    message.success(`Reply sent to ${item.name}!`);
-    setReplyText("");
+  const openPostCommentsModal = async (postRecord) => {
+    setDetailModalType("comments");
+    setDetailModalAccount({
+      accountName: postRecord.caption ? (postRecord.caption.length > 35 ? postRecord.caption.slice(0, 35) + "..." : postRecord.caption) : "Post",
+      platform: postRecord.platform,
+    });
+    setDetailModalData([]);
+    setDetailModalOpen(true);
+    setDetailModalLoading(true);
+    try {
+      const targetId = postRecord.parentPostId || postRecord.id || postRecord._id;
+      const res = await campaignScheduledApi.getPostComments(targetId, activeClientId);
+      const commentsList = res.comments || [];
+      const platformTarget = postRecord.platform?.toLowerCase();
+      const platformIdTarget = postRecord.platformId;
+      const filtered = commentsList.filter((c) => {
+        if (platformIdTarget && c.accountId && c.accountId === platformIdTarget) return true;
+        if (platformTarget && c.platform && c.platform.toLowerCase() === platformTarget) return true;
+        if (!platformTarget) return true;
+        return false;
+      });
+      const listToDisplay = filtered;
+      const formatted = listToDisplay.map((c) => ({
+        id: c.id,
+        name: c.author || c.name || "User",
+        username: c.username || `@${(c.author || c.name || "user").toLowerCase().replace(/\s+/g, "")}`,
+        text: c.text,
+        postTitle: postRecord.caption || "Post",
+        time: c.publishedAt ? dayjs(c.publishedAt).format("MMM DD, YYYY h:mm A") : (c.time || "Recent"),
+        avatar: c.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.author || c.name || "User")}&background=3b82f6&color=fff`,
+        platform: c.platform || postRecord.platform,
+      }));
+      setDetailModalData(formatted);
+    } catch (err) {
+      console.error("Failed loading post comments:", err);
+      setDetailModalData([]);
+    } finally {
+      setDetailModalLoading(false);
+    }
   };
 
   const fetchAnalytics = async (forceRefresh = false) => {
@@ -765,12 +806,8 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
               dataIndex: "likes",
               key: "likes",
               sorter: (a, b) => a.likes - b.likes,
-              render: (val, record) => (
-                <div
-                  style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
-                  onClick={() => openDetailModal("likers", record)}
-                  title="Click to view post likes list"
-                >
+              render: (val) => (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   <LikeOutlined style={{ color: "#ec4899" }} />
                   <Text strong style={{ color: "#ec4899" }}>{val?.toLocaleString() || 0}</Text>
                 </div>
@@ -785,7 +822,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                 <div
                   style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
                   onClick={() => openDetailModal("comments", record)}
-                  title="Click to view & reply comments"
+                  title="Click to view comments"
                 >
                   <MessageOutlined style={{ color: "#3b82f6" }} />
                   <Text strong style={{ color: "#3b82f6" }}>{val?.toLocaleString() || 0}</Text>
@@ -943,7 +980,27 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                 title: "Comments",
                 dataIndex: "comments",
                 key: "comments",
-                render: (val) => <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><MessageOutlined style={{ color: "#3b82f6" }} /> {val || 0}</span>,
+                render: (val, record) => (
+                  <Button
+                    type="text"
+                    size="small"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 4,
+                      cursor: "pointer",
+                      padding: "2px 8px",
+                      borderRadius: 8,
+                      background: "rgba(59, 130, 246, 0.08)",
+                      color: "#2563eb",
+                      fontWeight: 600,
+                    }}
+                    onClick={() => openPostCommentsModal(record)}
+                    title="Click to view & reply comments on this post"
+                  >
+                    <MessageOutlined style={{ color: "#3b82f6" }} /> {val || 0}
+                  </Button>
+                ),
               },
               {
                 title: "Published Date",
@@ -980,25 +1037,45 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
       <Modal
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {detailModalType === "followers" && <TeamOutlined style={{ color: "#4f46e5" }} />}
-            {detailModalType === "likers" && <LikeOutlined style={{ color: "#ec4899" }} />}
-            {detailModalType === "comments" && <MessageOutlined style={{ color: "#3b82f6" }} />}
-            <span>
-              {detailModalType === "followers" && `Followers of ${detailModalAccount?.accountName || "Account"}`}
-              {detailModalType === "likers" && `People who Liked Posts on ${detailModalAccount?.accountName || "Account"}`}
-              {detailModalType === "comments" && `Comments & Discussions on ${detailModalAccount?.accountName || "Account"}`}
-            </span>
+            {detailModalType === "followers" && <TeamOutlined style={{ color: "#4f46e5", fontSize: 18 }} />}
+            {detailModalType === "comments" && (
+              detailModalAccount?.platform && platformIcons[detailModalAccount.platform]
+                ? <span style={{ fontSize: 18, display: "inline-flex", alignItems: "center" }}>{platformIcons[detailModalAccount.platform]}</span>
+                : <MessageOutlined style={{ color: "#3b82f6", fontSize: 18 }} />
+            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontWeight: 700 }}>
+                {detailModalType === "followers" && `Followers of ${detailModalAccount?.accountName || "Account"}`}
+                {detailModalType === "comments" && `Comments on ${detailModalAccount?.accountName || "Account"}`}
+              </span>
+              {detailModalAccount?.platform && (
+                <Tag
+                  color={
+                    detailModalAccount.platform === "instagram" ? "magenta" :
+                    detailModalAccount.platform === "facebook" ? "blue" :
+                    detailModalAccount.platform === "youtube" ? "red" :
+                    detailModalAccount.platform === "linkedin" ? "geekblue" : "default"
+                  }
+                  style={{ borderRadius: 8, textTransform: "capitalize", fontWeight: 700, margin: 0 }}
+                >
+                  {detailModalAccount.platform}
+                </Tag>
+              )}
+            </div>
           </div>
         }
         open={detailModalOpen}
         onCancel={() => setDetailModalOpen(false)}
         footer={null}
-        width={560}
+        width={580}
         style={{ borderRadius: 20, overflow: "hidden" }}
       >
         <Spin spinning={detailModalLoading}>
           {detailModalData.length === 0 ? (
-            <Empty description={`No ${detailModalType} activity recorded yet`} style={{ margin: "30px 0" }} />
+            <Empty
+              description={`No ${detailModalAccount?.platform ? detailModalAccount.platform.charAt(0).toUpperCase() + detailModalAccount.platform.slice(1) + " " : ""}${detailModalType} recorded yet`}
+              style={{ margin: "30px 0" }}
+            />
           ) : (
             <List
               itemLayout="horizontal"
@@ -1017,56 +1094,45 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                 >
                   <List.Item.Meta
                     avatar={
-                      <Avatar src={item.avatar} icon={<UserOutlined />} style={{ background: "#4f46e5", fontWeight: 700 }}>
+                      <Avatar
+                        src={item.avatar}
+                        icon={<UserOutlined />}
+                        style={{
+                          background: item.platform === "instagram" ? "#ec4899" : item.platform === "facebook" ? "#1877f2" : item.platform === "youtube" ? "#ef4444" : "#4f46e5",
+                          fontWeight: 700,
+                        }}
+                      >
                         {item.name ? item.name.charAt(0) : "U"}
                       </Avatar>
                     }
                     title={
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                         <Text strong style={{ fontSize: 14 }}>{item.name}</Text>
-                        <Tag color="purple" style={{ borderRadius: 10, fontSize: 11, fontWeight: 700 }}>
-                          {item.username || item.type || item.status || "User"}
-                        </Tag>
+                        <Space size={6}>
+                          {item.platform && platformIcons[item.platform]}
+                          <Tag
+                            color={
+                              item.platform === "instagram" ? "magenta" :
+                              item.platform === "facebook" ? "blue" :
+                              item.platform === "youtube" ? "red" :
+                              item.platform === "linkedin" ? "geekblue" : "purple"
+                            }
+                            style={{ borderRadius: 10, fontSize: 11, fontWeight: 700, margin: 0 }}
+                          >
+                            {item.username || item.type || item.status || "User"}
+                          </Tag>
+                        </Space>
                       </div>
                     }
                     description={
                       <div>
                         {detailModalType === "comments" && (
-                          <div style={{ margin: "4px 0 6px" }}>
+                          <div style={{ margin: "4px 0 2px" }}>
                             <Text style={{ fontSize: 13, color: "var(--text-primary, #0f172a)", display: "block", fontWeight: 600 }}>
                               "{item.text}"
                             </Text>
                             <Text type="secondary" style={{ fontSize: 11 }}>
                               On: <i>{item.postTitle}</i> · {item.time}
-                            </Text>
-                            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                              <Input
-                                size="small"
-                                placeholder={`Reply to ${item.name}...`}
-                                value={replyText}
-                                onChange={(e) => setReplyText(e.target.value)}
-                                style={{ borderRadius: 8 }}
-                              />
-                              <Button
-                                size="small"
-                                type="primary"
-                                icon={<SendOutlined />}
-                                onClick={() => handleSendReply(item)}
-                                style={{ borderRadius: 8 }}
-                              >
-                                Reply
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-
-                        {detailModalType === "likers" && (
-                          <div>
-                            <Tag color="pink" style={{ borderRadius: 8, margin: "2px 0 4px", fontWeight: 700 }}>
-                              {item.reaction || "👍 Like"}
-                            </Tag>
-                            <Text type="secondary" style={{ fontSize: 11, display: "block" }}>
-                              Liked: {item.postTitle} ({item.time})
                             </Text>
                           </div>
                         )}

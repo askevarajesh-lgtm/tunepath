@@ -1541,6 +1541,13 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
         taskData.department,
       );
     }
+    if (!workflowConfig) {
+      workflowConfig = await getWorkflowConfig(
+        null,
+        tenantCompanyId,
+        null,
+      );
+    }
 
     if (
       workflowConfig &&
@@ -3841,6 +3848,13 @@ const getTasksForKanban = async (
         null
       );
     }
+    if (!workflowConfig) {
+      workflowConfig = await getWorkflowConfig(
+        null,
+        tenantCompanyId,
+        null,
+      );
+    }
 
     // If workflow config exists, use workflow status IDs
     if (
@@ -3898,6 +3912,7 @@ const getTasksForKanban = async (
 };
 
 // Helper function to validate status transition based on workflow order
+// Helper function to validate status transition based on workflow order
 const validateStatusTransition = async (task, newStatusId, tenantCompanyId) => {
   // Restrict moving backward before In Progress once the task is in progress or beyond
   const inProgressOrBeyond = [
@@ -3924,7 +3939,7 @@ const validateStatusTransition = async (task, newStatusId, tenantCompanyId) => {
     };
   }
 
-  // Get workflow config for this task's project or department
+  // Get workflow config for this task's project or department, or fallback to default
   const projectId = task.projectId?._id || task.projectId;
   let workflowConfig = null;
   if (projectId) {
@@ -3939,6 +3954,13 @@ const validateStatusTransition = async (task, newStatusId, tenantCompanyId) => {
       null,
       tenantCompanyId,
       task.department,
+    );
+  }
+  if (!workflowConfig) {
+    workflowConfig = await getWorkflowConfig(
+      null,
+      tenantCompanyId,
+      null,
     );
   }
 
@@ -3962,7 +3984,8 @@ const validateStatusTransition = async (task, newStatusId, tenantCompanyId) => {
     const lower = String(statusId).toLowerCase().trim();
     return sortedStatuses.find((s) => {
       const sId = String(s.id).toLowerCase().trim();
-      if (sId === lower) return true;
+      const sName = String(s.name || "").toLowerCase().trim();
+      if (sId === lower || sName === lower) return true;
       if ((lower === "assigned" || lower === "to_do") && (sId === "to_do" || sId === "assigned")) return true;
       if ((lower === "created" || lower === "backlog" || lower === "hold") && (sId === "backlog" || sId === "hold" || sId === "created")) return true;
       if (["complete", "completed", "done", "validated"].includes(lower) && ["complete", "completed", "done", "validated"].includes(sId)) return true;
@@ -3979,13 +4002,13 @@ const validateStatusTransition = async (task, newStatusId, tenantCompanyId) => {
   // Allow transitioning from backlog (Hold) or hold ONLY to in_progress (resuming task)
   const currentStatusId = currentStatusInWorkflow ? currentStatusInWorkflow.id : task.status;
   if (currentStatusId === "backlog" || currentStatusId === "hold" || currentStatusId === "created") {
-    if (newStatusId === "in_progress") {
+    if (newStatusId === "in_progress" || newStatusId === "to_do") {
       return { valid: true, workflowStatus: newStatusInWorkflow };
     }
     if (newStatusId !== "backlog" && newStatusId !== "hold" && newStatusId !== "created") {
       return {
         valid: false,
-        message: "Tasks on Hold can only be moved to In Progress.",
+        message: "Tasks on Hold can only be moved to In Progress or To Do.",
         workflowStatus: null,
       };
     }
@@ -3996,35 +4019,63 @@ const validateStatusTransition = async (task, newStatusId, tenantCompanyId) => {
     return { valid: true, workflowStatus: newStatusInWorkflow };
   }
 
-  // Allow forward movement (next status) or backward movement (previous status)
-  // This allows flexibility while maintaining workflow structure
+  const isRejected = (s) => {
+    if (!s) return false;
+    const sId = String(s.id || "").toLowerCase();
+    const sName = String(s.name || "").toLowerCase();
+    return sId === "rejected" || sName === "rejected";
+  };
+
+  const currentIsRejected = isRejected(currentStatusInWorkflow);
+  const newIsRejected = isRejected(newStatusInWorkflow);
+
+  // Moving TO Rejected is allowed from In Progress or beyond (or any active step)
+  if (newIsRejected) {
+    return { valid: true, workflowStatus: newStatusInWorkflow };
+  }
+
+  // Moving FROM Rejected is allowed back to previous status, In Progress, To Do, or Review (rework)
+  if (currentIsRejected) {
+    return { valid: true, workflowStatus: newStatusInWorkflow };
+  }
+
+  // Progressive statuses sequence (excluding Rejected from mandatory forward chain)
+  const progressiveStatuses = sortedStatuses.filter((s) => !isRejected(s));
+  const currentProgIndex = progressiveStatuses.findIndex(
+    (s) => s.id === currentStatusInWorkflow.id,
+  );
+  const newProgIndex = progressiveStatuses.findIndex(
+    (s) => s.id === newStatusInWorkflow.id,
+  );
+
+  if (currentProgIndex !== -1 && newProgIndex !== -1) {
+    const progDiff = newProgIndex - currentProgIndex;
+    if (progDiff <= 1) {
+      // Moving forward by 1 step, remaining in same step, or moving backward
+      return { valid: true, workflowStatus: newStatusInWorkflow };
+    } else {
+      // Skipping forward by more than 1 progressive step
+      return {
+        valid: false,
+        message: `Cannot skip workflow steps. Current: ${currentStatusInWorkflow.name} (Order ${currentStatusInWorkflow.order}), Target: ${newStatusInWorkflow.name} (Order ${newStatusInWorkflow.order}). Please move through statuses in order.`,
+        workflowStatus: null,
+      };
+    }
+  }
+
+  // Fallback to standard order check if not in progressive sequence
   const currentOrder = currentStatusInWorkflow.order;
   const newOrder = newStatusInWorkflow.order;
-
-  // Allow moving to adjacent statuses (forward or backward by 1)
-  // Or allow moving to any previous status (backward)
-  // But restrict jumping too far forward
   const orderDiff = newOrder - currentOrder;
 
-  if (orderDiff === 1) {
-    // Moving forward by 1 - always allowed
+  if (orderDiff <= 1) {
     return { valid: true, workflowStatus: newStatusInWorkflow };
-  } else if (orderDiff === -1) {
-    // Moving backward by 1 - allowed
-    return { valid: true, workflowStatus: newStatusInWorkflow };
-  } else if (orderDiff < 0) {
-    // Moving backward by more than 1 - allowed (rework scenarios)
-    return { valid: true, workflowStatus: newStatusInWorkflow };
-  } else if (orderDiff > 1) {
-    // Jumping forward by more than 1 - not allowed
+  } else {
     return {
       valid: false,
       message: `Cannot skip workflow steps. Current: ${currentStatusInWorkflow.name} (Order ${currentOrder}), Target: ${newStatusInWorkflow.name} (Order ${newOrder}). Please move through statuses in order.`,
       workflowStatus: null,
     };
-  } else {
-    // Same order - allowed (reordering within same status)
-    return { valid: true, workflowStatus: newStatusInWorkflow };
   }
 };
 
@@ -4112,6 +4163,9 @@ const updateTaskStatusAndOrder = async (
         workflowConfig = await getWorkflowConfig(null, tenantCompanyId, userDeptSlug);
       }
     }
+  }
+  if (!workflowConfig) {
+    workflowConfig = await getWorkflowConfig(null, tenantCompanyId, null);
   }
 
   const hasWorkflowConfig =
@@ -5913,7 +5967,7 @@ const getWorkflowConfig = async (
       { id: "in_progress", name: "In Progress", color: "#faad14", order: 2 },
       { id: "review", name: "Review", color: "#722ed1", order: 3 },
       { id: "Rejected", name: "Rejected", color: "#ff4d4f", order: 4 },
-      { id: "done", name: "Done", color: "#52c41a", order: 5 },
+      { id: "done", name: "Complete", color: "#52c41a", order: 5 },
     ],
   });
 };
@@ -5942,7 +5996,16 @@ const createOrUpdateWorkflowConfig = async (configData, tenantCompanyId) => {
     query.projectType = null;
   }
 
-  const existing = await WorkflowConfig.findOne(query);
+  let existing = null;
+  if (configData._id || configData.id) {
+    existing = await WorkflowConfig.findOne({
+      _id: configData._id || configData.id,
+      tenantCompanyId,
+    });
+  }
+  if (!existing) {
+    existing = await WorkflowConfig.findOne(query);
+  }
 
   if (existing) {
     existing.name = configData.name;
@@ -5962,6 +6025,17 @@ const createOrUpdateWorkflowConfig = async (configData, tenantCompanyId) => {
     color: configData.color || "#1890ff",
     tenantCompanyId,
   });
+};
+
+const deleteWorkflowConfig = async (configId, tenantCompanyId) => {
+  const result = await WorkflowConfig.findOneAndDelete({
+    _id: configId,
+    tenantCompanyId,
+  });
+  if (!result) {
+    throw new Error("Workflow template not found");
+  }
+  return result;
 };
 
 // Get all workflow configurations for a tenant (filtered by department/user if requested)
@@ -6503,6 +6577,7 @@ module.exports = {
   getTaskActivity,
   getWorkflowConfig,
   createOrUpdateWorkflowConfig,
+  deleteWorkflowConfig,
   getAllWorkflowConfigs,
   getNotificationSettings,
   updateNotificationSettings,
