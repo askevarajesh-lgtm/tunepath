@@ -14,7 +14,8 @@ import {
   useAddLeadNoteMutation,
   useDeleteLeadNoteMutation,
   useAddLeadReminderMutation,
-  useGetLeadByIdQuery
+  useGetLeadByIdQuery,
+  useGetLeadsQuery
 } from '../../api/leadApi';
 import { useGetDepartmentsQuery } from '../../api/settingsApi';
 import { useSyncWhatsAppLeadsMutation, useGetFacebookIntegrationsQuery, useLazyGetFacebookFormsQuery, useSyncFacebookLeadsMutation } from '../../api/integrationApi';
@@ -65,6 +66,9 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const [statusFilter, setStatusFilter] = useState([]);
   const [departmentFilter, setDepartmentFilter] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assigningLeads, setAssigningLeads] = useState([]);
@@ -406,58 +410,32 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
     }
   ];
 
-  const filteredLeads = leads.filter(lead => {
-    if (activeTab === 'reminders') {
-      if (!lead.reminders || lead.reminders.length === 0) return false;
-    }
-
-    let dateMatch = true;
+  const queryParams = useMemo(() => {
+    const params = {
+      page: currentPage,
+      limit: pageSize,
+    };
+    if (activeTab === 'reminders') params.filter = 'reminder';
+    if (searchQuery && searchQuery.trim()) params.search = searchQuery.trim();
+    if (statusFilter && statusFilter.length > 0) params.status = statusFilter[0]; // Supports single status on server for now
+    if (departmentFilter && departmentFilter.length > 0) params.department = departmentFilter[0];
+    if (formNameFilter && formNameFilter.length > 0) params.formName = formNameFilter[0];
     if (dateRangeFilter && dateRangeFilter.length === 2) {
-      const start = dateRangeFilter[0].startOf('day');
-      const end = dateRangeFilter[1].endOf('day');
-      const leadDate = getActualLeadDate(lead);
-      dateMatch = leadDate.isAfter(start) && leadDate.isBefore(end);
+      params.startDate = dateRangeFilter[0].toISOString();
+      params.endDate = dateRangeFilter[1].toISOString();
     }
-    
-    let formMatch = true;
-    if (formNameFilter && formNameFilter.length > 0) {
-      const formName = getFormName(lead).toLowerCase();
-      formMatch = formNameFilter.some(filterItem => formName.includes(filterItem.toLowerCase()));
-    }
+    return params;
+  }, [currentPage, pageSize, activeTab, searchQuery, statusFilter, departmentFilter, formNameFilter, dateRangeFilter]);
 
-    let departmentMatch = true;
-    if (isAgencyClient && departmentFilter && departmentFilter.length > 0) {
-      departmentMatch = departmentFilter.includes(lead.assignedDepartment);
-    }
+  const { data: serverLeadsData, isLoading: isServerLeadsLoading, refetch: refetchServerLeads } = useGetLeadsQuery(queryParams, { skip: !activeTab });
+  
+  const serverLeads = serverLeadsData?.data?.leads || serverLeadsData?.leads || [];
+  const serverTotal = serverLeadsData?.data?.total || serverLeadsData?.total || 0;
 
-    let searchMatch = true;
-    if (searchQuery && searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const name = (lead.fullName || '').toLowerCase();
-      const email = (lead.email || '').toLowerCase();
-      const phone = (lead.phoneNumber || '').toLowerCase();
-      const formName = getFormName(lead).toLowerCase();
-      const source = (lead.source || '').toLowerCase();
-      const status = (lead.status || '').toLowerCase();
-      const assignedTo = (lead.assignedTo || '').toLowerCase();
-      const assignedDepartment = (lead.assignedDepartment || '').toLowerCase();
+  const displayLeads = serverLeads;
 
-      searchMatch = name.includes(q) ||
-                    email.includes(q) ||
-                    phone.includes(q) ||
-                    formName.includes(q) ||
-                    source.includes(q) ||
-                    status.includes(q) ||
-                    assignedTo.includes(q) ||
-                    assignedDepartment.includes(q);
-    }
-    let statusMatch = true;
-    if (statusFilter && statusFilter.length > 0) {
-      statusMatch = statusFilter.includes(lead.status);
-    }
-    
-    return dateMatch && formMatch && searchMatch && statusMatch && departmentMatch;
-  }).sort((a, b) => getActualLeadDate(b).valueOf() - getActualLeadDate(a).valueOf());
+  // We keep filteredLeads for calculating dropdowns, though they will only reflect the current page of leads
+  const filteredLeads = leads;
 
   const handleEditClick = (record) => {
     setEditingLead(record);
@@ -512,6 +490,8 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
         setLeadCountryIso('IN');
       } catch (error) {
         message.error(error?.data?.message || error.message || 'Failed to save lead');
+      } finally {
+        refetchServerLeads?.();
       }
     });
   };
@@ -777,10 +757,20 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
         
         <Table 
           columns={columns} 
-          dataSource={filteredLeads} 
+          dataSource={displayLeads} 
           rowKey="_id"
-          loading={isLoading}
-          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+          loading={isLoading || isServerLeadsLoading}
+          pagination={{ 
+            current: currentPage,
+            pageSize: pageSize,
+            total: serverTotal,
+            showSizeChanger: true, 
+            pageSizeOptions: ['10', '20', '50', '100', '200'] 
+          }}
+          onChange={(pagination) => {
+            setCurrentPage(pagination.current);
+            setPageSize(pagination.pageSize);
+          }}
           rowSelection={{ 
             type: 'checkbox',
             selectedRowKeys,

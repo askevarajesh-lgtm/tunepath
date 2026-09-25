@@ -15,6 +15,11 @@ const ProposalsList = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [total, setTotal] = useState(0);
+
   // Filter states
   const [searchText, setSearchText] = useState('');
   const [selectedClient, setSelectedClient] = useState(undefined);
@@ -33,7 +38,7 @@ const ProposalsList = () => {
 
   useEffect(() => {
     fetchProposals();
-  }, [searchText, selectedClient, selectedStatus, selectedMonth]);
+  }, [searchText, selectedClient, selectedStatus, selectedMonth, currentPage, pageSize]);
 
   const fetchClients = async () => {
     try {
@@ -49,7 +54,10 @@ const ProposalsList = () => {
   const fetchProposals = async () => {
     try {
       setLoading(true);
-      const params = {};
+      const params = {
+        page: currentPage,
+        limit: pageSize,
+      };
       if (searchText.trim()) params.search = searchText.trim();
       if (selectedClient && selectedClient !== 'all') params.clientId = selectedClient;
       if (selectedStatus && selectedStatus !== 'all') params.status = selectedStatus;
@@ -58,6 +66,7 @@ const ProposalsList = () => {
       const res = await api.get('/proposals', { params });
       if (res.data?.success) {
         setProposals(res.data.data || []);
+        setTotal(res.data.total || 0);
       }
     } catch (error) {
       console.error('Failed to fetch proposals:', error);
@@ -72,6 +81,7 @@ const ProposalsList = () => {
     setSelectedClient(undefined);
     setSelectedStatus(undefined);
     setSelectedMonth(null);
+    setCurrentPage(1);
   };
 
   const handleDelete = async (id) => {
@@ -243,6 +253,17 @@ const ProposalsList = () => {
             )}
           ]} 
           dataSource={proposals} 
+          pagination={{ 
+            current: currentPage,
+            pageSize: pageSize,
+            total: total,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '20', '50', '100', '200']
+          }}
+          onChange={(pagination) => {
+            setCurrentPage(pagination.current);
+            setPageSize(pagination.pageSize);
+          }}
         />
       </Card>
     </div>

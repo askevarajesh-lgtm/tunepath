@@ -49,6 +49,7 @@ const clientOverviewRoutes = require('../modules/accounts/clientOverview.routes'
 const agencyBillingRoutes = require('../modules/accounts/agencyBilling.routes');
 const agencyReportsRoutes = require('../modules/accounts/agencyReports.routes');
 const agencySettingsRoutes = require('../modules/accounts/agencySettings.routes');
+const taxSettingsRoutes = require('../modules/accounts/taxSettings.routes');
 const agencyPerformanceRoutes = require('../modules/accounts/agencyPerformance.routes');
 const agencySupportRoutes = require('../modules/accounts/agencySupport.routes');
 const agencyUsersRoutes = require('../modules/accounts/agencyUsers.routes');
@@ -87,6 +88,7 @@ router.use('/client/overview', clientOverviewRoutes);
 router.use('/agency/billing', agencyBillingRoutes);
 router.use('/agency/reports', agencyReportsRoutes);
 router.use('/agency/settings', agencySettingsRoutes);
+router.use('/tax-settings', taxSettingsRoutes);
 router.use('/agency/performance', agencyPerformanceRoutes);
 router.use('/agency/support', agencySupportRoutes);
 router.use('/agency/users', agencyUsersRoutes);

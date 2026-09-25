@@ -280,14 +280,39 @@ const getLeads = async (companyId, currentUser, query = {}) => {
   if (query.source) {
     accessFilter.source = query.source;
   }
+  if (query.department) {
+    accessFilter.assignedDepartment = query.department;
+  }
+  if (query.formName) {
+    const fnRegex = new RegExp(escapeRegex(query.formName), "i");
+    accessFilter.$or = [
+      ...(accessFilter.$or || []),
+      { "customData.form_name": fnRegex },
+      { "customData.formName": fnRegex },
+      { formName: fnRegex }
+    ];
+  }
+  if (query.startDate && query.endDate) {
+    const start = new Date(query.startDate);
+    const end = new Date(query.endDate);
+    end.setHours(23, 59, 59, 999);
+    // Approximate by createdAt for server-side
+    accessFilter.createdAt = { $gte: start, $lte: end };
+  }
   if (query.search && query.search.trim()) {
     const sRegex = new RegExp(escapeRegex(query.search.trim()), "i");
-    accessFilter.$or = [
+    const searchOr = [
       { fullName: sRegex },
       { phoneNumber: sRegex },
       { email: sRegex },
       { companyName: sRegex }
     ];
+    if (accessFilter.$or) {
+      accessFilter.$and = [{ $or: accessFilter.$or }, { $or: searchOr }];
+      delete accessFilter.$or;
+    } else {
+      accessFilter.$or = searchOr;
+    }
   }
 
   // By default, exclude heavy subdocuments for high-speed listing

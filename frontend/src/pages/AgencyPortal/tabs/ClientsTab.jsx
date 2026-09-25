@@ -59,6 +59,11 @@ const ClientsTab = () => {
   const [clientDataLoading, setClientDataLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalClients, setTotalClients] = useState(0);
+
   const [clientCountryCode, setClientCountryCode] = useState('91');
   const [clientCountryIso, setClientCountryIso] = useState('IN');
   const [clientEditCountryCode, setClientEditCountryCode] = useState('91');
@@ -89,8 +94,6 @@ const ClientsTab = () => {
       const res = await fetch('/api/users', { headers });
       const data = await res.json();
       if (data.success) {
-        // Filter out agency super admins or anyone who inherently has access to all clients
-        // Or just let them be assignable too. For now, we list all agency users.
         const allUsers = data.data || [];
         const excludedRoles = [
           'supreme_super_admin', 'superadmin', 'super_admin', 'commander_admin', 'admin',
@@ -124,8 +127,6 @@ const ClientsTab = () => {
         localStorage.setItem('user', JSON.stringify(data.user));
         message.success(`Logged in as ${data.user.name}`);
         login(data.user);
-
-        // Redirect to the client's dashboard path based on their role
         navigate('/client');
       } else {
         message.error(data.message || data.error || 'Failed to login as client');
@@ -136,13 +137,19 @@ const ClientsTab = () => {
     }
   };
 
-  const fetchClients = async () => {
+  const fetchClients = async (page = 1, limit = 10, search = '') => {
     try {
       setLoading(true);
       const headers = { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
+      
+      const queryParams = new URLSearchParams({
+        page,
+        limit,
+        ...(search ? { search } : {})
+      }).toString();
 
       const [brandsRes, mosRes] = await Promise.all([
-        fetch('/api/brands', { headers }),
+        fetch(`/api/brands?${queryParams}`, { headers }),
         fetch('/api/mos/dashboard', { headers })
       ]);
 
@@ -152,6 +159,7 @@ const ClientsTab = () => {
       const mosClients = mosData.success && mosData.data ? mosData.data.clients : [];
 
       if (brandsData.success) {
+        setTotalClients(brandsData.pagination?.total || 0);
         setDbClients(brandsData.data.map(c => {
           const mosInfo = mosClients.find(m => m.clientId === c._id) || {};
 
@@ -182,7 +190,11 @@ const ClientsTab = () => {
   };
 
   useEffect(() => {
-    fetchClients();
+    // Only fetch on mount or when dependencies change
+    fetchClients(currentPage, pageSize, searchQuery);
+  }, [currentPage, pageSize]); // Add dependencies as needed
+
+  useEffect(() => {
     fetchPackages();
   }, []);
 
@@ -412,23 +424,15 @@ const ClientsTab = () => {
     </div>
   );
 
-  // Filter clients by name or email against the search query.
-  // This is the piece that was missing: the Input had no value/onChange,
-  // so nothing ever consumed what the user typed.
+  // Frontend filtering is now only for globalSelectedClient if needed, 
+  // search is handled by the backend.
   const filteredClients = useMemo(() => {
     let clientsToFilter = dbClients;
     if (globalSelectedClient) {
       clientsToFilter = dbClients.filter(c => c._id === globalSelectedClient._id);
     }
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return clientsToFilter;
-    return clientsToFilter.filter(c => {
-      const name = (c.name || '').toLowerCase();
-      const email = (c.adminEmail || c.email || '').toLowerCase();
-      const contactPerson = (c.contactPersonName || '').toLowerCase();
-      return name.includes(q) || email.includes(q) || contactPerson.includes(q);
-    });
-  }, [dbClients, searchQuery]);
+    return clientsToFilter;
+  }, [dbClients, globalSelectedClient]);
 
   const hasAccountsPerm = (action) => {
     if (['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager'].includes(user?.role)) return true;
@@ -444,7 +448,7 @@ const ClientsTab = () => {
         <div>
           <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>All Clients</Title>
           <Text type="secondary" style={{ fontSize: 15, fontWeight: 500 }}>
-            {filteredClients.length} of {dbClients.length} total active clients in your agency
+            {totalClients} total active clients in your agency
           </Text>
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -467,11 +471,19 @@ const ClientsTab = () => {
 
           <Input
             prefix={<Search size={18} style={{ color: 'var(--text-tertiary)' }} />}
-            placeholder="Search clients by name or email..."
+            placeholder="Search clients by name or email (press enter)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onPressEnter={() => {
+              setCurrentPage(1);
+              fetchClients(1, pageSize, searchQuery);
+            }}
             allowClear
-            onClear={() => setSearchQuery('')}
+            onClear={() => {
+              setSearchQuery('');
+              setCurrentPage(1);
+              fetchClients(1, pageSize, '');
+            }}
             style={{
               maxWidth: 400,
               background: 'transparent',
@@ -687,11 +699,17 @@ const ClientsTab = () => {
 
       <Card>
         <Table
-
           dataSource={filteredClients}
           rowKey="_id"
+          loading={loading}
+          onChange={(pagination) => {
+            setCurrentPage(pagination.current);
+            setPageSize(pagination.pageSize);
+          }}
           pagination={{
-            defaultPageSize: 10,
+            current: currentPage,
+            pageSize: pageSize,
+            total: totalClients,
             showSizeChanger: true,
             pageSizeOptions: ['10', '20', '50', '100'],
             showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,

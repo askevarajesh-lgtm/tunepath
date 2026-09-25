@@ -86,4 +86,4 @@ export const useGetCoordinatorTasksQuery = createQueryHook((params) => ({ url: '
 export const useCreateCoordinatorTaskMutation = createMutationHook((data) => ({ url: '/coordinator-tasks', method: 'POST', body: data }));
 export const useDeleteCoordinatorTaskMutation = createMutationHook((id) => ({ url: `/coordinator-tasks/${id}`, method: 'DELETE' }));
 export const useGetCoordinatorTaskByIdQuery = createQueryHook((id) => ({ url: `/coordinator-tasks/${id}` }));
-export const useGetTodayCoordinatorTaskStatsQuery = createQueryHook(() => ({ url: '/coordinator-tasks/stats/today' }));
+export const useGetTodayCoordinatorTaskStatsQuery = createQueryHook(() => ({ url: '/coordinator-tasks/today-stats' }));

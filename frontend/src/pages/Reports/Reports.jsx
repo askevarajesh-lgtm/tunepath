@@ -13,7 +13,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell, Legend 
 } from 'recharts';
 import api from '../../services/api';
-import { getRecentSentReports, getMonthlyHighlights } from '../../api/reportApi';
+import { getRecentSentReports, getMonthlyHighlights, getReportDashboardStats } from '../../api/reportApi';
 import { generateMonthlyHighlightsPDF, generateMetaCampaignCombinedPDF } from '../../utils/monthlyHighlightsPdfGenerator';
 import { useGetClientsQuery } from '../../api/clientApi';
 import { useClientContext } from '../../contexts/ClientContext';
@@ -35,6 +35,11 @@ const Reports = () => {
   const { selectedClient: headerSelectedClient, agencyClients } = useClientContext();
   
   const [recentSentReports, setRecentSentReports] = useState([]);
+  const [totalReports, setTotalReports] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [dashboardStats, setDashboardStats] = useState(null);
+  
   const [realLeads, setRealLeads] = useState([]);
   const [realProposals, setRealProposals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -87,8 +92,24 @@ const Reports = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const recent = await getRecentSentReports();
-      setRecentSentReports(recent);
+      const params = {
+        page: currentPage,
+        limit: pageSize,
+        clientId: selectedClient,
+        month: selectedMonth ? selectedMonth.month() + 1 : 'all',
+        year: selectedMonth ? selectedMonth.year() : 'all'
+      };
+      
+      const recent = await getRecentSentReports(params);
+      setRecentSentReports(recent.data || []);
+      setTotalReports(recent.total || 0);
+
+      const stats = await getReportDashboardStats({
+        clientId: selectedClient,
+        month: selectedMonth ? selectedMonth.month() + 1 : 'all',
+        year: selectedMonth ? selectedMonth.year() : 'all'
+      });
+      setDashboardStats(stats);
 
       try {
         const leadsRes = await api.get('/leads');
@@ -116,7 +137,12 @@ const Reports = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [selectedClient, selectedMonth, currentPage, pageSize]);
+
+  const handleTableChange = (pagination) => {
+    setCurrentPage(pagination.current);
+    setPageSize(pagination.pageSize);
+  };
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -128,136 +154,39 @@ const Reports = () => {
     visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
   };
 
-  // Filter and deduplicate reports
-  const filteredReports = useMemo(() => {
-    const rawFiltered = recentSentReports.filter(report => {
-      if (selectedClient !== 'all') {
-        const reportClientId = typeof report.clientId === 'object' ? report.clientId?._id : report.clientId;
-        if (String(reportClientId) !== String(selectedClient)) return false;
-      }
-      if (selectedMonth) {
-        const reportDate = dayjs(report.sentAt);
-        if (reportDate.month() !== selectedMonth.month() || reportDate.year() !== selectedMonth.year()) {
-          return false;
-        }
-      }
-      return true;
-    });
+  // We no longer filter reports on the frontend; recentSentReports are already filtered.
+  const filteredReports = recentSentReports;
 
-    // Guard against any duplicate entries by client + template + period
-    const seen = new Set();
-    const uniqueList = [];
-    rawFiltered.forEach(r => {
-      const cId = typeof r.clientId === 'object' ? String(r.clientId?._id) : String(r.clientId);
-      const tmpl = String(r.template || r.name || '').trim();
-      const period = r.fromDate && r.toDate 
-        ? `${r.fromDate}_${r.toDate}` 
-        : (r.month && r.year ? `${r.year}_${r.month}` : dayjs(r.sentAt).format('YYYY-MM-DD'));
-      const key = `${cId}_${tmpl}_${period}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueList.push(r);
-      }
-    });
-
-    return uniqueList;
-  }, [recentSentReports, selectedClient, selectedMonth]);
-
-  // Compute Client Reporting Coverage for selected period
+  // Use dashboardStats from backend instead of computing on frontend
   const clientCoverage = useMemo(() => {
-    if (!clients || clients.length === 0) return { covered: 0, total: 0, percentage: 0, list: [] };
+    const total = (selectedClient && selectedClient !== 'all') ? 1 : clients.length;
+    const covered = dashboardStats?.clientCoverage || 0;
+    const percentage = total > 0 ? Math.round((covered / total) * 100) : 0;
     
-    // When a specific client is selected in the filter or header, display only that client
     const targetClients = (selectedClient && selectedClient !== 'all')
       ? clients.filter(c => String(c._id) === String(selectedClient))
       : clients;
 
     const list = targetClients.map(c => {
       const cId = String(c._id);
-      const reportsForClient = filteredReports.filter(r => {
-        const rId = typeof r.clientId === 'object' ? String(r.clientId?._id) : String(r.clientId);
-        return rId === cId;
-      });
+      const stats = dashboardStats?.clientStatsMap?.[cId] || { reportsCount: 0, latestReport: null };
       return {
         client: c,
-        reportsCount: reportsForClient.length,
-        hasReport: reportsForClient.length > 0,
-        latestReport: reportsForClient[0] || null
+        reportsCount: stats.reportsCount,
+        hasReport: stats.reportsCount > 0,
+        latestReport: stats.latestReport
       };
     });
-
-    const covered = list.filter(item => item.hasReport).length;
-    const total = targetClients.length;
-    const percentage = total > 0 ? Math.round((covered / total) * 100) : 0;
-
+    
     return { covered, total, percentage, list };
-  }, [clients, filteredReports, selectedClient]);
+  }, [dashboardStats, clients, selectedClient]);
 
-  // 6-Month Publishing Trend
-  const monthlyTrendData = useMemo(() => {
-    const monthAbbrs = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const baseDate = selectedMonth || dayjs();
-    const months = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = baseDate.subtract(i, 'month');
-      months.push({
-        key: `${d.year()}-${d.month()}`,
-        monthName: `${monthAbbrs[d.month()]} ${d.year()}`,
-        monthIdx: d.month(),
-        yearVal: d.year(),
-        count: 0
-      });
-    }
-
-    recentSentReports.forEach(r => {
-      if (selectedClient !== 'all') {
-        const rClientId = typeof r.clientId === 'object' ? String(r.clientId?._id) : String(r.clientId);
-        if (rClientId !== String(selectedClient)) return;
-      }
-      const rDate = dayjs(r.sentAt || r.createdAt);
-      const mMatch = months.find(m => m.monthIdx === rDate.month() && m.yearVal === rDate.year());
-      if (mMatch) {
-        mMatch.count += 1;
-      }
-    });
-
-    return months.map(m => ({
-      month: m.monthName,
-      reports: m.count
-    }));
-  }, [recentSentReports, selectedMonth, selectedClient]);
-
-  // Report Types Distribution
-  const reportTypesData = useMemo(() => {
-    if (filteredReports.length === 0) return [];
-
-    const counts = {};
-    filteredReports.forEach(r => {
-      const type = r.template || 'Highlights of the Month';
-      counts[type] = (counts[type] || 0) + 1;
-    });
-
-    const typeColors = {
-      'Highlights of the Month': '#8b5cf6',
-      'Keywords': '#10b981',
-      'Meta Campaign': '#3b82f6',
-      'Meta Insights': '#1877f2',
-      'Website Traffic': '#0284c7',
-      'Social Media Post Insights': '#ec4899',
-    };
-
-    return Object.keys(counts).map(key => ({
-      name: key,
-      value: counts[key],
-      color: typeColors[key] || '#8b5cf6'
-    }));
-  }, [filteredReports]);
-
-  // Real KPIs
-  const totalSent = filteredReports.length;
-  const totalOpened = filteredReports.filter(r => ['Opened', 'Delivered', 'Published', 'Sent'].includes(r.status)).length;
-  const deliveryRate = totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 100;
-  const activeCategoriesCount = reportTypesData.length;
+  const monthlyTrendData = dashboardStats?.monthlyTrendData || [];
+  const reportTypesData = dashboardStats?.reportTypesData || [];
+  
+  const totalSent = dashboardStats?.totalSent || 0;
+  const deliveryRate = dashboardStats?.deliveryRate || "0%";
+  const activeCategoriesCount = dashboardStats?.activeCategoriesCount || 0;
 
   const handleOpenCreateReport = (clientId = null, template = 'Highlights of the Month') => {
     const rawClientId = (clientId && typeof clientId === 'object' && clientId._id) ? clientId._id : (typeof clientId === 'string' ? clientId : null);
@@ -792,8 +721,11 @@ const Reports = () => {
             loading={loading} 
             columns={recentCols} 
             dataSource={filteredReports.length > 0 ? filteredReports : []}
+            onChange={handleTableChange}
             pagination={{ 
-              defaultPageSize: 10, 
+              current: currentPage,
+              pageSize: pageSize,
+              total: totalReports,
               pageSizeOptions: ['10', '20', '50', '100'], 
               showSizeChanger: true, 
               showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} reports`,

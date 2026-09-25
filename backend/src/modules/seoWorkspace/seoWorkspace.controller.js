@@ -1396,7 +1396,7 @@ exports.getKeywords = async (req, res) => {
     const query = { projectId: { $in: projectIds } };
     if (req.query.projectId) {
       if (!projectIds.some(id => id.toString() === req.query.projectId)) {
-        return res.json([]);
+        return res.json({ data: [], total: 0 });
       }
       query.projectId = req.query.projectId;
     }
@@ -1411,16 +1411,39 @@ exports.getKeywords = async (req, res) => {
     }
     if (req.query.verificationStatus) {
       query.verificationStatus = req.query.verificationStatus;
+    } else if (req.query.verificationStatusNot) {
+      query.verificationStatus = { $ne: req.query.verificationStatusNot };
+    }
+    if (req.query.search) {
+      query.keyword = { $regex: req.query.search, $options: 'i' };
     }
 
+    // Pagination
+    let page = parseInt(req.query.page, 10);
+    let limit = parseInt(req.query.limit, 10);
+    
     let keywordsQuery = WorkspaceKeyword.find(query).populate('projectId', 'name').sort({ 'metrics.searchVolume': -1 });
+    
+    let total = await WorkspaceKeyword.countDocuments(query);
+    
+    if (page && limit) {
+      const skip = (page - 1) * limit;
+      keywordsQuery = keywordsQuery.skip(skip).limit(limit);
+    }
+    
     let keywords = await keywordsQuery;
 
     if (req.query.longTail === 'true') {
+      // NOTE: longTail filter is applied in-memory, so total might be inaccurate if paginated.
       keywords = keywords.filter((k) => k.keyword.trim().split(/\s+/).length >= 4);
     }
 
-    res.json(keywords);
+    // Return object format when paginated, array format otherwise for backwards compatibility if needed
+    if (req.query.page && req.query.limit) {
+       res.json({ data: keywords, total, page, limit });
+    } else {
+       res.json(keywords);
+    }
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

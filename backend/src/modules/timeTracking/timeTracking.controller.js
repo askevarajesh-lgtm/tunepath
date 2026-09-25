@@ -274,13 +274,20 @@ exports.getRecentEntries = async (req, res) => {
       matchQuery.employee = new mongoose.Types.ObjectId(req.user._id);
     }
 
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const total = await TimeEntry.countDocuments(matchQuery);
+
     const entries = await TimeEntry.find(matchQuery)
       .populate('employee', 'name departmentId departmentName')
       .populate('client', 'name companyName')
       .populate('task', 'title department status')
       .populate('department', 'name')
       .sort({ date: -1, createdAt: -1 })
-      .limit(20);
+      .skip(skip)
+      .limit(limit);
 
     const formatted = entries.map(e => ({
       id: e._id,
@@ -303,7 +310,7 @@ exports.getRecentEntries = async (req, res) => {
       source: e.source
     }));
 
-    res.status(200).json({ success: true, data: formatted });
+    res.status(200).json({ success: true, data: formatted, total, page, limit });
   } catch (error) {
     console.error('Error fetching recent entries:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch entries', error: error.message });
@@ -911,5 +918,192 @@ exports.getTeamTaskPerformance = async (req, res) => {
   } catch (error) {
     console.error('getTeamTaskPerformance error:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch team performance', error: error.message });
+  }
+};
+
+// ─── GET /timesheet — getTimesheetData ───────────────────────────────────────
+exports.getTimesheetData = async (req, res) => {
+  try {
+    if (!req.companyId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
+
+    const startDateParam = req.query.startDate ? new Date(req.query.startDate) : null;
+    const endDateParam = req.query.endDate ? new Date(req.query.endDate) : null;
+    const dateParam = req.query.date ? new Date(req.query.date) : new Date();
+
+    let startOfWeek, endOfWeek;
+    if (startDateParam && endDateParam) {
+      startOfWeek = new Date(startDateParam);
+      startOfWeek.setUTCHours(0, 0, 0, 0);
+      endOfWeek = new Date(endDateParam);
+      endOfWeek.setUTCHours(23, 59, 59, 999);
+    } else {
+      const weekRange = getWeekRange(dateParam);
+      startOfWeek = weekRange.startOfWeek;
+      endOfWeek = weekRange.endOfWeek;
+    }
+
+    const companyIdSet = new Set(
+      [tenantObjectId, req.user?.companyId, req.user?.brandId, req.user?.agencyId, req.user?._id]
+        .filter(Boolean)
+        .map(id => id.toString())
+    );
+    const companyIdList = Array.from(companyIdSet).map(id => new mongoose.Types.ObjectId(id));
+
+    const baseMatch = {
+      $or: [
+        { tenantCompanyId: { $in: companyIdList } },
+        { client: { $in: companyIdList } }
+      ]
+    };
+    if (['user', 'brand_team_user'].includes(req.user.role)) {
+      baseMatch.employee = new mongoose.Types.ObjectId(req.user._id);
+    }
+
+    const weekMatch = { ...baseMatch, date: { $gte: startOfWeek, $lte: endOfWeek } };
+
+    const activeTasks = await Task.find({
+      $or: [
+        { tenantCompanyId: { $in: companyIdList } },
+        { companyId: { $in: companyIdList } }
+      ],
+      workStartedAt: { $ne: null }
+    }).populate('assignedTo', 'name departmentId departmentName')
+      .populate('companyId', 'companyName name');
+
+    const now = new Date();
+    const weekStartMs = startOfWeek.getTime();
+    const weekEndMs = endOfWeek.getTime();
+    const nowMs = now.getTime();
+
+    const activeTasksData = activeTasks.map(t => {
+      const startedAt = new Date(t.workStartedAt);
+      const startedMs = startedAt.getTime();
+      const overlapWeekStart = Math.max(startedMs, weekStartMs);
+      const overlapWeekEnd = Math.min(nowMs, weekEndMs);
+      const elapsedWeekMin = overlapWeekStart < overlapWeekEnd ? (overlapWeekEnd - overlapWeekStart) / 60000 : 0;
+      return {
+        ...t.toObject(),
+        employeeId: t.assignedTo?._id?.toString(),
+        departmentId: t.assignedTo?.departmentId?.toString(),
+        departmentName: t.assignedTo?.departmentName || t.department || '—',
+        elapsedWeekHours: elapsedWeekMin / 60,
+        startedMs
+      };
+    });
+
+    let eligibleUsers = await getEligibleUsers(req, companyIdList);
+    
+    // Filter by department and member search
+    if (req.query.departmentId && req.query.departmentId !== 'all') {
+      eligibleUsers = eligibleUsers.filter(u => u.departmentId?.toString() === req.query.departmentId);
+    }
+    if (req.query.searchMember) {
+      const s = req.query.searchMember.toLowerCase();
+      eligibleUsers = eligibleUsers.filter(u => u.name?.toLowerCase().includes(s));
+    }
+
+    const total = eligibleUsers.length;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    eligibleUsers = eligibleUsers.slice((page - 1) * limit, page * limit);
+
+    const weekEntries = await TimeEntry.find(weekMatch)
+      .populate('task', 'title status companyId')
+      .populate('client', 'companyName name')
+      .populate('department', 'name')
+      .lean();
+
+    const departments = await getDepartments(companyIdList);
+    const deptMap = {};
+    departments.forEach(d => { deptMap[d._id.toString()] = d.name; });
+
+    const getIsoDayOfWeek = (dateInput) => {
+      if (!dateInput) return 0;
+      if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+        const [y, m, dayNum] = dateInput.split('-').map(Number);
+        const d = new Date(Date.UTC(y, m - 1, dayNum));
+        const day = d.getUTCDay();
+        return day === 0 ? 7 : day;
+      }
+      const d = new Date(dateInput);
+      if (isNaN(d.getTime())) return 0;
+      const day = d.getUTCDay();
+      return day === 0 ? 7 : day;
+    };
+
+    const colors = ['var(--accent-warning)', 'var(--accent-primary)', 'var(--accent-info)', 'var(--accent-secondary)', 'var(--accent-danger)'];
+    
+    const timesheetData = eligibleUsers.map((u, i) => {
+      const empEntries = weekEntries.filter(e => e.employee && e.employee.toString() === u._id.toString());
+      
+      const daysArr = [1, 2, 3, 4, 5, 6, 7].map(isoDay => {
+        const dayEntries = empEntries.filter(e => getIsoDayOfWeek(e.date) === isoDay);
+        const dayHours = dayEntries.reduce((sum, e) => sum + (Number(e.hours) || 0), 0);
+        const entries = dayEntries.map(e => ({
+          taskId: e.task?._id,
+          taskTitle: e.description || e.task?.title || 'General Work',
+          client: e.client?.companyName || e.client?.name || null,
+          department: e.department?.name || e.moduleName || null,
+          status: e.task?.status,
+          hours: Number(e.hours) || 0,
+          isBillable: e.isBillable !== false,
+          isRunning: false,
+          startedAt: e.createdAt,
+          description: e.description
+        }));
+        return { total: parseFloat(dayHours.toFixed(2)), entries };
+      });
+
+      const visualTotal = daysArr.reduce((s, v) => s + v.total, 0);
+      let finalTotal = visualTotal;
+      const daysArrWithActive = [...daysArr];
+      
+      const empActiveTasks = activeTasksData.filter(t => t.employeeId === u._id.toString());
+      empActiveTasks.forEach(t => {
+        if (t.elapsedWeekHours > 0) {
+          finalTotal += t.elapsedWeekHours;
+          for (let isoDay = 1; isoDay <= 7; isoDay++) {
+            const dayStartMs = weekStartMs + (isoDay - 1) * 86400000;
+            const dayEndMs = dayStartMs + 86400000 - 1;
+            const overlapDayStart = Math.max(t.startedMs, dayStartMs);
+            const overlapDayEnd = Math.min(nowMs, dayEndMs);
+            if (overlapDayStart < overlapDayEnd) {
+              const dayElapsed = (overlapDayEnd - overlapDayStart) / 3600000;
+              daysArrWithActive[isoDay - 1].total = parseFloat((daysArrWithActive[isoDay - 1].total + dayElapsed).toFixed(2));
+              daysArrWithActive[isoDay - 1].entries.push({
+                taskId: t._id,
+                taskTitle: t.title || 'General Work',
+                client: t.companyId?.companyName || t.companyId?.name || null,
+                department: t.department || null,
+                status: t.status,
+                hours: parseFloat(dayElapsed.toFixed(2)),
+                isBillable: true,
+                isRunning: true,
+                startedAt: new Date(overlapDayStart)
+              });
+            }
+          }
+        }
+      });
+
+      const deptName = u.departmentId ? (deptMap[u.departmentId.toString()] || u.departmentName || '—') : (u.departmentName || '—');
+
+      return {
+        name: u.name,
+        role: u.roleName || u.role,
+        department: deptName,
+        initials: u.name ? u.name.substring(0, 2).toUpperCase() : 'UN',
+        color: colors[i % colors.length],
+        mon: daysArrWithActive[0], tue: daysArrWithActive[1], wed: daysArrWithActive[2],
+        thu: daysArrWithActive[3], fri: daysArrWithActive[4], sat: daysArrWithActive[5], sun: daysArrWithActive[6],
+        total: parseFloat(finalTotal.toFixed(2))
+      };
+    });
+
+    res.status(200).json({ success: true, data: timesheetData, total, page, limit });
+  } catch (error) {
+    console.error('getTimesheetData error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch timesheet data', error: error.message });
   }
 };
