@@ -131,6 +131,7 @@ const checkSocialMediaModuleEnabled = async (clientId, digitalInsights, delivera
 };
 
 const autoAggregateMetrics = async (clientId, month, year, projectId = null, fromDate = null, toDate = null) => {
+    const cache = require('../technicalSeo/providers/CacheProvider');
     let startDate, endDate, monthName;
     const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     
@@ -191,7 +192,9 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
                     { updatedAt: { $gte: startDate, $lte: endDate } }
                 ] }
             ]
-        }).catch(() => []);
+        })
+        .select('numberOfPosters completedPosters approvedPosters remainingPosters numberOfVideos completedVideos approvedVideos remainingVideos numberOfShoots completedShoots approvedShoots remainingShoots selectedCategories')
+        .lean().catch(() => []);
 
         projects.forEach(p => {
             const numPosters = p.numberOfPosters || 0;
@@ -441,7 +444,7 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
                 { createdAt: { $gte: prevMonthDate, $lte: endDate } }
             ] };
         }
-        const clientPosts = await PostModel.find({
+        const publishedPosts = await PostModel.find({
             $and: [
                 { $or: [
                     { clientCompanyId: { $in: clientTargetIds } },
@@ -449,27 +452,36 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
                     { userId: { $in: clientTargetIds } },
                     { brandId: { $in: clientTargetIds } }
                 ] },
-                postDateQuery
+                postDateQuery,
+                { $or: [
+                    { status: { $regex: /^published$/i } },
+                    { published_at: { $exists: true, $ne: null, $ne: '' } },
+                    { publishedAt: { $exists: true, $ne: null, $ne: '' } }
+                ] }
             ]
-        }).lean().catch(() => []);
-
-        const publishedPosts = clientPosts.filter(p => {
-            const statusStr = String(p.status || '').toLowerCase();
-            return statusStr === 'published' || p.published_at || p.publishedAt;
-        });
+        })
+        .select('status published_at publishedAt scheduled_iso scheduledISO created_at createdAt platforms platform_publications platform likes comments shares views videoViews impressions reach type post_option media_url link scheduledOption')
+        .lean().catch(() => []);
 
         await Promise.all(clientAccounts.map(async (acc) => {
             let followers = Number(acc.followers || acc.fan_count || acc.followers_count || acc.subscriberCount || acc.subscribers || 0);
             if (acc.access_token && (acc.platform === 'facebook' || acc.platform === 'instagram')) {
                 try {
                     const targetId = acc.ig_user_id || acc.page_id || 'me';
-                    const fields = acc.platform === 'instagram' ? 'id,name,username,followers_count' : 'id,name,fan_count,followers_count';
-                    const graphRes = await axios.get(`https://graph.facebook.com/v18.0/${targetId}`, {
-                        params: { access_token: acc.access_token, fields },
-                        timeout: 2000
-                    }).catch(() => null);
-                    if (graphRes && graphRes.data) {
-                        followers = graphRes.data.followers_count ?? graphRes.data.fan_count ?? followers;
+                    const cacheKey = `social_followers_${acc.platform}_${targetId}`;
+                    const cachedFollowers = await cache.get(cacheKey);
+                    if (cachedFollowers !== null) {
+                        followers = cachedFollowers;
+                    } else {
+                        const fields = acc.platform === 'instagram' ? 'id,name,username,followers_count' : 'id,name,fan_count,followers_count';
+                        const graphRes = await axios.get(`https://graph.facebook.com/v18.0/${targetId}`, {
+                            params: { access_token: acc.access_token, fields },
+                            timeout: 2000
+                        }).catch(() => null);
+                        if (graphRes && graphRes.data) {
+                            followers = graphRes.data.followers_count ?? graphRes.data.fan_count ?? followers;
+                            await cache.set(cacheKey, followers, 86400);
+                        }
                     }
                 } catch (e) {}
             }
@@ -480,13 +492,20 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
                 liveIgFollowers = Math.max(liveIgFollowers, followers);
             } else if (acc.platform === 'youtube' || (acc.id && String(acc.id).startsWith('yt-'))) {
                 try {
-                    const campaignScheduledService = require('../campaign-scheduled/campaignScheduled.service');
-                    if (campaignScheduledService && campaignScheduledService.fetchYoutubeChannelLiveStats) {
-                        const ytPromise = campaignScheduledService.fetchYoutubeChannelLiveStats(acc).catch(() => null);
-                        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2000));
-                        const ytStats = await Promise.race([ytPromise, timeoutPromise]);
-                        if (ytStats && ytStats.subscribers) {
-                            followers = Math.max(followers, ytStats.subscribers);
+                    const cacheKey = `social_followers_yt_${acc.id || acc.channelId || acc._id}`;
+                    const cachedFollowers = await cache.get(cacheKey);
+                    if (cachedFollowers !== null) {
+                        followers = Math.max(followers, cachedFollowers);
+                    } else {
+                        const campaignScheduledService = require('../campaign-scheduled/campaignScheduled.service');
+                        if (campaignScheduledService && campaignScheduledService.fetchYoutubeChannelLiveStats) {
+                            const ytPromise = campaignScheduledService.fetchYoutubeChannelLiveStats(acc).catch(() => null);
+                            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2000));
+                            const ytStats = await Promise.race([ytPromise, timeoutPromise]);
+                            if (ytStats && ytStats.subscribers) {
+                                followers = Math.max(followers, ytStats.subscribers);
+                                await cache.set(cacheKey, followers, 86400);
+                            }
                         }
                     }
                 } catch (e) {}
@@ -642,9 +661,46 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
             if (monthName === 'Custom Range') {
                 snapQuery.createdAt = { $lte: endDate };
             }
-            const allSnapshots = await OptimizationSnapshot.find(snapQuery).sort({ createdAt: -1 }).lean().catch(() => []);
+            const latestSnapshot = await OptimizationSnapshot.findOne(snapQuery)
+                .sort({ createdAt: -1 })
+                .select('createdAt collectedAt seo.positionTracking.rankings seo.organicKeywordsData seo.topKeywords')
+                .lean()
+                .catch(() => null);
 
-            const latestSnapshot = allSnapshots[0] || null;
+            let allSnapshots = latestSnapshot ? [latestSnapshot] : [];
+
+            await Promise.all(trackedMonthsList.map(async (mStr) => {
+                if (mStr === 'Custom Range') return;
+                const [mName, yNum] = mStr.split(' ');
+                const mIdx = monthAbbrs.indexOf(mName);
+                if (mIdx !== -1) {
+                    const startOfMonth = new Date(Number(yNum), mIdx, 1);
+                    const endOfMonth = new Date(Number(yNum), mIdx + 1, 0, 23, 59, 59, 999);
+                    
+                    const mSnapQuery = {
+                        projectId: semrushProject._id,
+                        $or: [
+                            { createdAt: { $gte: startOfMonth, $lte: endOfMonth } },
+                            { collectedAt: { $gte: startOfMonth, $lte: endOfMonth } }
+                        ]
+                    };
+                    const mSnap = await OptimizationSnapshot.findOne(mSnapQuery)
+                        .sort({ createdAt: -1 })
+                        .select('createdAt collectedAt seo.positionTracking.rankings seo.organicKeywordsData seo.topKeywords')
+                        .lean()
+                        .catch(() => null);
+                    if (mSnap) {
+                        // Prevent duplicates if latestSnapshot matches
+                        if (!allSnapshots.some(s => String(s._id) === String(mSnap._id))) {
+                            allSnapshots.push(mSnap);
+                        }
+                    }
+                }
+            }));
+            
+            // Sort them again just to be strictly identical to previous array behavior
+            allSnapshots.sort((a, b) => new Date(b.createdAt || b.collectedAt) - new Date(a.createdAt || a.collectedAt));
+
             let rankings = latestSnapshot?.seo?.positionTracking?.rankings || latestSnapshot?.seo?.organicKeywordsData || latestSnapshot?.seo?.topKeywords || [];
 
             if (!rankings || rankings.length === 0) {
@@ -652,7 +708,11 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
                 if (monthName === 'Custom Range') {
                     dataQuery.snapshotDate = { $lte: endDate };
                 }
-                const projectData = await SemrushProjectData.findOne(dataQuery).sort({ snapshotDate: -1 }).lean().catch(() => null);
+                const projectData = await SemrushProjectData.findOne(dataQuery)
+                    .sort({ snapshotDate: -1 })
+                    .select('snapshotDate data.rankings data.organicKeywords')
+                    .lean()
+                    .catch(() => null);
                 if (projectData?.data?.rankings) {
                     rankings = projectData.data.rankings;
                 } else if (projectData?.data?.organicKeywords) {
@@ -791,12 +851,20 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
                 const lastDayNum = new Date(yVal, mIdx, 0).getDate();
                 const endDateStr = `${yVal}-${String(mIdx).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
 
-                const gaPromise = googleAnalyticsSource.getOverviewMetrics(ga4PropertyId, startDateStr, endDateStr).catch(() => null);
-                const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2500));
-                const gaRes = await Promise.race([gaPromise, timeoutPromise]);
-                if (gaRes && gaRes.connected) {
-                    totalUsers = gaRes.totalUsers || 0;
-                    newUsers = gaRes.newUsers || 0;
+                const cacheKey = `ga4_overview_${ga4PropertyId}_${startDateStr}_${endDateStr}`;
+                const cachedRes = await cache.get(cacheKey);
+                if (cachedRes !== null) {
+                    totalUsers = cachedRes.totalUsers || 0;
+                    newUsers = cachedRes.newUsers || 0;
+                } else {
+                    const gaPromise = googleAnalyticsSource.getOverviewMetrics(ga4PropertyId, startDateStr, endDateStr).catch(() => null);
+                    const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2500));
+                    const gaRes = await Promise.race([gaPromise, timeoutPromise]);
+                    if (gaRes && gaRes.connected) {
+                        totalUsers = gaRes.totalUsers || 0;
+                        newUsers = gaRes.newUsers || 0;
+                        await cache.set(cacheKey, { totalUsers, newUsers }, 86400);
+                    }
                 }
             }
 
@@ -824,11 +892,18 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
             const lastDayNum = new Date(year, month, 0).getDate();
             const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
 
-            const landingPromise = googleAnalyticsSource.getLandingPagesReport(ga4PropertyId, startDateStr, endDateStr, 20).catch(() => null);
-            const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2500));
-            const landingRes = await Promise.race([landingPromise, timeoutPromise]);
-            if (landingRes && landingRes.connected && Array.isArray(landingRes.rows)) {
-                websiteTrafficLandingPages = landingRes.rows;
+            const cacheKey = `ga4_landing_${ga4PropertyId}_${startDateStr}_${endDateStr}`;
+            const cachedRes = await cache.get(cacheKey);
+            if (cachedRes !== null) {
+                websiteTrafficLandingPages = cachedRes;
+            } else {
+                const landingPromise = googleAnalyticsSource.getLandingPagesReport(ga4PropertyId, startDateStr, endDateStr, 20).catch(() => null);
+                const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 2500));
+                const landingRes = await Promise.race([landingPromise, timeoutPromise]);
+                if (landingRes && landingRes.connected && Array.isArray(landingRes.rows)) {
+                    websiteTrafficLandingPages = landingRes.rows;
+                    await cache.set(cacheKey, websiteTrafficLandingPages, 86400);
+                }
             }
         }
     } catch (err) {
@@ -847,9 +922,16 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
             const lastDayNum = new Date(year, month, 0).getDate();
             const endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`;
 
-            const cityRes = await googleAnalyticsSource.getCityTrafficReport(ga4PropertyId, startDateStr, endDateStr, 20).catch(() => null);
-            if (cityRes && cityRes.connected && Array.isArray(cityRes.rows)) {
-                websiteTrafficUsersByCity = cityRes.rows;
+            const cacheKey = `ga4_city_${ga4PropertyId}_${startDateStr}_${endDateStr}`;
+            const cachedRes = await cache.get(cacheKey);
+            if (cachedRes !== null) {
+                websiteTrafficUsersByCity = cachedRes;
+            } else {
+                const cityRes = await googleAnalyticsSource.getCityTrafficReport(ga4PropertyId, startDateStr, endDateStr, 20).catch(() => null);
+                if (cityRes && cityRes.connected && Array.isArray(cityRes.rows)) {
+                    websiteTrafficUsersByCity = cityRes.rows;
+                    await cache.set(cacheKey, websiteTrafficUsersByCity, 86400);
+                }
             }
         }
     } catch (err) {

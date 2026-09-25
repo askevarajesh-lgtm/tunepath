@@ -85,7 +85,28 @@ exports.getCommandCenterData = async (req, res, next) => {
     if (req.user && req.user.role === 'commander_admin') {
       taskQuery.tenantCompanyId = { $in: allRelatedUserIds };
     }
-    const recentTasks = await Task.find(taskQuery);
+    
+    // Phase 9: Optimize Commander Dashboard Task Data by pushing calculations to MongoDB
+    const recentTasksAgg = await Task.aggregate([
+      { $match: taskQuery },
+      {
+        $group: {
+          _id: "$tenantCompanyId",
+          totalTasks: { $sum: 1 },
+          completedTasks: {
+            $sum: {
+              $cond: [
+                { $in: [{ $toLower: "$status" }, ['done', 'completed', 'complete']] }, 
+                1, 
+                0
+              ]
+            }
+          }
+        }
+      }
+    ]);
+    
+    const totalRecentTasks = recentTasksAgg.reduce((acc, curr) => acc + curr.totalTasks, 0);
 
     // Client MOS Leaderboard
     const topClients = activeClientsDocs.map(c => {
@@ -104,16 +125,15 @@ exports.getCommandCenterData = async (req, res, next) => {
       }
 
       // Task completion for this client
-      const clientTasks = recentTasks.filter(t => t.tenantCompanyId?.toString() === clientIdStr);
+      const clientTaskStats = recentTasksAgg.find(t => t._id?.toString() === clientIdStr) || { totalTasks: 0, completedTasks: 0 };
       let taskScore = 100;
-      if (clientTasks.length > 0) {
-        const completed = clientTasks.filter(t => ['done', 'completed', 'complete'].includes(t.status?.toLowerCase())).length;
-        taskScore = Math.round((completed / clientTasks.length) * 100);
+      if (clientTaskStats.totalTasks > 0) {
+        taskScore = Math.round((clientTaskStats.completedTasks / clientTaskStats.totalTasks) * 100);
       }
 
       // Real MOS is average of SLA and Task completion
       const hasSla = clientSlas.length > 0;
-      const hasTask = clientTasks.length > 0;
+      const hasTask = clientTaskStats.totalTasks > 0;
       
       let realMos = null; // Default to null if no data
       if (hasSla && hasTask) {
@@ -160,7 +180,7 @@ exports.getCommandCenterData = async (req, res, next) => {
 
     // Activity counts (instead of misleading capacity)
     const agencyActivity = [
-      { name: 'Tasks Logged', count: recentTasks.length, icon: 'tasks' },
+      { name: 'Tasks Logged', count: totalRecentTasks, icon: 'tasks' },
       { name: 'SLAs Created', count: slas.filter(s => s.createdAt >= thirtyDaysAgo).length, icon: 'slas' },
       { name: 'Agencies Active', count: activeClientsCount, icon: 'users' }
     ];

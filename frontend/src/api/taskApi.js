@@ -96,6 +96,7 @@ const createMutationHook = (endpointFn) => {
 
 // Queries
 export const useGetTasksQuery = createQueryHook((params) => ({ url: '/tasks', params }));
+export const useGetTaskAnalyticsQuery = createQueryHook((params) => ({ url: '/tasks/analytics', params }));
 export const useGetTasksDropdownQuery = createQueryHook((params) => ({ url: '/tasks/dropdown', params: { ...params, limit: params?.limit || 20 } }));
 export const useGetTaskByIdQuery = createQueryHook((id) => `/tasks/${id}`);
 export const useGetTasksByProjectQuery = createQueryHook((projectId) => `/tasks/project/${projectId}`);

@@ -36,6 +36,28 @@ const getAllTasks = async (req, res) => {
   }
 };
 
+const getTaskAnalytics = async (req, res) => {
+  try {
+    const query = { ...req.query };
+    if (query.projectId === "null" || query.projectId === "")
+      query.projectId = null;
+    if (query.assignedTo === "null" || query.assignedTo === "")
+      query.assignedTo = null;
+    if (query.department === "null" || query.department === "")
+      query.department = null;
+
+    const result = await taskService.getTaskAnalytics(
+      req.companyId,
+      query,
+      req.user?.role,
+      req.user?._id,
+    );
+    return sendSuccess(res, "Task analytics retrieved successfully", { data: result });
+  } catch (error) {
+    return sendError(res, 500, error.message);
+  }
+};
+
 const getTasksDropdown = async (req, res) => {
   try {
     const tasks = await taskService.getTasksDropdown(
@@ -560,6 +582,7 @@ const reopenTask = async (req, res) => {
 
 module.exports = {
   getAllTasks,
+  getTaskAnalytics,
   getTasksDropdown,
   getTaskById,
   createTask,

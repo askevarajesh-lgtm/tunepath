@@ -24,15 +24,41 @@ const getAllDeals = async (companyId, query = {}) => {
   if (query.stage) filter.stage = query.stage;
   if (query.priority) filter.priority = query.priority;
   if (query.rep) filter.rep = { $regex: query.rep, $options: 'i' };
+  
   if (query.search) {
+    const searchRegex = new RegExp(query.search, 'i');
     filter.$or = [
-      { name: { $regex: query.search, $options: 'i' } },
-      { category: { $regex: query.search, $options: 'i' } },
-      { rep: { $regex: query.search, $options: 'i' } }
+      { name: searchRegex },
+      { category: searchRegex },
+      { rep: searchRegex }
     ];
   }
-
-  return await Deal.find(filter).sort({ createdAt: -1 });
+  
+  const page = parseInt(query.page) || 1;
+  const limit = query.limit ? parseInt(query.limit) : null;
+  const skip = limit ? (page - 1) * limit : 0;
+  
+  const sortStage = query.sort ? query.sort : { createdAt: -1 };
+  
+  let dbQuery = Deal.find(filter).sort(sortStage);
+  if (limit) {
+    dbQuery = dbQuery.skip(skip).limit(limit);
+  }
+  
+  const deals = await dbQuery.lean();
+  
+  if (limit) {
+    const total = await Deal.countDocuments(filter);
+    return {
+      deals,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    };
+  }
+  
+  return { deals }; // Backward compatibility if limit not requested
 };
 
 const getDealById = async (id, companyId) => {
@@ -87,88 +113,166 @@ const addDealNote = async (id, content, username, companyId) => {
 
 const getPipelineAnalytics = async (companyId) => {
   await Deal.deleteMany({ companyId, "activityLogs.action": "Deal Seeded" });
-  const deals = await Deal.find({ companyId });
-
-  // Compute KPIs
   const openStages = ['lead', 'qualified', 'proposal', 'negotiation'];
-  const activeDeals = deals.filter(d => d.stage !== 'lost');
-  const openDeals = deals.filter(d => openStages.includes(d.stage));
-  const wonDeals = deals.filter(d => d.stage === 'won');
-  const lostDeals = deals.filter(d => d.stage === 'lost');
-
-  const totalPipelineValue = activeDeals.reduce((sum, d) => sum + d.value, 0);
-  const weightedPipelineValue = activeDeals.reduce((sum, d) => {
-    if (d.stage === 'won') return sum + d.value;
-    return sum + (d.value * (d.probability || 20) / 100);
-  }, 0);
-  
-  const totalClosed = wonDeals.length + lostDeals.length;
-  const winRate = totalClosed > 0 ? Math.round((wonDeals.length / totalClosed) * 100) : 0;
-  
-  const avgDealSize = deals.length > 0 ? Math.round(deals.reduce((sum, d) => sum + d.value, 0) / deals.length) : 0;
-  const activeProspects = activeDeals.length;
-  const proposalsSent = deals.filter(d => d.stage === 'proposal').length;
-
-  // Conversion funnel counts
   const funnelStages = ['lead', 'qualified', 'proposal', 'negotiation', 'won'];
-  const funnel = funnelStages.map(stg => {
-    const matched = deals.filter(d => d.stage === stg);
-    return {
-      stage: stg.toUpperCase(),
-      count: matched.length,
-      value: matched.reduce((sum, d) => sum + d.value, 0)
-    };
-  });
 
-  // Top performers grouping by rep
-  const repGroups = {};
-  deals.forEach(d => {
-    if (!repGroups[d.rep]) {
-      repGroups[d.rep] = { rep: d.rep, ownerInit: d.ownerInit, valueWon: 0, countWon: 0, pipelineVal: 0, totalCount: 0 };
+  // KPIs
+  const kpisAgg = await Deal.aggregate([
+    { $match: { companyId } },
+    {
+      $group: {
+        _id: null,
+        totalPipelineValue: { $sum: { $cond: [{ $ne: ['$stage', 'lost'] }, '$value', 0] } },
+        weightedPipelineValue: {
+          $sum: {
+            $cond: [
+              { $ne: ['$stage', 'lost'] },
+              {
+                $cond: [
+                  { $eq: ['$stage', 'won'] },
+                  '$value',
+                  { $multiply: ['$value', { $divide: [{ $ifNull: ['$probability', 20] }, 100] }] }
+                ]
+              },
+              0
+            ]
+          }
+        },
+        dealsWon: { $sum: { $cond: [{ $eq: ['$stage', 'won'] }, 1, 0] } },
+        dealsLost: { $sum: { $cond: [{ $eq: ['$stage', 'lost'] }, 1, 0] } },
+        totalValueAll: { $sum: '$value' },
+        totalCountAll: { $sum: 1 },
+        activeProspects: { $sum: { $cond: [{ $ne: ['$stage', 'lost'] }, 1, 0] } },
+        proposalsSent: { $sum: { $cond: [{ $eq: ['$stage', 'proposal'] }, 1, 0] } }
+      }
+    },
+    {
+      $project: {
+        totalPipelineValue: 1,
+        weightedPipelineValue: 1,
+        dealsWonThisMonth: '$dealsWon',
+        dealsLostThisMonth: '$dealsLost',
+        winRate: {
+          $cond: [
+            { $gt: [{ $add: ['$dealsWon', '$dealsLost'] }, 0] },
+            { $round: [{ $multiply: [{ $divide: ['$dealsWon', { $add: ['$dealsWon', '$dealsLost'] }] }, 100] }] },
+            0
+          ]
+        },
+        avgDealSize: {
+          $cond: [
+            { $gt: ['$totalCountAll', 0] },
+            { $round: [{ $divide: ['$totalValueAll', '$totalCountAll'] }] },
+            0
+          ]
+        },
+        activeProspects: 1,
+        proposalsSent: 1
+      }
     }
-    const group = repGroups[d.rep];
-    group.totalCount += 1;
-    if (d.stage === 'won') {
-      group.valueWon += d.value;
-      group.countWon += 1;
-    } else if (openStages.includes(d.stage)) {
-      group.pipelineVal += d.value;
+  ]);
+  
+  const kpis = kpisAgg.length > 0 ? kpisAgg[0] : {
+    totalPipelineValue: 0,
+    weightedPipelineValue: 0,
+    winRate: 0,
+    avgDealSize: 0,
+    activeProspects: 0,
+    proposalsSent: 0,
+    dealsWonThisMonth: 0,
+    dealsLostThisMonth: 0
+  };
+  delete kpis._id;
+
+  // Funnel
+  const funnelAgg = await Deal.aggregate([
+    { $match: { companyId, stage: { $in: funnelStages } } },
+    {
+      $group: {
+        _id: '$stage',
+        count: { $sum: 1 },
+        value: { $sum: '$value' }
+      }
     }
-  });
-
-  const leaderboard = Object.values(repGroups).map(g => ({
-    ...g,
-    winRate: g.totalCount > 0 ? Math.round((g.countWon / g.totalCount) * 100) : 0
-  })).sort((a, b) => b.valueWon - a.valueWon);
-
-  // Stalled Deal Detection: No activity in last 1 day (or older)
-  const oneDayAgo = new Date();
-  oneDayAgo.setDate(oneDayAgo.getDate() - 1);
-  const stalledDeals = deals.filter(d => openStages.includes(d.stage) && (!d.updatedAt || new Date(d.updatedAt) < oneDayAgo)).map(d => ({
-    _id: d._id,
-    name: d.name,
-    stage: d.stage,
-    value: d.value,
-    rep: d.rep,
-    companyName: d.companyName,
-    industry: d.industry,
-    updatedAt: d.updatedAt
+  ]);
+  
+  const funnelMap = {};
+  funnelAgg.forEach(f => funnelMap[f._id] = f);
+  
+  const funnel = funnelStages.map(stg => ({
+    stage: stg.toUpperCase(),
+    count: funnelMap[stg] ? funnelMap[stg].count : 0,
+    value: funnelMap[stg] ? funnelMap[stg].value : 0
   }));
 
-  return {
-    kpis: {
-      totalPipelineValue,
-      weightedPipelineValue,
-      winRate,
-      avgDealSize,
-      activeProspects,
-      proposalsSent,
-      dealsWonThisMonth: wonDeals.length,
-      dealsLostThisMonth: lostDeals.length
+  // Leaderboard
+  const leaderboardAgg = await Deal.aggregate([
+    { $match: { companyId } },
+    {
+      $group: {
+        _id: '$rep',
+        ownerInit: { $first: '$ownerInit' },
+        valueWon: { $sum: { $cond: [{ $eq: ['$stage', 'won'] }, '$value', 0] } },
+        countWon: { $sum: { $cond: [{ $eq: ['$stage', 'won'] }, 1, 0] } },
+        pipelineVal: { $sum: { $cond: [{ $in: ['$stage', openStages] }, '$value', 0] } },
+        totalCount: { $sum: 1 }
+      }
     },
+    {
+      $project: {
+        rep: '$_id',
+        ownerInit: 1,
+        valueWon: 1,
+        countWon: 1,
+        pipelineVal: 1,
+        totalCount: 1,
+        winRate: {
+          $cond: [
+            { $gt: ['$totalCount', 0] },
+            { $round: [{ $multiply: [{ $divide: ['$countWon', '$totalCount'] }, 100] }] },
+            0
+          ]
+        }
+      }
+    },
+    { $sort: { valueWon: -1 } }
+  ]);
+  
+  leaderboardAgg.forEach(l => delete l._id);
+
+  // Stalled Deals
+  const oneDayAgo = new Date();
+  oneDayAgo.setDate(oneDayAgo.getDate() - 1);
+  const stalledDealsAgg = await Deal.aggregate([
+    { 
+      $match: { 
+        companyId, 
+        stage: { $in: openStages },
+        $or: [
+          { updatedAt: { $lt: oneDayAgo } },
+          { updatedAt: { $exists: false } }
+        ]
+      } 
+    },
+    {
+      $project: {
+        _id: 1,
+        name: 1,
+        stage: 1,
+        value: 1,
+        rep: 1,
+        companyName: 1,
+        industry: 1,
+        updatedAt: 1
+      }
+    }
+  ]);
+
+  return {
+    kpis,
     funnel,
-    leaderboard,
-    stalledDeals
+    leaderboard: leaderboardAgg,
+    stalledDeals: stalledDealsAgg
   };
 };
 

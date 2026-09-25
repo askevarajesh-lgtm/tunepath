@@ -1,11 +1,12 @@
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, Suspense, lazy } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LayoutProvider } from './contexts/LayoutContext';
 import { FeatureProvider } from './contexts/FeatureContext';
 import SignIn from './pages/SignIn/SignIn';
 import ForgotPassword from './pages/SignIn/ForgotPassword';
 import { ClientProvider } from './contexts/ClientContext';
+import { Spin } from 'antd';
 
 // Layouts
 import AppLayout from './layouts/AppLayout';
@@ -21,136 +22,143 @@ import {
 } from 'lucide-react';
 
 // Admin Pages
-import Dashboard from './pages/Dashboard/Dashboard';
-import CRM from './pages/CRM/CRM';
-import WebsiteBuilder from './pages/WebsiteBuilder/WebsiteBuilder';
-import BuilderRouteWrapper from './pages/WebsiteBuilder/tabs/BuilderRouteWrapper';
-import BlogPostBuilderRouteWrapper from './pages/WebsiteBuilder/tabs/BlogPostBuilderRouteWrapper';
-import FormEmbedView from './pages/WebsiteBuilder/tabs/FormEmbedView';
-import BlogEmbedView from './pages/WebsiteBuilder/tabs/BlogEmbedView';
-import BlogPostEmbedView from './pages/WebsiteBuilder/tabs/BlogPostEmbedView';
-import QREmbedView from './pages/WebsiteBuilder/tabs/QREmbedView';
-import WebsitePreviewView from './pages/WebsiteBuilder/tabs/WebsitePreviewView';
-import CustomDomainWebsiteViewer from './pages/WebsiteBuilder/tabs/CustomDomainWebsiteViewer';
-import BlogPostPreviewView from './pages/WebsiteBuilder/tabs/BlogPostPreviewView';
-import Strategy from './pages/Strategy/Strategy';
-import SeoIntelligence from './pages/SeoIntelligence/SeoIntelligence';
-import SemrushDashboard from './pages/Semrush/SemrushDashboard';
-import Semrush from './pages/Semrush/Semrush';
-import DashboardTab from './pages/Semrush/components/DashboardTab';
-import PositionTrackingTab from './pages/Semrush/components/PositionTrackingTab';
-import ActivityTab from './pages/Semrush/components/ActivityTab';
-import DomainOverviewTab from './pages/Semrush/components/DomainOverviewTab';
-import OrganicKeywordsTab from './pages/Semrush/components/OrganicKeywordsTab';
-import BacklinksTab from './pages/Semrush/components/BacklinksTab';
-import SiteHealthTab from './pages/Semrush/components/SiteHealthTab';
-import KeywordMagicToolTab from './pages/Semrush/components/KeywordMagicToolTab';
-import CompetitorAnalysisTab from './pages/Semrush/components/CompetitorAnalysisTab';
-import TrafficAnalyticsTab from './pages/Semrush/components/TrafficAnalyticsTab';
-import ReportsTab from './pages/Semrush/components/ReportsTab';
-import Content from './pages/Content/Content';
-import AIStudio from './pages/AIStudio/AIStudio';
-import CampaignScheduledPage from './pages/Campaign Scheduled/CampaignScheduledPage';
-import PerformanceAds from './pages/PerformanceAds/PerformanceAds';
-import Accounts from './pages/Accounts/Accounts';
-import SLA from './pages/SLA/SLA';
-import PortalSettings from './pages/PortalSettings/PortalSettings';
-import Analytics from './pages/Analytics/Analytics';
+const Dashboard = lazy(() => import('./pages/Dashboard/Dashboard'));
+const CRM = lazy(() => import('./pages/CRM/CRM'));
+const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder/WebsiteBuilder'));
+const BuilderRouteWrapper = lazy(() => import('./pages/WebsiteBuilder/tabs/BuilderRouteWrapper'));
+const BlogPostBuilderRouteWrapper = lazy(() => import('./pages/WebsiteBuilder/tabs/BlogPostBuilderRouteWrapper'));
+const FormEmbedView = lazy(() => import('./pages/WebsiteBuilder/tabs/FormEmbedView'));
+const BlogEmbedView = lazy(() => import('./pages/WebsiteBuilder/tabs/BlogEmbedView'));
+const BlogPostEmbedView = lazy(() => import('./pages/WebsiteBuilder/tabs/BlogPostEmbedView'));
+const QREmbedView = lazy(() => import('./pages/WebsiteBuilder/tabs/QREmbedView'));
+const WebsitePreviewView = lazy(() => import('./pages/WebsiteBuilder/tabs/WebsitePreviewView'));
+const CustomDomainWebsiteViewer = lazy(() => import('./pages/WebsiteBuilder/tabs/CustomDomainWebsiteViewer'));
+const BlogPostPreviewView = lazy(() => import('./pages/WebsiteBuilder/tabs/BlogPostPreviewView'));
+const Strategy = lazy(() => import('./pages/Strategy/Strategy'));
+const SeoIntelligence = lazy(() => import('./pages/SeoIntelligence/SeoIntelligence'));
+const SemrushDashboard = lazy(() => import('./pages/Semrush/SemrushDashboard'));
+const Semrush = lazy(() => import('./pages/Semrush/Semrush'));
+const DashboardTab = lazy(() => import('./pages/Semrush/components/DashboardTab'));
+const PositionTrackingTab = lazy(() => import('./pages/Semrush/components/PositionTrackingTab'));
+const ActivityTab = lazy(() => import('./pages/Semrush/components/ActivityTab'));
+const DomainOverviewTab = lazy(() => import('./pages/Semrush/components/DomainOverviewTab'));
+const OrganicKeywordsTab = lazy(() => import('./pages/Semrush/components/OrganicKeywordsTab'));
+const BacklinksTab = lazy(() => import('./pages/Semrush/components/BacklinksTab'));
+const SiteHealthTab = lazy(() => import('./pages/Semrush/components/SiteHealthTab'));
+const KeywordMagicToolTab = lazy(() => import('./pages/Semrush/components/KeywordMagicToolTab'));
+const CompetitorAnalysisTab = lazy(() => import('./pages/Semrush/components/CompetitorAnalysisTab'));
+const TrafficAnalyticsTab = lazy(() => import('./pages/Semrush/components/TrafficAnalyticsTab'));
+const ReportsTab = lazy(() => import('./pages/Semrush/components/ReportsTab'));
+const Content = lazy(() => import('./pages/Content/Content'));
+const AIStudio = lazy(() => import('./pages/AIStudio/AIStudio'));
+const CampaignScheduledPage = lazy(() => import('./pages/Campaign Scheduled/CampaignScheduledPage'));
+const PerformanceAds = lazy(() => import('./pages/PerformanceAds/PerformanceAds'));
+const Accounts = lazy(() => import('./pages/Accounts/Accounts'));
+const SLA = lazy(() => import('./pages/SLA/SLA'));
+const PortalSettings = lazy(() => import('./pages/PortalSettings/PortalSettings'));
+const Analytics = lazy(() => import('./pages/Analytics/Analytics'));
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import Automation from './pages/Automation/Automation';
-import TasksPage from './pages/Tasks/TasksPage';
-import TaskForm from './pages/Tasks/TaskForm';
-import TaskAnalyticsPage from './pages/Tasks/TaskAnalyticsPage';
-import CoordinatorTasks from './pages/Tasks/CoordinatorTasks';
-import ProjectList from './pages/projects/ProjectList';
-import ProjectForm from './pages/projects/ProjectForm';
-import ProjectDetail from './pages/projects/ProjectDetail';
-import MasterItemsList from './pages/MasterItems/MasterItemsList';
-import MasterItemForm from './pages/MasterItems/MasterItemForm';
-import ExpenseManagementPage from './pages/expenses/ExpenseManagementPage';
-import CampaignExpensesList from './pages/campaign-expenses/CampaignList';
-import CampaignExpensesForm from './pages/campaign-expenses/CampaignForm';
-import CampaignExpensesView from './pages/campaign-expenses/CampaignView';
-import ProposalsList from './pages/Proposals/ProposalsList';
-import ProposalForm from './pages/Proposals/ProposalForm';
-import ProposalViewPage from './pages/Proposals/ProposalViewPage';
-import InvoicesList from './pages/Invoices/InvoicesList';
-import InvoiceForm from './pages/Invoices/InvoiceForm';
-import InvoiceViewPage from './pages/Invoices/InvoiceViewPage';
-import MeetingsPage from './pages/Meetings/MeetingsPage';
-import CalendarPage from './pages/Calendar/CalendarPage';
-import DeliverablesPage from './pages/Deliverables/DeliverablesPage';
-import PLDashboard from './pages/pl-analytics/PLDashboard';
+const Automation = lazy(() => import('./pages/Automation/Automation'));
+const TasksPage = lazy(() => import('./pages/Tasks/TasksPage'));
+const TaskForm = lazy(() => import('./pages/Tasks/TaskForm'));
+const TaskAnalyticsPage = lazy(() => import('./pages/Tasks/TaskAnalyticsPage'));
+const CoordinatorTasks = lazy(() => import('./pages/Tasks/CoordinatorTasks'));
+const ProjectList = lazy(() => import('./pages/projects/ProjectList'));
+const ProjectForm = lazy(() => import('./pages/projects/ProjectForm'));
+const ProjectDetail = lazy(() => import('./pages/projects/ProjectDetail'));
+const MasterItemsList = lazy(() => import('./pages/MasterItems/MasterItemsList'));
+const MasterItemForm = lazy(() => import('./pages/MasterItems/MasterItemForm'));
+const ExpenseManagementPage = lazy(() => import('./pages/expenses/ExpenseManagementPage'));
+const CampaignExpensesList = lazy(() => import('./pages/campaign-expenses/CampaignList'));
+const CampaignExpensesForm = lazy(() => import('./pages/campaign-expenses/CampaignForm'));
+const CampaignExpensesView = lazy(() => import('./pages/campaign-expenses/CampaignView'));
+const ProposalsList = lazy(() => import('./pages/Proposals/ProposalsList'));
+const ProposalForm = lazy(() => import('./pages/Proposals/ProposalForm'));
+const ProposalViewPage = lazy(() => import('./pages/Proposals/ProposalViewPage'));
+const InvoicesList = lazy(() => import('./pages/Invoices/InvoicesList'));
+const InvoiceForm = lazy(() => import('./pages/Invoices/InvoiceForm'));
+const InvoiceViewPage = lazy(() => import('./pages/Invoices/InvoiceViewPage'));
+const MeetingsPage = lazy(() => import('./pages/Meetings/MeetingsPage'));
+const CalendarPage = lazy(() => import('./pages/Calendar/CalendarPage'));
+const DeliverablesPage = lazy(() => import('./pages/Deliverables/DeliverablesPage'));
+const PLDashboard = lazy(() => import('./pages/pl-analytics/PLDashboard'));
 
-import Reports from './pages/Reports/Reports';
+const Reports = lazy(() => import('./pages/Reports/Reports'));
 
-import TimeTracking from './pages/TimeTracking/TimeTracking';
-import Resources from './pages/Resources/Resources';
-import MOSScore from './pages/MOSScore/MOSScore';
-import Finance from './pages/Finance/Finance';
-import Profitability from './pages/Profitability/Profitability';
-import SalesPipeline from './pages/SalesPipeline/SalesPipeline';
-import SettingsPage from './pages/Settings/Settings';
-import ClientSettingsTab from './pages/ClientPortal/tabs/ClientSettingsTab';
-import AIAgents from './pages/AIAgents/AIAgents';
-import AICopilot from './pages/AICopilot/AICopilot';
-import Benchmarks from './pages/Benchmarks/Benchmarks';
-import Marketplace from './pages/Marketplace/Marketplace';
-import MarketplaceSEO from './pages/Marketplace/SEO/MarketplaceSEO';
-import ClientChatGPTPage from './pages/ClientChatGPTPage/ClientChatGPTPage';
-import ClaudeChatPage from './pages/ClaudeChatPage/ClaudeChatPage';
-import ClientCanvaPage from './pages/ClientCanvaPage/ClientCanvaPage';
+const TimeTracking = lazy(() => import('./pages/TimeTracking/TimeTracking'));
+const Resources = lazy(() => import('./pages/Resources/Resources'));
+const MOSScore = lazy(() => import('./pages/MOSScore/MOSScore'));
+const Finance = lazy(() => import('./pages/Finance/Finance'));
+const Profitability = lazy(() => import('./pages/Profitability/Profitability'));
+const SalesPipeline = lazy(() => import('./pages/SalesPipeline/SalesPipeline'));
+const SettingsPage = lazy(() => import('./pages/Settings/Settings'));
+const ClientSettingsTab = lazy(() => import('./pages/ClientPortal/tabs/ClientSettingsTab'));
+const AIAgents = lazy(() => import('./pages/AIAgents/AIAgents'));
+const AICopilot = lazy(() => import('./pages/AICopilot/AICopilot'));
+const Benchmarks = lazy(() => import('./pages/Benchmarks/Benchmarks'));
+const Marketplace = lazy(() => import('./pages/Marketplace/Marketplace'));
+const MarketplaceSEO = lazy(() => import('./pages/Marketplace/SEO/MarketplaceSEO'));
+const ClientChatGPTPage = lazy(() => import('./pages/ClientChatGPTPage/ClientChatGPTPage'));
+const ClaudeChatPage = lazy(() => import('./pages/ClaudeChatPage/ClaudeChatPage'));
+const ClientCanvaPage = lazy(() => import('./pages/ClientCanvaPage/ClientCanvaPage'));
 
 // Agency Portal Tabs
-import OverviewTab from './pages/AgencyPortal/tabs/OverviewTab';
-import AgencyAdminDashboardTab from './pages/AgencyPortal/tabs/AgencyAdminDashboardTab';
-import ClientsTab from './pages/AgencyPortal/tabs/ClientsTab';
-import AgencyPerformanceTab from './pages/AgencyPortal/tabs/PerformanceTab';
-import AgencyTasksTab from './pages/AgencyPortal/tabs/TasksTab';
-import AgencyBillingTab from './pages/AgencyPortal/tabs/BillingTab';
-import AgencySupportTab from './pages/AgencyPortal/tabs/SupportTab';
-import AgencyReportsTab from './pages/AgencyPortal/tabs/AgencyReportsTab';
-import AgencySettingsTab from './pages/AgencyPortal/tabs/AgencySettingsTab';
-import AgencyUsersTab from './pages/AgencyPortal/tabs/AgencyUsersTab';
+const OverviewTab = lazy(() => import('./pages/AgencyPortal/tabs/OverviewTab'));
+const AgencyAdminDashboardTab = lazy(() => import('./pages/AgencyPortal/tabs/AgencyAdminDashboardTab'));
+const ClientsTab = lazy(() => import('./pages/AgencyPortal/tabs/ClientsTab'));
+const AgencyPerformanceTab = lazy(() => import('./pages/AgencyPortal/tabs/PerformanceTab'));
+const AgencyTasksTab = lazy(() => import('./pages/AgencyPortal/tabs/TasksTab'));
+const AgencyBillingTab = lazy(() => import('./pages/AgencyPortal/tabs/BillingTab'));
+const AgencySupportTab = lazy(() => import('./pages/AgencyPortal/tabs/SupportTab'));
+const AgencyReportsTab = lazy(() => import('./pages/AgencyPortal/tabs/AgencyReportsTab'));
+const AgencySettingsTab = lazy(() => import('./pages/AgencyPortal/tabs/AgencySettingsTab'));
+const AgencyUsersTab = lazy(() => import('./pages/AgencyPortal/tabs/AgencyUsersTab'));
 
 // Client Portal Tabs
-import ClientDashboardTab from './pages/ClientPortal/tabs/DashboardTab';
-import BrandUsersTab from './pages/ClientPortal/tabs/BrandUsersTab';
-import BillingTab from './pages/ClientPortal/tabs/BillingTab';
-import ClientPerformanceTab from './pages/ClientPortal/tabs/MyPerformanceTab';
-import ClientLeadsTab from './pages/ClientPortal/tabs/LeadsTab';
-import ClientTasksTab from './pages/ClientPortal/tabs/TasksTab';
-import BrandSettingsTab from './pages/ClientPortal/tabs/BrandSettingsTab';
+const ClientDashboardTab = lazy(() => import('./pages/ClientPortal/tabs/DashboardTab'));
+const BrandUsersTab = lazy(() => import('./pages/ClientPortal/tabs/BrandUsersTab'));
+const BillingTab = lazy(() => import('./pages/ClientPortal/tabs/BillingTab'));
+const ClientPerformanceTab = lazy(() => import('./pages/ClientPortal/tabs/MyPerformanceTab'));
+const ClientLeadsTab = lazy(() => import('./pages/ClientPortal/tabs/LeadsTab'));
+const ClientTasksTab = lazy(() => import('./pages/ClientPortal/tabs/TasksTab'));
+const BrandSettingsTab = lazy(() => import('./pages/ClientPortal/tabs/BrandSettingsTab'));
 
-import ClientBillingTab from './pages/ClientPortal/tabs/BillingTab';
-import ClientSupportTab from './pages/ClientPortal/tabs/SupportTab';
-import ClientWebsiteTab from './pages/ClientPortal/tabs/ClientWebsiteTab';
-import TeamTab from './pages/ClientPortal/tabs/TeamTab';
-import ClientReportsTab from './pages/ClientPortal/tabs/ReportsTab';
+const ClientBillingTab = lazy(() => import('./pages/ClientPortal/tabs/BillingTab'));
+const ClientSupportTab = lazy(() => import('./pages/ClientPortal/tabs/SupportTab'));
+const ClientWebsiteTab = lazy(() => import('./pages/ClientPortal/tabs/ClientWebsiteTab'));
+const TeamTab = lazy(() => import('./pages/ClientPortal/tabs/TeamTab'));
+const ClientReportsTab = lazy(() => import('./pages/ClientPortal/tabs/ReportsTab'));
 
 // User Portal Tabs
-import UserDashboardTab from './pages/UserPortal/DashboardTab';
-import UserSettingsTab from './pages/UserPortal/SettingsTab';
+const UserDashboardTab = lazy(() => import('./pages/UserPortal/DashboardTab'));
+const UserSettingsTab = lazy(() => import('./pages/UserPortal/SettingsTab'));
 
 // Super Admin Layout and Pages
 import SuperAdminLayout from './layouts/SuperAdminLayout';
-import SuperAdminDashboard from './pages/SuperAdmin/Dashboard';
-import SuperAdminCompanies from './pages/SuperAdmin/Companies';
-import SuperAdminSubscriptions from './pages/SuperAdmin/Subscriptions';
-import SuperAdminIntegrations from './pages/SuperAdmin/Integrations';
-import SuperAdminAdmins from './pages/SuperAdmin/Admins';
-import SuperAdminSettings from './pages/SuperAdmin/Settings/SuperAdminSettings';
+const SuperAdminDashboard = lazy(() => import('./pages/SuperAdmin/Dashboard'));
+const SuperAdminCompanies = lazy(() => import('./pages/SuperAdmin/Companies'));
+const SuperAdminSubscriptions = lazy(() => import('./pages/SuperAdmin/Subscriptions'));
+const SuperAdminIntegrations = lazy(() => import('./pages/SuperAdmin/Integrations'));
+const SuperAdminAdmins = lazy(() => import('./pages/SuperAdmin/Admins'));
+const SuperAdminSettings = lazy(() => import('./pages/SuperAdmin/Settings/SuperAdminSettings'));
 
 // Ekta HR / HRMS Pages (Commander Admin)
-import EktaHrStaffPage from './pages/integrations/EktaHrStaffPage';
-import EktaHrAttendanceModulePage from './pages/integrations/EktaHrAttendanceModulePage';
-import DailyReports from './pages/dailyreport/DailyReports';
+const EktaHrStaffPage = lazy(() => import('./pages/integrations/EktaHrStaffPage'));
+const EktaHrAttendanceModulePage = lazy(() => import('./pages/integrations/EktaHrAttendanceModulePage'));
+const DailyReports = lazy(() => import('./pages/dailyreport/DailyReports'));
 
-import PerformancePage from './pages/performance/PerformancePage';
-import SelfAssessmentForm from './pages/performance/SelfAssessmentForm';
-import TransactionsPage from './pages/transactions/TransactionsPage';
-import SalesTrackingPageEnhanced from './pages/sales/SalesTrackingPageEnhanced';
-import SEOPanel from './pages/seo-panel/SEOPanel';
+const PerformancePage = lazy(() => import('./pages/performance/PerformancePage'));
+const SelfAssessmentForm = lazy(() => import('./pages/performance/SelfAssessmentForm'));
+const TransactionsPage = lazy(() => import('./pages/transactions/TransactionsPage'));
+const SalesTrackingPageEnhanced = lazy(() => import('./pages/sales/SalesTrackingPageEnhanced'));
+const SEOPanel = lazy(() => import('./pages/seo-panel/SEOPanel'));
+
+
+const PageLoader = () => (
+  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100%' }}>
+    <Spin size="large" />
+  </div>
+);
 
 function ScrollToTop() {
   const { pathname } = useLocation();
@@ -267,7 +275,8 @@ const AppRoutes = () => {
   const { role, user } = useAuth();
   
   return (
-    <Routes>
+    <Suspense fallback={<PageLoader />}>
+      <Routes>
       {/* Top-level universal SEO and Reports routes */}
       <Route path="/seo" element={<SeoRedirect />} />
       <Route path="/seo/*" element={<SeoRedirect />} />
@@ -747,6 +756,7 @@ const AppRoutes = () => {
       {/* Catch all - Redirect to sign in if no role, otherwise to respective dashboard */}
       <Route path="*" element={<ProtectedRoute allowedRoles={['supreme_super_admin', 'superadmin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency_client', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'agency', 'client']} />} />
     </Routes>
+    </Suspense>
   );
 };
 

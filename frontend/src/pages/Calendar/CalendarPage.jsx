@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Table, Button, Form, Input, DatePicker, Select, InputNumber, Drawer,
@@ -24,8 +25,9 @@ import {
 } from '../../api/calendarApi';
 import { useGetUsersDropdownQuery } from '../../api/userApi';
 import { useGetCompaniesDropdownQuery } from '../../api/companyApi';
-import { useGetLeadsQuery } from '../../api/leadApi';
+import { useGetLeadsDropdownQuery } from '../../api/leadApi';
 import { useGetProjectsDropdownQuery } from '../../api/projectApi';
+
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -115,9 +117,10 @@ const CalendarPage = () => {
   });
 
   // Dropdowns lists
-  const { data: usersData } = useGetUsersDropdownQuery({});
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const { data: usersData } = useGetUsersDropdownQuery({ search: userSearchTerm });
   const { data: companiesData } = useGetCompaniesDropdownQuery({});
-  const { data: leadsData } = useGetLeadsQuery({ limit: 500 });
+  const { data: leadsData } = useGetLeadsDropdownQuery();
   const { data: projectsData } = useGetProjectsDropdownQuery({});
 
   // Mutations

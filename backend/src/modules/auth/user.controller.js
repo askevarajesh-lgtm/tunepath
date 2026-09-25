@@ -2,6 +2,7 @@ const User = require('./user.model');
 const Role = require('../roles/role.model');
 const Department = require('../departments/department.model');
 const { validatePhoneNumber } = require('../../utils/phoneValidation');
+const mongoose = require('mongoose');
 
 const SYSTEM_ROLES = [
   'supreme_super_admin',
@@ -118,11 +119,66 @@ exports.getUsersDropdown = async (req, res, next) => {
       }
     }
 
-    const users = await User.find(queryFilter)
+    // Search filter
+    if (req.query.search) {
+      const searchRegex = new RegExp(req.query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      const searchOr = [{ name: searchRegex }, { email: searchRegex }];
+      if (Object.keys(queryFilter).length > 0) {
+        queryFilter = { $and: [queryFilter, { $or: searchOr }] };
+      } else {
+        queryFilter.$or = searchOr;
+      }
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    let limit = parseInt(req.query.limit) || 50;
+    if (limit > 100) limit = 100; // Safe maximum
+    const skip = (page - 1) * limit;
+
+    // Fetch paginated users
+    const usersPromise = User.find(queryFilter)
       .select('name email role customRoleId departmentId departmentName department')
       .populate('departmentId', 'name slug')
-      .sort({ name: 1 });
-    res.status(200).json({ success: true, data: { users } });
+      .sort({ name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const countPromise = User.countDocuments(queryFilter);
+
+    // Fetch included IDs if specified (to ensure selected values are always in the list)
+    let includedUsersPromise = Promise.resolve([]);
+    if (req.query.includeIds) {
+      const idsToInclude = req.query.includeIds.split(',').filter(id => id && mongoose.Types.ObjectId.isValid(id));
+      if (idsToInclude.length > 0) {
+        includedUsersPromise = User.find({ _id: { $in: idsToInclude } })
+          .select('name email role customRoleId departmentId departmentName department')
+          .populate('departmentId', 'name slug')
+          .lean();
+      }
+    }
+
+    const [paginatedUsers, total, includedUsers] = await Promise.all([
+      usersPromise, countPromise, includedUsersPromise
+    ]);
+
+    // Merge users, ensuring no duplicates
+    const userMap = new Map();
+    includedUsers.forEach(u => userMap.set(u._id.toString(), u));
+    paginatedUsers.forEach(u => userMap.set(u._id.toString(), u));
+    
+    const users = Array.from(userMap.values());
+
+    const pages = Math.ceil(total / limit);
+    const hasMore = page < pages;
+
+    res.status(200).json({ 
+      success: true, 
+      data: { 
+        users,
+        pagination: { total, page, limit, pages, hasMore }
+      } 
+    });
   } catch (error) {
     next(error);
   }

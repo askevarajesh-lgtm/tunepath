@@ -1,4 +1,18 @@
+
 import { useAuth } from "../../contexts/AuthContext";
+
+function debounce(func, wait) {
+  let timeout;
+  return function(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
+}
+
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import {
   Form,
@@ -251,16 +265,31 @@ const TaskForm = () => {
     taskTarget === 'own_brand';
   const selectedDepartment = Form.useWatch("department", form);
   const watchedCompanyId = Form.useWatch("companyId", form);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  // Use debounce for search term
+  const debouncedSetUserSearch = React.useCallback(
+    debounce((val) => setUserSearchTerm(val), 400),
+    []
+  );
+
+  
+  const watchedAssignedTo = Form.useWatch("assignedTo", form);
+  const watchedWatchers = Form.useWatch("watchers", form);
+  const includeIds = [
+    ...(Array.isArray(watchedAssignedTo) ? watchedAssignedTo : [watchedAssignedTo]),
+    ...(Array.isArray(watchedWatchers) ? watchedWatchers : [watchedWatchers])
+  ].filter(Boolean).join(',');
 
   const {
     data: usersData,
     isLoading: isLoadingUsers,
     isError: isUsersError,
-  } = useGetUsersDropdownQuery({});
+  } = useGetUsersDropdownQuery({ search: userSearchTerm, includeIds });
+
 
   // Fetch users specifically for the selected company to find the admin
   const { data: companyUsersData } = useGetUsersDropdownQuery(
-    { companyId: watchedCompanyId },
+    { companyId: watchedCompanyId, search: userSearchTerm, includeIds },
     { skip: !watchedCompanyId || isEdit },
   );
 

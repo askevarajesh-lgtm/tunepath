@@ -80,7 +80,24 @@ const createMutationHook = (method) => {
 };
 
 export const useGetLeadsQuery = createQueryHook((params) => ({ url: '/leads', params }));
+export const useGetLeadsDropdownQuery = createQueryHook(() => ({ url: '/leads/dropdown' }));
 export const useGetLeadStatsQuery = createQueryHook((params) => ({ url: '/leads/stats', params }));
+
+export const useLazyGetLeadsQuery = () => {
+  const [isLoading, setIsLoading] = useState(false);
+  const trigger = useCallback(async (params) => {
+    setIsLoading(true);
+    try {
+      const response = await api.get('/leads', { params });
+      return { data: response.data };
+    } catch (error) {
+      return { error };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+  return [trigger, { isLoading }];
+};
 export const useGetLeadByIdQuery = createQueryHook((leadId) => `/leads/${leadId}`);
 export const useGetAssignableBdeUsersQuery = createQueryHook('/leads/assignable-bde');
 export const useGetLeadNotesQuery = createQueryHook((leadId) => `/leads/${leadId}/notes`);

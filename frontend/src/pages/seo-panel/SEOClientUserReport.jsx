@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import React, { useState, useMemo } from "react";
 import {
   Card,
@@ -35,6 +36,7 @@ import { useGetSEOClientUserReportQuery } from "../../api/seoApi";
 import { useGetCompaniesDropdownQuery } from "../../api/companyApi";
 import { useGetUsersDropdownQuery } from "../../api/userApi";
 import { useGetProjectsDropdownQuery } from "../../api/projectApi";
+
 
 const { Title, Text } = Typography;
 const { Panel } = Collapse;
@@ -81,7 +83,8 @@ const SEOClientUserReport = () => {
     milestoneWorkflowType: "seo",
     companyId: filters.clientCompanyId,
   });
-  const { data: usersData } = useGetUsersDropdownQuery({ limit: 1000 });
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const { data: usersData } = useGetUsersDropdownQuery({ limit: 1000, search: userSearchTerm });
 
   const report = data?.data;
   const clients =
@@ -263,7 +266,7 @@ const SEOClientUserReport = () => {
             />
           </Col>
           <Col xs={24} sm={12} md={8}>
-            <Select
+            <Select onSearch={(v) => setUserSearchTerm(v)} filterOption={false} 
               placeholder="Filter by User"
               allowClear
               showSearch

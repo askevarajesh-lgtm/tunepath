@@ -1,6 +1,103 @@
 const User = require('../auth/user.model');
 const { validatePhoneNumber } = require('../../utils/phoneValidation');
 
+// Get dropdown brands for forms/selects
+exports.getBrandsDropdown = async (req, res, next) => {
+  try {
+    const isAdmin = ['supreme_super_admin', 'commander_admin'].includes(req.user.role);
+    const isAgencyAdmin = ['agency_super_admin', 'agency_manager'].includes(req.user.role);
+    const isBrandUser = ['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role);
+    const isEmployee = !isAdmin && !isAgencyAdmin && !isBrandUser;
+
+    let filter = {};
+
+    if (isBrandUser) {
+      const brandId = req.companyId || req.user.tenantCompanyId || req.user.brandId || req.user._id;
+      filter._id = brandId;
+    } else if (isAgencyAdmin || isEmployee) {
+      filter.role = 'agency_client';
+      filter.isDirect = false;
+      filter.$or = [{ brandId: null }, { brandId: { $exists: false } }, { $expr: { $eq: ['$_id', '$brandId'] } }];
+      const agencyId = req.user.agencyId || req.user.adminId || req.companyId || (isAgencyAdmin ? req.user._id : null);
+      if (!agencyId) {
+        return res.status(400).json({ success: false, message: 'No agency associated with this user' });
+      }
+      filter.agencyId = agencyId;
+      if (isEmployee) {
+        let hasViewAllFromRole = false;
+        try {
+          const dbUser = await User.findById(req.user._id).lean();
+          if (dbUser && dbUser.viewAllClients) {
+            hasViewAllFromRole = true;
+          } else if (dbUser && dbUser.customRoleId) {
+            const mongoose = require('mongoose');
+            const RoleModel = mongoose.models.Role || require('../roles/role.model');
+            const roleDoc = await RoleModel.findById(dbUser.customRoleId).lean();
+            if (roleDoc && roleDoc.permissions && roleDoc.permissions['Clients-Accounts']) {
+              hasViewAllFromRole = roleDoc.permissions['Clients-Accounts'].All || false;
+            }
+          }
+        } catch (e) {
+          console.error('Error fetching role for permissions:', e);
+        }
+        if (!hasViewAllFromRole) {
+          filter.assignedUsers = req.user._id;
+        }
+      }
+    } else {
+      filter.role = { $in: ['brand_super_admin', 'brand_manager', 'agency_client'] };
+      filter.isDirect = true;
+      if (req.user && req.user.role === 'commander_admin') {
+        filter.createdBy = req.user._id;
+      }
+    }
+
+    if (req.query.search) {
+      const searchRegex = new RegExp(req.query.search, 'i');
+      filter.$or = [
+        ...(filter.$or || []),
+        { name: searchRegex },
+        { companyName: searchRegex },
+        { email: searchRegex }
+      ];
+    }
+    
+    if (req.query.status) {
+       filter.status = req.query.status;
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 1000, 1000);
+    const skip = (page - 1) * limit;
+
+    const totalCount = await User.countDocuments(filter);
+
+    const brands = await User.find(filter)
+      .select('_id name companyName email status avatar mrr isDirect role')
+      .sort({ companyName: 1, name: 1 })
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const data = brands.map(brand => ({
+      ...brand,
+      adminEmail: brand.email
+    }));
+
+    res.status(200).json({ 
+      success: true, 
+      count: data.length, 
+      data,
+      total: totalCount,
+      page,
+      pages: Math.ceil(totalCount / limit)
+    });
+  } catch (error) {
+    console.error('Error in getBrandsDropdown:', error);
+    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+  }
+};
+
 // Get all brands/companies for the current agency
 exports.getBrands = async (req, res, next) => {
   try {
@@ -18,7 +115,6 @@ exports.getBrands = async (req, res, next) => {
       filter.role = 'agency_client';
       filter.isDirect = false;
       filter.$or = [{ brandId: null }, { brandId: { $exists: false } }, { $expr: { $eq: ['$_id', '$brandId'] } }];
-      // For agency admins and their employees, companyId represents the agency.
       const agencyId = req.user.agencyId || req.user.adminId || req.companyId || (isAgencyAdmin ? req.user._id : null);
       if (!agencyId) {
         return res.status(400).json({ success: false, message: 'No agency associated with this user' });
@@ -27,16 +123,13 @@ exports.getBrands = async (req, res, next) => {
       if (isEmployee) {
         let hasViewAllFromRole = false;
         try {
-          const dbUser = await User.findById(req.user._id);
-          // Check if they have the individual toggle on
+          const dbUser = await User.findById(req.user._id).lean();
           if (dbUser && dbUser.viewAllClients) {
             hasViewAllFromRole = true;
-          } 
-          // Otherwise, check their role permissions
-          else if (dbUser && dbUser.customRoleId) {
+          } else if (dbUser && dbUser.customRoleId) {
             const mongoose = require('mongoose');
             const RoleModel = mongoose.models.Role || require('../roles/role.model');
-            const roleDoc = await RoleModel.findById(dbUser.customRoleId);
+            const roleDoc = await RoleModel.findById(dbUser.customRoleId).lean();
             if (roleDoc && roleDoc.permissions && roleDoc.permissions['Clients-Accounts']) {
               hasViewAllFromRole = roleDoc.permissions['Clients-Accounts'].All || false;
             }
@@ -44,7 +137,6 @@ exports.getBrands = async (req, res, next) => {
         } catch (e) {
           console.error('Error fetching role for permissions:', e);
         }
-        
         if (!hasViewAllFromRole) {
           filter.assignedUsers = req.user._id;
         }
@@ -65,48 +157,77 @@ exports.getBrands = async (req, res, next) => {
         { email: searchRegex }
       ];
     }
+    
+    // Support filtering by status if provided
+    if (req.query.status) {
+       filter.status = req.query.status;
+    }
 
-    const brands = await User.find(filter).sort({ createdAt: -1 })
+    // Pagination setup
+    const page = parseInt(req.query.page) || 1;
+    // Default to a large limit for backwards compatibility with dropdowns, 
+    // unless explicitly requested to paginate by the frontend list view
+    const limit = req.query.limit ? parseInt(req.query.limit) : (req.query.page ? 10 : 1000);
+    const skip = (page - 1) * limit;
+
+    const totalCount = await User.countDocuments(filter);
+
+    const brands = await User.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
       .populate('createdBy', 'name role roleName')
-      .populate('assignedUsers', 'name email role roleName');
+      .populate('assignedUsers', 'name email role roleName')
+      .lean();
 
     const brandIds = brands.map(b => b._id);
-    const usersCounts = await User.aggregate([
-      {
-        $match: {
-          brandId: { $in: brandIds },
-          role: { $in: ['brand_manager', 'user'] }
+    
+    let countMap = {};
+    if (brandIds.length > 0) {
+      const usersCounts = await User.aggregate([
+        {
+          $match: {
+            brandId: { $in: brandIds },
+            role: { $in: ['brand_manager', 'user'] }
+          }
+        },
+        {
+          $match: {
+            $expr: { $ne: ['$_id', '$brandId'] }
+          }
+        },
+        {
+          $group: {
+            _id: '$brandId',
+            count: { $sum: 1 }
+          }
         }
-      },
-      {
-        $match: {
-          $expr: { $ne: ['$_id', '$brandId'] }
-        }
-      },
-      {
-        $group: {
-          _id: '$brandId',
-          count: { $sum: 1 }
-        }
-      }
-    ]);
+      ]);
 
-    const countMap = {};
-    usersCounts.forEach(c => {
-      if (c._id) {
-        countMap[c._id.toString()] = c.count;
-      }
-    });
+      usersCounts.forEach(c => {
+        if (c._id) {
+          countMap[c._id.toString()] = c.count;
+        }
+      });
+    }
 
     const data = brands.map((brand) => {
       return {
-        ...brand.toObject(),
+        ...brand,
         adminEmail: brand.email,
         usersCount: countMap[brand._id.toString()] || 0
       };
     });
 
-    res.status(200).json({ success: true, count: data.length, data });
+    res.status(200).json({ 
+      success: true, 
+      count: data.length, 
+      data,
+      total: totalCount,
+      page,
+      limit,
+      totalPages: Math.ceil(totalCount / limit)
+    });
   } catch (error) {
     next(error);
   }

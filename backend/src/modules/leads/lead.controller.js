@@ -32,6 +32,15 @@ const getLeads = async (req, res) => {
   }
 };
 
+const getLeadsDropdown = async (req, res) => {
+  try {
+    const leads = await leadService.getLeadsDropdown(req.companyId, req.user);
+    return sendSuccess(res, "Leads dropdown retrieved successfully", { leads });
+  } catch (error) {
+    return sendError(res, 500, error.message);
+  }
+};
+
 const getLeadById = async (req, res) => {
   try {
     const lead = await leadService.getLeadById(
@@ -288,21 +297,45 @@ const exportLeadsCsv = async (req, res) => {
             .map((s) => s.trim())
             .filter(Boolean)
         : [];
-    const { filename, csv } = await leadService.buildLeadsCsvExport(
+    const { filename, cursor } = await leadService.buildLeadsCsvExport(
       req.companyId,
       filter,
       selectedIds,
       req.user,
       req.query,
     );
+    
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader(
       "Content-Disposition",
       `attachment; filename="${filename.replace(/"/g, "")}"`,
     );
-    return res.status(200).send(`\uFEFF${csv}`);
+    
+    // Write BOM for Excel compatibility
+    res.write('\uFEFF');
+    
+    const { EXPORT_HEADERS, leadToCsvRow } = require('./leadCsv.util');
+    res.write(EXPORT_HEADERS.join(",") + '\n');
+    
+    cursor.on('data', (lead) => {
+      res.write(leadToCsvRow(lead) + '\n');
+    });
+    
+    cursor.on('end', () => {
+      res.end();
+    });
+    
+    cursor.on('error', (err) => {
+      console.error('Export cursor error:', err);
+      if (!res.headersSent) {
+        return sendError(res, 500, err.message);
+      }
+      res.end();
+    });
   } catch (error) {
-    return sendError(res, 500, error.message);
+    if (!res.headersSent) {
+      return sendError(res, 500, error.message);
+    }
   }
 };
 
@@ -375,6 +408,7 @@ const assignLeads = async (req, res) => {
 module.exports = {
   getLeads,
   getLeadStats,
+  getLeadsDropdown,
   getLeadById,
   getAssignableBdeUsers,
   createLead,

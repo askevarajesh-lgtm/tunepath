@@ -103,19 +103,42 @@ exports.getClientExecutiveDashboard = async (clientId, companyId, queryMonth, qu
   const activeProjectsCount = allProjects.filter(p => p.status !== 'completed').length;
   const completedProjectsCount = allProjects.filter(p => p.status === 'completed').length;
 
-  // Approvals (Tasks waiting for review created on or before selected month)
   const pendingApprovalTasks = await Task.find({ 
     ...taskFilter,
     status: { $in: ['sent_for_client_review', 'review', 'in_review'] },
     clientReviewStatus: { $nin: ['approved', 'client_approved'] },
     clientApproved: { $ne: true },
     createdAt: { $lte: endOfMonth }
-  }).limit(5).catch(() => []);
-
-  // Tasks Execution Stats
-  const allTasks = await Task.find(taskFilter).catch(() => []);
+  })
+    .select('title projectId priority dueDate status clientReviewStatus')
+    .lean()
+    .limit(5)
+    .catch(() => []);
 
   const completedStatuses = ['done', 'complete', 'completed', 'validated', 'approved', 'approved_by_client', 'client_approved', 'closed'];
+
+  const optimizedTaskFilter = {
+    ...taskFilter,
+    $or: [
+      // all open tasks
+      { status: { $nin: completedStatuses }, clientApproved: { $ne: true }, clientReviewStatus: { $nin: ['approved', 'client_approved'] }, clientApprovalStatus: { $nin: ['approved', 'client_approved'] }, validationStatus: { $ne: 'validated' } },
+      // or tasks touched this month
+      { createdAt: { $gte: startOfMonth, $lte: endOfMonth } },
+      { dueDate: { $gte: startOfMonth, $lte: endOfMonth } },
+      { workCompletedAt: { $gte: startOfMonth, $lte: endOfMonth } },
+      { actualCompletionDate: { $gte: startOfMonth, $lte: endOfMonth } },
+      { completedAt: { $gte: startOfMonth, $lte: endOfMonth } },
+      { updatedAt: { $gte: startOfMonth, $lte: endOfMonth } }
+    ]
+  };
+
+  // Tasks Execution Stats
+  const allTasks = await Task.find(optimizedTaskFilter)
+    .select('status clientReviewStatus clientApprovalStatus clientApproved validationStatus createdAt dueDate workCompletedAt actualCompletionDate completedAt updatedAt')
+    .lean()
+    .catch(() => []);
+
+
 
   const isTaskCompleted = (t) => {
     const status = (t.status || '').toString().trim().toLowerCase();
@@ -174,10 +197,29 @@ exports.getClientOperationsDashboard = async (clientId, companyId, queryMonth, q
 
   const { effectiveClientId, allClientIds, taskFilter } = await resolveClientScope(reqUser, clientId, companyId);
 
-  // Tasks
-  const allTasks = await Task.find(taskFilter).catch(() => []);
-
   const completedStatuses = ['done', 'complete', 'completed', 'validated', 'approved', 'approved_by_client', 'client_approved', 'closed'];
+
+  const optimizedTaskFilter = {
+    ...taskFilter,
+    $or: [
+      // all open tasks
+      { status: { $nin: completedStatuses }, clientApproved: { $ne: true }, clientReviewStatus: { $nin: ['approved', 'client_approved'] }, clientApprovalStatus: { $nin: ['approved', 'client_approved'] }, validationStatus: { $ne: 'validated' } },
+      // or tasks touched this month
+      { createdAt: { $gte: startOfMonth, $lte: endOfMonth } },
+      { dueDate: { $gte: startOfMonth, $lte: endOfMonth } },
+      { workCompletedAt: { $gte: startOfMonth, $lte: endOfMonth } },
+      { actualCompletionDate: { $gte: startOfMonth, $lte: endOfMonth } },
+      { completedAt: { $gte: startOfMonth, $lte: endOfMonth } },
+      { updatedAt: { $gte: startOfMonth, $lte: endOfMonth } }
+    ]
+  };
+
+  // Tasks
+  const allTasks = await Task.find(optimizedTaskFilter)
+    .select('status clientReviewStatus clientApprovalStatus clientApproved validationStatus createdAt dueDate workCompletedAt actualCompletionDate completedAt updatedAt')
+    .lean()
+    .catch(() => []);
+
 
   const isTaskCompleted = (t) => {
     const status = (t.status || '').toString().trim().toLowerCase();

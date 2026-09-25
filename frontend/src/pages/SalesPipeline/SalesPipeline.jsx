@@ -39,6 +39,139 @@ const INDUSTRY_CATEGORIES = [
   'Other'
 ];
 
+
+const StageColumn = ({ stage, serverAnalytics, canEdit, handleDragStart, handleDrop, handleDragOver, searchQuery, refreshTrigger, isDark, formatPrice, setSelectedDealId, setIsDetailOpen }) => {
+  const [page, setPage] = useState(1);
+  
+  const { data: dealsResponse, isLoading, refetch } = useGetDealsQuery({
+    stage: stage.id,
+    search: searchQuery,
+    page: page,
+    limit: 20
+  });
+
+  // Since it's a custom hook, we need to accumulate deals when loading more
+  const [accumulatedDeals, setAccumulatedDeals] = useState([]);
+  
+  React.useEffect(() => {
+    refetch();
+  }, [refreshTrigger, refetch]);
+
+  React.useEffect(() => {
+    if (dealsResponse?.data?.deals) {
+      if (page === 1) {
+        setAccumulatedDeals(dealsResponse.data.deals);
+      } else {
+        setAccumulatedDeals(prev => {
+          const newDeals = dealsResponse.data.deals.filter(nd => !prev.find(p => p._id === nd._id));
+          return [...prev, ...newDeals];
+        });
+      }
+    }
+  }, [dealsResponse, page]);
+
+  const totalVal = serverAnalytics?.funnel?.find(f => f.stage === stage.id.toUpperCase())?.value || 0;
+  const stageTotalCount = serverAnalytics?.funnel?.find(f => f.stage === stage.id.toUpperCase())?.count || dealsResponse?.data?.total || 0;
+
+  return (
+    <div
+      onDragOver={handleDragOver}
+      onDrop={(e) => canEdit && handleDrop(e, stage.id)}
+      style={{ flex: 1, minWidth: 290, background: isDark ? '#1a1a1a' : '#f8f9fa', borderRadius: 16, padding: 16, border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: 12 }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `2px solid ${stage.color}`, paddingBottom: 8 }}>
+        <div>
+          <strong style={{ fontSize: 12, color: isDark ? '#fff' : '#1f1f1f', letterSpacing: 0.5 }}>{stage.title}</strong>
+          <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: isDark ? '#2a2a2a' : '#e9ecef', fontSize: 11, fontWeight: 600 }}>{stageTotalCount}</span>
+        </div>
+        <strong style={{ color: stage.color, fontSize: 13 }}>{formatPrice(totalVal)}</strong>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', minHeight: 400 }}>
+        {accumulatedDeals.map(deal => (
+          <Card
+            key={deal._id}
+            bodyStyle={{ padding: 16 }}
+            onClick={() => { setSelectedDealId(deal._id); setIsDetailOpen(true); }}
+            draggable={canEdit}
+            onDragStart={(e) => handleDragStart(e, deal._id)}
+            style={{ borderRadius: 12, border: '1px solid var(--border-color)', background: isDark ? '#242424' : '#fff', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
+            hoverable
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <strong style={{ fontSize: 14, color: isDark ? '#fff' : '#1f1f1f' }}>{deal.name}</strong>
+              <Avatar size="small" style={{ backgroundColor: stage.color, fontSize: 10, fontWeight: 700 }}>{deal.ownerInit}</Avatar>
+            </div>
+            <Tag style={{ borderRadius: 12, fontSize: 10, border: '1px solid var(--border-color)', background: 'transparent', color: 'var(--text-secondary)', marginBottom: 12 }}>{deal.category}</Tag>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 16, fontWeight: 800, color: stage.color }}>{formatPrice(deal.value)}</span>
+              {deal.priority && (
+                <Tag color={deal.priority === 'critical' || deal.priority === 'high' ? 'red' : 'blue'} style={{ borderRadius: 6, fontSize: 9 }}>{deal.priority.toUpperCase()}</Tag>
+              )}
+            </div>
+
+            <Divider style={{ margin: '12px 0' }} />
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: '#8c8c8c' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><User size={12} /> {deal.rep}</span>
+            </div>
+          </Card>
+        ))}
+        {accumulatedDeals.length === 0 && !isLoading && (
+          <div style={{ textAlign: 'center', color: '#8c8c8c', padding: '40px 0', fontSize: 12 }}>Drop deals here</div>
+        )}
+        {dealsResponse?.data?.total > accumulatedDeals.length && (
+          <Button type="dashed" loading={isLoading} onClick={() => setPage(p => p + 1)} style={{ width: '100%', borderRadius: 8 }}>Load More</Button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const WonLostList = ({ stageId, title, emptyText, formatPrice, setSelectedDealId, setIsDetailOpen, isDark, refreshTrigger }) => {
+  const [page, setPage] = useState(1);
+  const { data: dealsResponse, isLoading, refetch } = useGetDealsQuery({ stage: stageId, page, limit: 10 });
+  const [accumulatedDeals, setAccumulatedDeals] = useState([]);
+
+  React.useEffect(() => { refetch(); }, [refreshTrigger, refetch]);
+  
+  React.useEffect(() => {
+    if (dealsResponse?.data?.deals) {
+      if (page === 1) setAccumulatedDeals(dealsResponse.data.deals);
+      else {
+        setAccumulatedDeals(prev => {
+          const newDeals = dealsResponse.data.deals.filter(nd => !prev.find(p => p._id === nd._id));
+          return [...prev, ...newDeals];
+        });
+      }
+    }
+  }, [dealsResponse, page]);
+
+  return (
+    <Card title={title} className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {accumulatedDeals.map(deal => (
+          <div key={deal._id} onClick={() => { setSelectedDealId(deal._id); setIsDetailOpen(true); }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: isDark ? '#262626' : (stageId==='won' ? 'rgba(16,185,129,0.05)' : 'rgba(239,68,68,0.05)'), borderRadius: 12, border: '1px solid var(--border-color)', cursor: 'pointer' }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <Avatar style={{ backgroundColor: stageId === 'won' ? 'var(--accent-primary)' : 'var(--accent-danger)', fontWeight: 700 }}>{deal.ownerInit}</Avatar>
+              <div>
+                <strong style={{ color: isDark ? '#fff' : '#000' }}>{deal.name}</strong>
+                <div style={{ fontSize: 12, color: '#8c8c8c' }}>{deal.category} · Rep: {deal.rep}</div>
+              </div>
+            </div>
+            <strong style={{ color: stageId === 'won' ? 'var(--accent-primary)' : 'var(--accent-danger)', fontSize: 16 }}>{formatPrice(deal.value)}</strong>
+          </div>
+        ))}
+        {accumulatedDeals.length === 0 && !isLoading && <Text type="secondary" style={{ textAlign: 'center', display: 'block', padding: 20 }}>{emptyText}</Text>}
+        {dealsResponse?.data?.total > accumulatedDeals.length && (
+          <Button type="dashed" loading={isLoading} onClick={() => setPage(p => p + 1)} style={{ width: '100%', borderRadius: 8 }}>Load More</Button>
+        )}
+      </div>
+    </Card>
+  );
+};
+
 const SalesPipeline = () => {
   const navigate = useNavigate();
   const { isDark } = useTheme();
@@ -54,6 +187,7 @@ const SalesPipeline = () => {
   const [newNote, setNewNote] = useState('');
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
   const [stalledDaysFilter, setStalledDaysFilter] = useState(1);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   // Forms
   const [form] = Form.useForm();
@@ -124,7 +258,7 @@ const SalesPipeline = () => {
       message.success("Deal created successfully");
       setIsCreateOpen(false);
       form.resetFields();
-      refetchDeals();
+      setRefreshTrigger(prev => prev + 1);
       refetchAnalytics();
     } catch (err) {
       message.error(err?.error || "Failed to create deal");
@@ -138,7 +272,7 @@ const SalesPipeline = () => {
       setIsConvertModalOpen(false);
       convertForm.resetFields();
       setIsDetailOpen(false);
-      refetchDeals();
+      setRefreshTrigger(prev => prev + 1);
       refetchAnalytics();
     } catch (err) {
       console.error("CONVERT ERROR DETAILS:", err);
@@ -162,7 +296,7 @@ const SalesPipeline = () => {
 
       await updateDeal({ id: dealId, stage: nextStage, probability }).unwrap();
       message.success(`Moved deal to ${nextStage.toUpperCase()}`);
-      refetchDeals();
+      setRefreshTrigger(prev => prev + 1);
       refetchAnalytics();
     } catch (err) {
       message.error(err?.error || "Failed to update deal stage");
@@ -190,7 +324,7 @@ const SalesPipeline = () => {
       await addDealNote({ dealId: selectedDealId, content: newNote }).unwrap();
       setNewNote('');
       message.success("Note added successfully");
-      refetchDeals();
+      setRefreshTrigger(prev => prev + 1);
     } catch (err) {
       message.error(err?.error || "Failed to add note");
     }
@@ -208,7 +342,7 @@ const SalesPipeline = () => {
           await deleteDeal(id).unwrap();
           message.success("Opportunity deleted successfully");
           setIsDetailOpen(false);
-          refetchDeals();
+          setRefreshTrigger(prev => prev + 1);
           refetchAnalytics();
         } catch (err) {
           message.error(err?.error || "Failed to delete deal");
@@ -396,43 +530,10 @@ const SalesPipeline = () => {
       <motion.div variants={itemVariants} style={{ marginBottom: 32 }}>
         <Row gutter={[24, 24]}>
           <Col xs={24} lg={12}>
-            <Card title="Won Deals (Won)" className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {getDealsByStage('won').map(deal => (
-                  <div key={deal._id} onClick={() => { setSelectedDealId(deal._id); setIsDetailOpen(true); }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: isDark ? '#262626' : 'rgba(16,185,129,0.05)', borderRadius: 12, border: '1px solid var(--border-color)', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <Avatar style={{ backgroundColor: 'var(--accent-primary)', fontWeight: 700 }}>{deal.ownerInit}</Avatar>
-                      <div>
-                        <strong style={{ color: isDark ? '#fff' : '#000' }}>{deal.name}</strong>
-                        <div style={{ fontSize: 12, color: '#8c8c8c' }}>{deal.category} · Rep: {deal.rep}</div>
-                      </div>
-                    </div>
-                    <strong style={{ color: 'var(--accent-primary)', fontSize: 16 }}>{formatPrice(deal.value)}</strong>
-                  </div>
-                ))}
-                {getDealsByStage('won').length === 0 && <Text type="secondary" style={{ textAlign: 'center', display: 'block', padding: 20 }}>No won deals this month</Text>}
-              </div>
-            </Card>
+            <WonLostList stageId="won" title="Won Deals (Won)" emptyText="No won deals this month" formatPrice={formatPrice} setSelectedDealId={setSelectedDealId} setIsDetailOpen={setIsDetailOpen} isDark={isDark} refreshTrigger={refreshTrigger} />
           </Col>
-
           <Col xs={24} lg={12}>
-            <Card title="Lost Deals (Lost)" className="glassmorphism" style={{ borderRadius: 16, border: '1px solid var(--border-color)' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {getDealsByStage('lost').map(deal => (
-                  <div key={deal._id} onClick={() => { setSelectedDealId(deal._id); setIsDetailOpen(true); }} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: isDark ? '#262626' : 'rgba(239,68,68,0.05)', borderRadius: 12, border: '1px solid var(--border-color)', cursor: 'pointer' }}>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                      <Avatar style={{ backgroundColor: 'var(--accent-danger)', fontWeight: 700 }}>{deal.ownerInit}</Avatar>
-                      <div>
-                        <strong style={{ color: isDark ? '#fff' : '#000' }}>{deal.name}</strong>
-                        <div style={{ fontSize: 12, color: '#8c8c8c' }}>Reason: {deal.lostReason || "Not specified"}</div>
-                      </div>
-                    </div>
-                    <strong style={{ color: 'var(--accent-danger)', fontSize: 16 }}>{formatPrice(deal.value)}</strong>
-                  </div>
-                ))}
-                {getDealsByStage('lost').length === 0 && <Text type="secondary" style={{ textAlign: 'center', display: 'block', padding: 20 }}>No lost deals recorded</Text>}
-              </div>
-            </Card>
+            <WonLostList stageId="lost" title="Lost Deals (Lost)" emptyText="No lost deals recorded" formatPrice={formatPrice} setSelectedDealId={setSelectedDealId} setIsDetailOpen={setIsDetailOpen} isDark={isDark} refreshTrigger={refreshTrigger} />
           </Col>
         </Row>
       </motion.div>
@@ -642,7 +743,7 @@ const SalesPipeline = () => {
                       try {
                         await updateDeal({ id: selectedDeal._id, expectedCloseDate: d ? d.toISOString() : null }).unwrap();
                         message.success("Expected end date updated");
-                        refetchDeals();
+                        setRefreshTrigger(prev => prev + 1);
                         refetchAnalytics();
                       } catch {
                         message.error("Failed to update date");

@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import { useAuth } from "../../contexts/AuthContext";
 import React, { useMemo, useState } from "react";
 import {
@@ -42,6 +43,7 @@ import {
     taskCompletedOnDay,
 } from "./taskKanbanDateUtils";
 import "./TaskCalendarView.css";
+
 
 const { Option } = Select;
 const { Text, Title } = Typography;
@@ -146,7 +148,8 @@ const TaskCalendarView = ({ onTaskClick, departmentFilter }) => {
         );
 
     const { data: projectsData } = useGetProjectsDropdownQuery();
-    const { data: usersData } = useGetUsersDropdownQuery();
+    const [userSearchTerm, setUserSearchTerm] = useState('');
+  const { data: usersData } = useGetUsersDropdownQuery({ search: userSearchTerm });
 
     const allProjects =
         projectsData?.data?.data || projectsData?.data?.projects || [];
@@ -482,7 +485,7 @@ const TaskCalendarView = ({ onTaskClick, departmentFilter }) => {
                                         ))}
                                     </Select>
 
-                                    <Select
+                                    <Select onSearch={(v) => setUserSearchTerm(v)} filterOption={false} 
                                         placeholder="Assigned To"
                                         allowClear
                                         showSearch
@@ -499,7 +502,7 @@ const TaskCalendarView = ({ onTaskClick, departmentFilter }) => {
                                         ))}
                                     </Select>
 
-                                    <Select
+                                    <Select onSearch={(v) => setUserSearchTerm(v)} filterOption={false} 
                                         placeholder="Assigned By"
                                         allowClear
                                         showSearch

@@ -1072,38 +1072,18 @@ const getAllProjects = async (
     }
   ]);
 
+  // Fallback for masterItemId
   if (result && result.data) {
-    await Promise.all(
-      result.data.map(async (project) => {
-        if (project.status !== "completed" && project.status !== "cancelled") {
-          try {
-            await checkAndMarkProjectCompleted(project._id, null, tenantCompanyId);
-          } catch (e) {
-            // ignore
-          }
-        }
-      })
-    );
-
-    result.data = await Promise.all(
-      result.data.map(async (project) => {
-        const reloaded = await Project.findById(project._id)
-          .populate("clientId", "name companyName email phone address status")
-          .populate("companyId", "name companyName email phone address status")
-          .populate("createdBy", "name email roleName")
-          .populate("invoiceId", "invoiceNumber type status")
-          .populate("masterItemId", "name description deliverables itemType pricingModel basePrice handlingAmount campaignAmount handlingDuration numberOfPosters completedPosters approvedPosters remainingPosters numberOfVideos completedVideos approvedVideos remainingVideos numberOfShoots completedShoots approvedShoots remainingShoots digitalMarketingPackages campaignPackages seoPackages websitePackages designingPackages selectedCategories isActive")
-          .populate("masterItemIds", "name itemCode category price duration description")
-          .lean();
-
-        const projObj = reloaded || (project.toObject ? project.toObject() : project);
-        if (!projObj.masterItemId && projObj.masterItemIds && projObj.masterItemIds.length > 0) {
-          projObj.masterItemId = projObj.masterItemIds[0];
-        }
-        return projObj;
-      })
-    );
+    result.data = result.data.map(project => {
+      if (!project.masterItemId && project.masterItemIds && project.masterItemIds.length > 0) {
+        project.masterItemId = project.masterItemIds[0];
+      }
+      return project;
+    });
   }
+
+  // Removed N+1 re-fetch hack: projects are now updated by event hooks 
+  // (e.g. when tasks are completed or deliverables updated) instead of on every list view.
 
   return result;
 };
@@ -1267,7 +1247,24 @@ const getUnassignedDeliverablesSummary = async (
   }
 
   const { filters } = resolved.queryOptions;
-  const projects = await Project.find(filters)
+
+  // Optimize: Only fetch projects that could possibly have pending deliverables or be in progress
+  const activeFilters = {
+    $and: [
+      filters,
+      {
+        $or: [
+          { remainingPosters: { $gt: 0 } },
+          { remainingVideos: { $gt: 0 } },
+          { remainingShoots: { $gt: 0 } },
+          { "selectedCategories.remaining": { $gt: 0 } },
+          { status: "in_progress" },
+        ],
+      },
+    ],
+  };
+
+  const projects = await Project.find(activeFilters)
     .select(
       "name remainingPosters remainingVideos remainingShoots selectedCategories clientId status",
     )
@@ -2594,6 +2591,199 @@ const bulkDeleteProjects = async (projectIds, tenantCompanyId) => {
   return results;
 };
 
+const getDeliverablesClientSummary = async (
+  tenantCompanyId,
+  reqQuery = {},
+  userRole = null,
+  userId = null,
+) => {
+  const resolved = await resolveProjectListQueryOptions(
+    tenantCompanyId,
+    reqQuery,
+    userRole,
+    userId,
+  );
+  if (!resolved.ok) {
+    return [];
+  }
+  
+  const pipeline = [
+    { $match: { ...resolved.queryOptions.filter, clientId: { $ne: null } } },
+    {
+      $addFields: {
+        pTotal: {
+          $add: [
+            { $ifNull: ["$numberOfPosters", 0] },
+            { $ifNull: ["$numberOfVideos", 0] },
+            { $ifNull: ["$numberOfShoots", 0] }
+          ]
+        },
+        pPostersComp: {
+          $cond: {
+            if: { $ne: [{ $type: "$completedPosters" }, "missing"] },
+            then: { $max: [{ $ifNull: ["$completedPosters", 0] }, { $ifNull: ["$approvedPosters", 0] }] },
+            else: { $ifNull: ["$approvedPosters", 0] }
+          }
+        },
+        pVideosComp: {
+          $cond: {
+            if: { $ne: [{ $type: "$completedVideos" }, "missing"] },
+            then: { $max: [{ $ifNull: ["$completedVideos", 0] }, { $ifNull: ["$approvedVideos", 0] }] },
+            else: { $ifNull: ["$approvedVideos", 0] }
+          }
+        },
+        pShootsComp: {
+          $cond: {
+            if: { $ne: [{ $type: "$completedShoots" }, "missing"] },
+            then: { $max: [{ $ifNull: ["$completedShoots", 0] }, { $ifNull: ["$approvedShoots", 0] }] },
+            else: { $ifNull: ["$approvedShoots", 0] }
+          }
+        },
+        pPostersPending: { $max: [0, { $subtract: [{ $ifNull: ["$completedPosters", 0] }, { $ifNull: ["$approvedPosters", 0] }] }] },
+        pVideosPending: { $max: [0, { $subtract: [{ $ifNull: ["$completedVideos", 0] }, { $ifNull: ["$approvedVideos", 0] }] }] },
+        pShootsPending: { $max: [0, { $subtract: [{ $ifNull: ["$completedShoots", 0] }, { $ifNull: ["$approvedShoots", 0] }] }] },
+      }
+    },
+    {
+      $addFields: {
+        pCompleted: { $add: ["$pPostersComp", "$pVideosComp", "$pShootsComp"] },
+        extraStats: {
+          $reduce: {
+            input: { $ifNull: ["$selectedCategories", []] },
+            initialValue: { total: 0, completed: 0, pending: 0 },
+            in: {
+              $let: {
+                vars: {
+                  rawName: { $toLower: { $ifNull: ["$$this.name", { $ifNull: ["$$this.categoryName", ""] }] } },
+                  catComp: {
+                    $cond: {
+                      if: { $ne: [{ $type: "$$this.completed" }, "missing"] },
+                      then: { $max: [{ $ifNull: ["$$this.completed", 0] }, { $ifNull: ["$$this.approved", 0] }] },
+                      else: { $ifNull: ["$$this.approved", 0] }
+                    }
+                  },
+                  catPending: { $max: [0, { $subtract: [{ $ifNull: ["$$this.completed", 0] }, { $ifNull: ["$$this.approved", 0] }] }] },
+                  catQty: { $ifNull: ["$$this.quantity", { $ifNull: ["$$this.count", 0] }] }
+                },
+                in: {
+                  $cond: {
+                    if: {
+                      $not: {
+                        $or: [
+                          { $regexMatch: { input: "$$rawName", regex: "poster" } },
+                          { $regexMatch: { input: "$$rawName", regex: "video" } },
+                          { $regexMatch: { input: "$$rawName", regex: "shoot" } }
+                        ]
+                      }
+                    },
+                    then: {
+                      total: { $add: ["$$value.total", "$$catQty"] },
+                      completed: { $add: ["$$value.completed", "$$catComp"] },
+                      pending: { $add: ["$$value.pending", "$$catPending"] }
+                    },
+                    else: "$$value"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      $addFields: {
+        calculatedPending: {
+          $add: ["$pPostersPending", "$pVideosPending", "$pShootsPending", "$extraStats.pending"]
+        },
+        isProjectPendingReview: {
+          $in: ["$status", ["workflow_sent", "sent_for_client_review", "workflow_revision_requested"]]
+        }
+      }
+    },
+    {
+      $addFields: {
+        projectTotal: { $add: ["$pTotal", "$extraStats.total"] },
+        projectCompleted: { $add: ["$pCompleted", "$extraStats.completed"] },
+      }
+    },
+    {
+      $addFields: {
+        projectPending: {
+          $cond: {
+            if: { $gt: ["$calculatedPending", 0] },
+            then: "$calculatedPending",
+            else: { $cond: { if: "$isProjectPendingReview", then: 1, else: 0 } }
+          }
+        },
+        projectRemaining: { $max: [0, { $subtract: ["$projectTotal", "$projectCompleted"] }] }
+      }
+    },
+    {
+      $group: {
+        _id: "$clientId",
+        totalDeliverables: { $sum: "$projectTotal" },
+        completedDeliverables: { $sum: "$projectCompleted" },
+        pendingApprovalDeliverables: { $sum: "$projectPending" },
+        remainingDeliverables: { $sum: "$projectRemaining" },
+        projects: {
+          $push: {
+            _id: "$_id",
+            name: "$name",
+            status: "$status",
+            projectTotal: "$projectTotal",
+            projectCompleted: "$projectCompleted",
+            projectPending: "$projectPending",
+            projectRemaining: "$projectRemaining"
+          }
+        }
+      }
+    },
+    {
+      $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "_id",
+        as: "clientUser"
+      }
+    },
+    {
+      $lookup: {
+        from: "clientcompanies",
+        localField: "_id",
+        foreignField: "_id",
+        as: "clientCompany"
+      }
+    },
+    {
+      $addFields: {
+        clientInfo: {
+          $cond: {
+            if: { $gt: [{ $size: "$clientUser" }, 0] },
+            then: { $arrayElemAt: ["$clientUser", 0] },
+            else: { $arrayElemAt: ["$clientCompany", 0] }
+          }
+        }
+      }
+    },
+    {
+      $project: {
+        clientId: "$_id",
+        clientName: { $ifNull: ["$clientInfo.name", { $ifNull: ["$clientInfo.companyName", "Unknown Client"] }] },
+        clientEmail: { $ifNull: ["$clientInfo.email", ""] },
+        totalDeliverables: 1,
+        completedDeliverables: 1,
+        pendingApprovalDeliverables: 1,
+        remainingDeliverables: 1,
+        projects: 1,
+        _id: 0
+      }
+    }
+  ];
+
+  const results = await Project.aggregate(pipeline);
+  return results;
+};
+
 module.exports = {
   getAllProjects,
   getProjectReport,
@@ -2616,4 +2806,5 @@ module.exports = {
   getProjectServiceCapacity,
   reconcileProjectTaskCounts,
   checkAndMarkProjectCompleted,
+  getDeliverablesClientSummary,
 };

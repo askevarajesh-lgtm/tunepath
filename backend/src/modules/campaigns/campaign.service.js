@@ -205,10 +205,8 @@ const getCampaignsDropdown = async (
     Campaign,
     queryOptions,
     [
-      { path: "clientCompanyId", select: "name email phone companyName agencyName" },
-      { path: "clientId", select: "name email phone companyName agencyName" },
-      { path: "companyId", select: "name email companyName agencyName" },
-      { path: "projectId", select: "name status departments invoiceId" },
+      { path: "clientCompanyId", select: "name companyName agencyName" },
+      { path: "clientId", select: "name companyName agencyName" },
     ],
     "platform startDate endDate status clientCompanyId clientId companyId projectId dailyBudget campaignDays totalCampaignValue campaignAmount isInternal ownBrandName",
   );

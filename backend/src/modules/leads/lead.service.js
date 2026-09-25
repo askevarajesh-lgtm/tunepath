@@ -181,6 +181,69 @@ const getLeadStats = async (companyId, currentUser, query = {}) => {
     accessFilter.companyId = toObjectId(accessFilter.companyId);
   }
 
+  // Parse UI Filters
+  if (query.status && query.status !== "All" && query.status !== "all") {
+    const statuses = query.status.split(',').map(s => s.trim()).filter(Boolean);
+    if (statuses.length > 0) {
+      accessFilter.status = { $in: statuses.map(s => new RegExp(`^${escapeRegex(s)}$`, "i")) };
+    }
+  }
+  if (query.source) {
+    accessFilter.source = query.source;
+  }
+  if (query.department) {
+    const depts = query.department.split(',').map(d => d.trim()).filter(Boolean);
+    if (depts.length > 0) {
+      accessFilter.assignedDepartment = { $in: depts };
+    }
+  }
+  if (query.owner) {
+    if (query.owner === 'Unassigned') {
+      accessFilter.$or = [...(accessFilter.$or || []), { assignedTo: { $in: [null, ""] } }];
+    } else {
+      accessFilter.assignedTo = query.owner;
+    }
+  }
+  if (query.formName) {
+    const formNames = query.formName.split(',').map(f => f.trim()).filter(Boolean);
+    if (formNames.length > 0) {
+      const formRegexes = formNames.map(f => new RegExp(escapeRegex(f), "i"));
+      accessFilter.$or = [
+        ...(accessFilter.$or || []),
+        { "customData.form_name": { $in: formRegexes } },
+        { "customData.formName": { $in: formRegexes } },
+        { formName: { $in: formRegexes } }
+      ];
+    }
+  }
+  if (query.startDate && query.endDate) {
+    accessFilter.$or = [
+      ...(accessFilter.$or || []),
+      {
+        createdAt: {
+          $gte: new Date(query.startDate),
+          $lte: new Date(query.endDate)
+        }
+      },
+      {
+        "customData.created_time": {
+          $gte: query.startDate,
+          $lte: query.endDate
+        }
+      }
+    ];
+  }
+  if (query.search && query.search.trim()) {
+    const sRegex = new RegExp(escapeRegex(query.search.trim()), "i");
+    accessFilter.$or = [
+      ...(accessFilter.$or || []),
+      { fullName: sRegex },
+      { phoneNumber: sRegex },
+      { email: sRegex },
+      { companyName: sRegex }
+    ];
+  }
+
   const [aggregationResult] = await Lead.aggregate([
     { $match: accessFilter },
     {
@@ -188,8 +251,41 @@ const getLeadStats = async (companyId, currentUser, query = {}) => {
         total: [{ $count: "count" }],
         byStatus: [{ $group: { _id: { $toLower: "$status" }, count: { $sum: 1 } } }],
         bySource: [{ $group: { _id: "$source", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
-        byOwner: [{ $group: { _id: "$assignedTo", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+        byOwner: [
+          { 
+            $group: { 
+              _id: "$assignedTo", 
+              count: { $sum: 1 },
+              new: { $sum: { $cond: [{ $eq: [{ $toLower: "$status" }, "new"] }, 1, 0] } },
+              active: { $sum: { $cond: [{ $in: [{ $toLower: "$status" }, ["contacted", "in_progress", "follow_up"]] }, 1, 0] } },
+              followup: { $sum: { $cond: [{ $eq: [{ $toLower: "$status" }, "follow_up"] }, 1, 0] } },
+              converted: { $sum: { $cond: [{ $eq: [{ $toLower: "$status" }, "converted"] }, 1, 0] } },
+              contactReady: { 
+                $sum: { 
+                  $cond: [
+                    { $or: [
+                      { $and: [{ $ne: ["$phoneNumber", null] }, { $ne: ["$phoneNumber", ""] }] },
+                      { $and: [{ $ne: ["$email", null] }, { $ne: ["$email", ""] }] }
+                    ]}, 
+                    1, 0
+                  ] 
+                } 
+              }
+            } 
+          }, 
+          { $sort: { count: -1 } }
+        ],
         byDepartment: [{ $group: { _id: "$assignedDepartment", count: { $sum: 1 } } }, { $sort: { count: -1 } }],
+        trendData: [
+          { $match: { createdAt: { $gte: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000) } } },
+          { $group: { _id: { $dateToString: { format: "%d %b", date: "$createdAt" } }, count: { $sum: 1 } } },
+          { $sort: { _id: 1 } }
+        ],
+        statusMovementData: [
+          { $match: { updatedAt: { $gte: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000) }, status: { $ne: "new" } } },
+          { $group: { _id: { $dateToString: { format: "%d %b", date: "$updatedAt" } }, count: { $sum: 1 } } },
+          { $sort: { _id: 1 } }
+        ],
         recent30Days: [
           { $match: { createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } } },
           { $count: "count" }
@@ -260,7 +356,9 @@ const getLeadStats = async (companyId, currentUser, query = {}) => {
     statusBreakdown: aggregationResult?.byStatus || [],
     sourceBreakdown: aggregationResult?.bySource || [],
     ownerBreakdown: aggregationResult?.byOwner || [],
-    departmentBreakdown: aggregationResult?.byDepartment || []
+    departmentBreakdown: aggregationResult?.byDepartment || [],
+    trendData: aggregationResult?.trendData || [],
+    statusMovementData: aggregationResult?.statusMovementData || []
   };
 };
 
@@ -274,15 +372,66 @@ const getLeads = async (companyId, currentUser, query = {}) => {
   }
 
   // Optional server-side filtering
-  if (query.status && query.status !== "All") {
-    accessFilter.status = new RegExp(`^${escapeRegex(query.status)}$`, "i");
+  if (query.status && query.status !== "All" && query.status !== "all") {
+    const statuses = query.status.split(',').map(s => s.trim()).filter(Boolean);
+    if (statuses.length > 0) {
+      accessFilter.status = { $in: statuses.map(s => new RegExp(`^${escapeRegex(s)}$`, "i")) };
+    }
   }
   if (query.source) {
     accessFilter.source = query.source;
   }
+  if (query.department) {
+    const depts = query.department.split(',').map(d => d.trim()).filter(Boolean);
+    if (depts.length > 0) {
+      accessFilter.assignedDepartment = { $in: depts };
+    }
+  }
+  if (query.owner) {
+    if (query.owner === 'Unassigned') {
+      accessFilter.$or = [...(accessFilter.$or || []), { assignedTo: { $in: [null, ""] } }];
+    } else {
+      accessFilter.assignedTo = query.owner;
+    }
+  }
+  if (query.formName) {
+    const formNames = query.formName.split(',').map(f => f.trim()).filter(Boolean);
+    if (formNames.length > 0) {
+      const formRegexes = formNames.map(f => new RegExp(escapeRegex(f), "i"));
+      accessFilter.$or = [
+        ...(accessFilter.$or || []),
+        { "customData.form_name": { $in: formRegexes } },
+        { "customData.formName": { $in: formRegexes } },
+        { formName: { $in: formRegexes } }
+      ];
+    }
+  }
+  if (query.startDate && query.endDate) {
+    accessFilter.$or = [
+      ...(accessFilter.$or || []),
+      {
+        createdAt: {
+          $gte: new Date(query.startDate),
+          $lte: new Date(query.endDate)
+        }
+      },
+      {
+        "customData.created_time": {
+          $gte: query.startDate,
+          $lte: query.endDate
+        }
+      }
+    ];
+  }
+
+  if (query.hasReminders === 'true') {
+    accessFilter.reminders = { $exists: true, $not: { $size: 0 } };
+  }
+
   if (query.search && query.search.trim()) {
     const sRegex = new RegExp(escapeRegex(query.search.trim()), "i");
     accessFilter.$or = [
+      ...(accessFilter.$or || []),
       { fullName: sRegex },
       { phoneNumber: sRegex },
       { email: sRegex },
@@ -295,8 +444,16 @@ const getLeads = async (companyId, currentUser, query = {}) => {
   if (query.full === "true" || query.includeDetails === "true") {
     projection = "";
   }
+  if (query.hasReminders === 'true') {
+    projection = "-activityLogs -leadNotes"; // keep reminders if they want to view them
+  }
 
-  let dbQuery = Lead.find(accessFilter).sort({ createdAt: -1 });
+  let sortCriteria = { createdAt: -1 };
+  if (query.sortBy) {
+    sortCriteria = { [query.sortBy]: query.sortOrder === 'asc' ? 1 : -1 };
+  }
+
+  let dbQuery = Lead.find(accessFilter).sort(sortCriteria);
   if (projection) {
     dbQuery = dbQuery.select(projection);
   }
@@ -583,7 +740,7 @@ const deleteLeadNote = async (leadId, noteId, companyId, currentUser) => {
   return true;
 };
 
-const getLeadsForExport = async (
+const getLeadsExportCursor = async (
   companyId,
   filter,
   currentUser,
@@ -591,45 +748,59 @@ const getLeadsForExport = async (
 ) => {
   await ensureCurrentUserData(currentUser);
   const accessFilter = buildLeadAccessFilter(companyId, currentUser);
-  if (query.companyId) {
-    // If a client is selected, remove the isClientLead restriction to see their leads
+  if (query.companyId || query.clientId) {
     delete accessFilter.isClientLead;
-    accessFilter.clientId = query.companyId;
+    accessFilter.clientId = query.companyId || query.clientId;
   }
-  const leads = await Lead.find(accessFilter).sort({ createdAt: -1 }).lean();
-  let filteredLeads = leads;
-  
+
   if (filter === "reminder") {
-    filteredLeads = filteredLeads.filter((l) => (l.reminders || []).length > 0);
+    accessFilter.reminders = { $exists: true, $not: { $size: 0 } };
   }
 
   if (query.startDate && query.endDate) {
-    const start = new Date(query.startDate);
-    const end = new Date(query.endDate);
-    filteredLeads = filteredLeads.filter((lead) => {
-      const customDate =
-        lead?.customData?.created_time ||
-        lead?.customData?.createdTime ||
-        lead?.customData?.createdtime;
-      const leadDate = customDate ? new Date(customDate) : new Date(lead.createdAt);
-      return leadDate >= start && leadDate <= end;
-    });
+    accessFilter.$or = [
+      ...(accessFilter.$or || []),
+      {
+        createdAt: {
+          $gte: new Date(query.startDate),
+          $lte: new Date(query.endDate)
+        }
+      },
+      {
+        "customData.created_time": {
+          $gte: query.startDate,
+          $lte: query.endDate
+        }
+      }
+    ];
   }
 
   if (query.formName) {
-    const fnFilter = query.formName.toLowerCase();
-    filteredLeads = filteredLeads.filter((lead) => {
-      const formName = (
-        lead?.customData?.form_name ||
-        lead?.customData?.formName ||
-        lead?.formName ||
-        ""
-      ).toLowerCase();
-      return formName.includes(fnFilter);
-    });
+    const fnFilter = new RegExp(escapeRegex(query.formName.trim()), "i");
+    accessFilter.$or = [
+      ...(accessFilter.$or || []),
+      { "customData.form_name": fnFilter },
+      { "customData.formName": fnFilter },
+      { formName: fnFilter }
+    ];
+  }
+  
+  if (query.status && query.status !== "All" && query.status !== "all") {
+    const statuses = query.status.split(',').map(s => s.trim()).filter(Boolean);
+    if (statuses.length > 0) {
+      accessFilter.status = { $in: statuses.map(s => new RegExp(`^${escapeRegex(s)}$`, "i")) };
+    }
   }
 
-  return filteredLeads;
+  if (query.department) {
+    const depts = query.department.split(',').map(d => d.trim()).filter(Boolean);
+    if (depts.length > 0) {
+      accessFilter.assignedDepartment = { $in: depts };
+    }
+  }
+
+  // Exclude heavy fields to save memory
+  return Lead.find(accessFilter).select("-activityLogs -leadNotes").sort({ createdAt: -1 }).cursor();
 };
 
 const addLeadReminder = async (leadId, companyId, currentUser, payload) => {
@@ -665,7 +836,7 @@ const buildLeadsCsvExport = async (
   query = {},
 ) => {
   await ensureCurrentUserData(currentUser);
-  let leads;
+  let cursor;
   let filename;
 
   if (selectedIds && selectedIds.length) {
@@ -677,32 +848,23 @@ const buildLeadsCsvExport = async (
     }
     const accessFilter = buildLeadAccessFilter(companyId, currentUser);
     if (query.companyId) {
-      // If a client is selected, remove the isClientLead restriction to see their leads
       delete accessFilter.isClientLead;
       accessFilter.clientId = query.companyId;
     }
-    leads = await Lead.find({
+    
+    cursor = Lead.find({
       ...accessFilter,
       _id: { $in: objectIds },
-    }).lean();
-    if (!leads.length) {
-      throw new Error("No matching leads to export for the selected ids");
-    }
-    const orderIndex = new Map(objectIds.map((id, i) => [String(id), i]));
-    leads.sort(
-      (a, b) =>
-        (orderIndex.get(String(a._id)) ?? 0) -
-        (orderIndex.get(String(b._id)) ?? 0),
-    );
+    }).select("-activityLogs -leadNotes").sort({ createdAt: -1 }).cursor();
+    
     filename = `leads-export-selected-${new Date().toISOString().slice(0, 10)}.csv`;
   } else {
-    leads = await getLeadsForExport(companyId, filter, currentUser, query);
+    cursor = await getLeadsExportCursor(companyId, filter, currentUser, query);
     const safeFilter = filter === "reminder" ? "reminder" : "all";
     filename = `leads-export-${safeFilter}-${new Date().toISOString().slice(0, 10)}.csv`;
   }
 
-  const csv = leadsToCsv(leads);
-  return { filename, csv };
+  return { filename, cursor };
 };
 
 const bulkDeleteLeads = async (leadIds, companyId, currentUser) => {
@@ -890,11 +1052,26 @@ const assignLeads = async (leadIds, assignData, companyId, currentUser) => {
   return { updatedCount: updatedLeads.length, leads: updatedLeads };
 };
 
+/**
+ * Lightweight leads list for dropdowns.
+ * Returns only _id, fullName, companyName — no heavy subfields.
+ * Reuses the same buildLeadAccessFilter so tenant isolation / RBAC is identical to getLeads.
+ */
+const getLeadsDropdown = async (companyId, currentUser) => {
+  await ensureCurrentUserData(currentUser);
+  const accessFilter = buildLeadAccessFilter(companyId, currentUser);
+  return Lead.find(accessFilter)
+    .select('_id fullName companyName')
+    .sort({ fullName: 1 })
+    .lean();
+};
+
 module.exports = {
   getLeads,
   getLeadStats,
   getLeadById,
   getAssignableBdeUsers,
+  getLeadsDropdown,
   createLead,
   updateLead,
   assignLeads,

@@ -3,20 +3,30 @@ import { Modal, DatePicker, Button, Form, message, Space, Typography, Tag } from
 import { FilePdfOutlined, DownloadOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { generateLeadReportPDF } from '../utils/leadReportPdfGenerator';
+import { useLazyGetLeadsQuery } from '../../../api/leadApi';
 
 const { Text } = Typography;
 
-const GenerateLeadReportModal = ({ open, onClose, leads = [] }) => {
+const GenerateLeadReportModal = ({ open, onClose }) => {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [fetchLeads] = useLazyGetLeadsQuery();
 
   const handleFinish = async (values) => {
     try {
       setLoading(true);
       const selectedMonth = values.selectedMonth || dayjs();
 
-      message.loading({ content: 'Generating Month-on-Month Lead Report PDF...', key: 'leadReportGen' });
+      message.loading({ content: 'Fetching data and generating Month-on-Month Lead Report PDF...', key: 'leadReportGen' });
       
+      const startDate = selectedMonth.startOf('month').toISOString();
+      const endDate = selectedMonth.endOf('month').toISOString();
+      
+      const { data, error } = await fetchLeads({ startDate, endDate });
+      if (error) throw error;
+      
+      const leads = data?.data?.leads || data?.leads || [];
+
       // Generate and download client PDF
       generateLeadReportPDF(leads, {
         selectedMonth,

@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import { useAuth } from "../../contexts/AuthContext";
 import React, { useState, useMemo, useEffect } from "react";
 import {
@@ -31,6 +32,7 @@ import { PERMISSION_ACTIONS, isSeniorUser } from "../../utils/actionPermissions"
 import dayjs from "dayjs";
 import { isDurationTrackingTask, isCompletedTask, isTaskTimerRunning, getTaskLiveDurationMinutes, getTaskDueDeadline } from "./taskDuration";
 import TaskReopenModal from "./TaskReopenModal";
+
 
 const { Option } = Select;
 const { Search } = Input;
@@ -165,7 +167,8 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
   const { data: departmentsResp } = useGetDepartmentsDynamicQuery();
   const departments = departmentsResp?.data?.departments || [];
   const { data: projectsData } = useGetProjectsDropdownQuery();
-  const { data: usersData } = useGetUsersDropdownQuery();
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const { data: usersData } = useGetUsersDropdownQuery({ search: userSearchTerm });
 
   // Handle paginated response (data?.data?.data) or legacy format (data?.data?.tasks)
   const tasks = data?.data?.data || data?.data?.tasks || [];
@@ -655,7 +658,7 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
         )}
         {/* Assigned User filter only for Admin and Coordinator roles */}
         {canSeeAllFilters && (
-          <Select
+          <Select onSearch={(v) => setUserSearchTerm(v)} filterOption={false} 
             placeholder="Filter by Assigned User"
             allowClear
             showSearch

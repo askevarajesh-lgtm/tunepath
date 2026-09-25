@@ -411,143 +411,238 @@ const deleteExpense = async (expenseId, companyId) => {
 };
 
 const getExpenseStats = async (companyId, filters = {}) => {
-  const query = { companyId };
+  const mongoose = require("mongoose");
+  
+  const matchStage = { 
+    companyId: typeof companyId === "string" ? new mongoose.Types.ObjectId(companyId) : companyId 
+  };
+  if (filters.department) matchStage.department = filters.department;
 
-  // Filter by department
-  if (filters.department) query.department = filters.department;
-
-  // Date range filter
   if (filters.startDate && filters.endDate) {
-    query.date = {
+    matchStage.date = {
       $gte: new Date(filters.startDate),
       $lte: new Date(filters.endDate),
     };
   } else if (filters.startDate) {
-    query.date = { $gte: new Date(filters.startDate) };
+    matchStage.date = { $gte: new Date(filters.startDate) };
   } else if (filters.endDate) {
-    query.date = { $lte: new Date(filters.endDate) };
+    matchStage.date = { $lte: new Date(filters.endDate) };
   }
 
-  const allExpenses = await Expense.find(query).populate(
-    "staffId",
-    "name email role team",
-  );
+  const result = await Expense.aggregate([
+    { $match: matchStage },
+    {
+      $lookup: {
+        from: "users",
+        localField: "staffId",
+        foreignField: "_id",
+        as: "staffDetails",
+      },
+    },
+    {
+      $unwind: {
+        path: "$staffDetails",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+    {
+      $addFields: {
+        isFixed: {
+          $cond: {
+            if: { $eq: ["$expenseType", "fixed"] },
+            then: true,
+            else: {
+              $cond: {
+                if: {
+                  $and: [
+                    { $not: ["$staffId"] },
+                    {
+                      $or: [
+                        {
+                          $in: [
+                            "$category",
+                            [
+                              "rent", "electricity", "eb", "internet", "water",
+                              "utilities", "maintenance", "tea_coffee", "maid",
+                              "transport", "ceo_salary", "bde_salary", "oh_salary",
+                              "oh_incentive", "om_salary", "hr_account",
+                              "campaign_ads", "hosting", "domain_purchase",
+                              "domain_renewal", "mobile_recharge", "event",
+                              "purchase_gymbal", "purchase_camera", "other_trip",
+                              "other_miscellaneous",
+                            ],
+                          ],
+                        },
+                        {
+                          $in: [
+                            "$type",
+                            ["rent", "electricity", "telephone", "other"],
+                          ],
+                        },
+                      ],
+                    },
+                  ],
+                },
+                then: true,
+                else: false,
+              },
+            },
+          },
+        },
+        isVariable: {
+          $cond: {
+            if: { $eq: ["$expenseType", "variable"] },
+            then: true,
+            else: {
+              $cond: {
+                if: {
+                  $and: [
+                    { $ne: ["$staffId", null] },
+                    { $ne: [{ $type: "$staffId" }, "missing"] },
+                  ],
+                },
+                then: true,
+                else: false,
+              },
+            },
+          },
+        },
+        effDept: {
+          $cond: {
+            if: {
+              $and: [
+                {
+                  $or: [
+                    { $eq: ["$department", null] },
+                    { $eq: [{ $type: "$department" }, "missing"] },
+                  ],
+                },
+                { $ne: ["$staffId", null] },
+              ],
+            },
+            then: {
+              $ifNull: [
+                "$staffDetails.team",
+                { $ifNull: ["$staffDetails.department", "other"] },
+              ],
+            },
+            else: { $ifNull: ["$department", "other"] },
+          },
+        },
+        effCat: { $ifNull: ["$category", "other"] },
+        effRefAmount: {
+          $cond: {
+            if: { $eq: ["$referral.isReferral", true] },
+            then: {
+              $cond: {
+                if: { $or: [{ $eq: ["$referral.referralAmount", null] }, { $eq: ["$referral.referralAmount", 0] }] },
+                then: { $ifNull: ["$amount", 0] },
+                else: "$referral.referralAmount"
+              }
+            },
+            else: 0,
+          },
+        },
+      },
+    },
+    {
+      $facet: {
+        totals: [
+          {
+            $group: {
+              _id: null,
+              totalExpenses: { $sum: { $ifNull: ["$amount", 0] } },
+              fixedTotal: {
+                $sum: { $cond: ["$isFixed", { $ifNull: ["$amount", 0] }, 0] },
+              },
+              fixedCount: { $sum: { $cond: ["$isFixed", 1, 0] } },
+              variableTotal: {
+                $sum: {
+                  $cond: ["$isVariable", { $ifNull: ["$amount", 0] }, 0],
+                },
+              },
+              variableCount: { $sum: { $cond: ["$isVariable", 1, 0] } },
+              referralTotal: {
+                $sum: {
+                  $cond: [
+                    { $eq: ["$referral.isReferral", true] },
+                    "$effRefAmount",
+                    0,
+                  ],
+                },
+              },
+              referralCount: {
+                $sum: {
+                  $cond: [{ $eq: ["$referral.isReferral", true] }, 1, 0],
+                },
+              },
+            },
+          },
+        ],
+        departmentWise: [
+          { $match: { isVariable: true } },
+          {
+            $group: {
+              _id: "$effDept",
+              total: { $sum: { $ifNull: ["$amount", 0] } },
+              count: { $sum: 1 },
+              employees: { $addToSet: "$staffId" },
+            },
+          },
+        ],
+        categoryWise: [
+          {
+            $group: {
+              _id: "$effCat",
+              total: { $sum: { $ifNull: ["$amount", 0] } },
+              count: { $sum: 1 },
+            },
+          },
+        ],
+      },
+    },
+  ]);
 
-  // Calculate totals
-  const totalExpenses = allExpenses.reduce(
-    (sum, exp) => sum + (exp.amount || 0),
-    0,
-  );
+  const facetResult = result[0] || { totals: [], departmentWise: [], categoryWise: [] };
+  const totals = facetResult.totals[0] || {
+    totalExpenses: 0,
+    fixedTotal: 0,
+    fixedCount: 0,
+    variableTotal: 0,
+    variableCount: 0,
+    referralTotal: 0,
+    referralCount: 0,
+  };
 
-  // Fixed expenses: expenses with expenseType='fixed' or legacy fixed categories
-  const fixedExpenses = allExpenses.filter((exp) => {
-    if (exp.expenseType === "fixed") return true;
-    // Legacy support
-    const isFixedCategory = [
-      "rent",
-      "electricity",
-      "eb",
-      "internet",
-      "water",
-      "utilities",
-      "maintenance",
-      "tea_coffee",
-      "maid",
-      "transport",
-      "ceo_salary",
-      "bde_salary",
-      "oh_salary",
-      "oh_incentive",
-      "om_salary",
-      "hr_account",
-      "campaign_ads",
-      "hosting",
-      "domain_purchase",
-      "domain_renewal",
-      "mobile_recharge",
-      "event",
-      "purchase_gymbal",
-      "purchase_camera",
-      "other_trip",
-      "other_miscellaneous",
-    ].includes(exp.category);
-    const isFixedType = ["rent", "electricity", "telephone", "other"].includes(
-      exp.type,
-    );
-    return (isFixedCategory || isFixedType) && !exp.staffId;
-  });
-  const fixedTotal = fixedExpenses.reduce(
-    (sum, exp) => sum + (exp.amount || 0),
-    0,
-  );
-
-  // Variable expenses: expenses with expenseType='variable' or have staffId (employee salaries)
-  const variableExpenses = allExpenses.filter((exp) => {
-    if (exp.expenseType === "variable") return true;
-    // Legacy support: expenses with staffId are variable (salaries)
-    return exp.staffId !== null && exp.staffId !== undefined;
-  });
-  const variableTotal = variableExpenses.reduce(
-    (sum, exp) => sum + (exp.amount || 0),
-    0,
-  );
-
-  // Department-wise breakdown - ONLY for salary expenses (variable expenses)
   const departmentWise = {};
-  variableExpenses.forEach((exp) => {
-    // Get department from expense or from staff member's team/department
-    let dept = exp.department;
-    if (!dept && exp.staffId) {
-      // Try to get department from staff's team or role
-      dept = exp.staffId.team || exp.staffId.department || "other";
-    }
-    dept = dept || "other";
-
-    if (!departmentWise[dept]) {
-      departmentWise[dept] = { total: 0, count: 0, employees: [] };
-    }
-    departmentWise[dept].total += exp.amount || 0;
-    departmentWise[dept].count += 1;
-
-    // Track unique employees per department
-    if (exp.staffId) {
-      const staffId = exp.staffId._id?.toString() || exp.staffId.toString();
-      if (!departmentWise[dept].employees.includes(staffId)) {
-        departmentWise[dept].employees.push(staffId);
-      }
-    }
+  (facetResult.departmentWise || []).forEach((d) => {
+    departmentWise[d._id] = {
+      total: d.total,
+      count: d.count,
+      employees: d.employees
+        .filter((e) => e != null)
+        .map((e) => e.toString()),
+    };
   });
 
-  // Category-wise breakdown
   const categoryWise = {};
-  allExpenses.forEach((exp) => {
-    const cat = exp.category || "other";
-    if (!categoryWise[cat]) {
-      categoryWise[cat] = { total: 0, count: 0 };
-    }
-    categoryWise[cat].total += exp.amount || 0;
-    categoryWise[cat].count += 1;
+  (facetResult.categoryWise || []).forEach((c) => {
+    categoryWise[c._id] = {
+      total: c.total,
+      count: c.count,
+    };
   });
-
-  // Referral expenses
-  const referralExpenses = allExpenses.filter(
-    (exp) => exp.referral?.isReferral === true,
-  );
-  const referralTotal = referralExpenses.reduce(
-    (sum, exp) => sum + (exp.referral?.referralAmount || exp.amount || 0),
-    0,
-  );
 
   return {
-    totalExpenses,
-    fixedTotal,
-    variableTotal,
-    fixedCount: fixedExpenses.length,
-    variableCount: variableExpenses.length,
+    totalExpenses: totals.totalExpenses,
+    fixedTotal: totals.fixedTotal,
+    variableTotal: totals.variableTotal,
+    fixedCount: totals.fixedCount,
+    variableCount: totals.variableCount,
     departmentWise,
     categoryWise,
-    referralTotal,
-    referralCount: referralExpenses.length,
+    referralTotal: totals.referralTotal,
+    referralCount: totals.referralCount,
   };
 };
 

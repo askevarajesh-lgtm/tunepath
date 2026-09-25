@@ -6,6 +6,9 @@ const authMiddleware = require('../../middlewares/authMiddleware');
 // All brand routes should be protected
 router.use(authMiddleware);
 
+router.route('/dropdown')
+  .get(brandController.getBrandsDropdown);
+
 router.route('/')
   .get(brandController.getBrands)
   .post(brandController.createBrand);

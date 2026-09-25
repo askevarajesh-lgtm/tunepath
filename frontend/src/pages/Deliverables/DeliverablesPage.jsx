@@ -6,7 +6,7 @@ import {
   ProjectOutlined, CheckCircleOutlined, ClockCircleOutlined, ProfileOutlined, EyeOutlined, 
   HourglassOutlined, FilterOutlined, CloseCircleOutlined, SearchOutlined, CheckOutlined, ReloadOutlined
 } from '@ant-design/icons';
-import { useGetProjectsQuery } from '../../api/projectApi';
+import { useGetProjectsQuery, useGetDeliverablesClientSummaryQuery } from '../../api/projectApi';
 import { useGetTasksByProjectQuery } from '../../api/taskApi';
 import TaskDetailDrawer from '../Tasks/TaskDetailDrawer';
 import TaskCompletionCelebrate from '../Tasks/TaskCompletionCelebrate';
@@ -27,10 +27,6 @@ const DeliverablesPage = () => {
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'pending' | 'completed' | 'remaining'
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch all projects (populated with clientId)
-  const { data: projectsResponse, isLoading, refetch: refetchProjects } = useGetProjectsQuery({ limit: 1000 });
-  const projects = projectsResponse?.data?.data || projectsResponse?.data?.projects || [];
-
   // Fetch tasks for the selected project in Drawer
   const { data: tasksData, isLoading: isLoadingTasks, refetch: refetchTasks } = useGetTasksByProjectQuery(
     selectedProjectForTasks?._id,
@@ -38,97 +34,12 @@ const DeliverablesPage = () => {
   );
   const projectTasks = tasksData?.data?.tasks || tasksData?.data?.data || (Array.isArray(tasksData?.data) ? tasksData.data : []);
 
-  // Group by client and aggregate deliverables
+  // Fetch aggregated deliverable client summary
+  const { data: summaryResponse, isLoading, refetch: refetchProjects } = useGetDeliverablesClientSummaryQuery();
+  
   const clientData = useMemo(() => {
-    const clientsMap = {};
-
-    projects.forEach(project => {
-      const clientId = project.clientId?._id || project.clientId;
-      if (!clientId) return;
-
-      const clientName = project.clientId?.name || project.clientId?.companyName || 'Unknown Client';
-      const clientEmail = project.clientId?.email || '';
-
-      if (!clientsMap[clientId]) {
-        clientsMap[clientId] = {
-          clientId,
-          clientName,
-          clientEmail,
-          projects: [],
-          totalDeliverables: 0,
-          completedDeliverables: 0,
-          pendingApprovalDeliverables: 0,
-          remainingDeliverables: 0
-        };
-      }
-
-      // Aggregate core project specific deliverable fields
-      const pTotal = (project.numberOfPosters || 0) + (project.numberOfVideos || 0) + (project.numberOfShoots || 0);
-
-      const pPostersComp = (project.completedPosters !== undefined && project.completedPosters !== null)
-        ? Math.max(project.completedPosters || 0, project.approvedPosters || 0)
-        : (project.approvedPosters || 0);
-
-      const pVideosComp = (project.completedVideos !== undefined && project.completedVideos !== null)
-        ? Math.max(project.completedVideos || 0, project.approvedVideos || 0)
-        : (project.approvedVideos || 0);
-
-      const pShootsComp = (project.completedShoots !== undefined && project.completedShoots !== null)
-        ? Math.max(project.completedShoots || 0, project.approvedShoots || 0)
-        : (project.approvedShoots || 0);
-
-      const pCompleted = pPostersComp + pVideosComp + pShootsComp;
-
-      // Pending approval represents deliverables completed by the team that are awaiting client approval
-      const pPostersPending = Math.max(0, (project.completedPosters || 0) - (project.approvedPosters || 0));
-      const pVideosPending = Math.max(0, (project.completedVideos || 0) - (project.approvedVideos || 0));
-      const pShootsPending = Math.max(0, (project.completedShoots || 0) - (project.approvedShoots || 0));
-
-      let extraTotal = 0;
-      let extraCompleted = 0;
-      let extraPending = 0;
-
-      // Also check selectedCategories for custom deliverables
-      if (project.selectedCategories && Array.isArray(project.selectedCategories)) {
-        project.selectedCategories.forEach(cat => {
-          const rawName = cat.name || cat.categoryName || "";
-          const isStandard = ["poster", "video", "shoot"].some(k => rawName.toLowerCase().includes(k));
-          if (!isStandard) {
-            const catComp = (cat.completed !== undefined && cat.completed !== null)
-              ? Math.max(cat.completed || 0, cat.approved || 0)
-              : (cat.approved || 0);
-            extraTotal += (cat.quantity || cat.count || 0);
-            extraCompleted += catComp;
-            extraPending += Math.max(0, (cat.completed || 0) - (cat.approved || 0));
-          }
-        });
-      }
-
-      const calculatedPending = pPostersPending + pVideosPending + pShootsPending + extraPending;
-      // Project is pending review only when its status explicitly requires client review
-      const isProjectPendingReview = ['workflow_sent', 'sent_for_client_review', 'workflow_revision_requested'].includes(project.status);
-      const pPending = calculatedPending > 0 ? calculatedPending : (isProjectPendingReview ? 1 : 0);
-
-      const totalD = pTotal + extraTotal;
-      const compD = pCompleted + extraCompleted;
-      const remD = Math.max(0, totalD - compD);
-
-      clientsMap[clientId].totalDeliverables += totalD;
-      clientsMap[clientId].completedDeliverables += compD;
-      clientsMap[clientId].pendingApprovalDeliverables += pPending;
-      clientsMap[clientId].remainingDeliverables += remD;
-
-      clientsMap[clientId].projects.push({
-        ...project,
-        projectTotal: totalD,
-        projectCompleted: compD,
-        projectPending: pPending,
-        projectRemaining: remD
-      });
-    });
-
-    return Object.values(clientsMap);
-  }, [projects]);
+    return summaryResponse?.data?.summary || summaryResponse?.summary || summaryResponse?.data || [];
+  }, [summaryResponse]);
 
   const totalGlobal = clientData.reduce((acc, curr) => acc + curr.totalDeliverables, 0);
   const pendingGlobal = clientData.reduce((acc, curr) => acc + (curr.pendingApprovalDeliverables || 0), 0);

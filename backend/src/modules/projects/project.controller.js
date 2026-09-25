@@ -62,6 +62,24 @@ const getUnassignedDeliverablesSummary = async (req, res) => {
   }
 };
 
+const getDeliverablesClientSummary = async (req, res) => {
+  try {
+    const summary = await projectService.getDeliverablesClientSummary(
+      req.companyId,
+      req.query,
+      req.user?.role,
+      req.user?.clientUserId || req.user?._id,
+    );
+    return sendSuccess(
+      res,
+      "Deliverables client summary retrieved successfully",
+      { summary },
+    );
+  } catch (error) {
+    return sendError(res, 500, error.message);
+  }
+};
+
 const getProjectReport = async (req, res) => {
   try {
     const report = await projectService.getProjectReport(
@@ -480,6 +498,7 @@ module.exports = {
   getAllProjects,
   getProjectListSummaryStats,
   getUnassignedDeliverablesSummary,
+  getDeliverablesClientSummary,
   getProjectReport,
   getProjectsDropdown,
   getProjectById,

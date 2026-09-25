@@ -1,22 +1,16 @@
 import React, { useState } from 'react';
-import { Typography, Tabs, Button, Spin } from 'antd';
+import { Typography, Tabs, Button } from 'antd';
 import { FilePdfOutlined } from '@ant-design/icons';
 import { motion } from 'framer-motion';
 import AdminDashboard from './AdminDashboard';
 import AdminLeadsList from './AdminLeadsList';
 import GenerateLeadReportModal from './components/GenerateLeadReportModal';
-import { useGetLeadsQuery, useGetLeadStatsQuery } from '../../api/leadApi';
 
 const { Title, Text } = Typography;
 
 const CRM = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [reportModalOpen, setReportModalOpen] = useState(false);
-  
-  const { data: statsData, isLoading: isStatsLoading } = useGetLeadStatsQuery();
-  const { data: leadsData, isLoading: isLeadsLoading, refetch } = useGetLeadsQuery();
-  const leads = leadsData?.data?.leads || [];
-  const stats = statsData?.data || null;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -61,9 +55,6 @@ const CRM = () => {
               label: <strong style={{ fontWeight: 600 }}>Dashboard</strong>,
               children: (
                 <AdminDashboard 
-                  leads={leads} 
-                  stats={stats} 
-                  isLoading={isLeadsLoading && isStatsLoading} 
                   onOpenReportModal={() => setReportModalOpen(true)} 
                 />
               )
@@ -71,7 +62,7 @@ const CRM = () => {
             {
               key: 'leads',
               label: <strong style={{ fontWeight: 600 }}>Leads List</strong>,
-              children: <AdminLeadsList leads={leads} isLoading={isLeadsLoading} refetch={refetch} />
+              children: <AdminLeadsList />
             }
           ]}
         />
@@ -80,7 +71,6 @@ const CRM = () => {
       <GenerateLeadReportModal
         open={reportModalOpen}
         onClose={() => setReportModalOpen(false)}
-        leads={leads}
       />
     </motion.div>
   );

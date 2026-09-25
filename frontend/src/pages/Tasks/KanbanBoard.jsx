@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import { useAuth } from "../../contexts/AuthContext";
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
@@ -72,6 +73,7 @@ import { getTaskDurationLabel, isCompletedTask } from "./taskDuration";
 import { taskMatchesKanbanDay } from "./taskKanbanDateUtils";
 import dayjs from "dayjs";
 import { getProjectServiceStats } from "../../utils/categoryUtils";
+
 
 const { Option } = Select;
 
@@ -1627,7 +1629,8 @@ const KanbanBoard = ({
 
   const { data: allWorkflowConfigsData } = useGetAllWorkflowConfigsQuery();
   const { data: projectsData } = useGetProjectsDropdownQuery();
-  const { data: usersData } = useGetUsersDropdownQuery();
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const { data: usersData } = useGetUsersDropdownQuery({ search: userSearchTerm });
   const [updateTaskStatusAndOrder, { isLoading: isStatusUpdating }] =
     useUpdateTaskStatusAndOrderMutation();
   const [updateTasksOrder] = useUpdateTasksOrderMutation();
@@ -2700,7 +2703,7 @@ const KanbanBoard = ({
                   ))}
                 </Select>
 
-                <Select
+                <Select onSearch={(v) => setUserSearchTerm(v)} filterOption={false} 
                   placeholder="Assigned To"
                   allowClear
                   showSearch
@@ -2717,7 +2720,7 @@ const KanbanBoard = ({
                   ))}
                 </Select>
 
-                <Select
+                <Select onSearch={(v) => setUserSearchTerm(v)} filterOption={false} 
                   placeholder="Assigned By"
                   allowClear
                   showSearch

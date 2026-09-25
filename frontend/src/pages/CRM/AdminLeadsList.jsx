@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import React, { useState, useMemo } from 'react';
 import { Table, Tag, Space, Button, Typography, Input, Card, Modal, Select, Form, message, Upload, Row, Col, Tabs, Descriptions, Empty, DatePicker, Radio, Tooltip, AutoComplete } from 'antd';
 import { EyeOutlined, EditOutlined, DeleteOutlined, PlusOutlined, DownloadOutlined, UploadOutlined, FileTextOutlined, AudioOutlined, PictureOutlined, VideoCameraOutlined, FileOutlined, WhatsAppOutlined, FacebookOutlined, CalendarOutlined, CheckCircleOutlined, CloseCircleOutlined, UserAddOutlined, UserSwitchOutlined, ApartmentOutlined } from '@ant-design/icons';
@@ -14,7 +15,8 @@ import {
   useAddLeadNoteMutation,
   useDeleteLeadNoteMutation,
   useAddLeadReminderMutation,
-  useGetLeadByIdQuery
+  useGetLeadByIdQuery,
+  useGetLeadsQuery
 } from '../../api/leadApi';
 import { useGetDepartmentsQuery } from '../../api/settingsApi';
 import { useSyncWhatsAppLeadsMutation, useGetFacebookIntegrationsQuery, useLazyGetFacebookFormsQuery, useSyncFacebookLeadsMutation } from '../../api/integrationApi';
@@ -38,7 +40,7 @@ const CustomLabel = ({ text }) => (
 
 const DEFAULT_STATUSES = ['RNR', 'COLD', 'WARM', 'HOT', 'DROP', 'OTHER LOCATIONS', 'SV DONE', 'NOT REACHABLE', 'BOOKING DONE'];
 
-const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
+const AdminLeadsList = () => {
   const { user, role } = useAuth();
   const { canAdd, canEdit, canDelete, canView } = useActionPermissions('/crm');
 
@@ -65,6 +67,34 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const [statusFilter, setStatusFilter] = useState([]);
   const [departmentFilter, setDepartmentFilter] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [activeTab, setActiveTab] = useState('all');
+
+  React.useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setPage(1); // Reset page on search
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  const { data: leadsData, isLoading, refetch } = useGetLeadsQuery({
+    page,
+    limit,
+    search: debouncedSearchQuery,
+    status: statusFilter?.join(','),
+    department: departmentFilter?.join(','),
+    formName: formNameFilter?.join(','),
+    startDate: dateRangeFilter?.[0]?.startOf('day')?.toISOString(),
+    endDate: dateRangeFilter?.[1]?.endOf('day')?.toISOString(),
+    hasReminders: activeTab === 'reminders' ? 'true' : undefined
+  });
+  
+  const leads = leadsData?.data?.leads || leadsData?.leads || [];
+  const totalServerCount = leadsData?.data?.total || leadsData?.total || 0;
 
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assigningLeads, setAssigningLeads] = useState([]);
@@ -213,6 +243,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const [deleteLeadNote] = useDeleteLeadNoteMutation();
   const [addLeadReminder, { isLoading: isAddingReminder }] = useAddLeadReminderMutation();
   const { data: bdeData } = useGetAssignableBdeUsersQuery();
+  const [userSearchTerm, setUserSearchTerm] = useState('');
   const { data: usersData, isLoading: isLoadingUsers } = useGetUsersDropdownQuery(selectedClientId ? { clientId: selectedClientId } : {});
   const { data: departmentsData, isLoading: isLoadingDepts } = useGetDepartmentsQuery(
     selectedClientId ? { clientId: selectedClientId } : {},
@@ -271,8 +302,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const [exportCsv, { isFetching: isExporting }] = useLazyExportLeadsCsvQuery();
   const [importCsv, { isLoading: isImporting }] = useImportLeadsCsvMutation();
   const [syncWhatsApp, { isLoading: isSyncingWhatsApp }] = useSyncWhatsAppLeadsMutation();
-  const [bulkDeleteLeads, { isLoading: isBulkDeleting }] = useBulkDeleteLeadsMutation();
-  const [activeTab, setActiveTab] = useState('all');
+  const [bulkDeleteLeads, { isLoading: isBulkDeleting }] = useBulkDeleteLeadsMutation();  // activeTab already declared
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [isFbSyncModalOpen, setIsFbSyncModalOpen] = useState(false);
   const [selectedFbPageId, setSelectedFbPageId] = useState(null);
@@ -323,22 +353,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
     return lead?.customData?.form_name || lead?.customData?.formName || lead?.formName || '';
   };
 
-  const uniqueFormNames = useMemo(() => {
-    const names = new Set();
-    leads.forEach(lead => {
-      const name = getFormName(lead);
-      if (name) names.add(name);
-    });
-    return Array.from(names);
-  }, [leads]);
-
-  const uniqueStatuses = useMemo(() => {
-    const statuses = new Set();
-    leads.forEach(lead => {
-      if (lead.status) statuses.add(lead.status);
-    });
-    return Array.from(statuses);
-  }, [leads]);
+  const uniqueStatuses = DEFAULT_STATUSES;
 
   const getActualLeadDate = (lead) => {
     const customDate = lead?.customData?.created_time || lead?.customData?.createdTime || lead?.customData?.createdtime;
@@ -406,58 +421,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
     }
   ];
 
-  const filteredLeads = leads.filter(lead => {
-    if (activeTab === 'reminders') {
-      if (!lead.reminders || lead.reminders.length === 0) return false;
-    }
 
-    let dateMatch = true;
-    if (dateRangeFilter && dateRangeFilter.length === 2) {
-      const start = dateRangeFilter[0].startOf('day');
-      const end = dateRangeFilter[1].endOf('day');
-      const leadDate = getActualLeadDate(lead);
-      dateMatch = leadDate.isAfter(start) && leadDate.isBefore(end);
-    }
-    
-    let formMatch = true;
-    if (formNameFilter && formNameFilter.length > 0) {
-      const formName = getFormName(lead).toLowerCase();
-      formMatch = formNameFilter.some(filterItem => formName.includes(filterItem.toLowerCase()));
-    }
-
-    let departmentMatch = true;
-    if (isAgencyClient && departmentFilter && departmentFilter.length > 0) {
-      departmentMatch = departmentFilter.includes(lead.assignedDepartment);
-    }
-
-    let searchMatch = true;
-    if (searchQuery && searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      const name = (lead.fullName || '').toLowerCase();
-      const email = (lead.email || '').toLowerCase();
-      const phone = (lead.phoneNumber || '').toLowerCase();
-      const formName = getFormName(lead).toLowerCase();
-      const source = (lead.source || '').toLowerCase();
-      const status = (lead.status || '').toLowerCase();
-      const assignedTo = (lead.assignedTo || '').toLowerCase();
-      const assignedDepartment = (lead.assignedDepartment || '').toLowerCase();
-
-      searchMatch = name.includes(q) ||
-                    email.includes(q) ||
-                    phone.includes(q) ||
-                    formName.includes(q) ||
-                    source.includes(q) ||
-                    status.includes(q) ||
-                    assignedTo.includes(q) ||
-                    assignedDepartment.includes(q);
-    }
-    let statusMatch = true;
-    if (statusFilter && statusFilter.length > 0) {
-      statusMatch = statusFilter.includes(lead.status);
-    }
-    
-    return dateMatch && formMatch && searchMatch && statusMatch && departmentMatch;
-  }).sort((a, b) => getActualLeadDate(b).valueOf() - getActualLeadDate(a).valueOf());
 
   const handleEditClick = (record) => {
     setEditingLead(record);
@@ -628,6 +592,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       refetch?.();
     } catch (error) {
       message.error(error?.data?.message || 'Failed to import leads');
+
     }
     return false; // Prevent default upload behavior
   };
@@ -681,18 +646,14 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
           <Space wrap>
             <RangePicker onChange={val => setDateRangeFilter(val)} style={{ borderRadius: 8 }} />
             <Select
-              mode="multiple"
+              mode="tags"
               placeholder="Filter by Form Name"
               value={formNameFilter}
               onChange={val => setFormNameFilter(val || [])}
               style={{ minWidth: 200, borderRadius: 8 }}
               allowClear
               showSearch
-            >
-              {uniqueFormNames.map(name => (
-                <Option key={name} value={name}>{name}</Option>
-              ))}
-            </Select>
+            />
             <Select
               mode="multiple"
               placeholder="Filter by Status"
@@ -774,10 +735,20 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
         
         <Table 
           columns={columns} 
-          dataSource={filteredLeads} 
+          dataSource={leads} 
           rowKey="_id"
           loading={isLoading}
-          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+          onChange={(pagination) => {
+            setPage(pagination.current);
+            setLimit(pagination.pageSize);
+          }}
+          pagination={{ 
+            current: page,
+            pageSize: limit,
+            total: totalServerCount,
+            showSizeChanger: true, 
+            pageSizeOptions: ['10', '20', '50', '100', '200'] 
+          }}
           rowSelection={{ 
             type: 'checkbox',
             selectedRowKeys,
@@ -907,7 +878,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
             </Col>
             <Col span={12}>
               <Form.Item name="assignedTo" label={<CustomLabel text="Assigned To" />}>
-                <Select size="large" placeholder="Select User" allowClear loading={isLoadingUsers} showSearch>
+                <Select onSearch={(v) => setUserSearchTerm(v)} filterOption={false}  size="large" placeholder="Select User" allowClear loading={isLoadingUsers} showSearch>
                   {allUsers.map(u => (
                     <Option key={u._id} value={u.name || u.username}>{u.name || u.username}</Option>
                   ))}
@@ -985,7 +956,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
                     </Col>
                     <Col span={12}>
                       <span style={{ fontWeight: 600, fontSize: 13 }}>Set reminder to</span>
-                      <Select style={{ width: '100%', marginTop: 4 }} placeholder="Select User (optional)" allowClear value={reminderTo} onChange={setReminderTo} loading={isLoadingUsers} showSearch>
+                      <Select onSearch={(v) => setUserSearchTerm(v)} filterOption={false}  style={{ width: '100%', marginTop: 4 }} placeholder="Select User (optional)" allowClear value={reminderTo} onChange={setReminderTo} loading={isLoadingUsers} showSearch>
                         {allUsers.map(u => (
                           <Option key={u._id} value={u.name || u.username}>{u.name || u.username}</Option>
                         ))}

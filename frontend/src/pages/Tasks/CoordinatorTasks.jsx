@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import { useAuth } from "../../contexts/AuthContext";
 import React, { useState, useMemo } from "react";
 import {
@@ -40,6 +41,7 @@ import { isCompletedTask } from "./taskDuration";
 import { notifyLoading, notifySuccess, notifyError } from '../../utils/notify';
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 
+
 const { Title, Text } = Typography;
 
 const stringToColor = (str = "") => {
@@ -72,6 +74,7 @@ const CoordinatorTasks = () => {
   } = useGetCoordinatorTasksQuery({
     date: selectedDate.format("YYYY-MM-DD"),
   });
+  const [userSearchTerm, setUserSearchTerm] = useState('');
   const { data: usersData, isLoading: usersLoading } = useGetUsersDropdownQuery(
     {
       hasModuleAccess: "coordinator-tasks",

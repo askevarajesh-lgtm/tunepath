@@ -1,13 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Row, Col, Card, Typography, Select, Progress, Space, Avatar, Table, Button, Tag, Input } from 'antd';
 import { motion } from 'framer-motion';
 import { PieChart, Pie, Cell, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { TeamOutlined, FireOutlined, RiseOutlined, CheckCircleOutlined, TrophyOutlined, FilterOutlined, CalendarOutlined, FilePdfOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useGetLeadStatsQuery } from '../../api/leadApi';
 
 const { Title, Text } = Typography;
 
-const AdminDashboard = ({ leads = [], stats = null, isLoading = false, onOpenReportModal }) => {
+const AdminDashboard = ({ onOpenReportModal }) => {
   const itemVariants = {
     hidden: { y: 20, opacity: 0 },
     visible: { y: 0, opacity: 1, transition: { type: 'spring', stiffness: 300, damping: 24 } }
@@ -27,124 +28,50 @@ const AdminDashboard = ({ leads = [], stats = null, isLoading = false, onOpenRep
     setOwnerFilter(null);
   };
 
-  const getFormName = (lead) => {
-    return lead?.customData?.form_name || lead?.customData?.formName || lead?.formName || '';
-  };
+  let startDate, endDate;
+  const today = dayjs();
+  if (timeframe === 'Today') {
+    startDate = today.startOf('day').toISOString();
+    endDate = today.endOf('day').toISOString();
+  } else if (timeframe === 'Week') {
+    startDate = today.subtract(7, 'day').startOf('day').toISOString();
+    endDate = today.endOf('day').toISOString();
+  } else if (timeframe === 'Month') {
+    startDate = today.subtract(30, 'day').startOf('day').toISOString();
+    endDate = today.endOf('day').toISOString();
+  }
 
-  const getActualLeadDate = (lead) => {
-    const customDate = lead?.customData?.created_time || lead?.customData?.createdTime || lead?.customData?.createdtime;
-    if (customDate) {
-      return dayjs(customDate);
-    }
-    return dayjs(lead?.createdAt);
-  };
+  const { data: statsRes, isLoading } = useGetLeadStatsQuery({
+    startDate,
+    endDate,
+    status: statusFilter !== 'All' ? statusFilter : undefined,
+    source: sourceFilter,
+    formName: formNameFilter,
+    owner: ownerFilter
+  });
+  
+  const stats = statsRes?.data || {};
 
-  const formNames = useMemo(() => {
-    const names = new Set();
-    leads.forEach(l => {
-      const name = getFormName(l);
-      if (name) names.add(name);
-    });
-    return Array.from(names);
-  }, [leads]);
-
-  const sourceOptions = useMemo(() => Array.from(new Set(leads.map(l => l.source).filter(Boolean))), [leads]);
-  const ownerOptions = useMemo(() => Array.from(new Set(leads.map(l => l.assignedTo).filter(Boolean))), [leads]);
-
-  const filteredLeads = useMemo(() => {
-    return leads.filter(l => {
-      const leadDate = getActualLeadDate(l);
-      if (timeframe === 'Month' && leadDate) {
-        if (leadDate.isBefore(dayjs().subtract(30, 'day'))) return false;
-      } else if (timeframe === 'Week' && leadDate) {
-        if (leadDate.isBefore(dayjs().subtract(7, 'day'))) return false;
-      } else if (timeframe === 'Today' && leadDate) {
-        if (leadDate.isBefore(dayjs().startOf('day'))) return false;
-      }
-      
-      if (statusFilter !== 'All') {
-        const s = (l.status || '').toLowerCase();
-        if (statusFilter === 'New' && s !== 'new') return false;
-        if (statusFilter === 'Active' && !['contacted', 'in_progress', 'follow_up'].includes(s)) return false;
-        if (statusFilter === 'Converted' && s !== 'converted') return false;
-      }
-      
-      if (sourceFilter && l.source !== sourceFilter) return false;
-      if (formNameFilter && getFormName(l) !== formNameFilter) return false;
-      
-      if (ownerFilter) {
-        if (ownerFilter === 'Unassigned') {
-          if (l.assignedTo) return false;
-        } else {
-          if (l.assignedTo !== ownerFilter) return false;
-        }
-      }
-      return true;
-    });
-  }, [leads, timeframe, statusFilter, sourceFilter, formNameFilter, ownerFilter]);
-
-  const {
-    totalLeads,
-    newLeads,
-    activeLeads,
-    assignedLeads,
-    convertedLeads,
-    contactReadyLeads,
-    phoneAddedLeads,
-    emailAddedLeads,
-    followUpLeads
-  } = useMemo(() => {
-    if (filteredLeads.length === 0 && stats) {
-      return {
-        totalLeads: stats.totalLeads || 0,
-        newLeads: stats.newLeads || 0,
-        activeLeads: stats.activeLeads || 0,
-        assignedLeads: stats.assignedLeads || 0,
-        convertedLeads: stats.convertedLeads || 0,
-        contactReadyLeads: stats.contactReadyLeads || 0,
-        phoneAddedLeads: stats.phoneAddedLeads || 0,
-        emailAddedLeads: stats.emailAddedLeads || 0,
-        followUpLeads: stats.followUpLeads || 0,
-      };
-    }
-
-    let newL = 0, activeL = 0, assignedL = 0, convertedL = 0;
-    let contactReady = 0, phoneAdded = 0, emailAdded = 0, followUp = 0;
-
-    filteredLeads.forEach(l => {
-      const status = (l.status || '').toLowerCase();
-      if (status === 'new') newL++;
-      if (['contacted', 'in_progress', 'follow_up'].includes(status)) activeL++;
-      if (status === 'converted') convertedL++;
-      if (status === 'follow_up') followUp++;
-      
-      if (l.assignedTo) assignedL++;
-      if (l.phoneNumber || l.email) contactReady++;
-      if (l.phoneNumber) phoneAdded++;
-      if (l.email) emailAdded++;
-    });
-
-    return {
-      totalLeads: filteredLeads.length,
-      newLeads: newL,
-      activeLeads: activeL,
-      assignedLeads: assignedL,
-      convertedLeads: convertedL,
-      contactReadyLeads: contactReady,
-      phoneAddedLeads: phoneAdded,
-      emailAddedLeads: emailAdded,
-      followUpLeads: followUp,
-    };
-  }, [filteredLeads, stats]);
+  const totalLeads = stats.totalLeads || 0;
+  const newLeads = stats.newLeads || 0;
+  const activeLeads = stats.activeLeads || 0;
+  const assignedLeads = stats.assignedLeads || 0;
+  const convertedLeads = stats.convertedLeads || 0;
+  const contactReadyLeads = stats.contactReadyLeads || 0;
+  const phoneAddedLeads = stats.phoneAddedLeads || 0;
+  const emailAddedLeads = stats.emailAddedLeads || 0;
+  const followUpLeads = stats.followUpLeads || 0;
 
   const conversionRate = totalLeads ? Math.round((convertedLeads / totalLeads) * 100) : 0;
   const assignedRate = totalLeads ? Math.round((assignedLeads / totalLeads) * 100) : 0;
 
-  const statusData = [
-    { name: 'New Lead', value: newLeads, color: 'var(--accent-primary)' },
-    { name: 'In Progress', value: activeLeads, color: '#8b5cf6' },
-    { name: 'Converted', value: convertedLeads, color: '#10b981' }
-  ].filter(d => d.value > 0);
+  const statusData = (stats.statusBreakdown || [])
+    .map(s => ({
+      name: s._id,
+      value: s.count,
+      color: s._id.toLowerCase() === 'new' ? 'var(--accent-primary)' : 
+             s._id.toLowerCase() === 'converted' ? '#10b981' : '#8b5cf6'
+    })).filter(d => d.value > 0);
 
   const healthData = [
     { name: 'Assigned', value: assignedLeads },
@@ -154,66 +81,34 @@ const AdminDashboard = ({ leads = [], stats = null, isLoading = false, onOpenRep
     { name: 'Need Follow-up', value: followUpLeads }
   ];
 
-  const sourceData = useMemo(() => {
-    const counts = {};
-    filteredLeads.forEach(l => {
-      const source = l.source || 'Unknown';
-      counts[source] = (counts[source] || 0) + 1;
-    });
-    return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a,b) => b.value - a.value);
-  }, [filteredLeads]);
+  const sourceData = (stats.sourceBreakdown || []).map(s => ({
+    name: s._id || 'Unknown',
+    value: s.count
+  }));
 
-  const { trendData, statusMovementData } = useMemo(() => {
-    const trends = {};
-    const movements = {};
-    const today = dayjs();
-    for (let i = 9; i >= 0; i--) {
-      const d = today.subtract(i, 'day').format('DD MMM');
-      trends[d] = 0;
-      movements[d] = 0;
-    }
-    
-    filteredLeads.forEach(l => {
-      const leadDate = getActualLeadDate(l);
-      const d = leadDate.format('DD MMM');
-      if (trends[d] !== undefined) trends[d]++;
-      
-      const updatedD = dayjs(l.updatedAt).format('DD MMM');
-      if (movements[updatedD] !== undefined && l.status !== 'new') movements[updatedD]++;
-    });
+  const trendData = (stats.trendData || []).map(t => ({
+    date: t._id,
+    leads: t.count
+  }));
+  
+  const statusMovementData = (stats.statusMovementData || []).map(t => ({
+    date: t._id,
+    count: t.count
+  }));
 
-    return {
-      trendData: Object.entries(trends).map(([date, count]) => ({ date, leads: count })),
-      statusMovementData: Object.entries(movements).map(([date, count]) => ({ date, count }))
-    };
-  }, [filteredLeads]);
-
-  const ownerData = useMemo(() => {
-    const owners = {};
-    filteredLeads.forEach(l => {
-      const o = l.assignedTo || 'Unassigned';
-      if (!owners[o]) {
-        owners[o] = { 
-          key: o, initials: o.substring(0,2).toUpperCase(), owner: o, 
-          color: o === 'Unassigned' ? '#10b981' : 'var(--accent-primary)', 
-          leads: 0, new: 0, active: 0, followup: 0, reminders: 0, contactReady: 0, converted: 0 
-        };
-      }
-      owners[o].leads++;
-      const status = (l.status || '').toLowerCase();
-      if (status === 'new') owners[o].new++;
-      if (['contacted', 'in_progress', 'follow_up'].includes(status)) owners[o].active++;
-      if (status === 'follow_up') owners[o].followup++;
-      if (status === 'converted') owners[o].converted++;
-      if (l.phoneNumber || l.email) owners[o].contactReady++;
-    });
-
-    return Object.values(owners).map(o => ({
-      ...o,
-      contactReady: Math.round((o.contactReady / o.leads) * 100),
-      conversionRate: Math.round((o.converted / o.leads) * 100)
-    }));
-  }, [filteredLeads]);
+  const ownerData = (stats.ownerBreakdown || []).map(o => ({
+    key: o._id || 'Unassigned',
+    initials: (o._id || 'Unassigned').substring(0, 2).toUpperCase(),
+    owner: o._id || 'Unassigned',
+    color: (!o._id || o._id === 'Unassigned') ? '#10b981' : 'var(--accent-primary)',
+    leads: o.count,
+    new: o.new || 0,
+    active: o.active || 0,
+    followup: o.followup || 0,
+    contactReady: o.contactReady ? Math.round((o.contactReady / o.count) * 100) : 0,
+    conversionRate: o.converted ? Math.round((o.converted / o.count) * 100) : 0,
+    converted: o.converted || 0
+  }));
 
   const kpiCards = [
     { title: 'Total Leads', val: totalLeads.toString(), sub: 'Last 30 days', icon: <TeamOutlined /> },
@@ -288,7 +183,7 @@ const AdminDashboard = ({ leads = [], stats = null, isLoading = false, onOpenRep
             </Col>
             <Col style={{ flex: '1 1 160px' }}>
               <Select value={statusFilter} onChange={setStatusFilter} style={{ width: '100%' }} size="large">
-                <Select.Option value="All">All ({filteredLeads.length})</Select.Option>
+                <Select.Option value="All">All ({totalLeads})</Select.Option>
                 <Select.Option value="New">New</Select.Option>
                 <Select.Option value="Active">Active</Select.Option>
                 <Select.Option value="Converted">Converted</Select.Option>
@@ -296,17 +191,15 @@ const AdminDashboard = ({ leads = [], stats = null, isLoading = false, onOpenRep
             </Col>
             <Col style={{ flex: '1 1 160px' }}>
               <Select allowClear value={sourceFilter} onChange={setSourceFilter} placeholder="Source" style={{ width: '100%' }} size="large">
-                {sourceOptions.map(s => <Select.Option key={s} value={s}>{s}</Select.Option>)}
+                {sourceData.map(s => <Select.Option key={s.name} value={s.name}>{s.name}</Select.Option>)}
               </Select>
             </Col>
             <Col style={{ flex: '1 1 160px' }}>
-              <Select allowClear showSearch value={formNameFilter} onChange={setFormNameFilter} placeholder="Form Name" style={{ width: '100%' }} size="large">
-                {formNames.map(f => <Select.Option key={f} value={f}>{f}</Select.Option>)}
-              </Select>
+              <Input allowClear placeholder="Form Name Filter" value={formNameFilter} onChange={e => setFormNameFilter(e.target.value)} style={{ width: '100%' }} size="large" />
             </Col>
             <Col style={{ flex: '1 1 160px' }}>
               <Select allowClear showSearch value={ownerFilter} onChange={setOwnerFilter} placeholder="Owner" style={{ width: '100%' }} size="large">
-                {ownerOptions.map(o => <Select.Option key={o} value={o}>{o}</Select.Option>)}
+                {ownerData.filter(o => o.owner !== 'Unassigned').map(o => <Select.Option key={o.owner} value={o.owner}>{o.owner}</Select.Option>)}
                 <Select.Option value="Unassigned">Unassigned</Select.Option>
               </Select>
             </Col>

@@ -33,6 +33,7 @@ import {
     ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useClientContext } from '../contexts/ClientContext';
 import PortalSidebar from './PortalSidebar';
 import { slaApi } from '../api/slaApi';
 import { sidebarApi } from '../api/sidebarApi';
@@ -71,6 +72,7 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { role, user } = useAuth();
+    const { agencyClients } = useClientContext();
 
     const [slaCount, setSlaCount] = React.useState(0);
     const [accountsCount, setAccountsCount] = React.useState(0);
@@ -83,6 +85,12 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
     const [mosScore, setMosScore] = React.useState('...');
 
     React.useEffect(() => {
+        if (agencyClients) {
+            setAccountsCount(agencyClients.length);
+        }
+    }, [agencyClients]);
+
+    React.useEffect(() => {
         const fetchSlaCount = async () => {
             try {
                 const res = await slaApi.getSlaDashboardStats();
@@ -92,18 +100,6 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
                 }
             } catch (error) {
                 console.error('Failed to fetch SLA stats for sidebar', error);
-            }
-        };
-
-        const fetchAccountsCount = async () => {
-            try {
-                const res = await api.get('/brands');
-                if (res && res.data) {
-                    const count = res.data.count ?? res.data.pagination?.total ?? res.data.data?.length ?? 0;
-                    setAccountsCount(count);
-                }
-            } catch (error) {
-                console.error('Failed to fetch accounts count for sidebar', error);
             }
         };
 
@@ -134,10 +130,13 @@ const Sidebar = ({ collapsed, setCollapsed }) => {
             }
         };
 
-        fetchSlaCount();
-        fetchAccountsCount();
-        fetchAgenciesCount();
-        fetchSidebarCounts();
+        const timeoutId = setTimeout(() => {
+            fetchSlaCount();
+            fetchAgenciesCount();
+            fetchSidebarCounts();
+        }, 1500);
+
+        return () => clearTimeout(timeoutId);
     }, []);
 
     const menuItems = useMemo(() => [

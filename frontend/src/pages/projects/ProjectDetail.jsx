@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import React, { useMemo, useState } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
@@ -79,6 +80,7 @@ import {
   formatMinutesAsDuration,
 } from "../tasks/taskDuration";
 import { generateProjectTaskPDF, generateProjectTaskPPT } from "../../utils/projectTaskReportGenerator";
+
 
 const { TextArea } = Input;
 const { TabPane } = Tabs;
@@ -200,7 +202,8 @@ const ProjectDetail = () => {
       { entityType: "Project", entityId: id },
       { skip: !id },
     );
-  const { data: usersData } = useGetUsersDropdownQuery({});
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const { data: usersData } = useGetUsersDropdownQuery({ search: userSearchTerm });
   const users = usersData?.data?.users || usersData?.data?.data || [];
   const [submitForReview, { isLoading: isSubmitting }] =
     useSubmitForClientReviewMutation();
@@ -2526,7 +2529,7 @@ const ProjectDetail = () => {
               { required: true, message: "Please select assigned person" },
             ]}
           >
-            <Select
+            <Select onSearch={(v) => setUserSearchTerm(v)} filterOption={false} 
               placeholder="Select assigned person"
               showSearch
               optionFilterProp="children"

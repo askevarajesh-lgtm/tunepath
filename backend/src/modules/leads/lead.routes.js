@@ -83,6 +83,12 @@ router.get(
   leadController.getLeadStats,
 );
 router.get(
+  "/dropdown",
+  rbacMiddleware("admin", "bde", "client"),
+  permissionMiddleware("view-lead"),
+  leadController.getLeadsDropdown,
+);
+router.get(
   "/",
   rbacMiddleware("admin", "bde", "client"),
   permissionMiddleware("view-lead"),

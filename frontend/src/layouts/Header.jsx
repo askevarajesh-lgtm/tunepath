@@ -43,11 +43,18 @@ const Header = ({ collapsed, setCollapsed }) => {
     }, [selectedClient]);
 
     useEffect(() => {
-        fetchNotifications();
+        const timeoutId = setTimeout(() => {
+            fetchNotifications();
+        }, 1000);
+        
         const intervalId = setInterval(() => {
             fetchNotifications(true);
         }, 30000);
-        return () => clearInterval(intervalId);
+        
+        return () => {
+            clearTimeout(timeoutId);
+            clearInterval(intervalId);
+        };
     }, []);
 
     const fetchNotifications = async (silent = false) => {

@@ -12,8 +12,8 @@ const createDeal = async (req, res) => {
 
 const getAllDeals = async (req, res) => {
   try {
-    const deals = await salesPipelineService.getAllDeals(req.companyId, req.query);
-    return sendSuccess(res, "Deals retrieved successfully", { deals });
+    const result = await salesPipelineService.getAllDeals(req.companyId, req.query);
+    return sendSuccess(res, "Deals retrieved successfully", result);
   } catch (error) {
     return sendError(res, 500, error.message);
   }

@@ -969,6 +969,265 @@ const getAllTasks = async (
   ]);
 };
 
+const getTaskAnalytics = async (
+  tenantCompanyId,
+  reqQuery = {},
+  userRole = null,
+  userId = null,
+) => {
+  // Use exact same RBAC/Tenant isolation logic as getAllTasks
+  const clientCompanyIds = await getClientCompanyIds(tenantCompanyId);
+  const isGlobalAdmin = ["supreme_super_admin"].includes(userRole);
+  
+  const additionalFilters = {};
+  if (!isGlobalAdmin) {
+    additionalFilters.tenantCompanyId = { $in: [tenantCompanyId, ...clientCompanyIds] };
+  }
+  const userObjId = userId && mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+  const restrictToOwnAssignedTasks = !ROLES_WITH_FULL_TASK_ACCESS.includes(userRole);
+
+  if (userId && userRole && !restrictToOwnAssignedTasks && !['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole)) {
+    const currentUser = await User.findById(userId);
+    let allowedCreatorRoles = [];
+    if (userRole === 'commander_admin') allowedCreatorRoles = ['commander_admin'];
+    else if (userRole === 'agency_manager') allowedCreatorRoles = ['agency_manager', 'agency_super_admin', 'commander_admin', 'supreme_super_admin', 'agency_client', 'client', 'coordinator', 'website_coordinator', 'digital_marketing_coordinator', 'digital_marketing_manager', 'operations_head', 'admin', 'user'];
+    else if (userRole === 'agency_client' || userRole === 'client') allowedCreatorRoles = ['agency_manager', 'agency_super_admin', 'client', 'agency_client'];
+    else if (userRole === 'agency_super_admin') allowedCreatorRoles = ['agency_super_admin', 'agency_manager', 'agency_client', 'client', 'coordinator', 'website_coordinator', 'digital_marketing_coordinator', 'digital_marketing_manager', 'operations_head', 'admin', 'user'];
+    else if (userRole === 'brand_manager' || userRole === 'brand_super_admin') allowedCreatorRoles = [userRole, 'brand_manager', 'brand_super_admin'];
+    else allowedCreatorRoles = [userRole];
+
+    const creatorMatchQuery = { role: { $in: allowedCreatorRoles } };
+    if (currentUser?.agencyId) creatorMatchQuery.agencyId = currentUser.agencyId;
+    if (currentUser?.brandId) creatorMatchQuery.brandId = currentUser.brandId;
+    const allowedCreatorIds = await User.find(creatorMatchQuery).distinct('_id');
+    
+    if (userObjId) {
+      additionalFilters.$or = [
+        { createdBy: { $in: allowedCreatorIds } },
+        { watchers: userObjId },
+        { assignedTo: userObjId }
+      ];
+    } else {
+      additionalFilters.createdBy = { $in: allowedCreatorIds };
+    }
+  }
+
+  let clientUserDoc = null;
+  if (userId) clientUserDoc = await User.findById(userId).select("role clientId brandId isDirect agencyId");
+  const isClientScopedUser = ['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) || Boolean(clientUserDoc?.brandId);
+
+  if (userRole === "website_coordinator") {
+    additionalFilters.$or = [
+      { department: { $in: WEBSITE_COORDINATOR_DEPARTMENTS } },
+      { assignedTo: userObjId },
+      { createdBy: userObjId },
+      { watchers: userObjId },
+    ];
+  } else if (isClientScopedUser && userId) {
+    const user = clientUserDoc || await User.findById(userId).select("clientId brandId");
+    const activeBrandId = user?.brandId || user?.clientId || userObjId;
+    const brandUserIds = await User.find({
+      $or: [{ brandId: activeBrandId }, { clientId: activeBrandId }, { _id: activeBrandId }]
+    }).distinct("_id");
+    const allCompanyIds = Array.from(new Set([
+      activeBrandId.toString(),
+      userObjId.toString(),
+      ...(user?.clientId ? [user.clientId.toString()] : []),
+      ...(user?.brandId ? [user.brandId.toString()] : []),
+      ...brandUserIds.map(id => id.toString())
+    ])).map(id => new mongoose.Types.ObjectId(id));
+    additionalFilters.$or = [
+      { companyId: { $in: allCompanyIds } },
+      { createdBy: { $in: allCompanyIds } },
+      { assignedBy: { $in: allCompanyIds } },
+      { assignedTo: { $in: allCompanyIds } },
+      { watchers: { $in: allCompanyIds } }
+    ];
+  } else if (restrictToOwnAssignedTasks) {
+    additionalFilters.$or = [
+      { assignedTo: userObjId },
+      { createdBy: userObjId },
+      { watchers: userObjId },
+    ];
+  }
+
+  // Explicit filters
+  if (reqQuery.companyId) additionalFilters.companyId = reqQuery.companyId;
+  if (reqQuery.projectId) additionalFilters.projectId = reqQuery.projectId;
+  if (reqQuery.assignedTo && reqQuery.assignedTo !== "null" && reqQuery.assignedTo !== "") {
+    additionalFilters.assignedTo = reqQuery.assignedTo;
+  }
+  if (reqQuery.department && reqQuery.department !== "all") {
+    const deptFilter = await buildDepartmentFilterAsync(reqQuery.department, userRole);
+    if (deptFilter !== null) additionalFilters.department = deptFilter;
+  }
+  
+  if (reqQuery.status) additionalFilters.status = reqQuery.status;
+
+  // Date range filter
+  if (reqQuery.startDate && reqQuery.endDate) {
+    const filterStart = new Date(reqQuery.startDate);
+    const filterEnd = new Date(reqQuery.endDate);
+    if (!isNaN(filterStart) && !isNaN(filterEnd)) {
+      filterStart.setUTCHours(0, 0, 0, 0);
+      filterEnd.setUTCHours(23, 59, 59, 999);
+      additionalFilters.$or = additionalFilters.$or || [];
+      additionalFilters.$or.push(
+        { startDate: { $gte: filterStart, $lte: filterEnd } },
+        { dueDate: { $gte: filterStart, $lte: filterEnd } },
+        {
+          $and: [
+            { startDate: { $exists: false } },
+            { dueDate: { $exists: false } },
+            { createdAt: { $gte: filterStart, $lte: filterEnd } }
+          ]
+        },
+        {
+          $and: [
+            { startDate: { $lte: filterEnd } },
+            { dueDate: { $gte: filterStart } }
+          ]
+        }
+      );
+    }
+  }
+
+  // Combine query and additionalFilters safely (without search logic as we don't need search for aggregate)
+  let finalQuery = { ...additionalFilters };
+  if (finalQuery.assignedTo) {
+      finalQuery.assignedTo = mongoose.Types.ObjectId.isValid(finalQuery.assignedTo) ? new mongoose.Types.ObjectId(finalQuery.assignedTo) : finalQuery.assignedTo;
+  }
+
+  const isCompletedRegex = /^(review|completed|complete|validated|approved|done|in_review|reviewing)$/i;
+  const isInProgressRegex = /^(in_progress|submitted)$/i;
+
+  const aggResult = await Task.aggregate([
+    { $match: finalQuery },
+    {
+      $facet: {
+        kpis: [
+          {
+            $group: {
+              _id: null,
+              total: { $sum: 1 },
+              completed: { 
+                $sum: { $cond: [{ $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isCompletedRegex } }, 1, 0] } 
+              },
+              inProgress: { 
+                $sum: { $cond: [{ $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isInProgressRegex } }, 1, 0] } 
+              },
+              pending: { 
+                $sum: { 
+                  $cond: [
+                    { $and: [
+                      { $not: { $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isCompletedRegex } } },
+                      { $not: { $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isInProgressRegex } } }
+                    ]}, 1, 0
+                  ]
+                } 
+              },
+              corrections: {
+                $sum: { $cond: [{ $in: ["$taskCategory", ["Correction", "Internal Correction", "Client Correction", "Hosting"]] }, 1, 0] }
+              },
+              redesigns: {
+                $sum: { $cond: [{ $eq: ["$taskCategory", "Redesign"] }, 1, 0] }
+              },
+              overdue: {
+                $sum: { 
+                  $cond: [
+                    { $and: [
+                      { $lt: ["$dueDate", new Date()] },
+                      { $not: { $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isCompletedRegex } } }
+                    ]}, 1, 0
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        userPerf: [
+          {
+            $group: {
+              _id: "$assignedTo",
+              assigned: { $sum: 1 },
+              distinctAssigned: { $sum: 1 },
+              completed: { 
+                $sum: { $cond: [{ $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isCompletedRegex } }, 1, 0] } 
+              },
+              inProgress: { 
+                $sum: { $cond: [{ $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isInProgressRegex } }, 1, 0] } 
+              },
+              pending: { 
+                $sum: { 
+                  $cond: [
+                    { $and: [
+                      { $not: { $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isCompletedRegex } } },
+                      { $not: { $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isInProgressRegex } } }
+                    ]}, 1, 0
+                  ]
+                } 
+              },
+              corrections: {
+                $sum: { $cond: [{ $in: ["$taskCategory", ["Correction", "Internal Correction", "Client Correction", "Hosting"]] }, 1, 0] }
+              },
+              redesigns: {
+                $sum: { $cond: [{ $eq: ["$taskCategory", "Redesign"] }, 1, 0] }
+              }
+            }
+          }
+        ],
+        dateChartData: [
+          {
+            $addFields: {
+              targetDate: {
+                $ifNull: [
+                  "$dueDate", 
+                  { $ifNull: [
+                      "$startDate", 
+                      { $ifNull: [
+                          "$actualCompletionDate", 
+                          "$createdAt"
+                      ]}
+                  ]}
+                ]
+              }
+            }
+          },
+          {
+            $group: {
+              _id: { $dateToString: { format: "%Y-%m-%d", date: "$targetDate", timezone: "+05:30", onNull: { $dateToString: { format: "%Y-%m-%d", date: new Date(), timezone: "+05:30" } } } },
+              Assigned: { $sum: 1 },
+              Correction: {
+                $sum: { $cond: [{ $in: ["$taskCategory", ["Correction", "Internal Correction", "Client Correction", "Hosting"]] }, 1, 0] }
+              },
+              Redesign: {
+                $sum: { $cond: [{ $eq: ["$taskCategory", "Redesign"] }, 1, 0] }
+              },
+              Completed: {
+                $sum: { $cond: [{ $regexMatch: { input: { $ifNull: ["$status", ""] }, regex: isCompletedRegex } }, 1, 0] }
+              }
+            }
+          },
+          { $sort: { _id: 1 } }
+        ]
+      }
+    }
+  ]);
+
+  const kpis = aggResult[0]?.kpis[0] || {};
+  return {
+    total: kpis.total || 0,
+    completed: kpis.completed || 0,
+    inProgress: kpis.inProgress || 0,
+    pending: kpis.pending || 0,
+    corrections: kpis.corrections || 0,
+    redesigns: kpis.redesigns || 0,
+    overdue: kpis.overdue || 0,
+    userPerf: aggResult[0]?.userPerf || [],
+    dateChartData: aggResult[0]?.dateChartData || [],
+  };
+};
+
 // Dropdown query for tasks
 const getTasksDropdown = async (
   tenantCompanyId,
@@ -3353,14 +3612,15 @@ const getTasksForKanban = async (
     .populate("companyId", "name email")
     .populate(
       "projectId",
-      "name code status clientCompanyId color departments defaultAssignee",
+      "name code status clientCompanyId color departments defaultAssignee description",
     )
     .populate("assignedTo", "name email role avatar")
-    .populate("assignedBy", "name email")
     .populate("createdBy", "name email profileImage")
-    .populate("watchers", "name email avatar")
+    // Note: assignedBy and watchers are NOT populated here — they are not rendered
+    // on Kanban cards and the TaskDetailDrawer fetches its own separate task data.
     .sort({ order: 1, createdAt: -1 })
     .lean();
+
 
   // Sort tasks in memory to ensure perfect chronological stacking
   tasks.sort((a, b) => {
@@ -3388,6 +3648,179 @@ const getTasksForKanban = async (
   // For each task, get its workflow and group by workflow status ID
   const grouped = {};
 
+  // --- PHASE 6: PRE-FETCH WORKFLOW CONFIGS ---
+  const allConfigs = await WorkflowConfig.find({ tenantCompanyId, isActive: true }).lean();
+  
+  // Local helper from getWorkflowConfig to sort statuses
+  const formatConfigResult = (cfg) => {
+    if (!cfg) return null;
+    if (cfg.statuses && Array.isArray(cfg.statuses)) {
+      const statusesSorted = [...cfg.statuses].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+      cfg.statuses = statusesSorted;
+    }
+    return cfg;
+  };
+
+  const configByProject = new Map();
+  const typeConfigs = [];
+  let defaultConfig = null;
+
+  for (const cfg of allConfigs) {
+    const formatted = formatConfigResult(cfg);
+    if (formatted.projectId) {
+      configByProject.set(formatted.projectId.toString(), formatted);
+    } else if (formatted.projectType) {
+      typeConfigs.push(formatted);
+    } else {
+      defaultConfig = formatted;
+    }
+  }
+
+  // Pre-fetch departments for secondary fallback
+  const uniqueDepartments = new Set();
+  for (const t of tasks) {
+    if (t.department) {
+      uniqueDepartments.add(t.department);
+    }
+  }
+
+  const allDeptVariants = new Set();
+  for (const dept of uniqueDepartments) {
+    let norm = String(dept).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    allDeptVariants.add(norm);
+    const variants = getDepartmentFilterValues(norm);
+    variants.forEach((v) => allDeptVariants.add(v));
+  }
+
+  let deptDocs = [];
+  if (allDeptVariants.size > 0) {
+    const Department = mongoose.models.Department || require("../departments/department.model");
+    deptDocs = await Department.find({
+      $or: [
+        { slug: { $in: Array.from(allDeptVariants) } },
+        { name: { $in: Array.from(allDeptVariants) } }
+      ]
+    }).lean();
+  }
+
+  // Helper for matching projectType queries
+  const matchesProjectTypeQuery = (cfgType, queryOrFilter) => {
+    if (!cfgType) return false;
+    if (queryOrFilter && typeof queryOrFilter === "object" && queryOrFilter.$in) {
+       return queryOrFilter.$in.includes(cfgType);
+    }
+    if (queryOrFilter && typeof queryOrFilter === "string") {
+       return cfgType === queryOrFilter;
+    }
+    return false;
+  };
+
+  // Helper to build department filter synchronously based on the old buildDepartmentFilterAsync
+  const buildDepartmentFilterSync = (value) => {
+    if (!value || value === "all" || value === "ALL") return null;
+    const filterValuesSet = new Set();
+    getDepartmentFilterValues(value).forEach((val) => filterValuesSet.add(val));
+    
+    const inputVariants = new Set(getDepartmentFilterValues(value));
+    inputVariants.add(String(value));
+    inputVariants.add(toHyphenatedSlug(value));
+
+    deptDocs.forEach((d) => {
+      const deptIdStr = d._id ? d._id.toString() : "";
+      const deptSlug = d.slug || "";
+      const deptName = d.name || "";
+      const deptNameSlug = toHyphenatedSlug(deptName);
+
+      const deptVariants = new Set([
+        deptIdStr, deptSlug, deptName, deptNameSlug,
+        ...getDepartmentFilterValues(deptSlug),
+        ...getDepartmentFilterValues(deptName),
+        ...getDepartmentFilterValues(deptNameSlug),
+      ]);
+
+      let isMatch = false;
+      for (const inv of inputVariants) {
+        if (deptVariants.has(inv)) {
+          isMatch = true;
+          break;
+        }
+      }
+
+      if (isMatch) {
+        deptVariants.forEach((v) => {
+          if (v) filterValuesSet.add(v);
+        });
+      }
+    });
+
+    if (filterValuesSet.size === 0) return null;
+    return { $in: Array.from(filterValuesSet) };
+  };
+
+  const resolveTaskWorkflowConfig = (projectId, projectType, taskPopulatedProject) => {
+    let normalizedProjectType = projectType;
+    if (normalizedProjectType && typeof normalizedProjectType === "string") {
+      normalizedProjectType = normalizedProjectType
+        .trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+    }
+
+    if (projectId && projectId !== "null" && projectId !== "") {
+      const cfg = configByProject.get(projectId.toString());
+      if (cfg) return cfg;
+    }
+
+    if (!normalizedProjectType && projectId && projectId !== "null" && projectId !== "") {
+      if (taskPopulatedProject) {
+        normalizedProjectType = getProjectTypeFromProject(taskPopulatedProject);
+      }
+    }
+
+    if (normalizedProjectType) {
+      // 1. Primary projectType lookup
+      const filterObj = buildDepartmentFilterSync(normalizedProjectType);
+      let typeQuery = normalizedProjectType;
+      if (filterObj && filterObj.$in) {
+        typeQuery = filterObj;
+      } else if (filterObj) {
+        typeQuery = filterObj;
+      } else {
+        const departmentVariants = getDepartmentFilterValues(normalizedProjectType);
+        typeQuery = { $in: [normalizedProjectType, ...departmentVariants] };
+      }
+
+      let matchedTypeConfig = typeConfigs.find((cfg) => matchesProjectTypeQuery(cfg.projectType, typeQuery));
+      if (matchedTypeConfig) return matchedTypeConfig;
+
+      // 2. Secondary department lookup
+      const deptVariantsSet = new Set(getDepartmentFilterValues(normalizedProjectType));
+      deptVariantsSet.add(normalizedProjectType);
+      
+      const depts = deptDocs.filter((d) => 
+        (d.slug && deptVariantsSet.has(d.slug)) || 
+        (d.name && deptVariantsSet.has(d.name))
+      );
+
+      if (depts && depts.length > 0) {
+        const deptIdsAndSlugs = [];
+        depts.forEach((d) => {
+          if (d._id) {
+            deptIdsAndSlugs.push(d._id);
+            deptIdsAndSlugs.push(d._id.toString());
+          }
+          if (d.slug) deptIdsAndSlugs.push(d.slug);
+          if (d.name) deptIdsAndSlugs.push(d.name);
+          if (d.name) deptIdsAndSlugs.push(toHyphenatedSlug(d.name));
+        });
+        
+        matchedTypeConfig = typeConfigs.find((cfg) => deptIdsAndSlugs.includes(cfg.projectType));
+        if (matchedTypeConfig) return matchedTypeConfig;
+      }
+    }
+
+    return defaultConfig;
+  };
+  // --- END PRE-FETCH ---
+
   for (const task of tasks) {
     const taskStatus = task.status || "created";
 
@@ -3395,17 +3828,17 @@ const getTasksForKanban = async (
     let workflowConfig = null;
     if (task.projectId) {
       const projectId = task.projectId._id || task.projectId;
-      workflowConfig = await getWorkflowConfig(
+      workflowConfig = resolveTaskWorkflowConfig(
         projectId ? projectId.toString() : null,
-        tenantCompanyId,
         task.department || null,
+        task.projectId
       );
     }
     if (!workflowConfig && task.department) {
-      workflowConfig = await getWorkflowConfig(
+      workflowConfig = resolveTaskWorkflowConfig(
         null,
-        tenantCompanyId,
         task.department,
+        null
       );
     }
 
@@ -6064,6 +6497,7 @@ module.exports = {
   getTasksForKanban,
   updateTaskStatusAndOrder,
   updateTasksOrder,
+  getTaskAnalytics,
   addComment,
   getTaskComments,
   getTaskActivity,

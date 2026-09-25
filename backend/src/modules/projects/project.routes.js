@@ -50,6 +50,11 @@ router.get(
   permissionMiddleware("view-project"),
   projectController.getUnassignedDeliverablesSummary,
 );
+router.get(
+  "/deliverables-client-summary",
+  permissionMiddleware("view-project"),
+  projectController.getDeliverablesClientSummary,
+);
 router.post(
   "/from-invoice/:invoiceId",
   permissionMiddleware("create-project"),

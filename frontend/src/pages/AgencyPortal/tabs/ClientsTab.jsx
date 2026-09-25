@@ -58,6 +58,18 @@ const ClientsTab = () => {
   const [clientInvoices, setClientInvoices] = useState([]);
   const [clientDataLoading, setClientDataLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
+  const [total, setTotal] = useState(0);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setPage(1); // Reset to page 1 on search
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
   const [clientCountryCode, setClientCountryCode] = useState('91');
   const [clientCountryIso, setClientCountryIso] = useState('IN');
@@ -142,7 +154,7 @@ const ClientsTab = () => {
       const headers = { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
 
       const [brandsRes, mosRes] = await Promise.all([
-        fetch('/api/brands', { headers }),
+        fetch(`/api/brands?page=${page}&limit=${limit}&search=${encodeURIComponent(debouncedSearchQuery)}`, { headers }),
         fetch('/api/mos/dashboard', { headers })
       ]);
 
@@ -152,6 +164,11 @@ const ClientsTab = () => {
       const mosClients = mosData.success && mosData.data ? mosData.data.clients : [];
 
       if (brandsData.success) {
+        if (brandsData.total !== undefined) {
+          setTotal(brandsData.total);
+        } else {
+          setTotal(brandsData.data.length);
+        }
         setDbClients(brandsData.data.map(c => {
           const mosInfo = mosClients.find(m => m.clientId === c._id) || {};
 
@@ -415,20 +432,7 @@ const ClientsTab = () => {
   // Filter clients by name or email against the search query.
   // This is the piece that was missing: the Input had no value/onChange,
   // so nothing ever consumed what the user typed.
-  const filteredClients = useMemo(() => {
-    let clientsToFilter = dbClients;
-    if (globalSelectedClient) {
-      clientsToFilter = dbClients.filter(c => c._id === globalSelectedClient._id);
-    }
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return clientsToFilter;
-    return clientsToFilter.filter(c => {
-      const name = (c.name || '').toLowerCase();
-      const email = (c.adminEmail || c.email || '').toLowerCase();
-      const contactPerson = (c.contactPersonName || '').toLowerCase();
-      return name.includes(q) || email.includes(q) || contactPerson.includes(q);
-    });
-  }, [dbClients, searchQuery]);
+  
 
   const hasAccountsPerm = (action) => {
     if (['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager'].includes(user?.role)) return true;
@@ -444,7 +448,7 @@ const ClientsTab = () => {
         <div>
           <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>All Clients</Title>
           <Text type="secondary" style={{ fontSize: 15, fontWeight: 500 }}>
-            {filteredClients.length} of {dbClients.length} total active clients in your agency
+            {dbClients.length} on this page (out of {total} total clients)
           </Text>
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -688,7 +692,7 @@ const ClientsTab = () => {
       <Card>
         <Table
 
-          dataSource={filteredClients}
+          dataSource={dbClients}
           rowKey="_id"
           pagination={{
             defaultPageSize: 10,

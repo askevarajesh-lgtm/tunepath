@@ -41,6 +41,11 @@ const createScheduledNoteValidation = [
 // IMPORTANT: Specific routes must come BEFORE parameterized routes (/:id)
 router.get("/", _permMiddleware("view-task"), taskController.getAllTasks);
 router.get(
+  "/analytics",
+  _permMiddleware("view-task"),
+  taskController.getTaskAnalytics,
+);
+router.get(
   "/dropdown",
   _permMiddleware("view-task"),
   taskController.getTasksDropdown,

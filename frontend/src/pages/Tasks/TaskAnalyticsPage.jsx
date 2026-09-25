@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import React, { useState, useMemo } from "react";
 import * as XLSX from "xlsx";
 import dayjs from "dayjs";
@@ -57,7 +58,7 @@ import {
   AreaChart,
   Area,
 } from "recharts";
-import { useGetTasksQuery } from "../../api/taskApi";
+import { taskApi } from "../../api/taskApi";
 import { useGetUsersDropdownQuery } from "../../api/userApi";
 import { useGetDepartmentsDynamicQuery } from "../../api/accessControlApi";
 import { useGetDMTeamSettingsQuery } from "../../api/settingsApi";
@@ -65,6 +66,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import TaskDetailDrawer from "./TaskDetailDrawer";
 import { isCorrectionTask, isRedesignTask } from "./taskDuration";
+
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -449,19 +451,35 @@ const TaskAnalyticsPage = () => {
 
   // ─── Fetch all tasks (no limit — admin sees all) ──────────────────────────
   const {
-    data: tasksData,
+    data: analyticsResp,
     isLoading: tasksLoading,
     isError: tasksError,
-  } = useGetTasksQuery(
+  } = taskApi.useGetTaskAnalyticsQuery(
     {
-      limit: 1000,
-      department: selectedDepartment,
+      department: selectedDepartment || 'all',
       ...(selectedClientId ? { companyId: selectedClientId } : {}),
+      assignedTo: selectedUser || undefined,
+      status: selectedStatus || undefined,
+      startDate: dateRange?.[0] ? dateRange[0].format('YYYY-MM-DD') : undefined,
+      endDate: dateRange?.[1] ? dateRange[1].format('YYYY-MM-DD') : undefined,
     },
     { refetchOnMountOrArgChange: true },
   );
 
+  const analyticsData = analyticsResp?.data || {
+    total: 0,
+    completed: 0,
+    inProgress: 0,
+    pending: 0,
+    corrections: 0,
+    redesigns: 0,
+    dateChartData: [],
+    userPerf: []
+  };
+
+
   // ─── Fetch users (dropdown) for filter ───────────────────────────────────
+  const [userSearchTerm, setUserSearchTerm] = useState('');
   const { data: usersData, isLoading: usersLoading } = useGetUsersDropdownQuery(
     { limit: 200 },
     { refetchOnMountOrArgChange: true },
@@ -483,23 +501,7 @@ const TaskAnalyticsPage = () => {
     return null;
   };
 
-  const allTasks = useMemo(() => {
-    if (!tasksData) return [];
-    const raw =
-      tasksData?.data?.data ||
-      tasksData?.data?.tasks ||
-      tasksData?.tasks ||
-      tasksData?.data ||
-      tasksData;
-    const list = Array.isArray(raw) ? raw : [];
-    const map = new Map();
-    list.forEach((t) => {
-      if (t?._id && !map.has(String(t._id))) {
-        map.set(String(t._id), t);
-      }
-    });
-    return Array.from(map.values());
-  }, [tasksData]);
+  
 
   const allUsers = useMemo(() => {
     if (!usersData) return [];
@@ -588,49 +590,10 @@ const TaskAnalyticsPage = () => {
   };
 
   // ─── Apply filters ─────────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    return allTasks.filter((t) => {
-      if (selectedUser) {
-        const assignedId = t.assignedTo?._id || t.assignedTo;
-        if (assignedId !== selectedUser) return false;
-      }
-      if (selectedStatus) {
-        if (selectedStatus === "completed" && !isCompleted(t.status))
-          return false;
-        if (selectedStatus === "in_progress" && !isInProgress(t.status))
-          return false;
-        if (selectedStatus === "pending" && !isPending(t.status)) return false;
-      }
-      if (selectedDepartment && !matchDepartment(t, selectedDepartment)) {
-        return false;
-      }
-      if (dateRange?.[0] && dateRange?.[1]) {
-        if (!isTaskMatchingDateRange(t, dateRange[0], dateRange[1])) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [allTasks, selectedUser, selectedStatus, dateRange, selectedDepartment, departments]);
+  
 
   // Decoupled counts (ALWAYS count, regardless of status filter)
-  const statusAgnosticFiltered = useMemo(() => {
-    return allTasks.filter((t) => {
-      if (selectedUser) {
-        const assignedId = t.assignedTo?._id || t.assignedTo;
-        if (assignedId !== selectedUser) return false;
-      }
-      if (dateRange?.[0] && dateRange?.[1]) {
-        if (!isTaskMatchingDateRange(t, dateRange[0], dateRange[1])) {
-          return false;
-        }
-      }
-      if (selectedDepartment && !matchDepartment(t, selectedDepartment)) {
-        return false;
-      }
-      return true;
-    });
-  }, [allTasks, selectedUser, selectedDepartment, dateRange, departments]);
+  
 
   const total = filtered.length;
   const completed = filtered.filter((t) => isCompleted(t.status)).length;
@@ -645,34 +608,15 @@ const TaskAnalyticsPage = () => {
 
   // ─── Chart data: tasks by date ────────────────────────────────────────────
   const dateChartData = useMemo(() => {
-    const map = {};
-    filtered.forEach((t) => {
-      const taskDate = t.dueDate || t.startDate || t.actualCompletionDate || t.createdAt;
-      const key = taskDate ? dayjs(taskDate).format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD");
-      if (!map[key]) {
-        map[key] = {
-          raw: key,
-          date: formatDate(key),
-          Assigned: 0,
-          Completed: 0,
-          Correction: 0,
-          Redesign: 0,
-        };
-      }
-      map[key].Assigned++;
-
-      if (isCorrectionTask(t)) {
-        map[key].Correction++;
-      } else if (isRedesignTask(t)) {
-        map[key].Redesign++;
-      }
-
-      if (isCompleted(t.status)) {
-        map[key].Completed += 1;
-      }
-    });
-    return Object.values(map).sort((a, b) => a.raw.localeCompare(b.raw));
-  }, [filtered]);
+    return (analyticsData.dateChartData || []).map(d => ({
+      raw: d._id,
+      date: formatDate(d._id),
+      Assigned: d.Assigned || 0,
+      Completed: d.Completed || 0,
+      Correction: d.Correction || 0,
+      Redesign: d.Redesign || 0
+    }));
+  }, [analyticsData.dateChartData]);
 
   // ─── Per-user performance ──────────────────────────────────────────────────
   const userPerf = useMemo(() => {

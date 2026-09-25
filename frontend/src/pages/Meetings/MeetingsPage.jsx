@@ -1,3 +1,4 @@
+import UserSelect from '../../components/common/UserSelect';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Table, Button, Form, Input, DatePicker, TimePicker, Select, InputNumber, Drawer, 
@@ -27,8 +28,8 @@ import {
 } from '../../api/meetingApi';
 import { useGetUsersDropdownQuery } from '../../api/userApi';
 import { useGetCompaniesDropdownQuery } from '../../api/companyApi';
-import { useGetLeadsQuery } from '../../api/leadApi';
 import { useGetProjectsDropdownQuery } from '../../api/projectApi';
+
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -100,9 +101,9 @@ const MeetingsPage = () => {
   });
 
   // Dropdown lists
-  const { data: usersData } = useGetUsersDropdownQuery({});
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const { data: usersData } = useGetUsersDropdownQuery({ search: userSearchTerm });
   const { data: companiesData } = useGetCompaniesDropdownQuery({});
-  const { data: leadsData } = useGetLeadsQuery({ limit: 500 });
   const { data: projectsData } = useGetProjectsDropdownQuery({});
 
   // Mutations
@@ -130,7 +131,6 @@ const MeetingsPage = () => {
 
   const users = usersData?.data?.users || usersData?.data || [];
   const clients = companiesData?.data?.companies || companiesData?.data || [];
-  const leads = leadsData?.data?.leads || leadsData?.data || [];
   const projects = projectsData?.data?.projects || projectsData?.data || [];
 
   // Re-fetch on filter changes

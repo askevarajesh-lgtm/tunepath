@@ -98,22 +98,25 @@ const getFormName = (lead) => {
   return lead?.customData?.form_name || lead?.customData?.formName || lead?.formName || "";
 };
 
+const leadToCsvRow = (lead) => {
+  return [
+    fullNameFromLead(lead),
+    phoneFromLead(lead),
+    (lead.email && String(lead.email).trim()) || "",
+    formatLeadDate(lead),
+    (getFormName(lead) && String(getFormName(lead)).trim()) || "",
+    (lead.source && String(lead.source).trim()) || "",
+    (lead.status && String(lead.status).trim()) || "new",
+    (lead.assignedTo && String(lead.assignedTo).trim()) || "",
+    (lead.assignedDepartment && String(lead.assignedDepartment).trim()) || "",
+    (lead.notes && String(lead.notes).trim()) || "",
+  ].map(escapeCsvField).join(",");
+};
+
 const leadsToCsv = (leads) => {
   const lines = [EXPORT_HEADERS.join(",")];
   for (const lead of leads) {
-    const row = [
-      fullNameFromLead(lead),
-      phoneFromLead(lead),
-      (lead.email && String(lead.email).trim()) || "",
-      formatLeadDate(lead),
-      (getFormName(lead) && String(getFormName(lead)).trim()) || "",
-      (lead.source && String(lead.source).trim()) || "",
-      (lead.status && String(lead.status).trim()) || "new",
-      (lead.assignedTo && String(lead.assignedTo).trim()) || "",
-      (lead.assignedDepartment && String(lead.assignedDepartment).trim()) || "",
-      (lead.notes && String(lead.notes).trim()) || "",
-    ].map(escapeCsvField);
-    lines.push(row.join(","));
+    lines.push(leadToCsvRow(lead));
   }
   return lines.join("\n");
 };
@@ -188,6 +191,7 @@ const cellAt = (row, colMap, field, required) => {
 module.exports = {
   parseCsv,
   leadsToCsv,
+  leadToCsvRow,
   EXPORT_HEADERS,
   buildHeaderIndexMap,
   cellAt,

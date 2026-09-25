@@ -6,7 +6,7 @@ import {
     User, Activity, Edit2, RefreshCw, ExternalLink, Calendar, Sparkles, 
     CheckCircle2, ArrowRight, Zap, Award, Flame
 } from 'lucide-react';
-import { useGetTasksQuery } from '../../api/taskApi';
+import { taskApi } from '../../api/taskApi';
 import { useGetTodayNoteQuery, useCreateOrUpdateTodayNoteMutation } from '../../api/notepadApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -43,19 +43,6 @@ const UserDashboard = () => {
     const { user, setUser } = useAuth();
     const isUserRole = user?.role === 'user';
 
-    const { data: tasksData, isLoading } = useGetTasksQuery({ limit: 1000 });
-    const allTasks = tasksData?.data?.data || tasksData?.data?.tasks || [];
-
-    const tasks = useMemo(() => {
-        if (!user?._id) return [];
-        const userIdStr = String(user._id);
-        return allTasks.filter(t => {
-            const assignedIdStr = String(t.assignedTo?._id || t.assignedTo || "");
-            const creatorIdStr = String(t.createdBy?._id || t.createdBy || "");
-            return assignedIdStr === userIdStr || creatorIdStr === userIdStr || (!assignedIdStr && !creatorIdStr);
-        });
-    }, [allTasks, user]);
-
     const [selectedDate, setSelectedDate] = useState(dayjs());
     const [currentPage, setCurrentPage] = useState(1);
     const [pageSize, setPageSize] = useState(5);
@@ -64,30 +51,22 @@ const UserDashboard = () => {
         setCurrentPage(1);
     }, [selectedDate]);
 
-    // Selected Date Tasks (or All Tasks if selectedDate is cleared/null)
-    const tasksForSelectedDate = useMemo(() => {
-        if (!selectedDate) return tasks;
-        return tasks.filter(t => taskMatchesKanbanDay(t, selectedDate));
-    }, [tasks, selectedDate]);
+    const dateQueryParam = selectedDate ? selectedDate.format('YYYY-MM-DD') : undefined;
 
-    // Metrics for Top Cards (for selected date or all tasks if cleared)
-    const myTasksCount = tasksForSelectedDate.length;
-    const inProgressCount = tasksForSelectedDate.filter(t => isInProgress(t.status)).length;
-    const completedCount = tasksForSelectedDate.filter(t => isCompleted(t.status)).length;
-    const overdueCount = tasksForSelectedDate.filter(t => {
-        if (!t.dueDate) return false;
-        return dayjs(t.dueDate).isBefore(dayjs(), 'day') && !isCompleted(t.status);
-    }).length;
+    const { data: analyticsData, isLoading: isAnalyticsLoading } = taskApi.useGetTaskAnalyticsQuery({
+        startDate: dateQueryParam,
+        endDate: dateQueryParam,
+        assignedTo: user?._id
+    });
 
-    // Performance Score Card Metrics (For Selected Date or All Tasks if cleared)
     const perfMetrics = useMemo(() => {
-        const targetTasks = tasksForSelectedDate;
-        const assigned = targetTasks.length;
-        const done = targetTasks.filter(t => isCompleted(t.status)).length;
-        const inProg = targetTasks.filter(t => isInProgress(t.status)).length;
-        const pending = targetTasks.filter(t => isPending(t.status)).length;
-        const correction = targetTasks.filter(t => isCorrectionTask(t)).length;
-        const redesign = targetTasks.filter(t => isRedesignTask(t)).length;
+        const stats = analyticsData?.data || { total: 0, completed: 0, inProgress: 0, pending: 0, corrections: 0, redesigns: 0 };
+        const assigned = stats.total;
+        const done = stats.completed;
+        const inProg = stats.inProgress;
+        const pending = stats.pending;
+        const correction = stats.corrections;
+        const redesign = stats.redesigns;
 
         let efficiency = 0;
         if (assigned > 0) {
@@ -95,7 +74,24 @@ const UserDashboard = () => {
         }
 
         return { assigned, done, inProg, pending, correction, redesign, efficiency };
-    }, [tasksForSelectedDate]);
+    }, [analyticsData]);
+
+    const myTasksCount = perfMetrics.assigned;
+    const inProgressCount = perfMetrics.inProg;
+    const completedCount = perfMetrics.done;
+    const overdueCount = 0; // Removing client-side overdue calculation for performance.
+
+    const { data: tasksData, isLoading: isTasksLoading } = taskApi.useGetTasksQuery({
+        page: currentPage,
+        limit: pageSize,
+        startDate: dateQueryParam,
+        endDate: dateQueryParam,
+        assignedTo: user?._id
+    });
+
+    const isLoading = isAnalyticsLoading || isTasksLoading;
+    const tasksForSelectedDate = tasksData?.data?.tasks || tasksData?.data?.data || [];
+    const totalTasksForSelectedDate = tasksData?.data?.total || tasksForSelectedDate.length;
 
     // Daily Reports State
     const [isReportModalVisible, setIsReportModalVisible] = useState(false);
@@ -464,6 +460,7 @@ const UserDashboard = () => {
                                 ) : (
                                     <List
                                         pagination={{
+                                            total: totalTasksForSelectedDate,
                                             current: currentPage,
                                             pageSize: pageSize,
                                             onChange: (page, size) => {
