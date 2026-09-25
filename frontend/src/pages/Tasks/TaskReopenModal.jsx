@@ -147,7 +147,11 @@ const TaskReopenModal = ({ task, visible, onClose, onSuccess }) => {
           label="New Due Date"
           rules={[{ required: true, message: "Please select a due date" }]}
         >
-          <DatePicker style={{ width: "100%" }} format="DD/MM/YYYY" />
+          <DatePicker
+            style={{ width: "100%" }}
+            format="DD/MM/YYYY"
+            disabledDate={(current) => current && current < dayjs().startOf("day")}
+          />
         </Form.Item>
 
         <Form.Item

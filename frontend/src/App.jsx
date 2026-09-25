@@ -757,7 +757,11 @@ const isPlatformDomain = (hostname) => {
     'localhost',
     '127.0.0.1',
     'tunepath.askeva.io',
-    'm1.workforce.themilabs.com'
+    'm1.workforce.themilabs.com',
+    'ngrok-free.dev',
+    'ngrok.app',
+    'ngrok.io',
+    'ngrok-free.app',
   ];
   return reserved.some(plat => host === plat || host.endsWith('.' + plat));
 };

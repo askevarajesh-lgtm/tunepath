@@ -1125,8 +1125,20 @@ const TaskForm = () => {
         notifyError('save', 'validation', `Please select Start Date for Task #${num}`);
         return;
       }
+      if (dayjs(b.startDate).isBefore(dayjs().startOf('day'))) {
+        notifyError('save', 'validation', `Start Date cannot be in the past for Task #${num}`);
+        return;
+      }
       if (!b.dueDate) {
         notifyError('save', 'validation', `Please select Due Date for Task #${num}`);
+        return;
+      }
+      if (dayjs(b.dueDate).isBefore(dayjs().startOf('day'))) {
+        notifyError('save', 'validation', `Due Date cannot be in the past for Task #${num}`);
+        return;
+      }
+      if (dayjs(b.dueDate).isBefore(dayjs(b.startDate), 'day')) {
+        notifyError('save', 'validation', `Due Date cannot be before Start Date for Task #${num}`);
         return;
       }
     }
@@ -1176,6 +1188,19 @@ const TaskForm = () => {
 
       const startDate = values.startDate;
       const dueDate = values.dueDate;
+
+      if (!isEdit && startDate && dayjs(startDate).isBefore(dayjs().startOf('day'))) {
+        notifyError('save', 'validation', 'Start Date cannot be in the past');
+        return;
+      }
+      if (!isEdit && dueDate && dayjs(dueDate).isBefore(dayjs().startOf('day'))) {
+        notifyError('save', 'validation', 'Due Date cannot be in the past');
+        return;
+      }
+      if (startDate && dueDate && dayjs(dueDate).isBefore(dayjs(startDate), 'day')) {
+        notifyError('save', 'validation', 'Due Date cannot be before Start Date');
+        return;
+      }
 
       const taskData = {
         title: values.title,
@@ -1461,7 +1486,21 @@ const TaskForm = () => {
                   name="startDate"
                   rules={[{ required: true, message: "Please select start date" }]}
                 >
-                  <DatePicker style={{ width: "100%" }} />
+                  <DatePicker
+                    style={{ width: "100%" }}
+                    disabledDate={(current) => {
+                      if (isEdit && task?.startDate && dayjs(task.startDate).isBefore(dayjs().startOf("day"))) {
+                        return current && current < dayjs(task.startDate).startOf("day");
+                      }
+                      return current && current < dayjs().startOf("day");
+                    }}
+                    onChange={(date) => {
+                      const currentDue = form.getFieldValue("dueDate");
+                      if (currentDue && date && dayjs(currentDue).isBefore(date, "day")) {
+                        form.setFieldsValue({ dueDate: null });
+                      }
+                    }}
+                  />
                 </Form.Item>
               </Col>
 
@@ -1471,7 +1510,16 @@ const TaskForm = () => {
                   name="dueDate"
                   rules={[{ required: true, message: "Please select due date" }]}
                 >
-                  <DatePicker style={{ width: "100%" }} />
+                  <DatePicker
+                    style={{ width: "100%" }}
+                    disabledDate={(current) => {
+                      const start = form.getFieldValue("startDate");
+                      const minDate = start
+                        ? dayjs(start).startOf("day")
+                        : (isEdit && task?.startDate ? dayjs(task.startDate).startOf("day") : dayjs().startOf("day"));
+                      return current && current < minDate;
+                    }}
+                  />
                 </Form.Item>
               </Col>
 
@@ -1694,7 +1742,13 @@ const TaskForm = () => {
                       </label>
                       <DatePicker
                         value={block.startDate ? dayjs(block.startDate) : null}
-                        onChange={(date) => handleUpdateTaskBlock(index, "startDate", date)}
+                        disabledDate={(current) => current && current < dayjs().startOf("day")}
+                        onChange={(date) => {
+                          handleUpdateTaskBlock(index, "startDate", date);
+                          if (block.dueDate && date && dayjs(block.dueDate).isBefore(date, "day")) {
+                            handleUpdateTaskBlock(index, "dueDate", null);
+                          }
+                        }}
                         style={{ width: "100%" }}
                       />
                     </div>
@@ -1707,6 +1761,12 @@ const TaskForm = () => {
                       </label>
                       <DatePicker
                         value={block.dueDate ? dayjs(block.dueDate) : null}
+                        disabledDate={(current) => {
+                          const minDate = block.startDate
+                            ? dayjs(block.startDate).startOf("day")
+                            : dayjs().startOf("day");
+                          return current && current < minDate;
+                        }}
                         onChange={(date) => handleUpdateTaskBlock(index, "dueDate", date)}
                         style={{ width: "100%" }}
                       />

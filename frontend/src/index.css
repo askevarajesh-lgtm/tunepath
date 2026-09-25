@@ -1173,6 +1173,24 @@ a {
   visibility: visible !important;
 }
 
+/* Mobile Dialer Phone Modal Frameless Wrapper */
+.mobile-phone-modal-wrapper .ant-modal-content {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  border-radius: 50px !important;
+  border: none !important;
+}
+
+.mobile-phone-modal-wrapper .ant-modal-body {
+  padding: 0 !important;
+}
+
+.mobile-phone-modal-wrapper .ant-modal {
+  max-width: 360px !important;
+}
+
 .hover-card-elevation {
   transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }

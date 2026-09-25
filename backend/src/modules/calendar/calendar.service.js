@@ -76,6 +76,30 @@ const applyDateRange = (filter, field, startDate, endDate) => {
   }
 };
 
+// Helper: construct local ISO date-time string without timezone shift for meetings
+const getMeetingDateTimes = (date, timeStr, durationMinutes = 30) => {
+  if (!date) return { startDateTime: null, endDateTime: null };
+  const dateStr = typeof date === 'string'
+    ? date.split('T')[0]
+    : (date.toISOString ? date.toISOString().split('T')[0] : String(date).slice(0, 10));
+
+  const [hStr, mStr] = (timeStr || '09:00').split(':');
+  const startH = parseInt(hStr, 10) || 0;
+  const startM = parseInt(mStr || '0', 10) || 0;
+  const duration = parseInt(durationMinutes, 10) || 30;
+
+  const totalStartMin = startH * 60 + startM;
+  const totalEndMin = totalStartMin + duration;
+  const endH = Math.floor(totalEndMin / 60) % 24;
+  const endM = totalEndMin % 60;
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const startDateTime = `${dateStr}T${pad(startH)}:${pad(startM)}:00`;
+  const endDateTime = `${dateStr}T${pad(endH)}:${pad(endM)}:00`;
+
+  return { startDateTime, endDateTime };
+};
+
 const calendarService = {
   // Create a new custom calendar event
   createEvent: async (eventData, companyId, userId) => {
@@ -163,16 +187,16 @@ const calendarService = {
       .populate('projectId', 'name');
 
     const mappedMeetings = meetings.map(m => {
-      const dateStr = m.date.toISOString().split('T')[0];
-      const start = new Date(`${dateStr}T${m.time || '09:00'}`);
-      const end = new Date(start.getTime() + (m.duration || 30) * 60 * 1000);
+      const { startDateTime, endDateTime } = getMeetingDateTimes(m.date, m.time, m.duration);
 
       return {
         _id: m._id,
         title: `[Meeting] ${m.title}`,
         eventType: m.meetingType || 'team_meeting',
-        startDateTime: start,
-        endDateTime: end,
+        startDateTime,
+        endDateTime,
+        time: m.time,
+        duration: m.duration,
         location: m.meetingLink ? 'Virtual / Meeting Link' : 'Office',
         meetingLink: m.meetingLink,
         host: m.host,
@@ -619,17 +643,17 @@ const calendarService = {
         .populate('projectId', 'name');
 
       if (meeting) {
-        const dateStr = meeting.date.toISOString().split('T')[0];
-        const start = new Date(`${dateStr}T${meeting.time || '09:00'}`);
-        const end = new Date(start.getTime() + (meeting.duration || 30) * 60 * 1000);
+        const { startDateTime, endDateTime } = getMeetingDateTimes(meeting.date, meeting.time, meeting.duration);
 
         return {
           event: {
             _id: meeting._id,
             title: `[Meeting] ${meeting.title}`,
             eventType: meeting.meetingType || 'team_meeting',
-            startDateTime: start,
-            endDateTime: end,
+            startDateTime,
+            endDateTime,
+            time: meeting.time,
+            duration: meeting.duration,
             location: meeting.meetingLink ? 'Virtual / Meeting Link' : 'Office',
             meetingLink: meeting.meetingLink,
             host: meeting.host,

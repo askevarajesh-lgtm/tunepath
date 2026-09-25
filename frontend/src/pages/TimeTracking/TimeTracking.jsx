@@ -610,8 +610,13 @@ const TimeTracking = () => {
                 label: <span><Building2 size={12} style={{ marginRight: 6 }} />By Department</span>,
                 children: (
                   <Table
-                    columns={deptPerfCols} dataSource={deptPerformance} pagination={false}
-                    rowKey="department" size="middle" scroll={{ x: 700 }} rowClassName={() => 'hover-bg'}
+                    columns={deptPerfCols}
+                    dataSource={deptPerformance}
+                    pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
+                    rowKey="department"
+                    size="middle"
+                    scroll={{ x: 700 }}
+                    rowClassName={() => 'hover-bg'}
                     locale={{ emptyText: 'No department data for this week' }}
                   />
                 )
@@ -621,8 +626,13 @@ const TimeTracking = () => {
                 label: <span><Users size={12} style={{ marginRight: 6 }} />By Member</span>,
                 children: (
                   <Table
-                    columns={perfCols} dataSource={teamPerformance} pagination={false}
-                    rowKey="userId" size="middle" scroll={{ x: 700 }} rowClassName={() => 'hover-bg'}
+                    columns={perfCols}
+                    dataSource={teamPerformance}
+                    pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'] }}
+                    rowKey="userId"
+                    size="middle"
+                    scroll={{ x: 700 }}
+                    rowClassName={() => 'hover-bg'}
                     locale={{ emptyText: 'No member data for this week' }}
                   />
                 )

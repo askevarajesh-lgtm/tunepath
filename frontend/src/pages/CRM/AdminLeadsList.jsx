@@ -24,6 +24,9 @@ import { isValidPhoneNumber } from 'libphonenumber-js';
 import dayjs from 'dayjs';
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { useAuth } from "../../contexts/AuthContext";
+import useCompanyIntegrations from '../../hooks/useCompanyIntegrations';
+import OutboundCallButton from './components/OutboundCallButton';
+import CallHistoryTable from './components/CallHistoryTable';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -41,6 +44,8 @@ const DEFAULT_STATUSES = ['RNR', 'COLD', 'WARM', 'HOT', 'DROP', 'OTHER LOCATIONS
 const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const { user, role } = useAuth();
   const { canAdd, canEdit, canDelete, canView } = useActionPermissions('/crm');
+  const { isEntitled, isPlatformAdmin } = useCompanyIntegrations();
+  const isIvrEntitled = isPlatformAdmin || isEntitled('ivr');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
@@ -376,6 +381,12 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       title: <strong style={{ color: 'var(--text-secondary)' }}>Action</strong>, key: 'action', fixed: 'right',
       render: (_, record) => (
         <Space size="middle">
+          <OutboundCallButton
+            leadId={record._id}
+            customerPhone={record.phoneNumber || record.mobile}
+            leadName={record.fullName}
+            iconOnly={true}
+          />
           {canView && (
             <Tooltip title="View Lead">
               <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--accent-info)' }} onClick={() => handleOpenViewModal(record)} />
@@ -497,11 +508,12 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const handleAddSubmit = () => {
     form.validateFields().then(async (values) => {
       try {
+        const statusValue = (values.status || 'HOT').trim();
         if (editingLead) {
-          await updateLead({ id: editingLead._id, ...values, countryCode: leadCountryCode, status: (values.status || '').toLowerCase() }).unwrap();
+          await updateLead({ id: editingLead._id, ...values, countryCode: leadCountryCode, status: statusValue }).unwrap();
           message.success('Lead updated successfully');
         } else {
-          await createLead({ ...values, countryCode: leadCountryCode, status: (values.status || '').toLowerCase() }).unwrap();
+          await createLead({ ...values, countryCode: leadCountryCode, status: statusValue }).unwrap();
           message.success('Lead created successfully');
         }
         refetch?.();
@@ -818,6 +830,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
                 name="phoneNumber" 
                 label={<CustomLabel text="Phone Number" />} 
                 rules={[
+                  { required: true, message: 'Phone number is required' },
                   {
                     validator: (_, value) => {
                       if (!value) return Promise.resolve();
@@ -862,7 +875,12 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
 
           <Row gutter={24}>
             <Col span={12}>
-              <Form.Item name="status" label={<CustomLabel text="Status" />}>
+              <Form.Item
+                name="status"
+                label={<CustomLabel text="Status" />}
+                rules={[{ required: true, message: 'Status is required' }]}
+                initialValue="HOT"
+              >
                 <AutoComplete
                   size="large"
                   options={[
@@ -936,22 +954,32 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
             <Title level={4} style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>
               Lead — {currentViewingLead?.fullName}
             </Title>
-            {canConvertClient && currentViewingLead && (
-              <Button
-                type="primary"
-                icon={<UserAddOutlined />}
-                onClick={() => handleOpenConvertModal(currentViewingLead)}
-                style={{
-                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                  borderColor: '#10b981',
-                  borderRadius: 8,
-                  fontWeight: 700,
-                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
-                }}
-              >
-                Convert to Client
-              </Button>
-            )}
+            <Space>
+              {currentViewingLead && (
+                <OutboundCallButton
+                  leadId={currentViewingLead._id}
+                  customerPhone={currentViewingLead.phoneNumber || currentViewingLead.mobile}
+                  leadName={currentViewingLead.fullName}
+                  buttonType="primary"
+                />
+              )}
+              {canConvertClient && currentViewingLead && (
+                <Button
+                  type="primary"
+                  icon={<UserAddOutlined />}
+                  onClick={() => handleOpenConvertModal(currentViewingLead)}
+                  style={{
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    borderColor: '#10b981',
+                    borderRadius: 8,
+                    fontWeight: 700,
+                    boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)'
+                  }}
+                >
+                  Convert to Client
+                </Button>
+              )}
+            </Space>
           </div>
         }
         open={!!viewingLead}
@@ -962,7 +990,8 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
           setReminderDate(null);
         }}
         footer={null}
-        width={900}
+        width={1150}
+        style={{ maxWidth: '95vw', top: 20 }}
         className="glassmorphism-modal"
         styles={{ body: { paddingTop: 0 } }}
       >
@@ -1155,6 +1184,15 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
                 </div>
               )
             },
+            ...(isIvrEntitled ? [
+              {
+                key: 'calls',
+                label: <strong style={{ fontWeight: 600 }}>Call History</strong>,
+                children: (
+                  <CallHistoryTable leadId={currentViewingLead?._id} />
+                )
+              }
+            ] : []),
             {
               key: 'logs',
               label: <strong style={{ fontWeight: 600 }}>Activity Logs</strong>,

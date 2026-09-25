@@ -310,6 +310,46 @@ exports.getRecentEntries = async (req, res) => {
   }
 };
 
+// ─── Constants & Helpers for Time Tracking ─────────────────────────────────
+
+const MAX_WORK_HOURS_PER_DAY = 9; // Standard maximum working hours per day
+const IN_PROGRESS_STATUSES = ['in_progress', 'IN_PROGRESS', 'in progress'];
+
+/**
+ * Validates if a task has an active running timer that is in_progress and not past deadline.
+ */
+function isTaskTimerActive(task, now = new Date()) {
+  if (!task || !task.workStartedAt) return false;
+  if (!IN_PROGRESS_STATUSES.includes(task.status)) return false;
+  if (task.dueDate) {
+    const dueEnd = new Date(task.dueDate);
+    if (!isNaN(dueEnd.getTime())) {
+      dueEnd.setHours(23, 59, 59, 999);
+      if (now.getTime() > dueEnd.getTime()) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/**
+ * Calculates active session hours for a task on a specific day window, capped at max standard work hours (9h).
+ */
+function calculateActiveTaskDayHours(task, dayStartMs, dayEndMs, nowMs) {
+  if (!task.workStartedAt) return 0;
+  const startedMs = new Date(task.workStartedAt).getTime();
+  if (startedMs > dayEndMs || startedMs > nowMs) return 0;
+  if (dayStartMs > nowMs) return 0;
+
+  const effectiveStart = Math.max(startedMs, dayStartMs);
+  const effectiveEnd = Math.min(nowMs, dayEndMs);
+  if (effectiveStart >= effectiveEnd) return 0;
+
+  const rawHours = (effectiveEnd - effectiveStart) / 3600000;
+  return Math.min(MAX_WORK_HOURS_PER_DAY, Math.max(0, rawHours));
+}
+
 // ─── GET /dashboard — getDashboardData ───────────────────────────────────────
 
 exports.getDashboardData = async (req, res) => {
@@ -374,24 +414,23 @@ exports.getDashboardData = async (req, res) => {
     const kpi = kpiAgg[0] || { totalHours: 0, billableHours: 0, nonBillableHours: 0 };
     const utilizationRate = kpi.totalHours > 0 ? Math.round((kpi.billableHours / kpi.totalHours) * 100) : 0;
 
-    // ── Active timers (tasks in_progress with workStartedAt set) ─────────────
-    const activeTasks = await Task.find({
+    // ── Active timers (strictly tasks in_progress with workStartedAt set) ─────
+    const now = new Date();
+    const nowMs = now.getTime();
+    const weekStartMs = startOfWeek.getTime();
+    const weekEndMs = endOfWeek.getTime();
+
+    const activeTasksRaw = await Task.find({
       $or: [
         { tenantCompanyId: { $in: companyIdList } },
         { companyId: { $in: companyIdList } }
       ],
+      status: { $in: IN_PROGRESS_STATUSES },
       workStartedAt: { $ne: null }
     }).populate('assignedTo', 'name departmentId departmentName')
       .populate('companyId', 'companyName name');
 
-    const now = new Date();
-    
-    // Calculate overlap with the selected week and month
-    const weekStartMs = startOfWeek.getTime();
-    const weekEndMs = endOfWeek.getTime();
-    const monthStartMs = startOfMonth.getTime();
-    const monthEndMs = endOfMonth.getTime();
-    const nowMs = now.getTime();
+    const activeTasks = activeTasksRaw.filter(t => isTaskTimerActive(t, now));
 
     let activeTimersRunningTimeMin = 0; // for the Active Timers card (total running)
     let activeWeekHours = 0; // to add to kpi.totalHours
@@ -400,19 +439,18 @@ exports.getDashboardData = async (req, res) => {
       const startedAt = new Date(t.workStartedAt);
       const startedMs = startedAt.getTime();
       
-      const totalElapsedMin = Math.max(0, (nowMs - startedMs) / 60000);
+      // Running time for today's active session, capped at MAX_WORK_HOURS_PER_DAY
+      const totalElapsedMin = Math.min(MAX_WORK_HOURS_PER_DAY * 60, Math.max(0, (nowMs - startedMs) / 60000));
       activeTimersRunningTimeMin += totalElapsedMin;
 
-      const overlapWeekStart = Math.max(startedMs, weekStartMs);
-      const overlapWeekEnd = Math.min(nowMs, weekEndMs);
-      const elapsedWeekMin = overlapWeekStart < overlapWeekEnd ? (overlapWeekEnd - overlapWeekStart) / 60000 : 0;
-      const elapsedWeekHours = elapsedWeekMin / 60;
+      // Calculate elapsed active hours within the week (capped at 9h max per day)
+      let elapsedWeekHours = 0;
+      for (let isoDay = 1; isoDay <= 7; isoDay++) {
+        const dayStartMs = weekStartMs + (isoDay - 1) * 86400000;
+        const dayEndMs = dayStartMs + 86400000 - 1;
+        elapsedWeekHours += calculateActiveTaskDayHours(t, dayStartMs, dayEndMs, nowMs);
+      }
       activeWeekHours += elapsedWeekHours;
-
-      const overlapMonthStart = Math.max(startedMs, monthStartMs);
-      const overlapMonthEnd = Math.min(nowMs, monthEndMs);
-      const elapsedMonthMin = overlapMonthStart < overlapMonthEnd ? (overlapMonthEnd - overlapMonthStart) / 60000 : 0;
-      const elapsedMonthHours = elapsedMonthMin / 60;
 
       return {
         ...t.toObject(),
@@ -420,14 +458,13 @@ exports.getDashboardData = async (req, res) => {
         departmentId: t.assignedTo?.departmentId?.toString(),
         departmentName: t.assignedTo?.departmentName || t.department || '—',
         elapsedWeekHours,
-        elapsedMonthHours,
         startedMs
       };
     });
 
     // Add active week hours to KPIs
     kpi.totalHours += activeWeekHours;
-    kpi.billableHours += activeWeekHours; // assuming active timers are billable
+    kpi.billableHours += activeWeekHours;
 
     const activeTimersList = activeTasks.map(t => ({
       taskId: t._id,
@@ -552,40 +589,41 @@ exports.getDashboardData = async (req, res) => {
         };
       });
 
-      const visualTotal = daysArr.reduce((s, v) => s + v.total, 0);
-      
       // Distribute active timer hours across the week days
-      let finalTotal = visualTotal;
       const daysArrWithActive = [...daysArr];
-      
       const empActiveTasks = activeTasksData.filter(t => t.employeeId === u._id.toString());
-      empActiveTasks.forEach(t => {
-        if (t.elapsedWeekHours > 0) {
-          finalTotal += t.elapsedWeekHours;
-          // Split elapsed time by day
-          for (let isoDay = 1; isoDay <= 7; isoDay++) {
-            const dayStartMs = weekStartMs + (isoDay - 1) * 86400000;
-            const dayEndMs = dayStartMs + 86400000 - 1;
-            const overlapDayStart = Math.max(t.startedMs, dayStartMs);
-            const overlapDayEnd = Math.min(nowMs, dayEndMs);
-            if (overlapDayStart < overlapDayEnd) {
-              const dayElapsed = (overlapDayEnd - overlapDayStart) / 3600000;
-              daysArrWithActive[isoDay - 1].total = parseFloat((daysArrWithActive[isoDay - 1].total + dayElapsed).toFixed(2));
-              daysArrWithActive[isoDay - 1].entries.push({
-                taskId: t._id,
-                taskTitle: t.title || 'General Work',
-                client: t.companyId?.companyName || t.companyId?.name || null,
-                department: t.department || null,
-                status: t.status,
-                hours: parseFloat(dayElapsed.toFixed(2)),
-                isBillable: true,
-                isRunning: true,
-                startedAt: new Date(overlapDayStart)
-              });
-            }
+      
+      for (let isoDay = 1; isoDay <= 7; isoDay++) {
+        const dayStartMs = weekStartMs + (isoDay - 1) * 86400000;
+        const dayEndMs = dayStartMs + 86400000 - 1;
+        
+        let dayActiveHoursSum = 0;
+        empActiveTasks.forEach(t => {
+          const taskDayHours = calculateActiveTaskDayHours(t, dayStartMs, dayEndMs, nowMs);
+          if (taskDayHours > 0) {
+            dayActiveHoursSum += taskDayHours;
+            daysArrWithActive[isoDay - 1].entries.push({
+              taskId: t._id,
+              taskTitle: t.title || 'General Work',
+              client: t.companyId?.companyName || t.companyId?.name || null,
+              department: t.department || null,
+              status: t.status,
+              hours: parseFloat(taskDayHours.toFixed(2)),
+              isBillable: true,
+              isRunning: true,
+              startedAt: new Date(Math.max(t.startedMs, dayStartMs))
+            });
           }
+        });
+
+        // Cap active running timer addition to daily max work hours (9h)
+        const cappedDayActive = Math.min(MAX_WORK_HOURS_PER_DAY, dayActiveHoursSum);
+        if (cappedDayActive > 0) {
+          daysArrWithActive[isoDay - 1].total = parseFloat((daysArrWithActive[isoDay - 1].total + cappedDayActive).toFixed(2));
         }
-      });
+      }
+
+      const finalTotal = daysArrWithActive.reduce((s, v) => s + v.total, 0);
 
       const deptName = u.departmentId ? (deptMap[u.departmentId.toString()] || u.departmentName || '—') : (u.departmentName || '—');
 
@@ -784,11 +822,13 @@ exports.getTeamTaskPerformance = async (req, res) => {
 
     const completedStatuses = [
       'completed', 'done', 'validated', 'complete', 'review', 'REVIEW',
-      'submitted', 'SUBMITTED', 'in_review', 'IN_REVIEW', 'APPROVED', 'approved',
-      'Completed', 'Done', 'Validated', 'Complete'
+      'submitted', 'SUBMITTED', 'in_review', 'IN_REVIEW', 'in review', 'IN REVIEW',
+      'reviewing', 'REVIEWING', 'APPROVED', 'approved', 'Completed', 'Done',
+      'Validated', 'Complete', 'sent_for_client_review', 'SENT_FOR_CLIENT_REVIEW',
+      'client_review', 'CLIENT_REVIEW', 'review_ready', 'closed', 'Closed', 'CLOSED'
     ];
 
-    // Tasks completed this week based on any completion date field or updatedAt
+    // Tasks completed this week based on any completion date field, updatedAt, createdAt or dueDate
     const tasksCompletedAgg = await Task.aggregate([
       { $match: {
         $or: [{ tenantCompanyId: { $in: companyIdList } }, { companyId: { $in: companyIdList } }],
@@ -799,7 +839,9 @@ exports.getTeamTaskPerformance = async (req, res) => {
           { validatedAt: { $gte: startOfWeek, $lte: endOfWeek } },
           { completedAt: { $gte: startOfWeek, $lte: endOfWeek } },
           { workCompletedAt: { $gte: startOfWeek, $lte: endOfWeek } },
-          { updatedAt: { $gte: startOfWeek, $lte: endOfWeek } }
+          { updatedAt: { $gte: startOfWeek, $lte: endOfWeek } },
+          { createdAt: { $gte: startOfWeek, $lte: endOfWeek } },
+          { dueDate: { $gte: startOfWeek, $lte: endOfWeek } }
         ]
       }},
       { $group: { _id: '$assignedTo', tasksCompleted: { $sum: 1 } } }
@@ -812,23 +854,43 @@ exports.getTeamTaskPerformance = async (req, res) => {
     ]);
 
     // Fetch ALL active trackable users for this tenant
-    const users = await getEligibleUsers(companyIdList);
+    const users = await getEligibleUsers(req, companyIdList);
 
     // Fetch departments for label mapping
     const departments = await getDepartments(companyIdList);
     const deptMap = {};
-    departments.forEach(d => { deptMap[d._id.toString()] = d.name; });
+    departments.forEach(d => { 
+      deptMap[d._id.toString()] = d.name;
+      if (d.slug) deptMap[d.slug] = d.name;
+      if (d.name) deptMap[d.name] = d.name;
+    });
 
-    // Fetch active tasks to get their active time
-    const activeTasks = await Task.find({
-      $or: [{ tenantCompanyId: { $in: companyIdList } }, { companyId: { $in: companyIdList } }],
-      workStartedAt: { $ne: null }
-    }).populate('assignedTo', 'name departmentId departmentName');
+    const getNormalizedDeptName = (raw) => {
+      if (!raw || raw === '—' || raw === 'no-dept') return 'No Department';
+      const str = raw.toString();
+      if (deptMap[str]) return deptMap[str];
+      const matched = departments.find(d => 
+        d._id.toString() === str || 
+        (d.slug && d.slug.toLowerCase() === str.toLowerCase()) || 
+        (d.name && d.name.toLowerCase() === str.toLowerCase())
+      );
+      if (matched) return matched.name;
+      return str;
+    };
 
     const now = new Date();
     const nowMs = now.getTime();
     const weekStartMs = startOfWeek.getTime();
     const weekEndMs = endOfWeek.getTime();
+
+    // Fetch active tasks to get their active time
+    const activeTasksRaw = await Task.find({
+      $or: [{ tenantCompanyId: { $in: companyIdList } }, { companyId: { $in: companyIdList } }],
+      status: { $in: IN_PROGRESS_STATUSES },
+      workStartedAt: { $ne: null }
+    }).populate('assignedTo', 'name departmentId departmentName');
+
+    const activeTasks = activeTasksRaw.filter(t => isTaskTimerActive(t, now));
 
     // Ensure active users are included in `users` list
     const activeEmployeeIds = activeTasks.map(t => t.assignedTo?._id?.toString()).filter(Boolean);
@@ -857,7 +919,8 @@ exports.getTeamTaskPerformance = async (req, res) => {
     const performanceData = users.map(u => {
       const tc = tasksCompletedAgg.find(t => t._id && t._id.toString() === u._id.toString());
       const ts = timeSpentAgg.find(t => t._id && t._id.toString() === u._id.toString());
-      const deptName = u.departmentId ? (deptMap[u.departmentId.toString()] || u.departmentName || '—') : (u.departmentName || '—');
+      const rawDept = u.departmentId ? (deptMap[u.departmentId.toString()] || u.departmentName || '—') : (u.departmentName || '—');
+      const deptName = getNormalizedDeptName(rawDept);
       return {
         userId: u._id,
         name: u.name,
@@ -869,17 +932,17 @@ exports.getTeamTaskPerformance = async (req, res) => {
     });
 
     activeTasks.forEach(t => {
-      const startedMs = new Date(t.workStartedAt).getTime();
-      const overlapStart = Math.max(startedMs, weekStartMs);
-      const overlapEnd = Math.min(nowMs, weekEndMs);
+      let elapsedHours = 0;
+      for (let isoDay = 1; isoDay <= 7; isoDay++) {
+        const dayStartMs = weekStartMs + (isoDay - 1) * 86400000;
+        const dayEndMs = dayStartMs + 86400000 - 1;
+        elapsedHours += calculateActiveTaskDayHours(t, dayStartMs, dayEndMs, nowMs);
+      }
       
-      if (overlapStart < overlapEnd) {
-        const elapsedHours = (overlapEnd - overlapStart) / 3600000;
-        const uId = t.assignedTo ? t.assignedTo._id.toString() : 'unassigned';
-        const pData = performanceData.find(p => p.userId.toString() === uId);
-        if (pData) {
-          pData.totalTimeSpent += elapsedHours;
-        }
+      const uId = t.assignedTo ? t.assignedTo._id.toString() : 'unassigned';
+      const pData = performanceData.find(p => p.userId.toString() === uId);
+      if (pData && elapsedHours > 0) {
+        pData.totalTimeSpent += elapsedHours;
       }
     });
 
@@ -894,7 +957,7 @@ exports.getTeamTaskPerformance = async (req, res) => {
     });
 
     performanceData.forEach(p => {
-      const key = p.department && p.department !== '—' ? p.department : 'No Department';
+      const key = getNormalizedDeptName(p.department);
       if (!deptPerformance[key]) {
         deptPerformance[key] = { department: key, members: 0, tasksCompleted: 0, totalTimeSpent: 0 };
       }

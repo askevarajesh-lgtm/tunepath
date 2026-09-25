@@ -5,7 +5,8 @@ const SUPPORTED_INTEGRATIONS = [
   'website',
   'payment',
   'ekta',
-  'facebook_leads'
+  'facebook_leads',
+  'ivr'
 ];
 
 const INTERNAL_PROVIDERS = [

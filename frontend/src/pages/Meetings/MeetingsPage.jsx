@@ -433,6 +433,12 @@ const MeetingsPage = () => {
     return <Tag color={color}>{label}</Tag>;
   };
 
+  const formatMeetingTime = (timeStr) => {
+    if (!timeStr) return '';
+    const parsed = dayjs(timeStr, ['HH:mm', 'H:mm', 'h:mm A', 'hh:mm A', 'HH:mm:ss']);
+    return parsed.isValid() ? parsed.format('hh:mm A') : timeStr;
+  };
+
   // Render Calendar events
   const getCalendarListData = (value) => {
     const dateStr = value.format('YYYY-MM-DD');
@@ -445,7 +451,7 @@ const MeetingsPage = () => {
       <ul className="events" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
         {listData.map(item => (
           <li key={item._id} style={{ margin: '2px 0' }}>
-            <Tooltip title={`${item.title} (${item.time})`}>
+            <Tooltip title={`${item.title} (${formatMeetingTime(item.time)})`}>
               <Badge 
                 status={item.status === 'completed' ? 'success' : item.status === 'cancelled' ? 'error' : 'processing'} 
                 text={
@@ -500,7 +506,7 @@ const MeetingsPage = () => {
             <span><CalendarOutlined style={{ marginRight: 6 }} />{dayjs(date).format('MMM DD, YYYY')}</span>
             <span style={{ fontSize: '12px', color: '#8c8c8c' }}>
               <ClockCircleOutlined style={{ marginRight: 6 }} />
-              {record.time} ({record.duration} mins)
+              {formatMeetingTime(record.time)} ({record.duration} mins)
             </span>
           </Space>
         </div>
@@ -1010,7 +1016,7 @@ const MeetingsPage = () => {
                   <p><strong>Agenda:</strong></p>
                   <p>{detailData.meeting.agenda || 'No agenda detailed.'}</p>
                   
-                  <p><strong>Schedule:</strong> {dayjs(detailData.meeting.date).format('MMMM DD, YYYY')} at {detailData.meeting.time} ({detailData.meeting.duration} minutes)</p>
+                  <p><strong>Schedule:</strong> {dayjs(detailData.meeting.date).format('MMMM DD, YYYY')} at {formatMeetingTime(detailData.meeting.time)} ({detailData.meeting.duration} minutes)</p>
                   
                   <Space style={{ marginBottom: '16px', flexWrap: 'wrap' }}>
                     {detailData.meeting.meetingLink && (
@@ -1201,7 +1207,7 @@ const MeetingsPage = () => {
               Current Meeting Info
             </div>
             <div style={{ fontSize: 13, color: isDark ? '#d9d9d9' : '#595959' }}>
-              <strong>Date & Time:</strong> {dayjs(reschedulingMeeting.date).format('MMM DD, YYYY')} at {reschedulingMeeting.time} ({reschedulingMeeting.duration || 30} mins)
+              <strong>Date & Time:</strong> {dayjs(reschedulingMeeting.date).format('MMM DD, YYYY')} at {formatMeetingTime(reschedulingMeeting.time)} ({reschedulingMeeting.duration || 30} mins)
             </div>
             <div style={{ fontSize: 13, color: isDark ? '#d9d9d9' : '#595959', marginTop: 4 }}>
               <strong>Current Status:</strong> {getStatusTag(reschedulingMeeting.status)}

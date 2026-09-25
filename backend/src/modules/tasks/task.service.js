@@ -1158,6 +1158,19 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
   const creator = await User.findById(createdByUserId).select("role clientId brandId");
   const isGlobalAdmin = creator && ["supreme_super_admin"].includes(creator.role);
 
+  // Validate startDate & dueDate
+  if (taskData.startDate && taskData.dueDate) {
+    const start = new Date(taskData.startDate);
+    const due = new Date(taskData.dueDate);
+    if (!isNaN(start.getTime()) && !isNaN(due.getTime())) {
+      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+      if (dueDay < startDay) {
+        throw new Error("Due date cannot be before start date");
+      }
+    }
+  }
+
   // Auto-assign companyId if missing and the creator is a client/brand user/employee
   if (!taskData.companyId && creator && ['client', 'agency_client', 'brand_super_admin', 'brand_manager', 'user'].includes(creator.role)) {
     taskData.companyId = creator.clientId || creator.brandId || creator.agencyId || createdByUserId;
@@ -1890,6 +1903,21 @@ const updateTask = async (
 
   if (!task) {
     throw new Error("Task not found");
+  }
+
+  // Validate dates if updated
+  const effectiveStart = taskData.startDate !== undefined ? taskData.startDate : task.startDate;
+  const effectiveDue = taskData.dueDate !== undefined ? taskData.dueDate : task.dueDate;
+  if (effectiveStart && effectiveDue) {
+    const start = new Date(effectiveStart);
+    const due = new Date(effectiveDue);
+    if (!isNaN(start.getTime()) && !isNaN(due.getTime())) {
+      const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+      const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate());
+      if (dueDay < startDay) {
+        throw new Error("Due date cannot be before start date");
+      }
+    }
   }
 
   // Allowed updates
