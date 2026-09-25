@@ -20,8 +20,13 @@ export const deleteReportSchedule = async (id) => {
     return response.data.data;
 };
 
-export const getRecentSentReports = async () => {
-    const response = await api.get('/reports/history');
+export const getRecentSentReports = async (params = {}) => {
+    const response = await api.get('/reports/history', { params });
+    return response.data;
+};
+
+export const getReportDashboardStats = async (params = {}) => {
+    const response = await api.get('/reports/dashboard-stats', { params });
     return response.data.data;
 };
 

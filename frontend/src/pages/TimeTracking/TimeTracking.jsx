@@ -35,13 +35,27 @@ const TimeTracking = () => {
   const [deptPerformance, setDeptPerformance] = useState([]);
   const [formOptions, setFormOptions] = useState({ employees: [], clients: [], tasks: [], departments: [] });
 
+  // Pagination & Filter States
+  const [tsPage, setTsPage] = useState(1);
+  const [tsLimit, setTsLimit] = useState(10);
+  const [tsTotal, setTsTotal] = useState(0);
+  const [tsDepartmentId, setTsDepartmentId] = useState('all');
+  const [tsSearch, setTsSearch] = useState('');
+
+  const [recentPage, setRecentPage] = useState(1);
+  const [recentLimit, setRecentLimit] = useState(10);
+  const [recentTotal, setRecentTotal] = useState(0);
+
+  const [tsLoading, setTsLoading] = useState(false);
+  const [recentLoading, setRecentLoading] = useState(false);
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null);
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
 
-  const fetchData = async (dateStr, isSilentRefresh = false) => {
+  const fetchDashboardData = async (dateStr, isSilentRefresh = false) => {
     if (!isSilentRefresh) setLoading(true);
     try {
       const targetDate = dateStr || selectedDate;
@@ -53,42 +67,86 @@ const TimeTracking = () => {
         queryParams.date = targetDate;
       }
       
-      const [dashRes, recentRes, optRes, perfRes] = await Promise.all([
+      const [dashRes, optRes, perfRes] = await Promise.all([
         timeTrackingService.getDashboardData(queryParams),
-        timeTrackingService.getRecentEntries(),
         timeTrackingService.getFormOptions(),
         timeTrackingService.getTeamTaskPerformance(queryParams)
       ]);
 
       if (dashRes.success) {
         setKpis(dashRes.kpis);
-        setTimesheetData(dashRes.timesheet);
         setTimeByClient(dashRes.timeByClient);
         setTimeByDepartment(dashRes.timeByDepartment || []);
       }
-      if (recentRes.success) setRecentEntries(recentRes.data);
       if (optRes.success) setFormOptions(optRes.data);
       if (perfRes.success) {
         setTeamPerformance(perfRes.data);
         setDeptPerformance(perfRes.byDepartment || []);
       }
     } catch (error) {
-      console.error('Failed to fetch time tracking data', error);
-      message.error('Failed to load time tracking data');
+      console.error('Failed to fetch dashboard data', error);
+      message.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, [selectedDate, dateRange]);
+  const fetchTimesheetData = async (isSilentRefresh = false) => {
+    if (!isSilentRefresh) setTsLoading(true);
+    try {
+      const queryParams = { page: tsPage, limit: tsLimit, departmentId: tsDepartmentId, searchMember: tsSearch };
+      if (dateRange && dateRange.length === 2) {
+        queryParams.startDate = dateRange[0].format('YYYY-MM-DD');
+        queryParams.endDate = dateRange[1].format('YYYY-MM-DD');
+      } else {
+        queryParams.date = selectedDate;
+      }
+      const res = await timeTrackingService.getTimesheetData(queryParams);
+      if (res.success) {
+        setTimesheetData(res.data);
+        setTsTotal(res.total || 0);
+      }
+    } catch (error) {
+      console.error('Failed to fetch timesheet data', error);
+    } finally {
+      setTsLoading(false);
+    }
+  };
+
+  const fetchRecentEntries = async (isSilentRefresh = false) => {
+    if (!isSilentRefresh) setRecentLoading(true);
+    try {
+      const queryParams = { page: recentPage, limit: recentLimit };
+      const res = await timeTrackingService.getRecentEntries(queryParams);
+      if (res.success) {
+        setRecentEntries(res.data);
+        setRecentTotal(res.total || 0);
+      }
+    } catch (error) {
+      console.error('Failed to fetch recent entries', error);
+    } finally {
+      setRecentLoading(false);
+    }
+  };
+
+  const refreshAll = (isSilent = false) => {
+    fetchDashboardData(null, isSilent);
+    fetchTimesheetData(isSilent);
+    fetchRecentEntries(isSilent);
+  };
+
+  useEffect(() => { refreshAll(); }, [selectedDate, dateRange]);
+  
+  useEffect(() => { fetchTimesheetData(); }, [tsPage, tsLimit, tsDepartmentId, tsSearch]);
+  useEffect(() => { fetchRecentEntries(); }, [recentPage, recentLimit]);
 
   // Lightweight refresh for active timers every 60 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      fetchData(null, true);
+      refreshAll(true);
     }, 60000);
     return () => clearInterval(interval);
-  }, [selectedDate, dateRange]);
+  }, [selectedDate, dateRange, tsPage, tsLimit, tsDepartmentId, tsSearch, recentPage, recentLimit]);
 
   const handlePrevWeek = () => {
     const d = new Date(selectedDate);
@@ -105,7 +163,7 @@ const TimeTracking = () => {
   const handleAddSubmit = async (values) => {
     try {
       const res = await timeTrackingService.logTime(values);
-      if (res.success) { message.success('Time logged successfully'); setIsAddModalOpen(false); form.resetFields(); fetchData(); }
+      if (res.success) { message.success('Time logged successfully'); setIsAddModalOpen(false); form.resetFields(); refreshAll(); }
     } catch { message.error('Failed to log time'); }
   };
 
@@ -124,14 +182,14 @@ const TimeTracking = () => {
   const handleEditSubmit = async (values) => {
     try {
       const res = await timeTrackingService.updateTimeEntry(editingEntry.id, values);
-      if (res.success) { message.success('Time entry updated'); setIsEditModalOpen(false); setEditingEntry(null); fetchData(); }
+      if (res.success) { message.success('Time entry updated'); setIsEditModalOpen(false); setEditingEntry(null); refreshAll(); }
     } catch { message.error('Failed to update time entry'); }
   };
 
   const handleDelete = async (id) => {
     try {
       const res = await timeTrackingService.deleteTimeEntry(id);
-      if (res.success) { message.success('Time entry deleted'); fetchData(); }
+      if (res.success) { message.success('Time entry deleted'); refreshAll(); }
     } catch { message.error('Failed to delete time entry'); }
   };
 
@@ -485,7 +543,24 @@ const TimeTracking = () => {
                 <Building2 size={16} color="var(--accent-primary)" />
                 <Title level={5} style={{ margin: 0, fontWeight: 700, color: 'var(--text-primary)' }}>Department Timesheet</Title>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
+                <Input.Search 
+                  placeholder="Search member..." 
+                  allowClear 
+                  onSearch={(val) => setTsSearch(val)}
+                  style={{ width: 200 }}
+                />
+                <Select 
+                  value={tsDepartmentId} 
+                  onChange={setTsDepartmentId} 
+                  style={{ width: 180 }}
+                  options={[
+                    { value: 'all', label: 'All Departments' },
+                    ...(formOptions.departments || []).map(d => ({ value: d._id, label: d.name }))
+                  ]}
+                />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
                 <Button size="small" type="text" icon={<ChevronLeft size={16} />} onClick={handlePrevWeek} />
                 <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>Week of {selectedDate}</Text>
                 <Button size="small" type="text" icon={<ChevronRight size={16} />} onClick={handleNextWeek} />
@@ -498,10 +573,18 @@ const TimeTracking = () => {
           bodyStyle={{ padding: 0 }}
         >
           <Table
-            columns={tsCols} dataSource={timesheetData} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+            columns={tsCols} dataSource={timesheetData} 
+            pagination={{ 
+              current: tsPage, 
+              pageSize: tsLimit, 
+              total: tsTotal,
+              showSizeChanger: true, 
+              pageSizeOptions: ['10', '20', '50', '100', '200'],
+              onChange: (page, pageSize) => { setTsPage(page); setTsLimit(pageSize); }
+            }}
             rowKey={(r) => r.name + r.department} size="middle" scroll={{ x: 1100 }}
-            rowClassName={() => 'hover-bg'} loading={loading}
-            locale={{ emptyText: 'No department members found. Add team members with agencyId linked to this company.' }}
+            rowClassName={() => 'hover-bg'} loading={tsLoading || loading}
+            locale={{ emptyText: 'No department members found for the selected filters.' }}
           />
         </Card>
       </motion.div>
@@ -646,8 +729,17 @@ const TimeTracking = () => {
           bodyStyle={{ padding: 0 }}
         >
           <Table
-            columns={entryCols} dataSource={recentEntries} pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+            columns={entryCols} dataSource={recentEntries} 
+            pagination={{ 
+              current: recentPage, 
+              pageSize: recentLimit, 
+              total: recentTotal,
+              showSizeChanger: true, 
+              pageSizeOptions: ['10', '20', '50', '100', '200'],
+              onChange: (page, pageSize) => { setRecentPage(page); setRecentLimit(pageSize); }
+            }}
             rowKey="id" size="middle" scroll={{ x: 1100 }} rowClassName={() => 'hover-bg'}
+            loading={recentLoading || loading}
           />
         </Card>
       </motion.div>

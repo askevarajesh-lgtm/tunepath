@@ -15,8 +15,31 @@ export const timeTrackingService = {
     const response = await api.delete(`${PREFIX}/${id}`);
     return response.data;
   },
-  getRecentEntries: async () => {
-    const response = await api.get(`${PREFIX}/recent`);
+  getRecentEntries: async (params) => {
+    let qs = '';
+    if (typeof params === 'object') {
+      const p = new URLSearchParams();
+      if (params.page) p.append('page', params.page);
+      if (params.limit) p.append('limit', params.limit);
+      qs = `?${p.toString()}`;
+    }
+    const response = await api.get(`${PREFIX}/recent${qs}`);
+    return response.data;
+  },
+  getTimesheetData: async (params) => {
+    let qs = '';
+    if (typeof params === 'object') {
+      const p = new URLSearchParams();
+      if (params.page) p.append('page', params.page);
+      if (params.limit) p.append('limit', params.limit);
+      if (params.date) p.append('date', params.date);
+      if (params.startDate) p.append('startDate', params.startDate);
+      if (params.endDate) p.append('endDate', params.endDate);
+      if (params.departmentId) p.append('departmentId', params.departmentId);
+      if (params.searchMember) p.append('searchMember', params.searchMember);
+      qs = `?${p.toString()}`;
+    }
+    const response = await api.get(`${PREFIX}/timesheet${qs}`);
     return response.data;
   },
   getDashboardData: async (params) => {
