@@ -505,11 +505,12 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const handleAddSubmit = () => {
     form.validateFields().then(async (values) => {
       try {
+        const statusValue = (values.status || 'HOT').trim();
         if (editingLead) {
-          await updateLead({ id: editingLead._id, ...values, countryCode: leadCountryCode, status: (values.status || '').toLowerCase() }).unwrap();
+          await updateLead({ id: editingLead._id, ...values, countryCode: leadCountryCode, status: statusValue }).unwrap();
           message.success('Lead updated successfully');
         } else {
-          await createLead({ ...values, countryCode: leadCountryCode, status: (values.status || '').toLowerCase() }).unwrap();
+          await createLead({ ...values, countryCode: leadCountryCode, status: statusValue }).unwrap();
           message.success('Lead created successfully');
         }
         refetch?.();
@@ -823,6 +824,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
                 name="phoneNumber" 
                 label={<CustomLabel text="Phone Number" />} 
                 rules={[
+                  { required: true, message: 'Phone number is required' },
                   {
                     validator: (_, value) => {
                       if (!value) return Promise.resolve();
@@ -867,7 +869,12 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
 
           <Row gutter={24}>
             <Col span={12}>
-              <Form.Item name="status" label={<CustomLabel text="Status" />}>
+              <Form.Item
+                name="status"
+                label={<CustomLabel text="Status" />}
+                rules={[{ required: true, message: 'Status is required' }]}
+                initialValue="HOT"
+              >
                 <AutoComplete
                   size="large"
                   options={[

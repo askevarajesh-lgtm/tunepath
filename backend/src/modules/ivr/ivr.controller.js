@@ -28,7 +28,8 @@ async function findLeadByPhone(rawPhone, companyId = null) {
     query.companyId = companyId;
   }
 
-  return await Lead.findOne(query);
+  // Prioritize the lead that was most recently interacted with or updated
+  return await Lead.findOne(query).sort({ lastInteractionAt: -1, updatedAt: -1, createdAt: -1 });
 }
 
 /**
@@ -223,7 +224,30 @@ exports.handleSolluWebhook = async (req, res) => {
     const normalizedAgentPhone = solluService.normalizePhoneNumber(rawAgentPhone);
 
     const direction = (payload.Direction || payload.direction || 'outbound').toLowerCase();
-    const status = payload.status || payload.CallStatus || payload.dialstatus || payload.call_status || 'Completed';
+    
+    // Normalize status into consistent CRM labels
+    let rawStatus = payload.status || payload.CallStatus || payload.dialstatus || payload.call_status || '';
+    let normalizedStatus = 'Answered';
+    const statusUpper = String(rawStatus).toUpperCase();
+    if (
+      statusUpper === 'ANSWER' ||
+      statusUpper === 'ANSWERED' ||
+      statusUpper === 'COMPLETED' ||
+      statusUpper === 'SUCCESS'
+    ) {
+      normalizedStatus = 'Answered';
+    } else if (statusUpper.includes('BUSY')) {
+      normalizedStatus = 'Busy';
+    } else if (statusUpper.includes('NOANSWER') || statusUpper.includes('NO ANSWER')) {
+      normalizedStatus = 'No Answer';
+    } else if (statusUpper.includes('CANCEL')) {
+      normalizedStatus = 'Cancelled';
+    } else if (statusUpper.includes('FAIL') || statusUpper.includes('CONGESTION')) {
+      normalizedStatus = 'Failed';
+    } else if (rawStatus) {
+      normalizedStatus = rawStatus;
+    }
+
     const date = payload.date || payload.call_date || '';
     const time = payload.time || payload.call_time || '';
     const callDuration = parseInt(payload.call_duration || payload.callDuration || payload.duration || payload.CallDuration || 0, 10) || 0;
@@ -238,8 +262,20 @@ exports.handleSolluWebhook = async (req, res) => {
         }))
       : [];
 
-    // 1. Check if a call log already exists with this callId
+    // 1. Check if a call log already exists:
+    // First, search by exact externalCallId
     let callLog = await CallLog.findOne({ callId: externalCallId });
+
+    // If not found by externalCallId, look for an 'Initiated' call log for this customer phone created in last 15 minutes
+    if (!callLog && normalizedCustomerPhone) {
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+      const last10 = normalizedCustomerPhone.slice(-10);
+      callLog = await CallLog.findOne({
+        customerPhone: { $regex: `${last10}$`, $options: 'i' },
+        status: { $regex: /^initiated$/i },
+        createdAt: { $gte: fifteenMinsAgo },
+      }).sort({ createdAt: -1 });
+    }
 
     let matchedLead = null;
     let matchedAgent = null;
@@ -268,20 +304,23 @@ exports.handleSolluWebhook = async (req, res) => {
 
     const callRecordingUrl = solluService.resolveRecordingUrl(callRecording, ivrConfig.recordingBaseUrl);
 
+    // Target callId to update (preserve existing initiated callId to avoid duplicate records, or use externalCallId)
+    const targetCallId = callLog ? callLog.callId : externalCallId;
+
     // 2. Upsert CallLog idempotently
     const updateData = {
-      callId: externalCallId,
+      callId: targetCallId,
       customerPhone: normalizedCustomerPhone || (callLog ? callLog.customerPhone : ''),
       agentPhone: normalizedAgentPhone || (callLog ? callLog.agentPhone : ''),
-      status,
+      status: normalizedStatus,
       direction: direction === 'inbound' ? 'inbound' : 'outbound',
-      date,
-      time,
-      callDuration,
-      totalCallDuration,
+      date: date || (callLog ? callLog.date : ''),
+      time: time || (callLog ? callLog.time : ''),
+      callDuration: callDuration || (callLog ? callLog.callDuration : 0),
+      totalCallDuration: totalCallDuration || (callLog ? callLog.totalCallDuration : callDuration),
       did: did || (callLog ? callLog.did : ''),
-      callRecording,
-      callRecordingUrl,
+      callRecording: callRecording || (callLog ? callLog.callRecording : ''),
+      callRecordingUrl: callRecordingUrl || (callLog ? callLog.callRecordingUrl : ''),
       calledAgents: calledAgents.length > 0 ? calledAgents : (callLog?.calledAgents || []),
       rawPayload: payload,
     };
@@ -297,7 +336,7 @@ exports.handleSolluWebhook = async (req, res) => {
     }
 
     callLog = await CallLog.findOneAndUpdate(
-      { callId: externalCallId },
+      { callId: targetCallId },
       { $set: updateData },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
@@ -424,8 +463,6 @@ exports.getAllCallLogs = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit, 10))
-      .lean();
-
     return res.status(200).json({
       success: true,
       data: {
@@ -444,3 +481,91 @@ exports.getAllCallLogs = async (req, res) => {
     });
   }
 };
+
+/**
+ * Get Status of a specific call by callId (with optional leadId / customerPhone fallback)
+ * GET /api/ivr/calls/status/:callId
+ */
+exports.getCallStatus = async (req, res) => {
+  try {
+    const { callId } = req.params;
+    const { leadId, customerPhone } = req.query;
+
+    let callLog = null;
+    if (callId && callId !== 'undefined' && callId !== 'null') {
+      callLog = await CallLog.findOne({ callId }).lean();
+    }
+
+    if (!callLog && leadId && mongoose.Types.ObjectId.isValid(leadId)) {
+      // Find the most recent call log created in the last 15 minutes for this lead
+      const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+      callLog = await CallLog.findOne({
+        leadId,
+        createdAt: { $gte: fifteenMinsAgo },
+      })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+
+    if (!callLog && customerPhone) {
+      const normalized = solluService.normalizePhoneNumber(customerPhone);
+      const last10 = normalized ? normalized.slice(-10) : '';
+      if (last10) {
+        const fifteenMinsAgo = new Date(Date.now() - 15 * 60 * 1000);
+        callLog = await CallLog.findOne({
+          customerPhone: { $regex: `${last10}$`, $options: 'i' },
+          createdAt: { $gte: fifteenMinsAgo },
+        })
+          .sort({ createdAt: -1 })
+          .lean();
+      }
+    }
+
+    if (!callLog) {
+      return res.status(200).json({
+        success: true,
+        data: {
+          callId,
+          status: 'Initiated',
+          isEnded: false,
+          callDuration: 0,
+        },
+      });
+    }
+
+    const statusUpper = (callLog.status || '').toUpperCase();
+    const isEnded =
+      [
+        'COMPLETED',
+        'ENDED',
+        'DISCONNECTED',
+        'FAILED',
+        'BUSY',
+        'NOANSWER',
+        'NO ANSWER',
+        'CANCEL',
+        'CANCELLED',
+        'MISSED',
+        'ANSWER',
+        'ANSWERED',
+      ].includes(statusUpper) ||
+      (callLog.callDuration > 0 &&
+        !['INITIATED', 'RINGING', 'IN_PROGRESS', 'IN PROGRESS', 'ACTIVE'].includes(statusUpper));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        callId: callLog.callId,
+        status: callLog.status,
+        isEnded: !!isEnded,
+        callDuration: callLog.callDuration || 0,
+        totalCallDuration: callLog.totalCallDuration || 0,
+        callRecordingUrl: callLog.callRecordingUrl || '',
+      },
+    });
+  } catch (error) {
+    console.error('[IVR Controller] Get Call Status Error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+

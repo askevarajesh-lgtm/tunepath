@@ -61,7 +61,7 @@ const getAssignableBdeUsers = async (req, res) => {
 
 const createLead = async (req, res) => {
   try {
-    const {
+    let {
       fullName,
       companyName,
       phoneNumber,
@@ -70,16 +70,18 @@ const createLead = async (req, res) => {
       status,
       assignedTo,
     } = req.body;
+
+    status = (status && String(status).trim()) || "NEW";
+
     if (
       !String(fullName || "").trim() ||
       !String(phoneNumber || "").trim() ||
-      !String(source || "").trim() ||
-      !String(status || "").trim()
+      !String(source || "").trim()
     ) {
       return sendError(
         res,
         400,
-        "fullName, phoneNumber, source and status are required",
+        "fullName, phoneNumber, and source are required",
       );
     }
 
@@ -110,7 +112,7 @@ const createLead = async (req, res) => {
 
 const updateLead = async (req, res) => {
   try {
-    const {
+    let {
       fullName,
       companyName,
       phoneNumber,
@@ -120,16 +122,17 @@ const updateLead = async (req, res) => {
       assignedTo,
     } = req.body;
 
+    status = (status && String(status).trim()) || "NEW";
+
     if (
       !String(fullName || "").trim() ||
       !String(phoneNumber || "").trim() ||
-      !String(source || "").trim() ||
-      !String(status || "").trim()
+      !String(source || "").trim()
     ) {
       return sendError(
         res,
         400,
-        "fullName, phoneNumber, source and status are required",
+        "fullName, phoneNumber, and source are required",
       );
     }
 

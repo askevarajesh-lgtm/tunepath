@@ -17,19 +17,31 @@ import { useGetLeadCallLogsQuery } from '../../../api/ivrApi';
 const { Text } = Typography;
 
 const getStatusTag = (status) => {
-  const normalized = (status || '').toLowerCase();
-  if (normalized === 'answered' || normalized === 'completed') {
+  const normalized = (status || '').toLowerCase().trim();
+  if (
+    normalized === 'answered' ||
+    normalized === 'completed' ||
+    normalized === 'answer' ||
+    normalized === 'success'
+  ) {
     return (
       <Tag
         color="success"
         icon={<CheckCircleOutlined />}
         style={{ borderRadius: 6, fontWeight: 600, padding: '2px 8px' }}
       >
-        {(status || 'ANSWERED').toUpperCase()}
+        ANSWERED
       </Tag>
     );
   }
-  if (normalized === 'missed' || normalized === 'busy' || normalized === 'no answer') {
+  if (
+    normalized === 'missed' ||
+    normalized === 'busy' ||
+    normalized === 'no answer' ||
+    normalized === 'noanswer' ||
+    normalized === 'cancel' ||
+    normalized === 'cancelled'
+  ) {
     return (
       <Tag
         color="warning"
@@ -40,7 +52,7 @@ const getStatusTag = (status) => {
       </Tag>
     );
   }
-  if (normalized === 'failed' || normalized === 'rejected') {
+  if (normalized === 'failed' || normalized === 'rejected' || normalized === 'congestion') {
     return (
       <Tag
         color="error"

@@ -89,3 +89,18 @@ export const useGetAllCallLogsQuery = (params = {}, options = {}) => {
 
   return { data, isLoading, error, refetch };
 };
+
+/**
+ * Fetch live status of a specific call (for active dialer polling)
+ */
+export const getCallStatusApi = async (callId, { leadId, customerPhone } = {}) => {
+  try {
+    const params = {};
+    if (leadId) params.leadId = leadId;
+    if (customerPhone) params.customerPhone = customerPhone;
+    const response = await api.get(`/ivr/calls/status/${callId || 'recent'}`, { params });
+    return response.data;
+  } catch (err) {
+    return null;
+  }
+};

@@ -10,6 +10,7 @@ router.all('/outboundcallback', ivrController.handleSolluWebhook);
 
 // Protected Outbound IVR Endpoints (Called from CRM Frontend)
 router.post('/outbound-call', authMiddleware, ivrController.initiateOutboundCall);
+router.get('/calls/status/:callId', authMiddleware, ivrController.getCallStatus);
 router.get('/leads/:leadId/calls', authMiddleware, ivrController.getLeadCallLogs);
 router.get('/calls', authMiddleware, ivrController.getAllCallLogs);
 
