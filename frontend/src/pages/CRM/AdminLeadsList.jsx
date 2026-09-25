@@ -977,7 +977,8 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
           setReminderDate(null);
         }}
         footer={null}
-        width={900}
+        width={1150}
+        style={{ maxWidth: '95vw', top: 20 }}
         className="glassmorphism-modal"
         styles={{ body: { paddingTop: 0 } }}
       >

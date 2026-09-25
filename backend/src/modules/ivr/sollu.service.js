@@ -29,84 +29,120 @@ function resolveRecordingUrl(recordingField, customBaseUrl = '') {
 }
 
 /**
+ * Formats phone number for Sollu Telephony API.
+ * Ensures number is formatted (e.g. 0XXXXXXXXXX as required by Sollu).
+ */
+function formatSolluPhone(rawPhone) {
+  if (!rawPhone) return '';
+  const cleaned = String(rawPhone).replace(/[^\d]/g, '');
+  if (cleaned.length === 10) {
+    return `0${cleaned}`;
+  }
+  if (cleaned.length === 12 && cleaned.startsWith('91')) {
+    return `0${cleaned.substring(2)}`;
+  }
+  if (cleaned.length === 11 && cleaned.startsWith('0')) {
+    return cleaned;
+  }
+  return cleaned;
+}
+
+/**
  * Initiates an Outbound Call via Sollu Telephony API.
  * 
- * Uses dynamic configuration from company Integration settings in MongoDB.
+ * Sollu API URL Format:
+ * https://app.sollu.in/api/clicktocall?apikey=...&caller1=098849xxx&caller2=0988415xxxx&callback_url=outboundcallback
  */
 async function initiateOutboundCall({ customerPhone, agentPhone, did, leadId, ivrConfig = {}, metadata = {} }) {
-  const baseUrl = ivrConfig.baseUrl || process.env.SOLLU_API_BASE_URL;
-  const apiKey = ivrConfig.apiKey || process.env.SOLLU_API_KEY;
-  const bearerToken = ivrConfig.bearerToken || process.env.SOLLU_BEARER_TOKEN;
-  const outboundEndpoint = ivrConfig.outboundEndpoint || process.env.SOLLU_OUTBOUND_ENDPOINT || '/calls/outbound';
+  const baseUrl = (ivrConfig.baseUrl || process.env.SOLLU_API_BASE_URL || 'https://app.sollu.in').trim();
+  const apiKey = (ivrConfig.apiKey || process.env.SOLLU_API_KEY || '').trim();
+  const outboundEndpoint = (ivrConfig.outboundEndpoint || process.env.SOLLU_OUTBOUND_ENDPOINT || '/api/clicktocall').trim();
   const callerDid = did || ivrConfig.did || process.env.SOLLU_DID || '914443126059';
+  const callbackUrl = (ivrConfig.callbackUrl || process.env.SOLLU_CALLBACK_URL || 'outboundcallback').trim();
 
-  const normalizedCustomerPhone = normalizePhoneNumber(customerPhone);
-  const normalizedAgentPhone = normalizePhoneNumber(agentPhone);
+  const formattedCustomerPhone = formatSolluPhone(customerPhone);
+  const formattedAgentPhone = formatSolluPhone(agentPhone) || formatSolluPhone(callerDid);
 
-  if (!normalizedCustomerPhone) {
+  if (!formattedCustomerPhone) {
     throw new Error('Customer phone number is required');
   }
 
   // If live credentials are not yet supplied, operate in sandbox/simulated mode
-  if (!baseUrl || (!apiKey && !bearerToken)) {
-    console.warn('[Sollu IVR Service] Sollu API credentials not configured in Integrations settings. Simulating outbound call in sandbox mode.');
+  if (!apiKey) {
+    console.warn('[Sollu IVR Service] Sollu API Key not configured in Integrations settings. Simulating outbound call in sandbox mode.');
     const mockCallId = `SIM-${Date.now().toString().slice(-6)}`;
     return {
       success: true,
       simulated: true,
       message: 'Call initiated in simulation mode (Configure Sollu API in Settings -> Integrations to dial live)',
       callId: mockCallId,
-      customerPhone: normalizedCustomerPhone,
-      agentPhone: normalizedAgentPhone,
+      customerPhone: formattedCustomerPhone,
+      agentPhone: formattedAgentPhone,
       did: callerDid,
     };
   }
 
-  // Construct request headers
-  const headers = {
-    'Content-Type': 'application/json',
+  // Build target URL: https://app.sollu.in/api/clicktocall
+  const cleanBase = baseUrl.replace(/\/+$/, '');
+  const cleanEndpoint = outboundEndpoint.replace(/^\/+/, '');
+  const targetUrl = cleanEndpoint.startsWith('http') ? cleanEndpoint : `${cleanBase}/${cleanEndpoint}`;
+
+  // Build Query Parameters matching Sollu API Specification
+  const queryParams = {
+    apikey: apiKey,
+    caller1: formattedAgentPhone,
+    caller2: formattedCustomerPhone,
+    callback_url: callbackUrl,
   };
 
-  if (apiKey) {
-    headers['x-api-key'] = apiKey;
-    headers['Authorization'] = `ApiKey ${apiKey}`;
-  } else if (bearerToken) {
-    headers['Authorization'] = `Bearer ${bearerToken}`;
-  }
-
-  const requestPayload = {
-    customer_phone: normalizedCustomerPhone,
-    agent_phone: normalizedAgentPhone,
-    did: callerDid,
-    custom_data: {
-      leadId,
-      ...metadata,
-    },
-  };
-
-  const targetUrl = `${baseUrl.replace(/\/+$/, '')}/${outboundEndpoint.replace(/^\/+/, '')}`;
-
-  console.log(`[Sollu IVR Service] Initiating outbound call to ${normalizedCustomerPhone} via ${targetUrl}`);
+  console.log(`[Sollu IVR Service] Initiating outbound call: caller1 (Agent)=${formattedAgentPhone}, caller2 (Lead)=${formattedCustomerPhone} via ${targetUrl}`);
 
   try {
-    const response = await axios.post(targetUrl, requestPayload, {
-      headers,
+    const response = await axios.get(targetUrl, {
+      params: queryParams,
       timeout: 15000,
     });
 
     const responseData = response.data || {};
-    const callId = responseData.callid || responseData.callId || responseData.id || responseData.data?.callid || `SOLLU-${Date.now()}`;
+    console.log('[Sollu IVR Service] Sollu API Response:', responseData);
+
+    // Extract call identifier
+    let callId = null;
+    let message = 'Call initiated successfully via Sollu';
+
+    if (typeof responseData === 'object') {
+      callId =
+        responseData.callid ||
+        responseData.callId ||
+        responseData.call_id ||
+        responseData.id ||
+        responseData.data?.callid ||
+        responseData.data?.id ||
+        responseData.sid ||
+        `SOLLU-${Date.now()}`;
+      if (responseData.message || responseData.msg || responseData.status) {
+        message = responseData.message || responseData.msg || `Status: ${responseData.status}`;
+      }
+    } else if (typeof responseData === 'string') {
+      message = responseData;
+      callId = `SOLLU-${Date.now()}`;
+    }
 
     return {
       success: true,
       simulated: false,
-      message: responseData.message || 'Call initiated successfully via Sollu',
+      message,
       callId,
+      customerPhone: formattedCustomerPhone,
+      agentPhone: formattedAgentPhone,
       rawResponse: responseData,
     };
   } catch (error) {
     console.error('[Sollu IVR Service] Outbound call error:', error.response?.data || error.message);
-    const errorMessage = error.response?.data?.message || error.message || 'Failed to initiate outbound call with Sollu IVR';
+    const errorMessage =
+      (error.response?.data && (error.response.data.message || error.response.data.msg || JSON.stringify(error.response.data))) ||
+      error.message ||
+      'Failed to initiate outbound call with Sollu IVR';
     throw new Error(errorMessage);
   }
 }
@@ -136,7 +172,9 @@ function verifyWebhookRequest(req, secret = '') {
 
 module.exports = {
   normalizePhoneNumber,
+  formatSolluPhone,
   resolveRecordingUrl,
   initiateOutboundCall,
   verifyWebhookRequest,
 };
+

@@ -189,28 +189,47 @@ exports.initiateOutboundCall = async (req, res) => {
  */
 exports.handleSolluWebhook = async (req, res) => {
   try {
-    const payload = req.body || {};
+    const payload = { ...(req.query || {}), ...(req.body || {}) };
     console.log('[IVR Webhook] Received Sollu webhook payload:', JSON.stringify(payload));
 
-    const externalCallId = payload.callid || payload.callId || payload.id;
-    if (!externalCallId) {
-      console.warn('[IVR Webhook] Missing callid in payload');
-      return res.status(400).json({ success: false, message: 'Missing callid in payload' });
-    }
+    const externalCallId =
+      payload.callid ||
+      payload.callId ||
+      payload.call_id ||
+      payload.id ||
+      payload.sid ||
+      payload.CallSid ||
+      payload.uniqueid ||
+      `SOLLU-WH-${Date.now()}`;
 
-    const rawCustomerPhone = payload.customer_phone || payload.customerPhone || '';
-    const rawAgentPhone = payload.agent_phone || payload.agentPhone || '';
+    const rawCustomerPhone =
+      payload.customer_phone ||
+      payload.customerPhone ||
+      payload.caller2 ||
+      payload.CustomerNumber ||
+      payload.called ||
+      payload.phone ||
+      payload.mobile ||
+      '';
+
+    const rawAgentPhone =
+      payload.agent_phone ||
+      payload.agentPhone ||
+      payload.caller1 ||
+      payload.AgentNumber ||
+      '';
+
     const normalizedCustomerPhone = solluService.normalizePhoneNumber(rawCustomerPhone);
     const normalizedAgentPhone = solluService.normalizePhoneNumber(rawAgentPhone);
 
     const direction = (payload.Direction || payload.direction || 'outbound').toLowerCase();
-    const status = payload.status || 'Completed';
-    const date = payload.date || '';
-    const time = payload.time || '';
-    const callDuration = parseInt(payload.call_duration || payload.callDuration || 0, 10) || 0;
-    const totalCallDuration = parseInt(payload.total_call_duration || payload.totalCallDuration || 0, 10) || 0;
-    const did = payload.did || '';
-    const callRecording = payload.call_recording || payload.callRecording || '';
+    const status = payload.status || payload.CallStatus || payload.dialstatus || payload.call_status || 'Completed';
+    const date = payload.date || payload.call_date || '';
+    const time = payload.time || payload.call_time || '';
+    const callDuration = parseInt(payload.call_duration || payload.callDuration || payload.duration || payload.CallDuration || 0, 10) || 0;
+    const totalCallDuration = parseInt(payload.total_call_duration || payload.totalCallDuration || payload.total_duration || 0, 10) || callDuration;
+    const did = payload.did || payload.virtual_number || payload.VirtualNumber || payload.exophone || '';
+    const callRecording = payload.call_recording || payload.callRecording || payload.recording_url || payload.recordingurl || payload.audio_url || payload.RecordingUrl || '';
 
     const calledAgents = Array.isArray(payload.calledAgents)
       ? payload.calledAgents.map((a) => ({
