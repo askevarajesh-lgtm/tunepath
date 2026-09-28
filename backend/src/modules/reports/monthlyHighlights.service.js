@@ -1048,16 +1048,30 @@ exports.upsertMonthlyHighlights = async (agencyId, userId, payload) => {
             const SentReport = mongoose.models.SentReport || require('./sentReport.model');
             const clientName = report.clientId?.companyName || report.clientId?.name || 'Client';
             const clientEmail = report.clientId?.email ? [report.clientId.email] : ['Client Portal'];
-            const templateName = reportType || 'Monthly Highlights';
-            const reportName = `${clientName} - ${templateName} (${month}/${year})`;
+            const templateName = reportType || 'Highlights of the Month';
+            
+            const effMonth = month || (fromDate ? new Date(fromDate).getMonth() + 1 : new Date().getMonth() + 1);
+            const effYear = year || (fromDate ? new Date(fromDate).getFullYear() : new Date().getFullYear());
+            const reportName = `${clientName} - ${templateName} (${effMonth}/${effYear})`;
 
             await SentReport.findOneAndUpdate(
-                { clientId, template: templateName, name: reportName },
+                { 
+                    clientId, 
+                    template: templateName,
+                    $or: [
+                        { month: effMonth, year: effYear },
+                        ...(fromDate && toDate ? [{ fromDate: new Date(fromDate), toDate: new Date(toDate) }] : [])
+                    ]
+                },
                 {
                     agencyId: agencyId || report.clientId?.agencyId || userId,
                     clientId,
                     name: reportName,
                     template: templateName,
+                    month: effMonth,
+                    year: effYear,
+                    fromDate: fromDate ? new Date(fromDate) : undefined,
+                    toDate: toDate ? new Date(toDate) : undefined,
                     sentAt: new Date(),
                     deliveredTo: clientEmail,
                     deliveryMethod: 'Email & Portal',

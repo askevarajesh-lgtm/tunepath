@@ -139,7 +139,14 @@ export const useLazyExportLeadsCsvQuery = () => {
       
       const execute = async () => {
         const filter = typeof arg === "string" ? arg : arg?.filter;
-        const ids = typeof arg === "object" && arg !== null && Array.isArray(arg.ids) ? arg.ids : [];
+        const ids =
+          typeof arg === "object" && arg !== null
+            ? Array.isArray(arg.ids)
+              ? arg.ids
+              : Array.isArray(arg.selectedIds)
+              ? arg.selectedIds
+              : []
+            : [];
         const params = {
           filter: filter === "reminder" ? "reminder" : "all",
           ...(arg?.companyId ? { companyId: arg.companyId } : {}),
@@ -177,12 +184,16 @@ export const useLazyExportLeadsCsvQuery = () => {
 export const useImportLeadsCsvMutation = () => {
   const [isLoading, setIsLoading] = useState(false);
   
-  const trigger = useCallback((file) => {
+  const trigger = useCallback((arg) => {
       setIsLoading(true);
       
       const execute = async () => {
         const body = new FormData();
+        const file = arg?.file ? arg.file : arg;
         body.append("file", file);
+        if (arg?.clientId) {
+          body.append("clientId", arg.clientId);
+        }
         const response = await api.post('/leads/import', body);
         return response.data;
       };

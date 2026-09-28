@@ -320,25 +320,34 @@ const TimeTracking = () => {
     { title: 'CLIENT', dataIndex: 'client', key: 'client', render: text => text ? <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{text}</Text> : <Text type="secondary">—</Text> },
     { title: 'MODULE', dataIndex: 'module', key: 'module', render: text => <Tag style={{ borderRadius: 12, border: '1px solid var(--border-color)', background: 'var(--bg-tertiary)', color: 'var(--accent-info)', fontSize: 10, fontWeight: 600 }}>{text}</Tag> },
     { title: 'TASK/DESC', dataIndex: 'task', key: 'task', render: (text, r) => (
-      <div>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
         <Text style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{text}</Text>
-        {r.taskStatus && (
-          <Tag style={{ marginLeft: 8, fontSize: 9, borderRadius: 12, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+        {r.isRunning ? (
+          <Tag style={{ margin: 0, borderRadius: 12, border: '1px solid #52c41a', background: 'rgba(82,196,26,0.1)', color: '#52c41a', fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: '#52c41a', display: 'inline-block' }} />
+            Running
+          </Tag>
+        ) : r.taskStatus ? (
+          <Tag style={{ fontSize: 9, borderRadius: 12, border: 'none', background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
             {String(r.taskStatus).replace(/_/g, ' ').toUpperCase()}
           </Tag>
-        )}
+        ) : null}
       </div>
     ) },
-    { title: 'HOURS', dataIndex: 'hours', key: 'hours', render: text => <strong style={{ color: 'var(--text-primary)' }}>{formatTime(text)}</strong> },
+    { title: 'HOURS', dataIndex: 'hours', key: 'hours', render: (text, r) => <strong style={{ color: r.isRunning ? '#52c41a' : 'var(--text-primary)' }}>{formatTime(text)}</strong> },
     { title: 'BILLABLE', dataIndex: 'billable', key: 'billable', render: val => val ? <CheckCircle2 size={18} color="var(--accent-primary)" /> : <AlertCircle size={18} color="var(--text-tertiary)" /> },
     {
       title: 'ACTIONS', key: 'actions', render: (_, record) => (
-        <div style={{ display: 'flex', gap: 16 }}>
-          <a onClick={() => handleEditOpen(record)} style={{ color: 'var(--text-tertiary)' }}><Edit3 size={16} /></a>
-          <Popconfirm title="Delete this entry?" onConfirm={() => handleDelete(record.id)} okText="Yes" cancelText="No">
-            <a style={{ color: 'var(--text-tertiary)' }}><Trash2 size={16} /></a>
-          </Popconfirm>
-        </div>
+        record.isRunning ? (
+          <Text type="secondary" style={{ fontSize: 12, fontStyle: 'italic' }}>Live Timer</Text>
+        ) : (
+          <div style={{ display: 'flex', gap: 16 }}>
+            <a onClick={() => handleEditOpen(record)} style={{ color: 'var(--text-tertiary)' }}><Edit3 size={16} /></a>
+            <Popconfirm title="Delete this entry?" onConfirm={() => handleDelete(record.id)} okText="Yes" cancelText="No">
+              <a style={{ color: 'var(--text-tertiary)' }}><Trash2 size={16} /></a>
+            </Popconfirm>
+          </div>
+        )
       )
     }
   ];

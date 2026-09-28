@@ -208,6 +208,46 @@ const getAllDistinctReports = async (agencyId, user = null) => {
         .limit(200)
         .lean();
 
+    const getPeriodKey = (r) => {
+        let m = r.month;
+        let y = r.year;
+        if (!m && r.fromDate) {
+            const d = new Date(r.fromDate);
+            if (!isNaN(d.getTime())) {
+                m = d.getMonth() + 1;
+                y = d.getFullYear();
+            }
+        }
+        if (!m && (r.sentAt || r.publishedAt || r.createdAt)) {
+            const d = new Date(r.sentAt || r.publishedAt || r.createdAt);
+            if (!isNaN(d.getTime())) {
+                m = d.getMonth() + 1;
+                y = d.getFullYear();
+            }
+        }
+        return `${y || 'any'}_${m || 'any'}`;
+    };
+
+    const getEffectiveMonthYear = (r) => {
+        let m = r.month;
+        let y = r.year;
+        if (!m && r.fromDate) {
+            const d = new Date(r.fromDate);
+            if (!isNaN(d.getTime())) {
+                m = d.getMonth() + 1;
+                y = d.getFullYear();
+            }
+        }
+        if (!m && (r.sentAt || r.publishedAt || r.createdAt)) {
+            const d = new Date(r.sentAt || r.publishedAt || r.createdAt);
+            if (!isNaN(d.getTime())) {
+                m = d.getMonth() + 1;
+                y = d.getFullYear();
+            }
+        }
+        return { month: m, year: y };
+    };
+
     const distinctReportsMap = new Map();
 
     sentReports.forEach(r => {
@@ -216,9 +256,8 @@ const getAllDistinctReports = async (agencyId, user = null) => {
         if (!cId) return;
 
         const normTemplate = normalizeReportTemplate(r.template || r.name);
-        const periodKey = r.fromDate && r.toDate 
-            ? `${new Date(r.fromDate).toISOString().split('T')[0]}_${new Date(r.toDate).toISOString().split('T')[0]}`
-            : (r.month && r.year ? `${r.year}_${r.month}` : (r.sentAt ? new Date(r.sentAt).toISOString().split('T')[0] : 'default'));
+        const periodKey = getPeriodKey(r);
+        const eff = getEffectiveMonthYear(r);
 
         const uniqueKey = `${cId}_${normTemplate}_${periodKey}`;
         if (!distinctReportsMap.has(uniqueKey)) {
@@ -236,8 +275,8 @@ const getAllDistinctReports = async (agencyId, user = null) => {
                 pages: r.pages || 2,
                 downloadUrl: r.downloadUrl,
                 generatedBy: r.generatedBy,
-                month: r.month,
-                year: r.year,
+                month: eff.month,
+                year: eff.year,
                 fromDate: r.fromDate,
                 toDate: r.toDate,
                 projectId: r.projectId
@@ -250,9 +289,8 @@ const getAllDistinctReports = async (agencyId, user = null) => {
         const cId = String(clientObj?._id || m.clientId || '');
         if (!cId) return;
 
-        const periodKey = m.fromDate && m.toDate 
-            ? `${new Date(m.fromDate).toISOString().split('T')[0]}_${new Date(m.toDate).toISOString().split('T')[0]}`
-            : (m.month && m.year ? `${m.year}_${m.month}` : (m.publishedAt ? new Date(m.publishedAt).toISOString().split('T')[0] : 'default'));
+        const periodKey = getPeriodKey(m);
+        const eff = getEffectiveMonthYear(m);
 
         const reportTypes = (Array.isArray(m.publishedReportTypes) && m.publishedReportTypes.length > 0)
             ? m.publishedReportTypes
@@ -275,8 +313,8 @@ const getAllDistinctReports = async (agencyId, user = null) => {
                     status: 'Delivered',
                     pages: 2,
                     generatedBy: m.createdBy,
-                    month: m.month,
-                    year: m.year,
+                    month: eff.month,
+                    year: eff.year,
                     fromDate: m.fromDate,
                     toDate: m.toDate,
                     projectId: m.projectId

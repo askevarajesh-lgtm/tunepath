@@ -122,6 +122,7 @@ const normalizeHeaderKey = (h) =>
   String(h || "")
     .trim()
     .toLowerCase()
+    .replace(/[_\-]+/g, " ")
     .replace(/\s+/g, " ");
 
 /** Maps normalized header label -> canonical field key */
@@ -129,35 +130,83 @@ const HEADER_TO_FIELD = {
   name: "fullName",
   "full name": "fullName",
   fullname: "fullName",
+  "first name": "fullName",
+  firstname: "fullName",
+  "last name": "lastName",
+  lastname: "lastName",
+  "customer name": "fullName",
+  "client name": "fullName",
+  "lead name": "fullName",
+  "contact name": "fullName",
   "company name": "companyName",
   companyname: "companyName",
   company: "companyName",
+  organization: "companyName",
+  org: "companyName",
   "phone number": "phoneNumber",
   phonenumber: "phoneNumber",
   phone: "phoneNumber",
   mobile: "phoneNumber",
+  "mobile number": "phoneNumber",
+  "contact number": "phoneNumber",
+  contact: "phoneNumber",
+  tel: "phoneNumber",
+  telephone: "phoneNumber",
   email: "email",
+  "e mail": "email",
+  "email address": "email",
   "project type": "projectType",
   projecttype: "projectType",
+  project: "projectType",
+  service: "projectType",
   "lead source": "source",
   source: "source",
+  "lead date": "leadDate",
+  date: "leadDate",
+  "created date": "leadDate",
+  "created time": "leadDate",
+  createdtime: "leadDate",
+  created_time: "leadDate",
+  "form name": "formName",
+  formname: "formName",
+  form: "formName",
   status: "status",
+  "lead status": "status",
   "assigned to": "assignedTo",
   assignedto: "assignedTo",
+  assigned: "assignedTo",
+  owner: "assignedTo",
   bde: "assignedTo",
   "assigned department": "assignedDepartment",
   assigneddepartment: "assignedDepartment",
   department: "assignedDepartment",
+  dept: "assignedDepartment",
   notes: "notes",
+  note: "notes",
+  message: "notes",
+  comments: "notes",
+  description: "notes",
 };
 
-const ALLOWED_STATUS = new Set(["new", "in_progress", "follow_up", "closed", "hot", "warm", "cold"]);
+const ALLOWED_STATUS = new Set([
+  "new",
+  "in_progress",
+  "follow_up",
+  "contacted",
+  "converted",
+  "closed",
+  "lost",
+  "junk",
+  "hot",
+  "warm",
+  "cold",
+]);
 
 const normalizeStatus = (raw) => {
   const t = String(raw || "")
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, "_");
+    .replace(/[\s\-]+/g, "_");
   if (ALLOWED_STATUS.has(t)) return t;
   const compact = t.replace(/_/g, "");
   if (compact === "inprogress") return "in_progress";
@@ -169,7 +218,7 @@ const buildHeaderIndexMap = (headerRow) => {
   const map = {};
   headerRow.forEach((cell, idx) => {
     const key = HEADER_TO_FIELD[normalizeHeaderKey(cell)];
-    if (key) {
+    if (key && map[key] === undefined) {
       map[key] = idx;
     }
   });

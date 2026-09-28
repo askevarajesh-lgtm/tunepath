@@ -329,6 +329,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       }).unwrap();
       message.success(`Successfully synced ${res.data?.syncedCount || 0} leads from Facebook. 1-minute auto-sync is active.`);
       setIsFbSyncModalOpen(false);
+      refetchServerLeads?.();
       refetch?.();
     } catch (error) {
       message.error(error?.data?.message || 'Failed to sync Facebook leads');
@@ -536,7 +537,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
     });
   };
 
-  const handleExport = async () => {
+  const handleExport = async (customIds = null) => {
     try {
       let activeFilter = activeTab;
       if (activeTab === 'all' && dateRangeFilter) activeFilter = 'all';
@@ -555,8 +556,11 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
         payload.formName = formNameFilter[0];
       }
 
-      if (selectedRowKeys.length > 0) {
-        payload.selectedIds = selectedRowKeys;
+      const idsToExport = Array.isArray(customIds) && customIds.length > 0 ? customIds : null;
+
+      if (idsToExport) {
+        payload.ids = idsToExport;
+        payload.selectedIds = idsToExport;
       }
 
       const { data, error } = await exportCsv(payload);
@@ -571,6 +575,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
+      message.success(idsToExport ? `${idsToExport.length} selected lead(s) exported successfully` : 'Leads exported successfully');
     } catch (err) {
       message.error(err.data?.message || err.message || 'Export failed');
     }
@@ -647,11 +652,17 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
 
   const handleImport = async (file) => {
     try {
-      await importCsv(file).unwrap();
-      message.success('Leads imported successfully');
+      const payload = { file };
+      if (selectedClientId && selectedClientId !== 'all') {
+        payload.clientId = selectedClientId;
+      }
+      const res = await importCsv(payload).unwrap();
+      const count = res?.data?.createdCount ?? res?.createdCount;
+      message.success(count !== undefined ? `${count} lead(s) imported successfully` : 'Leads imported successfully');
+      refetchServerLeads?.();
       refetch?.();
     } catch (error) {
-      message.error(error?.data?.message || 'Failed to import leads');
+      message.error(error?.data?.message || error?.message || 'Failed to import leads');
     }
     return false; // Prevent default upload behavior
   };
@@ -660,6 +671,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
     try {
       await syncWhatsApp().unwrap();
       message.success('WhatsApp leads synchronized successfully');
+      refetchServerLeads?.();
       refetch?.();
     } catch (error) {
       message.error(error?.data?.message || 'Failed to sync WhatsApp leads');
@@ -776,6 +788,16 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
                     style={{ borderRadius: 8, fontWeight: 600, borderColor: '#0e4ca2', color: '#0e4ca2' }}
                   >
                     Assign Department ({selectedRowKeys.length})
+                  </Button>
+                )}
+                {selectedRowKeys.length > 0 && (
+                  <Button 
+                    icon={<DownloadOutlined />} 
+                    loading={isExporting} 
+                    onClick={() => handleExport(selectedRowKeys)} 
+                    style={{ borderRadius: 8, fontWeight: 600, borderColor: '#10B981', color: '#10B981' }}
+                  >
+                    Bulk Export ({selectedRowKeys.length})
                   </Button>
                 )}
                 {selectedRowKeys.length > 0 && canDelete && !isRegularUser && (

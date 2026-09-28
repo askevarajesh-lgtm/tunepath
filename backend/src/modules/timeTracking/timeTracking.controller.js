@@ -25,7 +25,7 @@ const EXCLUDED_SYSTEM_ROLES = [
 /** Roles that are considered clients */
 const CLIENT_ROLES = ['brand_super_admin', 'brand_manager', 'brand_admin', 'agency_client', 'client'];
 
-function getCompanyIdList(req, tenantObjectId) {
+async function getCompanyIdList(req, tenantObjectId) {
   const ids = [
     tenantObjectId,
     req.companyId,
@@ -37,6 +37,16 @@ function getCompanyIdList(req, tenantObjectId) {
   ]
     .filter(Boolean)
     .map(id => id.toString());
+
+  const agencyId = req.user?.agencyId || req.companyId;
+  if (agencyId) {
+    try {
+      const clients = await User.find({ agencyId: new mongoose.Types.ObjectId(agencyId) }).select('_id').lean();
+      clients.forEach(c => ids.push(c._id.toString()));
+    } catch (err) {
+      console.error('Error fetching agency clients in getCompanyIdList:', err);
+    }
+  }
 
   return Array.from(new Set(ids)).map(id => new mongoose.Types.ObjectId(id));
 }
@@ -261,64 +271,6 @@ exports.deleteTimeEntry = async (req, res) => {
   }
 };
 
-// ─── GET /recent — getRecentEntries ──────────────────────────────────────────
-
-exports.getRecentEntries = async (req, res) => {
-  try {
-    if (!req.companyId) return res.status(401).json({ success: false, message: 'Unauthorized' });
-    const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
-
-    let matchQuery = { tenantCompanyId: tenantObjectId };
-    // Regular users see only their own entries
-    if (['user', 'brand_team_user'].includes(req.user.role)) {
-      matchQuery.employee = new mongoose.Types.ObjectId(req.user._id);
-    }
-
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
-
-    const total = await TimeEntry.countDocuments(matchQuery);
-
-    const entries = await TimeEntry.find(matchQuery)
-      .populate('employee', 'name departmentId departmentName')
-      .populate('client', 'name companyName')
-      .populate('task', 'title department status')
-      .populate('department', 'name')
-      .sort({ date: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    const formatted = entries.map(e => ({
-      id: e._id,
-      date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      rawDate: e.date,
-      employeeId: e.employee?._id,
-      clientId: e.client?._id,
-      taskId: e.task?._id,
-      departmentId: e.department?._id || null,
-      member: e.employee?.name || 'Unknown',
-      memberInit: e.employee?.name?.substring(0, 2).toUpperCase() || 'UN',
-      department: e.department?.name || e.employee?.departmentName || e.task?.department || '—',
-      client: e.client?.companyName || e.client?.name || null,
-      module: e.moduleName || 'Other',
-      task: e.description || e.task?.title || 'General Work',
-      taskStatus: e.task?.status,
-      rawDescription: e.description,
-      hours: e.hours,
-      billable: e.isBillable,
-      source: e.source
-    }));
-
-    res.status(200).json({ success: true, data: formatted, total, page, limit });
-  } catch (error) {
-    console.error('Error fetching recent entries:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch entries', error: error.message });
-  }
-};
-
-// ─── Constants & Helpers for Time Tracking ─────────────────────────────────
-
 const MAX_WORK_HOURS_PER_DAY = 9; // Standard maximum working hours per day
 const IN_PROGRESS_STATUSES = ['in_progress', 'IN_PROGRESS', 'in progress'];
 
@@ -357,6 +309,178 @@ function calculateActiveTaskDayHours(task, dayStartMs, dayEndMs, nowMs) {
   return Math.min(MAX_WORK_HOURS_PER_DAY, Math.max(0, rawHours));
 }
 
+// ─── GET /recent — getRecentEntries ──────────────────────────────────────────
+
+exports.getRecentEntries = async (req, res) => {
+  try {
+    if (!req.companyId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+    const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
+
+    const companyIdList = await getCompanyIdList(req, tenantObjectId);
+
+    let matchQuery = {
+      $or: [
+        { tenantCompanyId: { $in: companyIdList } },
+        { client: { $in: companyIdList } }
+      ]
+    };
+    // Regular users see only their own entries
+    if (['user', 'brand_team_user'].includes(req.user.role)) {
+      matchQuery.employee = new mongoose.Types.ObjectId(req.user._id);
+    }
+
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Build department lookup maps to resolve raw ObjectIds or slugs into clean display names
+    const departments = await Department.find({}).select('_id name slug').lean();
+    const deptIdMap = {};
+    const deptSlugMap = {};
+    departments.forEach(d => {
+      deptIdMap[d._id.toString()] = d.name;
+      if (d.slug) deptSlugMap[d.slug.toLowerCase()] = d.name;
+      if (d.name) deptSlugMap[d.name.toLowerCase()] = d.name;
+    });
+
+    const resolveDeptName = (raw) => {
+      if (!raw) return null;
+      const str = String(raw).trim();
+      if (deptIdMap[str]) return deptIdMap[str];
+      if (deptSlugMap[str.toLowerCase()]) return deptSlugMap[str.toLowerCase()];
+      if (mongoose.Types.ObjectId.isValid(str) && /^[0-9a-fA-F]{24}$/.test(str)) {
+        return null; // Don't leak raw ObjectId
+      }
+      return str;
+    };
+
+    // ── Active running in-progress tasks (Page 1) ────────────────────────────
+    const now = new Date();
+    const nowMs = now.getTime();
+    let activeEntries = [];
+
+    const activeTasksRaw = await Task.find({
+      $or: [
+        { tenantCompanyId: { $in: companyIdList } },
+        { companyId: { $in: companyIdList } }
+      ],
+      status: { $in: IN_PROGRESS_STATUSES },
+      workStartedAt: { $ne: null }
+    })
+    .populate('assignedTo', 'name departmentId departmentName')
+    .populate('companyId', 'companyName name')
+    .sort({ workStartedAt: -1 })
+    .lean();
+
+    const activeTasks = activeTasksRaw.filter(t => isTaskTimerActive(t, now));
+
+    const filteredActive = ['user', 'brand_team_user'].includes(req.user.role)
+      ? activeTasks.filter(t => t.assignedTo?._id?.toString() === req.user._id.toString())
+      : activeTasks;
+
+    activeEntries = filteredActive.map(t => {
+      const startedMs = new Date(t.workStartedAt).getTime();
+      const elapsedHours = Math.min(MAX_WORK_HOURS_PER_DAY, Math.max(0.01, (nowMs - startedMs) / 3600000));
+
+      const resolvedDept = t.assignedTo?.departmentName 
+        || resolveDeptName(t.department) 
+        || '—';
+
+      let resolvedModule = resolveDeptName(t.department) || 'General';
+      if (mongoose.Types.ObjectId.isValid(resolvedModule) && /^[0-9a-fA-F]{24}$/.test(resolvedModule)) {
+        resolvedModule = 'General';
+      }
+
+      return {
+        id: `active_${t._id}`,
+        date: new Date(t.workStartedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        rawDate: t.workStartedAt,
+        employeeId: t.assignedTo?._id,
+        clientId: t.companyId?._id,
+        taskId: t._id,
+        departmentId: t.assignedTo?.departmentId || null,
+        member: t.assignedTo?.name || 'Unassigned',
+        memberInit: t.assignedTo?.name ? t.assignedTo.name.substring(0, 2).toUpperCase() : 'UN',
+        department: resolvedDept,
+        client: t.companyId?.companyName || t.companyId?.name || null,
+        module: resolvedModule,
+        task: t.title || 'General Work',
+        taskStatus: 'IN_PROGRESS',
+        rawDescription: t.description || t.title,
+        hours: elapsedHours,
+        billable: true,
+        source: 'timer',
+        isRunning: true
+      };
+    });
+
+    const totalLogged = await TimeEntry.countDocuments(matchQuery);
+    const total = totalLogged + activeEntries.length;
+
+    // Adjust limit on page 1 if active entries are prepended
+    const historicalLimit = page === 1 ? Math.max(1, limit - activeEntries.length) : limit;
+    const historicalSkip = page === 1 ? 0 : skip - activeEntries.length;
+
+    const entries = await TimeEntry.find(matchQuery)
+      .populate('employee', 'name departmentId departmentName')
+      .populate('client', 'name companyName')
+      .populate('task', 'title department status')
+      .populate('department', 'name')
+      .sort({ date: -1, createdAt: -1 })
+      .skip(historicalSkip > 0 ? historicalSkip : 0)
+      .limit(historicalLimit);
+
+    const historicalFormatted = entries.map(e => {
+      const resolvedDept = e.department?.name 
+        || deptIdMap[e.department?.toString()]
+        || e.employee?.departmentName 
+        || resolveDeptName(e.task?.department) 
+        || resolveDeptName(e.moduleName) 
+        || '—';
+
+      let resolvedModule = resolveDeptName(e.moduleName) 
+        || e.department?.name 
+        || resolveDeptName(e.task?.department) 
+        || 'General';
+
+      if (mongoose.Types.ObjectId.isValid(resolvedModule) && /^[0-9a-fA-F]{24}$/.test(resolvedModule)) {
+        resolvedModule = 'General';
+      }
+
+      return {
+        id: e._id,
+        date: new Date(e.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        rawDate: e.date,
+        employeeId: e.employee?._id,
+        clientId: e.client?._id,
+        taskId: e.task?._id,
+        departmentId: e.department?._id || null,
+        member: e.employee?.name || 'Unknown',
+        memberInit: e.employee?.name ? e.employee.name.substring(0, 2).toUpperCase() : 'UN',
+        department: resolvedDept,
+        client: e.client?.companyName || e.client?.name || null,
+        module: resolvedModule,
+        task: e.description || e.task?.title || 'General Work',
+        taskStatus: e.task?.status,
+        rawDescription: e.description,
+        hours: e.hours,
+        billable: e.isBillable,
+        source: e.source,
+        isRunning: false
+      };
+    });
+
+    const combinedData = page === 1 ? [...activeEntries, ...historicalFormatted] : historicalFormatted;
+
+    res.status(200).json({ success: true, data: combinedData, total, page, limit });
+  } catch (error) {
+    console.error('Error fetching recent entries:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch entries', error: error.message });
+  }
+};
+
+
+
 // ─── GET /dashboard — getDashboardData ───────────────────────────────────────
 
 exports.getDashboardData = async (req, res) => {
@@ -387,12 +511,7 @@ exports.getDashboardData = async (req, res) => {
       endOfMonth = new Date(dateParam.getFullYear(), dateParam.getMonth() + 1, 0, 23, 59, 59, 999);
     }
 
-    const companyIdSet = new Set(
-      [tenantObjectId, req.user?.companyId, req.user?.brandId, req.user?.agencyId, req.user?._id]
-        .filter(Boolean)
-        .map(id => id.toString())
-    );
-    const companyIdList = Array.from(companyIdSet).map(id => new mongoose.Types.ObjectId(id));
+    const companyIdList = await getCompanyIdList(req, tenantObjectId);
 
     const baseMatch = {
       $or: [
@@ -774,7 +893,7 @@ exports.getFormOptions = async (req, res) => {
   try {
     if (!req.companyId) return res.status(401).json({ success: false, message: 'Unauthorized' });
     const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
-    const companyIdList = getCompanyIdList(req, tenantObjectId);
+    const companyIdList = await getCompanyIdList(req, tenantObjectId);
 
     const employees = await getEligibleUsers(req, companyIdList);
 
@@ -807,7 +926,7 @@ exports.getTeamTaskPerformance = async (req, res) => {
   try {
     if (!req.companyId) return res.status(401).json({ success: false, message: 'Unauthorized' });
     const tenantObjectId = new mongoose.Types.ObjectId(req.companyId);
-    const companyIdList = getCompanyIdList(req, tenantObjectId);
+    const companyIdList = await getCompanyIdList(req, tenantObjectId);
 
     const startDateParam = req.query.startDate ? new Date(req.query.startDate) : null;
     const endDateParam = req.query.endDate ? new Date(req.query.endDate) : null;
@@ -1006,12 +1125,7 @@ exports.getTimesheetData = async (req, res) => {
       endOfWeek = weekRange.endOfWeek;
     }
 
-    const companyIdSet = new Set(
-      [tenantObjectId, req.user?.companyId, req.user?.brandId, req.user?.agencyId, req.user?._id]
-        .filter(Boolean)
-        .map(id => id.toString())
-    );
-    const companyIdList = Array.from(companyIdSet).map(id => new mongoose.Types.ObjectId(id));
+    const companyIdList = await getCompanyIdList(req, tenantObjectId);
 
     const baseMatch = {
       $or: [

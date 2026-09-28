@@ -10,16 +10,18 @@ const router = express.Router();
 
 const leadCsvUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const name = (file.originalname || "").toLowerCase();
-    const mime = file.mimetype || "";
-    const allowedMime =
-      mime === "text/csv" ||
-      mime === "application/csv" ||
+    const mime = (file.mimetype || "").toLowerCase();
+    const isCsv =
+      name.endsWith(".csv") ||
+      name.endsWith(".txt") ||
+      mime.includes("csv") ||
+      mime.includes("excel") ||
       mime === "text/plain" ||
-      mime === "application/vnd.ms-excel";
-    if (allowedMime || name.endsWith(".csv")) {
+      mime === "application/octet-stream";
+    if (isCsv) {
       cb(null, true);
     } else {
       cb(new Error("Only CSV files are allowed for import"));

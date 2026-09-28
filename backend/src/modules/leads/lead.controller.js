@@ -283,7 +283,7 @@ const addLeadReminder = async (req, res) => {
 const exportLeadsCsv = async (req, res) => {
   try {
     const filter = req.query.filter === "reminder" ? "reminder" : "all";
-    const idsParam = req.query.ids;
+    const idsParam = req.query.ids || req.query.selectedIds;
     const selectedIds =
       idsParam && String(idsParam).trim()
         ? String(idsParam)
@@ -323,6 +323,7 @@ const importLeadsCsv = async (req, res) => {
       req.companyId,
       req.user._id,
       req.user,
+      { ...req.query, ...req.body },
     );
     return sendSuccess(res, "Import completed", result);
   } catch (error) {

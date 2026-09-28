@@ -409,8 +409,20 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
     assignedToValue = String(currentUser?.name || "").trim();
   }
 
-  const effectiveClientId = leadData.clientId || currentUser?.clientUserId || currentUser?.brandId || null;
-  const isClientLead = leadData.isClientLead || currentUser?.isClientRole || !!currentUser?.brandId;
+  const isClientAdmin = ['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole);
+  const isClientTeamUser = (currentUser?.brandId || currentUser?.isClientRole) && !isClientAdmin;
+  const effectiveClientId =
+    leadData.clientId ||
+    currentUser?.clientUserId ||
+    currentUser?.brandId ||
+    (isClientAdmin ? (currentUser?.clientUserId || currentUser?.brandId || currentUser?._id) : null) ||
+    (isClientTeamUser ? (currentUser?.clientUserId || currentUser?.brandId) : null);
+  const isClientLead =
+    leadData.isClientLead ||
+    isClientAdmin ||
+    isClientTeamUser ||
+    currentUser?.isClientRole ||
+    !!currentUser?.brandId;
 
   const lead = await Lead.create({
     companyId,
@@ -714,10 +726,11 @@ const buildLeadsCsvExport = async (
       throw new Error("No valid lead ids provided for export");
     }
     const accessFilter = buildLeadAccessFilter(companyId, currentUser);
-    if (query.companyId) {
+    if (query.companyId || query.clientId) {
       // If a client is selected, remove the isClientLead restriction to see their leads
       delete accessFilter.isClientLead;
-      accessFilter.clientId = query.companyId;
+      const targetClientId = query.companyId || query.clientId;
+      accessFilter.clientId = toObjectId(targetClientId) || targetClientId;
     }
     leads = await Lead.find({
       ...accessFilter,
@@ -770,30 +783,33 @@ const bulkDeleteLeads = async (leadIds, companyId, currentUser) => {
   return { deletedCount: result.deletedCount };
 };
 
-const importLeadsFromCsvBuffer = async (buffer, companyId, userId) => {
+const importLeadsFromCsvBuffer = async (
+  buffer,
+  companyId,
+  userId,
+  currentUser,
+  extraData = {},
+) => {
   const text = buffer.toString("utf8");
   const rows = parseCsv(text);
   if (!rows.length) {
     throw new Error("CSV file is empty");
   }
   const headerMap = buildHeaderIndexMap(rows[0]);
-  const requiredCols = [
-    "fullName",
-    "companyName",
-    "phoneNumber",
-    "projectType",
-    "assignedTo",
-  ];
-  const missing = requiredCols.filter((k) => headerMap[k] === undefined);
-  if (missing.length) {
+  const recognizedCount = Object.keys(headerMap).length;
+  if (recognizedCount === 0) {
     throw new Error(
-      `Missing required column(s): ${missing.join(", ")}. Expected headers like Name, Company Name, Phone Number, Project Type, Assigned To (Lead Source column is optional; imports use source "Import"). Optional: Email, Status, Notes.`,
+      "No recognizable column headers found. Please ensure your CSV has headers like Name, Phone Number, Email, Lead Source, Status, etc.",
     );
   }
 
   const created = [];
   const failed = [];
   const dataRows = rows.slice(1);
+
+  if (!dataRows.length) {
+    throw new Error("CSV file contains headers but no data rows.");
+  }
 
   for (let i = 0; i < dataRows.length; i += 1) {
     const row = dataRows[i];
@@ -802,46 +818,69 @@ const importLeadsFromCsvBuffer = async (buffer, companyId, userId) => {
       continue;
     }
 
-    const fullName = cellAt(row, headerMap, "fullName", true);
-    const companyName = cellAt(row, headerMap, "companyName", true);
-    const phoneNumber = cellAt(row, headerMap, "phoneNumber", true);
+    let fullName = cellAt(row, headerMap, "fullName", false);
+    const lastName = cellAt(row, headerMap, "lastName", false);
+    if (lastName) {
+      fullName = fullName ? `${fullName} ${lastName}`.trim() : lastName;
+    }
+
+    const companyName = cellAt(row, headerMap, "companyName", false) || "";
+    const phoneNumber = cellAt(row, headerMap, "phoneNumber", false) || "";
     const email = cellAt(row, headerMap, "email", false) || "";
-    const projectType = cellAt(row, headerMap, "projectType", true);
-    const assignedTo = cellAt(row, headerMap, "assignedTo", true);
+    const projectType = cellAt(row, headerMap, "projectType", false) || "General";
+    const assignedTo = cellAt(row, headerMap, "assignedTo", false) || "";
+    const assignedDepartment = cellAt(row, headerMap, "assignedDepartment", false) || "";
+    const source = cellAt(row, headerMap, "source", false) || "Import";
     const notes = cellAt(row, headerMap, "notes", false) || "";
+    const formName = cellAt(row, headerMap, "formName", false) || "";
+    const leadDate = cellAt(row, headerMap, "leadDate", false) || "";
     const statusRaw = cellAt(row, headerMap, "status", false);
     const status = normalizeStatus(statusRaw) || "new";
 
-    if (
-      !fullName ||
-      !companyName ||
-      !phoneNumber ||
-      !projectType ||
-      !assignedTo
-    ) {
+    // Row must have at least one identifier (name, phone, email, or company)
+    if (!fullName && !phoneNumber && !email && !companyName) {
       failed.push({
         row: rowNum,
-        message:
-          "Missing required value (name, company, phone, project type, and assigned to are required)",
+        message: "Missing identifier: Row must contain at least a Name, Phone Number, Email, or Company",
       });
       continue;
     }
 
+    if (!fullName) {
+      fullName = companyName || phoneNumber || email || `Lead #${rowNum}`;
+    }
+
+    const customData = {};
+    if (formName) customData.form_name = formName;
+    if (leadDate) customData.created_time = leadDate;
+
+    const leadPayload = {
+      fullName,
+      companyName,
+      phoneNumber,
+      email,
+      projectType,
+      source,
+      status,
+      assignedTo,
+      assignedDepartment,
+      notes,
+      customData,
+    };
+
+    if (extraData?.clientId) {
+      leadPayload.clientId = extraData.clientId;
+      leadPayload.isClientLead = true;
+    } else if (extraData?.isClientLead !== undefined) {
+      leadPayload.isClientLead = extraData.isClientLead;
+    }
+
     try {
       const lead = await createLead(
-        {
-          fullName,
-          companyName,
-          phoneNumber,
-          email,
-          projectType,
-          source: "Import",
-          status,
-          assignedTo,
-          notes,
-        },
+        leadPayload,
         companyId,
         userId,
+        currentUser,
       );
       created.push(lead._id.toString());
     } catch (err) {
@@ -850,6 +889,10 @@ const importLeadsFromCsvBuffer = async (buffer, companyId, userId) => {
         message: err.message || "Failed to create lead",
       });
     }
+  }
+
+  if (created.length === 0 && failed.length > 0) {
+    throw new Error(`Failed to import leads: ${failed[0]?.message || "Unknown error"}`);
   }
 
   return {

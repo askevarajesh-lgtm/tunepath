@@ -702,16 +702,18 @@ const CreateReportModal = ({ visible, onClose, clients = [], defaultClientId = n
           youTubeReport: youTubeReportList
         };
         await upsertMonthlyHighlights(payload);
-      }
-
-      // Dispatch exact standalone report via API
-      if (targetClientId) {
-        await generateReport({
-          clientId: targetClientId,
-          template: reportType,
-          recipients: [recipientEmail],
-          deliveryMethod: 'Email'
-        });
+      } else {
+        // Dispatch standalone Meta campaign report via API
+        if (targetClientId) {
+          await generateReport({
+            clientId: targetClientId,
+            template: reportType,
+            recipients: [recipientEmail],
+            deliveryMethod: 'Email',
+            fromDate: reportDateRange.fromDate,
+            toDate: reportDateRange.toDate
+          });
+        }
       }
 
       message.success(`Standalone "${reportType}" report sent to ${clientInfo.companyName || clientInfo.name}!`);
