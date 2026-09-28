@@ -64,13 +64,13 @@ const FB_SCOPES = [
   "pages_read_engagement",
   "pages_manage_posts",
   "pages_manage_metadata",
-  // "pages_read_user_content",
-  // "pages_manage_engagement",
+  "pages_read_user_content",
+  "pages_manage_engagement",
   "instagram_basic",
   "instagram_content_publish",
-  // "instagram_manage_comments",
-  "instagram_manage_insights",
-  "read_insights",
+  "instagram_manage_comments",
+  // "instagram_manage_insights",
+  // "read_insights",
   "business_management",
 ].join(",");
 const LINKEDIN_SCOPES = [
