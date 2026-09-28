@@ -1,5 +1,6 @@
 const salesPipelineService = require("./salesPipeline.service");
 const { sendSuccess, sendError } = require("../tasks/shimResponse");
+const User = require("../auth/user.model");
 
 const createDeal = async (req, res) => {
   try {

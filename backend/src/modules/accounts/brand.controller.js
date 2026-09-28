@@ -66,9 +66,25 @@ exports.getBrands = async (req, res, next) => {
       ];
     }
 
-    const brands = await User.find(filter).sort({ createdAt: -1 })
+    let totalBrands = 0;
+    let brands = [];
+
+    // Support pagination if requested, otherwise fetch all
+    const page = parseInt(req.query.page, 10);
+    const limit = parseInt(req.query.limit, 10);
+
+    let brandsQuery = User.find(filter).sort({ createdAt: -1 })
       .populate('createdBy', 'name role roleName')
       .populate('assignedUsers', 'name email role roleName');
+
+    totalBrands = await User.countDocuments(filter);
+
+    if (!isNaN(page) && !isNaN(limit)) {
+      const skip = (page - 1) * limit;
+      brandsQuery = brandsQuery.skip(skip).limit(limit);
+    }
+
+    brands = await brandsQuery;
 
     const brandIds = brands.map(b => b._id);
     const usersCounts = await User.aggregate([
@@ -106,7 +122,17 @@ exports.getBrands = async (req, res, next) => {
       };
     });
 
-    res.status(200).json({ success: true, count: data.length, data });
+    res.status(200).json({ 
+      success: true, 
+      count: data.length, 
+      data,
+      pagination: {
+        total: totalBrands,
+        page: isNaN(page) ? 1 : page,
+        limit: isNaN(limit) ? totalBrands : limit,
+        pages: isNaN(limit) || limit === 0 ? 1 : Math.ceil(totalBrands / limit)
+      }
+    });
   } catch (error) {
     next(error);
   }

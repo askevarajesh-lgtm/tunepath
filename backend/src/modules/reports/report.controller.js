@@ -47,8 +47,22 @@ exports.deleteSchedule = async (req, res, next) => {
 exports.getRecentSentReports = async (req, res, next) => {
     try {
         const agencyId = req.user.agencyId || req.user._id;
-        const reports = await reportService.getRecentSentReports(agencyId, req.user);
-        res.status(200).json({ status: 'success', data: reports });
+        const result = await reportService.getRecentSentReports(agencyId, req.user, req.query);
+        if (req.query.page && req.query.limit) {
+            res.status(200).json({ status: 'success', data: result.data, total: result.total, page: result.page, limit: result.limit });
+        } else {
+            res.status(200).json({ status: 'success', data: result.data || result });
+        }
+    } catch (error) {
+        next(error);
+    }
+};
+
+exports.getDashboardStats = async (req, res, next) => {
+    try {
+        const agencyId = req.user.agencyId || req.user._id;
+        const stats = await reportService.getDashboardStats(agencyId, req.user, req.query);
+        res.status(200).json({ status: 'success', data: stats });
     } catch (error) {
         next(error);
     }

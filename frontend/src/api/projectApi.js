@@ -34,7 +34,7 @@ const createQueryHook = (endpointFn) => {
   };
 };
 
-export const useGetUnassignedDeliverablesSummaryQuery = createQueryHook(() => '/projects/unassigned-summary');
+export const useGetUnassignedDeliverablesSummaryQuery = createQueryHook(() => '/projects/unassigned-deliverables-summary');
 export const useGetProjectsQuery = createQueryHook((params) => ({ url: '/projects', params }));
 export const useGetProjectsDropdownQuery = createQueryHook((params) => ({ url: '/projects/dropdown', params }));
 export const useGetProjectByIdQuery = createQueryHook((id) => `/projects/${id}`);

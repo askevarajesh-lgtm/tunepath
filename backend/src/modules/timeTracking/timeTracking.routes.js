@@ -10,6 +10,7 @@ router.put('/:id', timeTrackingController.updateTimeEntry);
 router.delete('/:id', timeTrackingController.deleteTimeEntry);
 router.get('/recent', timeTrackingController.getRecentEntries);
 router.get('/dashboard', timeTrackingController.getDashboardData);
+router.get('/timesheet', timeTrackingController.getTimesheetData);
 router.get('/options', timeTrackingController.getFormOptions);
 router.get('/performance', timeTrackingController.getTeamTaskPerformance);
 
