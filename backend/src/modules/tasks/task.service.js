@@ -847,50 +847,95 @@ const getAllTasks = async (
       dateQuery.$lte = end;
     }
     if (Object.keys(dateQuery).length > 0) {
-      const dateOrFilter = [
+      const finishedStatuses = [
+        "review",
+        "in_review",
+        "submitted",
+        "completed",
+        "complete",
+        "validated",
+        "approved",
+        "done",
+        "sent_for_client_review",
+        "rejected",
+        "Rejected",
+      ];
+
+      const activeTaskDateOr = [
+        // Option A: Task has a defined startDate -> match on startDate
         {
-          $or: [
-            // Option A: Task has a defined startDate -> match ONLY on startDate
+          $and: [
+            { startDate: { $ne: null, $exists: true } },
+            { startDate: { $gte: start, $lte: end } },
+          ],
+        },
+        // Option B: Task only has dueDate (show from createdAt to dueDate)
+        {
+          $and: [
             {
-              $and: [
-                { startDate: { $ne: null, $exists: true } },
+              $or: [
+                { startDate: { $eq: null } },
+                { startDate: { $exists: false } },
+              ],
+            },
+            { createdAt: { $lte: end } },
+            { dueDate: { $gte: start, $lte: end } },
+          ],
+        },
+        // Option C: Task started on this day
+        { workStartedAt: { $gte: start, $lte: end } },
+        // Option D: Task was created in this range and has no dueDate (newly created tasks)
+        {
+          $and: [
+            { createdAt: { $gte: start, $lte: end } },
+            {
+              $or: [
+                { dueDate: { $exists: false } },
+                { dueDate: { $eq: null } },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const finishedTaskDateOr = [
+        { workCompletedAt: { $gte: start, $lte: end } },
+        { actualCompletionDate: { $gte: start, $lte: end } },
+        { validatedAt: { $gte: start, $lte: end } },
+        { completedAt: { $gte: start, $lte: end } },
+        // Fallback for older tasks without explicit completion timestamps
+        {
+          $and: [
+            { workCompletedAt: { $in: [null, undefined] } },
+            { actualCompletionDate: { $in: [null, undefined] } },
+            { validatedAt: { $in: [null, undefined] } },
+            { completedAt: { $in: [null, undefined] } },
+            {
+              $or: [
+                { updatedAt: { $gte: start, $lte: end } },
+                { dueDate: { $gte: start, $lte: end } },
                 { startDate: { $gte: start, $lte: end } },
               ],
             },
-            // Option B: Task only has dueDate (show from createdAt to dueDate)
+          ],
+        },
+      ];
+
+      const dateOrFilter = [
+        {
+          $or: [
+            // 1. Active tasks matching date range
             {
               $and: [
-                {
-                  $or: [
-                    { startDate: { $eq: null } },
-                    { startDate: { $exists: false } },
-                  ],
-                },
-                { createdAt: { $lte: end } },
-                { dueDate: { $gte: start } },
-                // If completed early, don't show on days after completion
-                {
-                  $or: [
-                    { actualCompletionDate: { $exists: false } },
-                    { actualCompletionDate: { $eq: null } },
-                    { actualCompletionDate: { $gte: start } },
-                  ],
-                },
+                { status: { $nin: finishedStatuses } },
+                { $or: activeTaskDateOr },
               ],
             },
-            // Option C: Task was actually completed/validated in this range
-            { actualCompletionDate: { $gte: start, $lte: end } },
-            { validatedAt: { $gte: start, $lte: end } },
-            // Option D: Task was created in this range and has no dueDate (newly created tasks)
+            // 2. Finished/completed tasks matching completion date in range
             {
               $and: [
-                { createdAt: { $gte: start, $lte: end } },
-                {
-                  $or: [
-                    { dueDate: { $exists: false } },
-                    { dueDate: { $eq: null } },
-                  ],
-                },
+                { status: { $in: finishedStatuses } },
+                { $or: finishedTaskDateOr },
               ],
             },
           ],
@@ -3275,38 +3320,85 @@ const getTasksForKanban = async (
       // on the selected calendar day.
       query.startDate = { $gte: start, $lte: end };
     } else {
-      // If we are filtering by a specific date, we should include tasks that:
-      // 1. Have the dateField in range (e.g., dueDate)
-      // 2. OR were completed/validated in that range
-      // 3. OR were created in that date range (for newly created tasks without dueDate)
+      const finishedStatuses = [
+        "review",
+        "in_review",
+        "submitted",
+        "completed",
+        "complete",
+        "validated",
+        "approved",
+        "done",
+        "sent_for_client_review",
+        "rejected",
+        "Rejected",
+      ];
+
+      const activeTaskDateOr = [
+        // Option A: Active task has startDate in range
+        {
+          startDate: { $gte: start, $lte: end },
+        },
+        // Option B: Active task has dueDate in range
+        {
+          dueDate: { $gte: start, $lte: end },
+        },
+        // Option C: Active task was started on this day
+        { workStartedAt: { $gte: start, $lte: end } },
+        // Option D: Active task was created in this range and has no dueDate (newly created tasks)
+        {
+          $and: [
+            { createdAt: { $gte: start, $lte: end } },
+            {
+              $or: [
+                { dueDate: { $exists: false } },
+                { dueDate: { $eq: null } },
+              ],
+            },
+          ],
+        },
+      ];
+
+      const finishedTaskDateOr = [
+        { workCompletedAt: { $gte: start, $lte: end } },
+        { actualCompletionDate: { $gte: start, $lte: end } },
+        { validatedAt: { $gte: start, $lte: end } },
+        { completedAt: { $gte: start, $lte: end } },
+        // Fallback for older tasks without explicit completion timestamps
+        {
+          $and: [
+            { workCompletedAt: { $in: [null, undefined] } },
+            { actualCompletionDate: { $in: [null, undefined] } },
+            { validatedAt: { $in: [null, undefined] } },
+            { completedAt: { $in: [null, undefined] } },
+            {
+              $or: [
+                { updatedAt: { $gte: start, $lte: end } },
+                { dueDate: { $gte: start, $lte: end } },
+                { startDate: { $gte: start, $lte: end } },
+              ],
+            },
+          ],
+        },
+      ];
+
       const dateOrFilter = [
         {
           $or: [
-            // Option A: Task has startDate in range
-            {
-              startDate: { $gte: start, $lte: end },
-            },
-            // Option B: Task has dueDate in range
-            {
-              dueDate: { $gte: start, $lte: end },
-            },
-            // Option C: Task was actually completed/validated in this range (regardless of scheduled dates)
-            { actualCompletionDate: { $gte: start, $lte: end } },
-            { validatedAt: { $gte: start, $lte: end } },
-            // Option D: Task was created in this range and has no dueDate (newly created tasks)
+            // 1. Active tasks matching date range
             {
               $and: [
-                { createdAt: { $gte: start, $lte: end } },
-                {
-                  $or: [
-                    { dueDate: { $exists: false } },
-                    { dueDate: { $eq: null } },
-                  ],
-                },
+                { status: { $nin: finishedStatuses } },
+                { $or: activeTaskDateOr },
               ],
             },
-            // Option E: Task was started on this day
-            { workStartedAt: { $gte: start, $lte: end } },
+            // 2. Finished/completed tasks matching completion date in range
+            {
+              $and: [
+                { status: { $in: finishedStatuses } },
+                { $or: finishedTaskDateOr },
+              ],
+            },
           ],
         },
       ];
