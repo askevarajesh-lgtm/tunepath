@@ -4,6 +4,7 @@ const Lead = require('../leads/lead.model');
 const User = require('../auth/user.model');
 const Integration = require('../integrations/integration.model');
 const solluService = require('./sollu.service');
+const { getEffectivePackageIntegrations, resolveCompanyUser } = require('../packages/packageAccess.service');
 
 const PLATFORM_ADMIN_ROLES = ['supreme_super_admin', 'commander_admin', 'super_admin'];
 
@@ -84,8 +85,28 @@ exports.initiateOutboundCall = async (req, res) => {
 
     // 1. Package Entitlement Check:
     // Check if user or their assigned package is entitled to 'ivr'
-    const userIntegrations = req.user?.integrations || [];
-    const isEntitled = isPlatformAdmin || userIntegrations.includes('ivr');
+    let isEntitled = isPlatformAdmin;
+
+    if (!isEntitled) {
+      const packageIntegrations = await getEffectivePackageIntegrations(req.user);
+      const companyUser = await resolveCompanyUser(req.user);
+      const userIntegrations = req.user?.integrations || companyUser?.integrations || [];
+
+      if (companyUser && ['agency_super_admin', 'commander_admin', 'supreme_super_admin'].includes(companyUser.role)) {
+        if (packageIntegrations.includes('ivr')) {
+          const disabled = companyUser.disabledPackageIntegrations || [];
+          isEntitled = !disabled.includes('ivr');
+        }
+        if (!isEntitled && Array.isArray(companyUser.additionalIntegrations) && companyUser.additionalIntegrations.includes('ivr')) {
+          isEntitled = true;
+        }
+      } else {
+        isEntitled =
+          packageIntegrations.includes('ivr') ||
+          userIntegrations.includes('ivr') ||
+          (Array.isArray(companyUser?.additionalIntegrations) && companyUser.additionalIntegrations.includes('ivr'));
+      }
+    }
 
     if (!isEntitled) {
       return res.status(403).json({
@@ -112,13 +133,60 @@ exports.initiateOutboundCall = async (req, res) => {
       });
     }
 
-    const targetAgentPhone = agentPhone || userPhone;
-
     // 2. Resolve configured IVR integration settings from MongoDB
     const effectiveCompanyId = companyId || targetLead?.companyId;
-    const effectiveClientId = targetLead?.clientId;
-    const ivrIntegration = await getActiveIvrIntegration(effectiveCompanyId, effectiveClientId);
-    const ivrConfig = ivrIntegration?.config || {};
+    const effectiveClientId = targetLead?.clientId || (['agency_client', 'client', 'client_user'].includes(userRole) ? (req.user?._id || req.user?.clientId) : null);
+
+    // Query for existing IVR integration (active or inactive)
+    const ivrQuery = {
+      type: 'ivr',
+      $or: [{ companyId: null }],
+    };
+    if (effectiveCompanyId) ivrQuery.$or.push({ companyId: effectiveCompanyId });
+    if (effectiveClientId) ivrQuery.$or.push({ clientId: effectiveClientId });
+
+    const existingIntegrations = await Integration.find(ivrQuery).sort({ clientId: -1, companyId: -1 }).lean();
+    const ivrIntegration = existingIntegrations[0] || null;
+
+    if (!ivrIntegration) {
+      return res.status(400).json({
+        success: false,
+        message: 'IVR Telephony is not configured. Please configure Sollu IVR in Settings > Integrations.',
+      });
+    }
+
+    if (!ivrIntegration.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: 'IVR Telephony integration is inactive. Please activate it in Settings > Integrations.',
+      });
+    }
+
+    const ivrConfig = ivrIntegration.config || {};
+    const apiKey = (ivrConfig.apiKey || ivrConfig.bearerToken || process.env.SOLLU_API_KEY || '').trim();
+    const baseUrl = (ivrConfig.baseUrl || process.env.SOLLU_API_BASE_URL || '').trim();
+
+    if (!baseUrl || !apiKey) {
+      return res.status(400).json({
+        success: false,
+        message: 'IVR Telephony is not configured. Please enter your Sollu API credentials in Settings > Integrations.',
+      });
+    }
+
+    // Use the Agent Mobile Number configured directly in the Sollu IVR integration page
+    const targetAgentPhone = (
+      agentPhone ||
+      ivrConfig.agentPhone ||
+      ivrConfig.defaultAgentPhone ||
+      ''
+    ).trim();
+
+    if (!targetAgentPhone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Agent mobile phone number is missing. Please enter your Agent Mobile Number in Settings > Integrations > Sollu IVR.',
+      });
+    }
 
     // 3. Call Sollu telephony service with dynamic configuration
     const solluResult = await solluService.initiateOutboundCall({
@@ -131,6 +199,7 @@ exports.initiateOutboundCall = async (req, res) => {
       metadata: {
         initiatedBy: req.user?.name || 'CRM User',
         companyId: effectiveCompanyId,
+        clientId: effectiveClientId,
       },
     });
 
@@ -154,7 +223,7 @@ exports.initiateOutboundCall = async (req, res) => {
           rawPayload: solluResult.rawResponse || {},
         },
       },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     // 5. Append activity log to Lead if linked
@@ -409,7 +478,7 @@ exports.handleSolluWebhook = async (req, res) => {
     callLog = await CallLog.findOneAndUpdate(
       { callId: targetCallId },
       { $set: updateData },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, returnDocument: 'after', setDefaultsOnInsert: true }
     );
 
     // 3. Update Lead Activity Log
@@ -419,7 +488,7 @@ exports.handleSolluWebhook = async (req, res) => {
       const recMsg = callRecordingUrl ? ' [Recording Available]' : '';
 
       matchedLead.activityLogs.push({
-        message: `Call [${direction.toUpperCase()}] ${status}${agentLabel}${durationMsg}${recMsg} (Call ID: ${externalCallId})`,
+        message: `Call [${direction.toUpperCase()}] ${normalizedStatus}${agentLabel}${durationMsg}${recMsg} (Call ID: ${externalCallId})`,
         createdAt: new Date(),
       });
       matchedLead.lastInteractionAt = new Date();
@@ -462,13 +531,49 @@ exports.getLeadCallLogs = async (req, res) => {
 
     const normalizedPhone = solluService.normalizePhoneNumber(lead.phoneNumber || lead.mobile);
     const last10 = normalizedPhone ? normalizedPhone.slice(-10) : '';
+    const leadObjectId = new mongoose.Types.ObjectId(leadId);
 
-    const query = {
-      $or: [
-        { leadId: new mongoose.Types.ObjectId(leadId) },
-        ...(last10 ? [{ customerPhone: { $regex: `${last10}$`, $options: 'i' } }] : []),
-      ],
-    };
+    let query;
+    if (lead.clientId) {
+      // Agency Client Lead: Strictly isolate calls belonging to this lead or this client tenant
+      query = {
+        $or: [
+          { leadId: leadObjectId },
+          ...(last10
+            ? [
+                {
+                  customerPhone: { $regex: `${last10}$`, $options: 'i' },
+                  clientId: lead.clientId,
+                  $or: [{ leadId: null }, { leadId: { $exists: false } }, { leadId: leadObjectId }],
+                },
+              ]
+            : []),
+        ],
+      };
+    } else {
+      // Agency Manager Lead (Agency level, no clientId): Strictly isolate calls belonging to this lead or agency manager tenant (no clientId)
+      const agencyScope = {
+        $or: [{ clientId: null }, { clientId: { $exists: false } }],
+      };
+      if (lead.companyId) {
+        agencyScope.companyId = lead.companyId;
+      }
+
+      query = {
+        $or: [
+          { leadId: leadObjectId },
+          ...(last10
+            ? [
+                {
+                  customerPhone: { $regex: `${last10}$`, $options: 'i' },
+                  ...agencyScope,
+                  $or: [{ leadId: null }, { leadId: { $exists: false } }, { leadId: leadObjectId }],
+                },
+              ]
+            : []),
+        ],
+      };
+    }
 
     const callLogs = await CallLog.find(query)
       .populate('agentId', 'name email phone avatar')
@@ -496,9 +601,12 @@ exports.getAllCallLogs = async (req, res) => {
   try {
     const { page = 1, limit = 20, status, direction, search, startDate, endDate } = req.query;
     const companyId = req.companyId || req.user?.agencyId || req.user?.brandId || null;
+    const clientId = req.user?.clientId || req.user?.clientCompanyId || (['agency_client', 'client', 'client_user'].includes(req.user?.role) ? (req.user?._id || req.user?.clientId) : null);
 
     const query = {};
-    if (companyId) {
+    if (clientId) {
+      query.clientId = clientId;
+    } else if (companyId) {
       query.companyId = companyId;
     }
 
@@ -533,7 +641,8 @@ exports.getAllCallLogs = async (req, res) => {
       .populate('agentId', 'name email phone')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit, 10))
+      .limit(parseInt(limit, 10));
+
     return res.status(200).json({
       success: true,
       data: {

@@ -26,6 +26,7 @@ const INTEGRATIONS_LIST = [
   { id: 'email', label: 'Email Integration' },
   { id: 'facebook', label: 'Facebook Integration' },
   { id: 'twilio', label: 'Twilio Integration' },
+  { id: 'ivr', label: 'Sollu IVR / Telephony' },
 ];
 
 const ClientDetailContent = ({

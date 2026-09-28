@@ -9,7 +9,7 @@ const {
 
 const getAllIntegrations = async (req, res) => {
   try {
-    const companyId = req.query.clientId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency));
+    const companyId = req.query.clientId || req.user?.brandId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency));
     const integrations = await integrationService.getAllIntegrations(
       companyId,
       req.user.role,
@@ -29,9 +29,10 @@ const createIntegration = async (req, res) => {
     if (!errors.isEmpty()) {
       return sendValidationError(res, errors.array());
     }
+    const targetCompanyId = req.body.clientId || req.user?.brandId || req.companyId;
     const integration = await integrationService.createIntegration(
       req.body,
-      req.companyId,
+      targetCompanyId,
       req.user.role,
       req.user,
     );
@@ -45,10 +46,11 @@ const createIntegration = async (req, res) => {
 
 const updateIntegration = async (req, res) => {
   try {
+    const targetCompanyId = req.body.clientId || req.user?.brandId || req.companyId;
     const integration = await integrationService.updateIntegration(
       req.params.id,
       req.body,
-      req.companyId,
+      targetCompanyId,
       req.user.role,
       req.user,
     );

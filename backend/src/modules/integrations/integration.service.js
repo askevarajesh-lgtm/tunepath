@@ -15,6 +15,7 @@ const ClientCompany = User;
 const {
   getEffectivePackageIntegrations,
   getEffectivePackageForUser,
+  resolveCompanyUser,
 } = require("../packages/packageAccess.service");
 const { isSupportedProductIntegration } = require("../../utils/supportedIntegrations");
 
@@ -57,9 +58,38 @@ const assertPackageEntitlement = async (user, role, integrationType) => {
   if (PLATFORM_ADMIN_ROLES.includes(role)) return;
   if (!integrationType) return;
 
+  const companyUser = await resolveCompanyUser(user);
+
+  // Check disabled exclusions
+  const disabledIntegrations = companyUser?.disabledPackageIntegrations || user?.disabledPackageIntegrations || [];
+  if (disabledIntegrations.includes(integrationType)) {
+    throw new Error(
+      `The "${integrationType}" integration has been disabled for your organization. Please contact your administrator.`,
+    );
+  }
+
+  // Explicit user or company direct entitlements
+  const userIntegrations = user?.integrations || [];
+  const companyIntegrations = companyUser?.integrations || [];
+  const additionalIntegrations = companyUser?.additionalIntegrations || user?.additionalIntegrations || [];
+
+  if (
+    userIntegrations.includes(integrationType) ||
+    companyIntegrations.includes(integrationType) ||
+    additionalIntegrations.includes(integrationType)
+  ) {
+    return;
+  }
+
+  const isAgencyRole = ['agency', 'agency_manager', 'agency_super_admin'].includes(role) ||
+    (companyUser && ['agency', 'agency_manager', 'agency_super_admin'].includes(companyUser.role));
+
   const pkg = await getEffectivePackageForUser(user);
   if (pkg && Array.isArray(pkg.integrations) && pkg.integrations.length > 0) {
-    if (!pkg.integrations.includes(integrationType)) {
+    if (pkg.integrations.includes(integrationType)) {
+      return;
+    }
+    if (!isAgencyRole && !additionalIntegrations.includes(integrationType)) {
       throw new Error(
         `The "${integrationType}" integration is not included in your current package (${pkg.name}). Please contact your administrator to upgrade your plan.`,
       );
@@ -237,8 +267,8 @@ const getAllIntegrations = async (companyId, role, user) => {
     if (companyId) {
       query.$or.push({ clientId: companyId });
     }
-    if (role === "user" && user.brandId) {
-      query.ownerId = user._id; // Sub-users only see their own integrations
+    if (user?.brandId && String(user.brandId) !== String(companyId)) {
+      query.$or.push({ clientId: user.brandId }, { companyId: user.brandId });
     }
   }
 
@@ -256,14 +286,14 @@ const getAllIntegrations = async (companyId, role, user) => {
     return productIntegrations;
   }
 
-
-  const company = await Company.findById(companyId)
+  const targetLookupId = companyId || user?.brandId || user?.agencyId;
+  const company = targetLookupId ? await Company.findById(targetLookupId)
     .select("name integrations")
-    .lean();
-  if (!company) {
+    .lean() : null;
+  if (!company && targetLookupId) {
     return [];
   }
-  const allowed = await resolveCompanyIntegrations(company);
+  const allowed = await resolveCompanyIntegrations(company || user);
   const companyFiltered = productIntegrations.filter((integration) => {
     if (integration.type === 'facebook_leads') {
       return Boolean(allowed['website']);
@@ -277,12 +307,28 @@ const getAllIntegrations = async (companyId, role, user) => {
   // this layer and the company-level gate above must pass for an integration
   // to be returned. See packageAccess.service.js / integrationAccess.js.
   const packageIntegrations = await getEffectivePackageIntegrations(user);
+  const companyUser = await resolveCompanyUser(user);
+  const additional = companyUser?.additionalIntegrations || user?.additionalIntegrations || [];
+  const disabled = companyUser?.disabledPackageIntegrations || user?.disabledPackageIntegrations || [];
+  const isAgencyRole = ['agency', 'agency_manager', 'agency_super_admin'].includes(role) ||
+    (companyUser && ['agency', 'agency_manager', 'agency_super_admin'].includes(companyUser.role));
+
   return companyFiltered.filter((integration) => {
+    if (disabled.includes(integration.type)) {
+      return false;
+    }
+    if (isAgencyRole || packageIntegrations.length === 0) {
+      return true;
+    }
     // If the integration is facebook_leads, it's governed by the 'website' package entitlement
     if (integration.type === 'facebook_leads') {
-      return packageIntegrations.includes('website');
+      return packageIntegrations.includes('website') || additional.includes('facebook_leads') || additional.includes('website');
     }
-    return packageIntegrations.includes(integration.type);
+    return (
+      packageIntegrations.includes(integration.type) ||
+      additional.includes(integration.type) ||
+      (user?.integrations && user.integrations.includes(integration.type))
+    );
   });
 };
 
@@ -305,6 +351,7 @@ const INTEGRATION_DEFAULT_NAMES = {
   payment: "Payment Integration",
   ekta: "Ekta HR Integration",
   facebook_leads: "Facebook Leads Integration",
+  ivr: "Sollu IVR / Telephony Integration",
 };
 
 const createIntegration = async (integrationData, companyId, role, user) => {
@@ -343,6 +390,26 @@ const createIntegration = async (integrationData, companyId, role, user) => {
   // Prevent duplicate payment integrations - upsert if one already exists
   if (integrationData.type === 'payment') {
     const existing = await Integration.findOne({ type: 'payment', companyId: finalCompanyId });
+    if (existing) {
+      Object.assign(existing, { name: existing.name || name, ...integrationData, companyId: finalCompanyId });
+      existing.markModified('config');
+      await existing.save();
+      return existing;
+    }
+  }
+
+  // Prevent duplicate IVR integrations - upsert if one already exists
+  if (integrationData.type === 'ivr') {
+    const query = { type: 'ivr' };
+    if (integrationData.clientId) {
+      query.clientId = integrationData.clientId;
+    } else if (finalCompanyId) {
+      query.companyId = finalCompanyId;
+      query.clientId = null;
+    } else {
+      query.companyId = null;
+    }
+    const existing = await Integration.findOne(query);
     if (existing) {
       Object.assign(existing, { name: existing.name || name, ...integrationData, companyId: finalCompanyId });
       existing.markModified('config');
@@ -394,13 +461,18 @@ const updateIntegration = async (
   // If the target integration is a global platform-level template (companyId === null)
   // and a non-platform admin is updating it (e.g. toggling isActive for their brand/agency):
   if (!isPlatformAdmin && (integration.companyId === null || integration.companyId === undefined)) {
-    let companyIntegration = await Integration.findOne({ type: integration.type, companyId });
+    const query = {
+      type: integration.type,
+      ...(integrationData.clientId ? { clientId: integrationData.clientId } : { companyId, clientId: null }),
+    };
+    let companyIntegration = await Integration.findOne(query);
     if (!companyIntegration) {
       const defaultName = INTEGRATION_DEFAULT_NAMES[integration.type] || `${integration.type.charAt(0).toUpperCase() + integration.type.slice(1)} Integration`;
       companyIntegration = new Integration({
         name: integration.name || defaultName,
         type: integration.type,
         companyId: companyId,
+        clientId: integrationData.clientId || null,
         isActive: integrationData.isActive !== undefined ? integrationData.isActive : integration.isActive,
         config: integrationData.config !== undefined ? integrationData.config : (integration.config || {}),
       });

@@ -34,6 +34,12 @@ const authMiddleware = async (req, res, next) => {
                 }
               }
               req.user.adminId = dbUser.adminId;
+              req.user.integrations = dbUser.integrations || [];
+              req.user.features = dbUser.features || [];
+              req.user.phone = dbUser.phone || '';
+              req.user.plan = dbUser.plan;
+              req.user.packageName = dbUser.packageName;
+              req.user.isDirect = dbUser.isDirect;
             }
           } catch (dbErr) {
             console.error("AuthMiddleware DB lookup error:", dbErr);

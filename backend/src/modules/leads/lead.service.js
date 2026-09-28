@@ -51,14 +51,11 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
 
   const userRole = String(currentUser.role || "").toLowerCase();
 
-  // 1. Sub-users of Agency Client / Brand only see leads belonging to their client company that are assigned to them, their department, or owned by them
-  if (userRole === "user" && (currentUser.brandId || currentUser.clientUserId)) {
-    const effectiveClientId = currentUser.clientUserId || currentUser.brandId;
+  const getUserMatchConditions = () => {
     const userName = String(currentUser.name || "").trim();
     const userEmail = String(currentUser.email || "").trim();
     const deptName = String(currentUser.departmentName || "").trim();
     const deptId = currentUser.departmentId;
-
     const userMatch = [];
     if (userName) {
       userMatch.push(
@@ -79,33 +76,42 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
       );
     }
     if (deptId) {
-      userMatch.push({ assignedDepartmentId: deptId });
+      const objDeptId = toObjectId(deptId);
+      userMatch.push({ assignedDepartmentId: objDeptId || deptId });
     }
     if (currentUser._id) {
+      const objUserId = toObjectId(currentUser._id);
       userMatch.push(
-        { ownerId: currentUser._id },
-        { createdBy: currentUser._id }
+        { ownerId: objUserId || currentUser._id },
+        { createdBy: objUserId || currentUser._id }
       );
     }
+    return userMatch.length > 0 ? userMatch : [{ assignedTo: "__NO_ACCESS__" }];
+  };
 
-    return {
-      clientId: effectiveClientId,
-      $or: userMatch.length > 0 ? userMatch : [{ assignedTo: "__NO_ACCESS__" }],
-    };
-  }
+  // 1. Client / Brand context
+  const isClientAdmin = ['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole);
+  const isClientTeamUser = (currentUser.brandId || currentUser.isClientRole) && !isClientAdmin;
 
-  // 2. Client / Brand Admins and Managers see all leads belonging to their client company
-  if (currentUser.isClientRole || ['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole)) {
+  if (isClientAdmin) {
     const effectiveClientId = currentUser.clientUserId || currentUser.brandId || currentUser._id;
     return {
-      clientId: effectiveClientId,
+      clientId: toObjectId(effectiveClientId) || effectiveClientId,
     };
   }
 
-  const baseFilter = companyId ? { companyId } : {};
+  if (isClientTeamUser) {
+    const effectiveClientId = currentUser.clientUserId || currentUser.brandId;
+    const userMatch = getUserMatchConditions();
+    return {
+      clientId: toObjectId(effectiveClientId) || effectiveClientId,
+      $or: userMatch,
+    };
+  }
 
-  // 3. Platform & Agency Management roles (commander_admin, supreme_super_admin, agency_super_admin, agency_manager, agency)
-  // They see all agency prospecting leads by default (or client leads if query.companyId is passed)
+  const baseFilter = companyId ? { companyId: toObjectId(companyId) || companyId } : {};
+
+  // 2. Platform & Agency Management roles
   const isAgencyAdminOrManager = [
     "supreme_super_admin",
     "commander_admin",
@@ -118,44 +124,11 @@ const buildLeadAccessFilter = (companyId, currentUser) => {
     return { ...baseFilter, isClientLead: { $ne: true } };
   }
 
-  // 4. Agency Employees / Team Members (e.g. role === "user" without brandId, role === "bde", or any custom role like Video Editor, Designer, etc.)
-  // They ONLY see leads assigned to them, their department, or created/owned by them
-  const userName = String(currentUser.name || "").trim();
-  const userEmail = String(currentUser.email || "").trim();
-  const deptName = String(currentUser.departmentName || "").trim();
-  const deptId = currentUser.departmentId;
-  const userMatch = [];
-  if (userName) {
-    userMatch.push(
-      { assignedTo: userName },
-      { assignedTo: new RegExp(`^\\s*${escapeRegex(userName)}\\s*$`, "i") }
-    );
-  }
-  if (userEmail) {
-    userMatch.push(
-      { assignedTo: userEmail },
-      { assignedTo: new RegExp(`^\\s*${escapeRegex(userEmail)}\\s*$`, "i") }
-    );
-  }
-  if (deptName) {
-    userMatch.push(
-      { assignedDepartment: deptName },
-      { assignedDepartment: new RegExp(`^\\s*${escapeRegex(deptName)}\\s*$`, "i") }
-    );
-  }
-  if (deptId) {
-    userMatch.push({ assignedDepartmentId: deptId });
-  }
-  if (currentUser._id) {
-    userMatch.push(
-      { ownerId: currentUser._id },
-      { createdBy: currentUser._id }
-    );
-  }
-
+  // 3. Agency Employees / Regular Team Members
+  const userMatch = getUserMatchConditions();
   return {
     ...baseFilter,
-    $or: userMatch.length > 0 ? userMatch : [{ assignedTo: "__NO_ACCESS__" }],
+    $or: userMatch,
   };
 };
 
@@ -264,13 +237,37 @@ const getLeadStats = async (companyId, currentUser, query = {}) => {
   };
 };
 
+const isFullAdminOrManager = (currentUser) => {
+  const userRole = String(currentUser?.role || "").toLowerCase();
+  const isAgencyAdminOrManager = [
+    "supreme_super_admin",
+    "commander_admin",
+    "agency_super_admin",
+    "agency_manager",
+    "agency",
+  ].includes(userRole);
+  const isClientAdmin = [
+    "client",
+    "agency_client",
+    "brand_super_admin",
+    "brand_manager",
+  ].includes(userRole);
+  return isAgencyAdminOrManager || isClientAdmin;
+};
+
 const getLeads = async (companyId, currentUser, query = {}) => {
   await ensureCurrentUserData(currentUser);
   const accessFilter = buildLeadAccessFilter(companyId, currentUser);
   if (query.companyId || query.clientId) {
     // If a client is selected, remove the isClientLead restriction to see their leads
     delete accessFilter.isClientLead;
-    accessFilter.clientId = query.companyId || query.clientId;
+    accessFilter.clientId = toObjectId(query.companyId || query.clientId) || (query.companyId || query.clientId);
+  }
+
+  const andConditions = [];
+  if (accessFilter.$or) {
+    andConditions.push({ $or: accessFilter.$or });
+    delete accessFilter.$or;
   }
 
   // Optional server-side filtering
@@ -285,12 +282,13 @@ const getLeads = async (companyId, currentUser, query = {}) => {
   }
   if (query.formName) {
     const fnRegex = new RegExp(escapeRegex(query.formName), "i");
-    accessFilter.$or = [
-      ...(accessFilter.$or || []),
-      { "customData.form_name": fnRegex },
-      { "customData.formName": fnRegex },
-      { formName: fnRegex }
-    ];
+    andConditions.push({
+      $or: [
+        { "customData.form_name": fnRegex },
+        { "customData.formName": fnRegex },
+        { formName: fnRegex }
+      ]
+    });
   }
   if (query.startDate && query.endDate) {
     const start = new Date(query.startDate);
@@ -301,17 +299,25 @@ const getLeads = async (companyId, currentUser, query = {}) => {
   }
   if (query.search && query.search.trim()) {
     const sRegex = new RegExp(escapeRegex(query.search.trim()), "i");
-    const searchOr = [
-      { fullName: sRegex },
-      { phoneNumber: sRegex },
-      { email: sRegex },
-      { companyName: sRegex }
-    ];
-    if (accessFilter.$or) {
-      accessFilter.$and = [{ $or: accessFilter.$or }, { $or: searchOr }];
-      delete accessFilter.$or;
+    andConditions.push({
+      $or: [
+        { fullName: sRegex },
+        { phoneNumber: sRegex },
+        { email: sRegex },
+        { companyName: sRegex }
+      ]
+    });
+  }
+
+  if (andConditions.length > 0) {
+    if (andConditions.length === 1 && !accessFilter.$and) {
+      if (andConditions[0].$or) {
+        accessFilter.$or = andConditions[0].$or;
+      } else {
+        accessFilter.$and = andConditions;
+      }
     } else {
-      accessFilter.$or = searchOr;
+      accessFilter.$and = andConditions;
     }
   }
 
@@ -380,6 +386,7 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
     customData,
   } = leadData;
 
+  const isAdminOrManager = isFullAdminOrManager(currentUser);
   const userRole = String(currentUser?.role || "").toLowerCase();
   const isAgencyAdminOrManager = [
     "supreme_super_admin",
@@ -389,17 +396,26 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
     "agency",
   ].includes(userRole);
 
-  const defaultAssignee = !isAgencyAdminOrManager
-    ? String(currentUser?.name || "").trim()
-    : "";
-  const assignedToValue = String(assignedTo || "").trim() || defaultAssignee;
+  let assignedToValue = String(assignedTo || "").trim();
+  let assignedDeptValue = String(assignedDepartment || "").trim();
+  let assignedDeptIdValue = assignedDepartmentId || null;
 
-  const isClientLead = leadData.isClientLead || currentUser?.isClientRole;
+  // Regular users (not admin/manager) can ONLY create leads assigned to themselves and their own department
+  if (!isAdminOrManager) {
+    assignedToValue = String(currentUser?.name || currentUser?.email || "").trim();
+    assignedDeptValue = String(currentUser?.departmentName || "").trim();
+    assignedDeptIdValue = currentUser?.departmentId || null;
+  } else if (!assignedToValue && !isAgencyAdminOrManager) {
+    assignedToValue = String(currentUser?.name || "").trim();
+  }
+
+  const effectiveClientId = leadData.clientId || currentUser?.clientUserId || currentUser?.brandId || null;
+  const isClientLead = leadData.isClientLead || currentUser?.isClientRole || !!currentUser?.brandId;
 
   const lead = await Lead.create({
     companyId,
-    clientId: leadData.clientId || null,
-    createdBy: userId,
+    clientId: effectiveClientId ? (toObjectId(effectiveClientId) || effectiveClientId) : null,
+    createdBy: userId || currentUser?._id,
     isClientLead,
     fullName: String(fullName || "").trim(),
     companyName: String(companyName || "").trim(),
@@ -409,9 +425,9 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
     source: String(source || "").trim(),
     status: status || "new",
     assignedTo: assignedToValue,
-    assignedDepartment: String(assignedDepartment || "").trim(),
-    assignedDepartmentId: assignedDepartmentId || null,
-    ownerId: (userRole === "user" && currentUser?.brandId) ? currentUser._id : null,
+    assignedDepartment: assignedDeptValue,
+    assignedDepartmentId: assignedDeptIdValue ? (toObjectId(assignedDeptIdValue) || assignedDeptIdValue) : null,
+    ownerId: currentUser?._id ? (toObjectId(currentUser._id) || currentUser._id) : null,
     notes: String(notes || "").trim(),
     customData: customData || {},
     activityLogs: [{ message: "Lead created" }],
@@ -430,6 +446,8 @@ const updateLead = async (leadId, updateData, companyId, currentUser) => {
   if (!lead) {
     throw new Error("Lead not found");
   }
+
+  const isAdminOrManager = isFullAdminOrManager(currentUser);
 
   const {
     fullName,
@@ -453,27 +471,19 @@ const updateLead = async (leadId, updateData, companyId, currentUser) => {
   if (source !== undefined) lead.source = String(source || "").trim();
   if (status !== undefined) lead.status = status || lead.status;
   
-  const userRole = String(currentUser?.role || "").toLowerCase();
-  const isAgencyAdminOrManager = [
-    "supreme_super_admin",
-    "commander_admin",
-    "agency_super_admin",
-    "agency_manager",
-    "agency",
-  ].includes(userRole);
-  const defaultAssignee = !isAgencyAdminOrManager
-    ? String(currentUser?.name || "").trim()
-    : "";
+  // Only admins / managers can reassign leads to another person or department
+  if (isAdminOrManager) {
+    if (assignedTo !== undefined) {
+      lead.assignedTo = String(assignedTo || "").trim();
+    }
+    if (assignedDepartment !== undefined) {
+      lead.assignedDepartment = String(assignedDepartment || "").trim();
+    }
+    if (assignedDepartmentId !== undefined) {
+      lead.assignedDepartmentId = assignedDepartmentId ? (toObjectId(assignedDepartmentId) || assignedDepartmentId) : null;
+    }
+  }
 
-  if (assignedTo !== undefined) {
-    lead.assignedTo = String(assignedTo || "").trim() || (isAgencyAdminOrManager ? lead.assignedTo : defaultAssignee);
-  }
-  if (assignedDepartment !== undefined) {
-    lead.assignedDepartment = String(assignedDepartment || "").trim();
-  }
-  if (assignedDepartmentId !== undefined) {
-    lead.assignedDepartmentId = assignedDepartmentId || null;
-  }
   if (notes !== undefined) {
     lead.notes = String(notes || "").trim();
   }
@@ -493,6 +503,9 @@ const updateLead = async (leadId, updateData, companyId, currentUser) => {
 
 const deleteLead = async (leadId, companyId, currentUser) => {
   await ensureCurrentUserData(currentUser);
+  if (!isFullAdminOrManager(currentUser)) {
+    throw new Error("You do not have permission to delete leads");
+  }
   const lead = await Lead.findOneAndDelete({
     _id: leadId,
     ...buildLeadAccessFilter(companyId, currentUser),
@@ -732,6 +745,9 @@ const buildLeadsCsvExport = async (
 
 const bulkDeleteLeads = async (leadIds, companyId, currentUser) => {
   await ensureCurrentUserData(currentUser);
+  if (!isFullAdminOrManager(currentUser)) {
+    throw new Error("You do not have permission to delete leads");
+  }
   if (!Array.isArray(leadIds) || leadIds.length === 0) {
     throw new Error("No lead IDs provided");
   }
@@ -845,6 +861,9 @@ const importLeadsFromCsvBuffer = async (buffer, companyId, userId) => {
 
 const assignLeads = async (leadIds, assignData, companyId, currentUser) => {
   await ensureCurrentUserData(currentUser);
+  if (!isFullAdminOrManager(currentUser)) {
+    throw new Error("You do not have permission to assign leads to another person or department");
+  }
   if (!Array.isArray(leadIds) || leadIds.length === 0) {
     throw new Error("No lead IDs provided");
   }

@@ -214,6 +214,11 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
     return false;
   }, [role, user]);
 
+  const isRegularUser = useMemo(() => {
+    const r = (role || user?.role || '').toLowerCase();
+    return r === 'user' || (!['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency', 'agency_client', 'client', 'brand_super_admin', 'brand_manager', 'brand_team_user'].includes(r));
+  }, [role, user]);
+
   const [createLead, { isLoading: isCreating }] = useCreateLeadMutation();
   const [updateLead, { isLoading: isUpdating }] = useUpdateLeadMutation();
   const [deleteLead] = useDeleteLeadMutation();
@@ -396,7 +401,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
               <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--accent-info)' }} onClick={() => handleOpenViewModal(record)} />
             </Tooltip>
           )}
-          {isAgencyClient && canEdit && (
+          {isAgencyClient && !isRegularUser && canEdit && (
             <Tooltip title="Assign Department">
               <Button 
                 type="text" 
@@ -411,7 +416,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
               <Button type="text" icon={<EditOutlined />} style={{ color: 'var(--accent-secondary)' }} onClick={() => handleEditClick(record)} />
             </Tooltip>
           )}
-          {canDelete && (
+          {canDelete && !isRegularUser && (
             <Tooltip title="Delete Lead">
               <Button type="text" icon={<DeleteOutlined />} danger onClick={() => handleDeleteClick(record)} />
             </Tooltip>
@@ -458,9 +463,22 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       email: record.email,
       source: record.source,
       status: record.status?.toUpperCase(),
-      assignedTo: record.assignedTo,
+      assignedTo: record.assignedTo || (isRegularUser ? (user?.name || user?.username) : undefined),
       notes: record.notes
     });
+    setIsModalOpen(true);
+  };
+
+  const handleOpenAddModal = () => {
+    setEditingLead(null);
+    form.resetFields();
+    if (isRegularUser) {
+      form.setFieldsValue({
+        assignedTo: user?.name || user?.username || '',
+      });
+    }
+    setLeadCountryCode('91');
+    setLeadCountryIso('IN');
     setIsModalOpen(true);
   };
 
@@ -487,11 +505,19 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
     form.validateFields().then(async (values) => {
       try {
         const statusValue = (values.status || 'HOT').trim();
+        const payload = {
+          ...values,
+          countryCode: leadCountryCode,
+          status: statusValue
+        };
+        if (isRegularUser) {
+          payload.assignedTo = user?.name || user?.username || '';
+        }
         if (editingLead) {
-          await updateLead({ id: editingLead._id, ...values, countryCode: leadCountryCode, status: statusValue }).unwrap();
+          await updateLead({ id: editingLead._id, ...payload }).unwrap();
           message.success('Lead updated successfully');
         } else {
-          await createLead({ ...values, countryCode: leadCountryCode, status: statusValue }).unwrap();
+          await createLead(payload).unwrap();
           message.success('Lead created successfully');
         }
         refetch?.();
@@ -737,7 +763,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
                   <Button icon={<UploadOutlined />} loading={isImporting} style={{ borderRadius: 8, fontWeight: 600, borderColor: 'var(--border-color)' }}>Import</Button>
                 </Upload>
                 <Button icon={<DownloadOutlined />} loading={isExporting} onClick={handleExport} style={{ borderRadius: 8, fontWeight: 600, borderColor: 'var(--border-color)' }}>Export</Button>
-                {isAgencyClient && selectedRowKeys.length > 0 && canEdit && (
+                {isAgencyClient && !isRegularUser && selectedRowKeys.length > 0 && canEdit && (
                   <Button 
                     icon={<ApartmentOutlined />} 
                     onClick={() => {
@@ -749,13 +775,13 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
                     Assign Department ({selectedRowKeys.length})
                   </Button>
                 )}
-                {selectedRowKeys.length > 0 && canView && (
+                {selectedRowKeys.length > 0 && canDelete && !isRegularUser && (
                   <Button danger icon={<DeleteOutlined />} loading={isBulkDeleting} onClick={handleBulkDelete} style={{ borderRadius: 8, fontWeight: 600 }}>Bulk Delete ({selectedRowKeys.length})</Button>
                 )}
               </>
             )}
-            {canAdd && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingLead(null); form.resetFields(); setLeadCountryCode('91'); setLeadCountryIso('IN'); setIsModalOpen(true); }} style={{ borderRadius: 8, fontWeight: 600, background: '#0e4ca2', border: 'none' }}>Add Lead</Button>
+            {(canAdd || isAgencyClient || Boolean(user?.brandId)) && (
+              <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenAddModal} style={{ borderRadius: 8, fontWeight: 600, background: '#0e4ca2', border: 'none' }}>Add Lead</Button>
             )}
             <Input
               allowClear
@@ -918,11 +944,20 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
             </Col>
             <Col span={12}>
               <Form.Item name="assignedTo" label={<CustomLabel text="Assigned To" />}>
-                <Select size="large" placeholder="Select User" allowClear loading={isLoadingUsers} showSearch>
-                  {allUsers.map(u => (
-                    <Option key={u._id} value={u.name || u.username}>{u.name || u.username}</Option>
-                  ))}
-                </Select>
+                {isRegularUser ? (
+                  <Input 
+                    size="large" 
+                    disabled 
+                    placeholder={user?.name || user?.username || "Assigned to You"} 
+                    style={{ borderRadius: 6 }} 
+                  />
+                ) : (
+                  <Select size="large" placeholder="Select User" allowClear loading={isLoadingUsers} showSearch>
+                    {allUsers.map(u => (
+                      <Option key={u._id} value={u.name || u.username}>{u.name || u.username}</Option>
+                    ))}
+                  </Select>
+                )}
               </Form.Item>
             </Col>
           </Row>

@@ -247,8 +247,13 @@ exports.createUser = async (req, res, next) => {
         if (userData.features && Array.isArray(userData.features) && parentFeatures.length > 0) {
           userData.features = userData.features.filter(f => parentFeatures.includes(f));
         }
-        if (userData.integrations && Array.isArray(userData.integrations) && parentIntegrations.length > 0) {
-          userData.integrations = userData.integrations.filter(i => parentIntegrations.includes(i));
+        if (userData.integrations && Array.isArray(userData.integrations)) {
+          if (req.user.role === 'agency_client') {
+            const allowedClientIntegrations = ['whatsapp', 'sms', 'email', 'website', 'ekta', 'ivr', 'payment'];
+            userData.integrations = userData.integrations.filter(i => allowedClientIntegrations.includes(i));
+          } else if (parentIntegrations.length > 0) {
+            userData.integrations = userData.integrations.filter(i => parentIntegrations.includes(i));
+          }
         }
       }
     } else {

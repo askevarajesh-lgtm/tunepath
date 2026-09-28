@@ -347,7 +347,7 @@ const SUPPORTED_INTEGRATIONS = ['whatsapp', 'sms', 'email', 'website', 'payment'
 
 const ClientIntegrationsTab = ({ user }) => {
   const [selectedConfig, setSelectedConfig] = useState(null);
-  const activeClientId = user?.activeClientId || user?.clientId || user?._id;
+  const activeClientId = user?.activeClientId || user?.clientId || user?.brandId || user?._id;
   const { data, refetch, isLoading } = useGetIntegrationsQuery({ clientId: activeClientId }, { skip: !activeClientId });
   const [updateIntegration] = useUpdateIntegrationMutation();
   const [createIntegration] = useCreateIntegrationMutation();

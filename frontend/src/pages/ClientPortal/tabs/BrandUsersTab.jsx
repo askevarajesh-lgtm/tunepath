@@ -36,7 +36,8 @@ const allIntegrationOptions = [
   { id: 'sms', label: 'SMS' },
   { id: 'email', label: 'Email' },
   { id: 'website', label: 'Website & Forms' },
-  { id: 'ekta', label: 'Ekta HR' }
+  { id: 'ekta', label: 'Ekta HR' },
+  { id: 'ivr', label: 'IVR Telephony' }
 ];
 
 const BrandUsersTab = ({ user }) => {
@@ -65,13 +66,14 @@ const BrandUsersTab = ({ user }) => {
 
   const parentFeatures = activeUser?.features || [];
   const parentIntegrations = activeUser?.integrations || [];
+  const isAgencyClient = activeUser?.role === 'agency_client' || (!activeUser?.isDirect && activeUser?.agencyId);
 
   const availableFeatures = allModuleOptions.filter(
-    f => parentFeatures.includes(f.id)
+    f => parentFeatures.length === 0 || parentFeatures.includes(f.id)
   );
 
   const availableIntegrations = allIntegrationOptions.filter(
-    i => parentIntegrations.includes(i.id)
+    i => isAgencyClient || parentIntegrations.length === 0 || parentIntegrations.includes(i.id)
   );
 
   const fetchData = async () => {

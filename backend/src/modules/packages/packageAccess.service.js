@@ -1,7 +1,7 @@
 const Package = require('./package.model');
 
-const AGENCY_ROOT_ROLES = ['agency_super_admin', 'commander_admin', 'supreme_super_admin'];
-const BRAND_ROOT_ROLES = ['brand_super_admin', 'brand_manager', 'agency_client'];
+const AGENCY_ROOT_ROLES = ['agency', 'agency_manager', 'agency_super_admin', 'commander_admin', 'supreme_super_admin'];
+const BRAND_ROOT_ROLES = ['brand', 'brand_super_admin', 'brand_manager', 'agency_client', 'client'];
 
 /**
 
@@ -25,6 +25,10 @@ const resolveCompanyUser = async (user) => {
   if (AGENCY_ROOT_ROLES.includes(user.role) || BRAND_ROOT_ROLES.includes(user.role)) {
     if (!user._id) return null;
     return User.findById(user._id).lean();
+  }
+
+  if (user.adminId) {
+    return User.findById(user.adminId).lean();
   }
 
   // No known company relationship -- nothing to resolve against.

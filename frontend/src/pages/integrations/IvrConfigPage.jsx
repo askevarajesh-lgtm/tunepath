@@ -57,26 +57,28 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
 
       form.setFieldsValue({
         authType: detectedAuthType,
-        baseUrl: config.baseUrl || "",
+        baseUrl: config.baseUrl || "https://app.sollu.in",
         apiKey: config.apiKey || "",
         bearerToken: config.bearerToken || "",
         did: config.did || "",
-        outboundEndpoint: config.outboundEndpoint || "",
+        agentPhone: config.agentPhone || "",
+        outboundEndpoint: config.outboundEndpoint === "/calls/outbound" ? "/api/clicktocall" : (config.outboundEndpoint || "/api/clicktocall"),
         callbackUrl: config.callbackUrl || "",
-        recordingBaseUrl: config.recordingBaseUrl || "",
+        recordingBaseUrl: config.recordingBaseUrl || "https://app.sollu.in",
         webhookSecret: config.webhookSecret || "",
         isActive: integration.isActive !== false,
       });
     } else {
       form.setFieldsValue({
         authType: "apiKey",
-        baseUrl: "",
+        baseUrl: "https://app.sollu.in",
         apiKey: "",
         bearerToken: "",
         did: "",
-        outboundEndpoint: "",
+        agentPhone: "",
+        outboundEndpoint: "/api/clicktocall",
         callbackUrl: "",
-        recordingBaseUrl: "",
+        recordingBaseUrl: "https://app.sollu.in",
         webhookSecret: "",
         isActive: true,
       });
@@ -96,6 +98,7 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
           apiKey: values.authType === "apiKey" ? (values.apiKey || "").trim() : "",
           bearerToken: values.authType === "bearer" ? (values.bearerToken || "").trim() : "",
           did: (values.did || "").trim(),
+          agentPhone: (values.agentPhone || "").trim(),
           outboundEndpoint: (values.outboundEndpoint || "").trim(),
           callbackUrl: (values.callbackUrl || "").trim(),
           recordingBaseUrl: (values.recordingBaseUrl || "").trim(),
@@ -288,10 +291,21 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
 
             <Col span={12}>
               <Form.Item
+                name="agentPhone"
+                label={<strong>Agent Mobile Number</strong>}
+                tooltip="The mobile phone number of the agent/handset that Sollu will ring when an outbound call is clicked in CRM."
+                rules={[{ required: true, message: "Please enter Agent Mobile Number" }]}
+              >
+                <Input size="large" placeholder="e.g. 9876543210" />
+              </Form.Item>
+            </Col>
+
+            <Col span={12}>
+              <Form.Item
                 name="outboundEndpoint"
                 label={<strong>Outbound Calling Endpoint</strong>}
               >
-                <Input size="large" />
+                <Input size="large" placeholder="/api/clicktocall" />
               </Form.Item>
             </Col>
 
@@ -300,7 +314,7 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
                 name="callbackUrl"
                 label={<strong>Callback URL Param / Identifier</strong>}
               >
-                <Input size="large" />
+                <Input size="large" placeholder="https://your-domain/api/ivr/webhook" />
               </Form.Item>
             </Col>
 
@@ -309,7 +323,7 @@ const IvrConfigPage = ({ integrationId, clientId, onBack }) => {
                 name="recordingBaseUrl"
                 label={<strong>Recording CDN / Base URL (Optional)</strong>}
               >
-                <Input size="large" />
+                <Input size="large" placeholder="https://app.sollu.in" />
               </Form.Item>
             </Col>
 

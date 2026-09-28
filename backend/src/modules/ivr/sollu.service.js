@@ -56,25 +56,42 @@ function formatSolluPhone(rawPhone) {
 async function initiateOutboundCall({ customerPhone, agentPhone, did, leadId, ivrConfig = {}, metadata = {} }) {
   const baseUrl = (ivrConfig.baseUrl || process.env.SOLLU_API_BASE_URL || 'https://app.sollu.in').trim();
   const apiKey = (ivrConfig.apiKey || process.env.SOLLU_API_KEY || '').trim();
-  const outboundEndpoint = (ivrConfig.outboundEndpoint || process.env.SOLLU_OUTBOUND_ENDPOINT || '/api/clicktocall').trim();
+  let outboundEndpoint = (ivrConfig.outboundEndpoint || process.env.SOLLU_OUTBOUND_ENDPOINT || '/api/clicktocall').trim();
+  if (!outboundEndpoint || outboundEndpoint === '/calls/outbound' || outboundEndpoint === 'calls/outbound') {
+    outboundEndpoint = '/api/clicktocall';
+  }
   const callerDid = did || ivrConfig.did || process.env.SOLLU_DID || '914443126059';
 
   // Resolve public webhook callback URL (ensuring full public URL is supplied to Sollu)
-  let rawCallbackUrl = (ivrConfig.callbackUrl || process.env.SOLLU_CALLBACK_URL || 'https://varsity-unscrew-refusal.ngrok-free.dev/api/ivr/webhook').trim();
-  if (!rawCallbackUrl.startsWith('http://') && !rawCallbackUrl.startsWith('https://')) {
-    const publicHost = 'https://varsity-unscrew-refusal.ngrok-free.dev';
+  const defaultPublicHost = (
+    process.env.SOLLU_CALLBACK_URL ||
+    process.env.APP_URL ||
+    (process.env.NODE_ENV === 'production' ? 'https://tunepath.askeva.io' : 'https://varsity-unscrew-refusal.ngrok-free.dev')
+  ).replace(/\/+$/, '');
+
+  let rawCallbackUrl = (ivrConfig.callbackUrl || process.env.SOLLU_CALLBACK_URL || '').trim();
+
+  if (!rawCallbackUrl) {
+    rawCallbackUrl = defaultPublicHost.endsWith('/api/ivr/webhook')
+      ? defaultPublicHost
+      : `${defaultPublicHost}/api/ivr/webhook`;
+  } else if (!rawCallbackUrl.startsWith('http://') && !rawCallbackUrl.startsWith('https://')) {
     if (rawCallbackUrl === 'outboundcallback' || rawCallbackUrl === 'callback' || rawCallbackUrl === 'webhook') {
-      rawCallbackUrl = `${publicHost}/api/ivr/${rawCallbackUrl}`;
+      rawCallbackUrl = `${defaultPublicHost}/api/ivr/${rawCallbackUrl}`;
     } else {
-      rawCallbackUrl = `${publicHost}/${rawCallbackUrl.replace(/^\/+/, '')}`;
+      rawCallbackUrl = `${defaultPublicHost}/${rawCallbackUrl.replace(/^\/+/, '')}`;
     }
   }
 
   const formattedCustomerPhone = formatSolluPhone(customerPhone);
-  const formattedAgentPhone = formatSolluPhone(agentPhone) || formatSolluPhone(callerDid);
+  const formattedAgentPhone = formatSolluPhone(agentPhone);
 
   if (!formattedCustomerPhone) {
     throw new Error('Customer phone number is required');
+  }
+
+  if (!formattedAgentPhone) {
+    throw new Error('Agent phone number is missing. Please ensure your profile phone number or Agent Phone in Settings is configured.');
   }
 
   // If live credentials are not yet supplied, operate in sandbox/simulated mode
@@ -149,10 +166,18 @@ async function initiateOutboundCall({ customerPhone, agentPhone, did, leadId, iv
     };
   } catch (error) {
     console.error('[Sollu IVR Service] Outbound call error:', error.response?.data || error.message);
-    const errorMessage =
-      (error.response?.data && (error.response.data.message || error.response.data.msg || JSON.stringify(error.response.data))) ||
-      error.message ||
-      'Failed to initiate outbound call with Sollu IVR';
+    let errorMessage = 'Failed to initiate outbound call with Sollu IVR';
+    if (typeof error.response?.data === 'string') {
+      if (error.response.data.includes('<html') || error.response.data.includes('404') || error.response.status === 404) {
+        errorMessage = `Sollu API endpoint returned 404. Please make sure the Outbound Calling Endpoint in Settings -> Integrations is set to "/api/clicktocall"`;
+      } else {
+        errorMessage = error.response.data.slice(0, 200);
+      }
+    } else if (error.response?.data && (error.response.data.message || error.response.data.msg)) {
+      errorMessage = error.response.data.message || error.response.data.msg;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
     throw new Error(errorMessage);
   }
 }

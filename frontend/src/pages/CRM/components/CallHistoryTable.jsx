@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Table, Tag, Button, Space, Typography, Tooltip, Empty, Modal, Badge } from 'antd';
 import {
   ReloadOutlined,
@@ -10,6 +10,7 @@ import {
   CloseCircleOutlined,
   ClockCircleOutlined,
   CopyOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useGetLeadCallLogsQuery } from '../../../api/ivrApi';
@@ -93,12 +94,62 @@ const CallHistoryTable = ({ leadId, onRefreshTrigger }) => {
   const [activeAudioUrl, setActiveAudioUrl] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
+  const pollCountRef = useRef(0);
 
-  React.useEffect(() => {
+  useEffect(() => {
     setCurrentPage(1);
   }, [leadId]);
 
+  // Listen for instant call-completed event
+  useEffect(() => {
+    const handleCallCompleted = () => {
+      refetch();
+    };
+    window.addEventListener('call-completed', handleCallCompleted);
+    return () => window.removeEventListener('call-completed', handleCallCompleted);
+  }, [refetch]);
+
+  // Refetch when onRefreshTrigger changes
+  useEffect(() => {
+    if (onRefreshTrigger) {
+      refetch();
+    }
+  }, [onRefreshTrigger, refetch]);
+
   const callLogs = data?.data || [];
+
+  // Smart Auto-Polling: If there are recent calls (last 5 min) without a recording, poll every 2.5s
+  useEffect(() => {
+    if (!leadId || callLogs.length === 0) return;
+
+    const hasPendingRecording = callLogs.some((log) => {
+      const createdAt = log.createdAt || log.updatedAt || log.date;
+      const isRecent = createdAt ? Math.abs(dayjs().diff(dayjs(createdAt), 'minute')) < 5 : true;
+      const hasAudio = Boolean(
+        log.callRecordingUrl ||
+        (log.callRecording && (log.callRecording.includes('.mp3') || log.callRecording.includes('.wav'))) ||
+        (typeof log.rawPayload?.data === 'string' && log.rawPayload.data.startsWith('http'))
+      );
+      const isEnded = log.status && log.status.toLowerCase() !== 'initiated';
+      return isRecent && (!hasAudio || !isEnded);
+    });
+
+    if (!hasPendingRecording) {
+      pollCountRef.current = 0;
+      return;
+    }
+
+    const interval = setInterval(() => {
+      pollCountRef.current += 1;
+      refetch();
+      // Stop polling after 20 attempts (50 seconds)
+      if (pollCountRef.current > 20) {
+        clearInterval(interval);
+      }
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, [callLogs, leadId, refetch]);
 
   const columns = [
     {
@@ -229,14 +280,31 @@ const CallHistoryTable = ({ leadId, onRefreshTrigger }) => {
       key: 'recording',
       width: 140,
       render: (_, record) => {
-        const recordingUrl =
+        let recordingUrl =
           record.callRecordingUrl ||
           (record.callRecording?.startsWith('http') ? record.callRecording : null) ||
           (typeof record.rawPayload?.data === 'string' && record.rawPayload.data.startsWith('http')
             ? record.rawPayload.data
             : null);
 
+        if (!recordingUrl && record.callRecording && (record.callRecording.includes('.mp3') || record.callRecording.includes('.wav') || record.callRecording.includes('recording'))) {
+          recordingUrl = `https://app.sollu.in/${record.callRecording.replace(/^\/+/, '')}`;
+        }
+
         if (!recordingUrl) {
+          const rawTime = record.rawPayload?.time || record.createdAt || record.date;
+          const isRecent = rawTime ? Math.abs(dayjs().diff(dayjs(rawTime), 'minute')) < 4 : false;
+          if (isRecent) {
+            return (
+              <Tag
+                color="processing"
+                icon={<LoadingOutlined spin />}
+                style={{ borderRadius: 6, fontWeight: 600, padding: '2px 8px', fontSize: 11 }}
+              >
+                Syncing Audio...
+              </Tag>
+            );
+          }
           if (record.callRecording) {
             return (
               <Tooltip title={`File: ${record.callRecording}`}>

@@ -53,11 +53,6 @@ export function useActionPermissions(path) {
   if (path === '/performance') moduleName = 'HRMS-Performance';
 
   const hasPermission = useCallback((action) => {
-    // Senior roles (Agency Manager, Brand Head, Admins, etc.) always get full access
-    if (isSeniorUser(user, role) || ALWAYS_FULL_ACCESS_ROLES.includes(role)) {
-      return true;
-    }
-
     if (!action) return false;
     let actionKey = action.charAt(0).toUpperCase() + action.slice(1);
     
@@ -68,6 +63,29 @@ export function useActionPermissions(path) {
     else if (actionLower.includes('edit') || actionLower.includes('assign') || actionLower.includes('complete') || actionLower.includes('validate') || actionLower.includes('manage')) actionKey = 'Edit';
     else if (actionLower.includes('delete')) actionKey = 'Delete';
     else if (actionLower.includes('view') || actionLower.includes('read')) actionKey = 'View';
+
+    const userRole = String(role || user?.role || '').toLowerCase();
+    const isRegularUser = userRole === 'user';
+
+    // Senior roles, agency client admins, client admins
+    if (
+      (isSeniorUser(user, role) || ALWAYS_FULL_ACCESS_ROLES.includes(role)) &&
+      !isRegularUser
+    ) {
+      return true;
+    }
+
+    // Team members under a brand/client organization (role === 'user' with brandId/isClientRole)
+    // They get View, Create, and Edit permissions for their leads/modules, but CANNOT delete
+    if (
+      isRegularUser &&
+      (Boolean(user?.brandId) || Boolean(user?.isClientRole) || Boolean(user?.clientId))
+    ) {
+      if (actionKey === 'Delete') {
+        return false;
+      }
+      return true;
+    }
 
     const hasCustomPermissions = user && user.permissions && Object.keys(user.permissions).length > 0;
 

@@ -103,6 +103,7 @@ const MobileDialerModal = ({
           if (pollRef.current) clearInterval(pollRef.current);
           if (timerRef.current) clearInterval(timerRef.current);
           setCallState('ended');
+          window.dispatchEvent(new CustomEvent('call-completed', { detail: { leadId, callId } }));
           onClose();
         }
       } catch (e) {
@@ -118,7 +119,7 @@ const MobileDialerModal = ({
       isMounted = false;
       if (pollRef.current) clearInterval(pollRef.current);
     };
-  }, [callState, callId, open, onClose]);
+  }, [callState, callId, open, onClose, leadId]);
 
   const formatTimer = (seconds) => {
     const m = Math.floor(seconds / 60)
@@ -175,7 +176,10 @@ const MobileDialerModal = ({
       console.warn('Error ending call on server:', err);
     }
 
-    // 3. Immediately close modal at that exact moment
+    // 3. Dispatch call-completed event for instant table refresh and auto-sync
+    window.dispatchEvent(new CustomEvent('call-completed', { detail: { leadId, callId } }));
+
+    // 4. Immediately close modal at that exact moment
     onClose();
   };
 
