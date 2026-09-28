@@ -532,9 +532,9 @@ export default function CampaignScheduledPage() {
       );
     if (activeTab === "campaigns")
       return <CampaignLogsView posts={posts} accounts={filteredAccounts} />;
-    if (activeTab === "reviews")
+    if (activeTab === "reviews" || activeTab === "engagement")
       return (
-        <ReviewsView accounts={filteredAccounts} activeClientId={activeClientId} />
+        <ReviewsView accounts={filteredAccounts} activeClientId={activeClientId} posts={posts} />
       );
     if (activeTab === "dashboard")
       return (

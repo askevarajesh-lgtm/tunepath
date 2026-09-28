@@ -16,7 +16,7 @@ const CRM = () => {
   const [reportModalOpen, setReportModalOpen] = useState(false);
   
   const { data: statsData, isLoading: isStatsLoading } = useGetLeadStatsQuery();
-  const { data: leadsData, isLoading: isLeadsLoading, refetch } = useGetLeadsQuery();
+  const { data: leadsData, isLoading: isLeadsLoading, refetch } = useGetLeadsQuery(undefined, { skip: activeTab !== 'dashboard' });
   const leads = leadsData?.data?.leads || [];
   const stats = statsData?.data || null;
 

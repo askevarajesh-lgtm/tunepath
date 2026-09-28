@@ -82,6 +82,42 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
   const [detailModalAccount, setDetailModalAccount] = useState(null);
   const [detailModalData, setDetailModalData] = useState([]);
   const [detailModalLoading, setDetailModalLoading] = useState(false);
+  const [postCommentsCountMap, setPostCommentsCountMap] = useState({});
+  const [channelCommentsCountMap, setChannelCommentsCountMap] = useState({});
+  const [activeReplyCommentId, setActiveReplyCommentId] = useState(null);
+  const [modalReplyText, setModalReplyText] = useState("");
+  const [submittingModalReply, setSubmittingModalReply] = useState(false);
+
+  const handleSendModalReply = async (item) => {
+    if (!modalReplyText.trim()) {
+      message.warning("Please enter a reply message");
+      return;
+    }
+    setSubmittingModalReply(true);
+    try {
+      await campaignScheduledApi.replyToComment(
+        item.id,
+        {
+          message: modalReplyText.trim(),
+          platform: item.platform || detailModalAccount?.platform,
+          accountId: item.accountId || detailModalAccount?.accountId,
+        },
+        activeClientId
+      );
+      message.success("Reply successfully published to social channel!");
+      setDetailModalData((prev) =>
+        prev.map((c) =>
+          c.id === item.id ? { ...c, replied: true, replyText: modalReplyText.trim() } : c
+        )
+      );
+      setActiveReplyCommentId(null);
+      setModalReplyText("");
+    } catch (err) {
+      message.error(err?.response?.data?.error || err.message || "Failed to post reply");
+    } finally {
+      setSubmittingModalReply(false);
+    }
+  };
 
   const openDetailModal = async (type, accountRecord) => {
     setDetailModalType(type);
@@ -95,15 +131,24 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         setDetailModalData(res.followers || []);
       } else if (type === "comments") {
         const res = await campaignScheduledApi.getAccountCommentsList(accountRecord.accountId, activeClientId);
-        const commentsList = res.comments || [];
+        let commentsList = res.comments || [];
         const targetPlatform = accountRecord.platform?.toLowerCase();
-        const filtered = commentsList.filter((c) => {
+        let filtered = commentsList.filter((c) => {
           if (c.platform && targetPlatform && c.platform.toLowerCase() !== targetPlatform) {
             return false;
           }
           return true;
         });
+
         setDetailModalData(filtered);
+        if (filtered.length > 0) {
+          setChannelCommentsCountMap((prev) => ({
+            ...prev,
+            [accountRecord.accountId]: filtered.length,
+            ...(accountRecord.id ? { [accountRecord.id]: filtered.length } : {}),
+            ...(accountRecord.platform ? { [accountRecord.platform]: filtered.length } : {}),
+          }));
+        }
       }
     } catch (err) {
       console.error(`Failed loading ${type}:`, err);
@@ -118,6 +163,7 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
     setDetailModalAccount({
       accountName: postRecord.caption ? (postRecord.caption.length > 35 ? postRecord.caption.slice(0, 35) + "..." : postRecord.caption) : "Post",
       platform: postRecord.platform,
+      accountId: postRecord.platformId,
     });
     setDetailModalData([]);
     setDetailModalOpen(true);
@@ -144,8 +190,18 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         time: c.publishedAt ? dayjs(c.publishedAt).format("MMM DD, YYYY h:mm A") : (c.time || "Recent"),
         avatar: c.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(c.author || c.name || "User")}&background=3b82f6&color=fff`,
         platform: c.platform || postRecord.platform,
+        accountId: c.accountId || postRecord.platformId,
       }));
       setDetailModalData(formatted);
+      if (formatted.length > 0) {
+        setPostCommentsCountMap((prev) => ({
+          ...prev,
+          [postRecord.id]: formatted.length,
+          ...(postRecord.parentPostId ? { [postRecord.parentPostId]: formatted.length } : {}),
+          ...(postRecord._id ? { [postRecord._id]: formatted.length } : {}),
+          ...(postRecord.platformId ? { [`${postRecord.parentPostId || postRecord.id || postRecord._id}_${postRecord.platformId}`]: formatted.length } : {}),
+        }));
+      }
     } catch (err) {
       console.error("Failed loading post comments:", err);
       setDetailModalData([]);
@@ -336,16 +392,24 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
             const account = (accounts || []).find((a) => a.id === platformId || a.platform === pub.platform);
             const platformName = pub.platform || account?.platform || (typeof platformId === "string" ? platformId.split("-")[0] : "unknown");
 
+            const postIdKey = `${post.id || post._id}_${platformId}`;
+            const commentsCount =
+              postCommentsCountMap[postIdKey] ??
+              postCommentsCountMap[platformId] ??
+              postCommentsCountMap[post.id] ??
+              postCommentsCountMap[post._id] ??
+              (typeof pub.comments === "number" ? pub.comments : (post.comments || 0));
+
             expanded.push({
               ...post,
-              id: `${post.id || post._id}_${platformId}`,
+              id: postIdKey,
               parentPostId: post.id || post._id,
               platformId: platformId,
               platform: platformName,
               accountName: account?.page_name || account?.username || account?.business_name || post.accountName || null,
               url: pub.url || post.url,
               likes: typeof pub.likes === "number" ? pub.likes : (post.likes || 0),
-              comments: typeof pub.comments === "number" ? pub.comments : (post.comments || 0),
+              comments: commentsCount,
               shares: typeof pub.shares === "number" ? pub.shares : (post.shares || 0),
               published_at: pub.published_at || post.published_at || post.scheduled_iso,
               platform_publications: { [platformId]: pub },
@@ -353,12 +417,20 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
           }
         });
       } else {
-        expanded.push(post);
+        const commentsCount =
+          postCommentsCountMap[post.id] ??
+          postCommentsCountMap[post._id] ??
+          (post.comments || 0);
+
+        expanded.push({
+          ...post,
+          comments: commentsCount,
+        });
       }
     });
 
     return expanded.sort((a, b) => (b.likes || 0) + (b.comments || 0) - ((a.likes || 0) + (a.comments || 0)));
-  }, [analytics?.topPosts, accounts]);
+  }, [analytics?.topPosts, accounts, postCommentsCountMap]);
 
   // Overall Stats
   const currentStats = useMemo(() => {
@@ -818,16 +890,24 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
               dataIndex: "comments",
               key: "comments",
               sorter: (a, b) => a.comments - b.comments,
-              render: (val, record) => (
-                <div
-                  style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
-                  onClick={() => openDetailModal("comments", record)}
-                  title="Click to view comments"
-                >
-                  <MessageOutlined style={{ color: "#3b82f6" }} />
-                  <Text strong style={{ color: "#3b82f6" }}>{val?.toLocaleString() || 0}</Text>
-                </div>
-              ),
+              render: (val, record) => {
+                const effectiveCount =
+                  channelCommentsCountMap[record.accountId] ??
+                  channelCommentsCountMap[record.id] ??
+                  channelCommentsCountMap[record.platform] ??
+                  (typeof val === "number" ? val : 0);
+
+                return (
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+                    onClick={() => openDetailModal("comments", record)}
+                    title="Click to view comments"
+                  >
+                    <MessageOutlined style={{ color: "#3b82f6" }} />
+                    <Text strong style={{ color: "#3b82f6" }}>{effectiveCount?.toLocaleString() || 0}</Text>
+                  </div>
+                );
+              },
             },
             {
               title: "Shares / Saves",
@@ -980,27 +1060,35 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                 title: "Comments",
                 dataIndex: "comments",
                 key: "comments",
-                render: (val, record) => (
-                  <Button
-                    type="text"
-                    size="small"
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 4,
-                      cursor: "pointer",
-                      padding: "2px 8px",
-                      borderRadius: 8,
-                      background: "rgba(59, 130, 246, 0.08)",
-                      color: "#2563eb",
-                      fontWeight: 600,
-                    }}
-                    onClick={() => openPostCommentsModal(record)}
-                    title="Click to view & reply comments on this post"
-                  >
-                    <MessageOutlined style={{ color: "#3b82f6" }} /> {val || 0}
-                  </Button>
-                ),
+                render: (val, record) => {
+                  const effectiveCount =
+                    postCommentsCountMap[record.id] ??
+                    postCommentsCountMap[record.parentPostId] ??
+                    postCommentsCountMap[record._id] ??
+                    (typeof val === "number" ? val : 0);
+
+                  return (
+                    <Button
+                      type="text"
+                      size="small"
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        cursor: "pointer",
+                        padding: "2px 8px",
+                        borderRadius: 8,
+                        background: "rgba(59, 130, 246, 0.08)",
+                        color: "#2563eb",
+                        fontWeight: 600,
+                      }}
+                      onClick={() => openPostCommentsModal(record)}
+                      title="Click to view & reply comments on this post"
+                    >
+                      <MessageOutlined style={{ color: "#3b82f6" }} /> {effectiveCount}
+                    </Button>
+                  );
+                },
               },
               {
                 title: "Published Date",
@@ -1131,9 +1219,55 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                             <Text style={{ fontSize: 13, color: "var(--text-primary, #0f172a)", display: "block", fontWeight: 600 }}>
                               "{item.text}"
                             </Text>
-                            <Text type="secondary" style={{ fontSize: 11 }}>
-                              On: <i>{item.postTitle}</i> · {item.time}
-                            </Text>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4 }}>
+                              <Text type="secondary" style={{ fontSize: 11 }}>
+                                On: <i>{item.postTitle}</i> · {item.time}
+                              </Text>
+                              {["facebook", "instagram", "youtube"].includes(item.platform || detailModalAccount?.platform) && (
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  icon={<MessageOutlined />}
+                                  onClick={() => {
+                                    setActiveReplyCommentId(activeReplyCommentId === item.id ? null : item.id);
+                                    setModalReplyText("");
+                                  }}
+                                  style={{ padding: 0, height: "auto", fontWeight: 600 }}
+                                >
+                                  {activeReplyCommentId === item.id ? "Cancel" : item.replied ? "Reply Again" : "Reply"}
+                                </Button>
+                              )}
+                            </div>
+
+                            {item.replied && (
+                              <div style={{ marginTop: 6, padding: "4px 8px", background: "rgba(16, 185, 129, 0.08)", borderLeft: "2px solid #10b981", borderRadius: 4 }}>
+                                <Text style={{ fontSize: 11, color: "#059669", fontWeight: 700 }}>✓ Replied:</Text> <Text style={{ fontSize: 11 }}>{item.replyText}</Text>
+                              </div>
+                            )}
+
+                            {activeReplyCommentId === item.id && (
+                              <div style={{ marginTop: 8, padding: 8, background: "var(--bg-secondary, #f8fafc)", borderRadius: 8, border: "1px solid var(--border-color, #e2e8f0)" }}>
+                                <Input.TextArea
+                                  rows={2}
+                                  placeholder="Type reply to publish to Meta / Channel..."
+                                  value={modalReplyText}
+                                  onChange={(e) => setModalReplyText(e.target.value)}
+                                  style={{ marginBottom: 6 }}
+                                />
+                                <div style={{ display: "flex", justifyContent: "flex-end", gap: 6 }}>
+                                  <Button size="small" onClick={() => setActiveReplyCommentId(null)}>Cancel</Button>
+                                  <Button
+                                    size="small"
+                                    type="primary"
+                                    loading={submittingModalReply}
+                                    onClick={() => handleSendModalReply(item)}
+                                    style={{ background: "#6366f1" }}
+                                  >
+                                    Send Reply
+                                  </Button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
 

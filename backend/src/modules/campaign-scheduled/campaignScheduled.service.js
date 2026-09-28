@@ -60,15 +60,18 @@ function extractSingleMediaUrl(mediaVal) {
 
 const FB_SCOPES = [
   "public_profile",
-  "pages_manage_posts",
-  "pages_read_engagement",
   "pages_show_list",
+  "pages_read_engagement",
+  "pages_manage_posts",
   "pages_manage_metadata",
-  "pages_manage_ads",
-  "pages_read_user_content",
+  // "pages_read_user_content",
+  // "pages_manage_engagement",
   "instagram_basic",
   "instagram_content_publish",
-  "business_management"
+  // "instagram_manage_comments",
+  "instagram_manage_insights",
+  "read_insights",
+  "business_management",
 ].join(",");
 const LINKEDIN_SCOPES = [
   "openid",
@@ -404,20 +407,21 @@ async function executeMetaGraphApi(apiCallFn, account) {
     return await apiCallFn(account.access_token);
   } catch (err) {
     const errCode = err?.response?.data?.error?.code;
-    const errType = err?.response?.data?.error?.type;
     const errMsg = err?.response?.data?.error?.message || "";
 
-    const isTokenError =
-      errCode === 190 ||
-      errCode === 200 ||
-      errType === "OAuthException" ||
-      /impersonating a user's page|Permissions error|Session has expired|invalid token/i.test(errMsg);
+    const isTokenExpired =
+      errCode === 190 &&
+      /Session has expired|invalid token|Session has been invalidated|Validate access token/i.test(errMsg);
 
-    if (isTokenError) {
-      console.warn(`[Meta Graph API] Encountered OAuth exception (${errMsg}). Attempting token recovery/refresh for account: ${account.id}...`);
-      const freshToken = await refreshFacebookPageToken(account);
-      if (freshToken) {
-        return await apiCallFn(freshToken);
+    if (isTokenExpired) {
+      console.warn(`[Meta Graph API] Access token expired (${errMsg}). Attempting single token refresh for account: ${account.id}...`);
+      try {
+        const freshToken = await refreshFacebookPageToken(account);
+        if (freshToken) {
+          return await apiCallFn(freshToken);
+        }
+      } catch (refreshErr) {
+        console.warn(`[Meta Graph API] Token refresh attempt failed:`, refreshErr.message);
       }
     }
     throw err;
@@ -2049,71 +2053,36 @@ async function getFacebookPostMetrics(account, externalId) {
         }
       } catch (e0) {}
 
-      // Reactions / Likes summary
+      // Combined single query for Facebook metrics
       try {
-        const rxRes = await executeMetaGraphApi(
+        const postDataRes = await executeMetaGraphApi(
           (token) =>
-            axios.get(`${META_GRAPH}/${candId}/reactions`, {
+            axios.get(`${META_GRAPH}/${candId}`, {
               params: {
-                summary: "total_count",
+                fields: "shares,reactions.summary(true),likes.summary(true),comments.summary(true),permalink_url",
                 access_token: token,
               },
+              timeout: 3000,
             }),
           account,
         );
-        likesCount = rxRes.data?.summary?.total_count || 0;
+        const data = postDataRes.data || {};
+        if (data.permalink_url) resolvedUrl = data.permalink_url;
+        if (data.shares?.count) sharesCount = data.shares.count;
+        likesCount = data.reactions?.summary?.total_count ?? data.likes?.summary?.total_count ?? likesCount;
+        totalComments = data.comments?.summary?.total_count ?? (Array.isArray(data.comments?.data) ? data.comments.data.length : totalComments);
       } catch (e1) {
         try {
-          const likesRes = await executeMetaGraphApi(
+          const rxRes = await executeMetaGraphApi(
             (token) =>
-              axios.get(`${META_GRAPH}/${candId}/likes`, {
-                params: {
-                  summary: "true",
-                  access_token: token,
-                },
+              axios.get(`${META_GRAPH}/${candId}/reactions`, {
+                params: { summary: "total_count", access_token: token },
+                timeout: 2000,
               }),
             account,
           );
-          likesCount = likesRes.data?.summary?.total_count || 0;
+          likesCount = rxRes.data?.summary?.total_count || likesCount;
         } catch (e2) {}
-      }
-
-      // Comments summary
-      try {
-        const commentsRes = await executeMetaGraphApi(
-          (token) =>
-            axios.get(`${META_GRAPH}/${candId}/comments`, {
-              params: {
-                summary: "true",
-                filter: "stream",
-                access_token: token,
-              },
-            }),
-          account,
-        );
-
-        if (typeof commentsRes.data?.summary?.total_count === "number") {
-          totalComments = commentsRes.data.summary.total_count;
-        } else if (commentsRes.data?.data && Array.isArray(commentsRes.data.data)) {
-          totalComments = commentsRes.data.data.length;
-        }
-      } catch (cErr) {
-        try {
-          const commentsRes = await executeMetaGraphApi(
-            (token) =>
-              axios.get(`${META_GRAPH}/${candId}/comments`, {
-                params: {
-                  fields: "id",
-                  access_token: token,
-                  limit: 100,
-                },
-              }),
-            account,
-          );
-          if (commentsRes.data?.data) {
-            totalComments = commentsRes.data.data.length;
-          }
-        } catch (cErr2) {}
       }
 
       if (likesCount > 0 || totalComments > 0 || sharesCount > 0) {
@@ -2128,7 +2097,7 @@ async function getFacebookPostMetrics(account, externalId) {
       url: resolvedUrl,
     };
   } catch (err) {
-    console.error(
+    console.warn(
       `[Facebook Metrics] Error fetching for ${externalId}:`,
       err.message,
     );
@@ -2145,26 +2114,20 @@ async function getInstagramPostMetrics(account, externalId) {
         fields: "caption,like_count,comments_count,permalink,timestamp",
         access_token: account.access_token,
       },
+      timeout: 3000,
     });
 
-    const commentsRes = await axios.get(
-      `${META_GRAPH}/${externalId}/comments`,
-      {
-        params: {
-          fields: "text,username,timestamp",
-          access_token: account.access_token,
-        },
-      },
-    );
+    const likes = Number(mediaRes.data?.like_count) || 0;
+    const comments = Number(mediaRes.data?.comments_count) || 0;
 
     return {
-      likes: mediaRes.data?.like_count || 0,
-      comments: mediaRes.data?.comments_count || 0,
+      likes,
+      comments,
       shares: 0,
-      url: mediaRes.data?.permalink,
+      url: mediaRes.data?.permalink || `https://www.instagram.com/p/${externalId}/`,
     };
   } catch (err) {
-    console.error(
+    console.warn(
       `[Instagram Metrics] Error fetching for ${externalId}:`,
       err.message,
     );
@@ -2172,7 +2135,7 @@ async function getInstagramPostMetrics(account, externalId) {
       likes: 0,
       comments: 0,
       shares: 0,
-      url: `https://www.instagram.com/p/${externalId}/`, // Note: ID might not match permalink precisely without Graph API, but it's a fallback.
+      url: `https://www.instagram.com/p/${externalId}/`,
     };
   }
 }
@@ -2380,22 +2343,31 @@ async function refreshPostMetrics(
   }).lean();
 }
 
-async function refreshPublishedPostMetrics(companyId, clientCompanyId = null) {
+let LAST_METRIC_REFRESH_TIME = {};
+
+async function refreshPublishedPostMetrics(companyId, clientCompanyId = null, force = false) {
+  const scopeKey = `${companyId || "default"}_${clientCompanyId || "none"}`;
+  const now = Date.now();
+  if (!force && LAST_METRIC_REFRESH_TIME[scopeKey] && (now - LAST_METRIC_REFRESH_TIME[scopeKey] < 300000)) {
+    return []; // Skip if refreshed in last 5 minutes
+  }
+  LAST_METRIC_REFRESH_TIME[scopeKey] = now;
+
   const published = await Post.find({
     status: "Published",
     ...buildScopeQuery(companyId, clientCompanyId),
-  }).lean();
-  const refreshed = [];
-  for (const post of published) {
-    refreshed.push(
-      await refreshPostMetrics(
+  }).sort({ published_at: -1 }).limit(10).lean();
+
+  const refreshed = await Promise.allSettled(
+    published.map((post) =>
+      refreshPostMetrics(
         post,
         companyId || post.companyId,
         clientCompanyId ?? post.clientCompanyId ?? null,
-      ),
-    );
-  }
-  return refreshed;
+      )
+    )
+  );
+  return refreshed.map((r) => (r.status === "fulfilled" ? r.value : null)).filter(Boolean);
 }
 
 async function getPostYoutubeComments(
@@ -2807,6 +2779,21 @@ async function getPostAllComments(
         );
       }
     }
+  }
+
+  if (comments.length > 0 && (post?._id || post?.id)) {
+    const postCommentsCount = Math.max(post.comments || 0, comments.length);
+    const updateObj = { comments: postCommentsCount };
+    for (const c of comments) {
+      if (c.accountId && post.platform_publications?.[c.accountId]) {
+        updateObj[`platform_publications.${c.accountId}.comments`] = Math.max(
+          post.platform_publications[c.accountId]?.comments || 0,
+          comments.filter((item) => item.accountId === c.accountId).length,
+        );
+      }
+    }
+    const targetQuery = post._id ? { _id: post._id } : { id: post.id };
+    Post.updateOne(targetQuery, { $set: updateObj }).catch(() => {});
   }
 
   return comments.slice(0, limit);

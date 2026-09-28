@@ -12,7 +12,7 @@ import { Menu, Tag, Typography } from "antd";
 const { Title, Text } = Typography;
 
 const items = [
-  { key: "dashboard", label: "Dashboard", icon: <FundProjectionScreenOutlined /> },
+  { key: "dashboard", label: "Dashboard & Insights", icon: <FundProjectionScreenOutlined /> },
   { key: "planner", label: "Planner", icon: <AppstoreOutlined /> },
   { key: "calendar", label: "Calendar", icon: <CalendarOutlined /> },
   {
@@ -20,7 +20,7 @@ const items = [
     label: "Campaign Logs",
     icon: <DatabaseOutlined />,
   },
-  // { key: "reviews", label: "Reviews", icon: <MessageOutlined /> },
+  { key: "engagement", label: "Engagement & Moderation", icon: <MessageOutlined /> },
   { key: "accounts", label: "Accounts", icon: <SettingOutlined /> },
 ];
 

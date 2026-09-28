@@ -27,7 +27,7 @@ exports.generateAuthUrl = async (req, res, next) => {
         returnUrl: returnUrl || '/agency/performance-ads' 
     };
     const state = Buffer.from(JSON.stringify(stateObj)).toString('base64');
-    const scopes = ['pages_show_list', 'pages_read_engagement', 'pages_manage_metadata', 'pages_manage_ads', 'leads_retrieval', 'ads_read', 'business_management', 'pages_read_user_content'].join(',');
+    const scopes = ['pages_show_list', 'pages_read_engagement', 'pages_manage_posts', 'pages_manage_metadata', 'pages_manage_ads', 'instagram_basic', 'instagram_content_publish', 'instagram_manage_insights', 'read_insights', 'leads_retrieval', 'ads_read', 'ads_management', 'business_management'].join(',');
     
     const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${META_APP_ID}&redirect_uri=${encodeURIComponent(META_REDIRECT_URI)}&state=${state}&scope=${scopes}`;
     

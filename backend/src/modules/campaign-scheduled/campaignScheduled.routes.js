@@ -2052,8 +2052,8 @@ async function getOrFetchAccountLiveStats(acc, forceRefresh = false) {
 
             if (acc.platform === "instagram" && acc.ig_user_id) {
                 const mediaRes = await axios.get(`${META_GRAPH}/${acc.ig_user_id}/media`, {
-                    params: { access_token: acc.access_token, fields: "id,like_count,comments_count", limit: 25 },
-                    timeout: 1500
+                    params: { access_token: acc.access_token, fields: "id,like_count,comments_count", limit: 15 },
+                    timeout: 4000
                 }).catch(() => null);
                 const mediaList = mediaRes?.data?.data || [];
                 if (mediaList.length > 0) {
@@ -2061,31 +2061,17 @@ async function getOrFetchAccountLiveStats(acc, forceRefresh = false) {
                     comments = mediaList.reduce((sum, m) => sum + (m.comments_count || 0), 0);
                 }
             } else if (acc.platform === "facebook" && acc.page_id) {
-                let fbPostList = [];
-                const fieldsOptions = [
-                    "id,reactions.summary(true),comments.summary(true),shares",
-                    "id,likes.summary(true),comments.summary(true),shares",
-                    "id,comments.summary(true),shares"
-                ];
-                for (const fld of fieldsOptions) {
-                    try {
-                        const fbPostsRes = await axios.get(`${META_GRAPH}/${acc.page_id}/published_posts`, {
-                            params: { access_token: acc.access_token, fields: fld, limit: 25 },
-                            timeout: 1500
-                        });
-                        if (fbPostsRes.data?.data) {
-                            fbPostList = fbPostsRes.data.data;
-                            break;
-                        }
-                    } catch (fbErr) {}
-                }
+                const fbPostsRes = await axios.get(`${META_GRAPH}/${acc.page_id}/published_posts`, {
+                    params: { access_token: acc.access_token, fields: "id,reactions.summary(true),comments.summary(true),shares", limit: 15 },
+                    timeout: 4000
+                }).catch(() => null);
+                const fbPostList = fbPostsRes?.data?.data || [];
                 if (fbPostList.length > 0) {
                     likes = fbPostList.reduce((sum, m) => {
                         const rxCount = m.reactions?.summary?.total_count;
-                        const likeCount = m.likes?.summary?.total_count;
-                        return sum + (typeof rxCount === 'number' ? rxCount : (typeof likeCount === 'number' ? likeCount : 0));
+                        return sum + (typeof rxCount === 'number' ? rxCount : 0);
                     }, 0);
-                    comments = fbPostList.reduce((sum, m) => sum + (m.comments?.summary?.total_count || 0), 0);
+                    comments = fbPostList.reduce((sum, m) => sum + (m.comments?.summary?.total_count ?? (Array.isArray(m.comments?.data) ? m.comments.data.length : 0)), 0);
                     shares = fbPostList.reduce((sum, m) => sum + (m.shares?.count || 0), 0);
                 }
             }
@@ -2630,6 +2616,9 @@ router.get("/accounts/:id/likers", async (req, res) => {
     res.json({ success: true, count: likers.length, likers });
 });
 
+const ACCOUNT_COMMENTS_CACHE = new Map();
+const COMMENTS_CACHE_TTL_MS = 60 * 1000;
+
 router.get("/accounts/:id/comments-list", async (req, res) => {
     const account = await Account.findOne({
         id: req.params.id,
@@ -2640,64 +2629,73 @@ router.get("/accounts/:id/comments-list", async (req, res) => {
         return res.status(404).json({ success: false, error: "Account not found" });
     }
 
+    const cacheKey = `${account.id}_${req.companyId || ""}_${req.clientCompanyId || ""}`;
+    const cached = ACCOUNT_COMMENTS_CACHE.get(cacheKey);
+    const now = Date.now();
+    if (req.query.forceRefresh !== "true" && cached && (now - cached.timestamp < COMMENTS_CACHE_TTL_MS)) {
+        return res.json({ success: true, count: cached.comments.length, comments: cached.comments });
+    }
+
     let comments = [];
     if (account.access_token || account.platform === "youtube") {
         if (account.platform === "instagram" && account.ig_user_id) {
             try {
-                const mediaRes = await executeMetaGraphApi(
-                    (token) => axios.get(`${META_GRAPH}/${account.ig_user_id}/media`, {
-                        params: { access_token: token, fields: "id,caption,timestamp", limit: 25 }
-                    }),
-                    account
-                ).catch(() => null);
+                const mediaRes = await axios.get(`${META_GRAPH}/${account.ig_user_id}/media`, {
+                    params: { access_token: account.access_token, fields: "id,caption,timestamp", limit: 10 },
+                    timeout: 4000
+                }).catch(() => null);
                 const mediaList = mediaRes?.data?.data || [];
-                for (const media of mediaList) {
-                    try {
-                        const commRes = await executeMetaGraphApi(
-                            (token) => axios.get(`${META_GRAPH}/${media.id}/comments`, {
-                                params: { access_token: token, fields: "id,text,username,timestamp,from{id,username,name}" }
-                            }),
-                            account
-                        ).catch(() => null);
-                        const comms = commRes?.data?.data || [];
+                
+                const commentPromises = mediaList.map((media) =>
+                    axios.get(`${META_GRAPH}/${media.id}/comments`, {
+                        params: { access_token: account.access_token, fields: "id,text,username,timestamp,like_count,from{id,username}", limit: 20 },
+                        timeout: 4000
+                    }).then((commRes) => ({ media, comms: commRes?.data?.data || [] })).catch(() => ({ media, comms: [] }))
+                );
+
+                const results = await Promise.allSettled(commentPromises);
+                results.forEach((res) => {
+                    if (res.status === "fulfilled") {
+                        const { media, comms } = res.value;
                         comms.forEach((c) => {
-                            const senderName = c.username || c.from?.username || c.from?.name || account.page_name || 'Instagram User';
+                            const senderName = c.from?.username || c.username || account.username || account.page_name || 'askevarajesh';
+                            const handle = c.from?.username ? `@${c.from.username}` : (c.username ? `@${c.username}` : `@${senderName}`);
                             comments.push({
                                 id: c.id,
                                 name: senderName,
-                                username: `@${senderName}`,
+                                username: handle,
                                 text: c.text || c.message || '',
                                 postTitle: media.caption || 'Instagram Post',
                                 time: c.timestamp ? new Date(c.timestamp).toLocaleString() : 'Recent',
                                 avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=ec4899&color=fff`,
                                 platform: "instagram",
+                                accountId: account.id,
                             });
                         });
-                    } catch (cErr) {
-                        console.warn(`[Comments API] IG comments error for media ${media.id}:`, cErr.message);
                     }
-                }
+                });
             } catch (e) {
-                console.warn("[Comments API] IG media error:", e.message);
+                console.warn("[Comments API] Fast IG media error:", e.message);
             }
         } else if (account.platform === "facebook" && account.page_id) {
             try {
-                const fbPostsRes = await executeMetaGraphApi(
-                    (token) => axios.get(`${META_GRAPH}/${account.page_id}/published_posts`, {
-                        params: { access_token: token, fields: "id,message,created_time", limit: 25 }
-                    }),
-                    account
-                ).catch(() => null);
+                const fbPostsRes = await axios.get(`${META_GRAPH}/${account.page_id}/published_posts`, {
+                    params: { access_token: account.access_token, fields: "id,message,created_time", limit: 10 },
+                    timeout: 4000
+                }).catch(() => null);
                 const fbPosts = fbPostsRes?.data?.data || [];
-                for (const fbPost of fbPosts) {
-                    try {
-                        const commRes = await executeMetaGraphApi(
-                            (token) => axios.get(`${META_GRAPH}/${fbPost.id}/comments`, {
-                                params: { access_token: token, fields: "id,message,from,created_time,like_count,comments{id,message,from,created_time,like_count}" }
-                            }),
-                            account
-                        ).catch(() => null);
-                        const comms = commRes?.data?.data || [];
+
+                const commentPromises = fbPosts.map((fbPost) =>
+                    axios.get(`${META_GRAPH}/${fbPost.id}/comments`, {
+                        params: { access_token: account.access_token, fields: "id,message,from,created_time,like_count", limit: 20 },
+                        timeout: 4000
+                    }).then((commRes) => ({ fbPost, comms: commRes?.data?.data || [] })).catch(() => ({ fbPost, comms: [] }))
+                );
+
+                const results = await Promise.allSettled(commentPromises);
+                results.forEach((res) => {
+                    if (res.status === "fulfilled") {
+                        const { fbPost, comms } = res.value;
                         comms.forEach((c) => {
                             const senderName = c.from?.name || c.from?.username || account.page_name || 'Facebook User';
                             comments.push({
@@ -2709,111 +2707,79 @@ router.get("/accounts/:id/comments-list", async (req, res) => {
                                 time: c.created_time ? new Date(c.created_time).toLocaleString() : 'Recent',
                                 avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(senderName)}&background=1877f2&color=fff`,
                                 platform: "facebook",
+                                accountId: account.id,
                             });
-
-                            if (c.comments?.data && Array.isArray(c.comments.data)) {
-                                c.comments.data.forEach((subC) => {
-                                    const subAuthor = subC.from?.name || subC.from?.username || 'Facebook User';
-                                    comments.push({
-                                        id: subC.id,
-                                        parentId: c.id,
-                                        name: subAuthor,
-                                        username: `@${(subC.from?.username || subAuthor).toLowerCase().replace(/\s+/g, '')}`,
-                                        text: subC.message || '',
-                                        postTitle: fbPost.message || 'Facebook Post',
-                                        time: subC.created_time ? new Date(subC.created_time).toLocaleString() : 'Recent',
-                                        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(subAuthor)}&background=1877f2&color=fff`,
-                                        platform: "facebook",
-                                    });
-                                });
-                            }
                         });
-                    } catch (cErr) {
-                        console.warn(`[Comments API] FB comments error for post ${fbPost.id}:`, cErr.message);
                     }
-                }
+                });
             } catch (e) {
-                console.warn("[Comments API] FB posts error:", e.message);
+                console.warn("[Comments API] Fast FB posts error:", e.message);
             }
         } else if (account.platform === "youtube") {
             try {
                 if (account.page_id) {
-                    try {
-                        const youtube = await createYoutubeClientForAccount(account);
-                        const ytRes = await youtube.commentThreads.list({
-                            part: ["snippet"],
-                            allThreadsRelatedToChannelId: account.page_id,
-                            maxResults: 50,
-                            order: "time",
-                            textFormat: "plainText"
+                    const youtube = await createYoutubeClientForAccount(account);
+                    const ytRes = await youtube.commentThreads.list({
+                        part: ["snippet"],
+                        allThreadsRelatedToChannelId: account.page_id,
+                        maxResults: 20,
+                        order: "time",
+                        textFormat: "plainText"
+                    }).catch(() => null);
+                    const items = ytRes?.data?.items || [];
+                    items.forEach((item) => {
+                        const top = item.snippet?.topLevelComment?.snippet || {};
+                        const authorName = top.authorDisplayName || 'YouTube User';
+                        comments.push({
+                            id: item.id || `yt-${comments.length}`,
+                            name: authorName,
+                            username: authorName.startsWith('@') ? authorName : `@${authorName}`,
+                            text: top.textDisplay || '',
+                            postTitle: account.page_name || 'YouTube Video',
+                            time: top.publishedAt ? new Date(top.publishedAt).toLocaleString() : 'Recent',
+                            avatar: top.authorProfileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=ef4444&color=fff`,
+                            platform: "youtube",
+                            accountId: account.id,
                         });
-                        const items = ytRes.data?.items || [];
-                        const videoIds = [...new Set(items.map((i) => i.snippet?.topLevelComment?.snippet?.videoId).filter(Boolean))];
-                        const videoTitleMap = {};
-                        if (videoIds.length > 0) {
-                            try {
-                                const vRes = await youtube.videos.list({
-                                    part: ["snippet"],
-                                    id: videoIds.slice(0, 50).join(",")
-                                });
-                                (vRes.data?.items || []).forEach((v) => {
-                                    videoTitleMap[v.id] = v.snippet?.title;
-                                });
-                            } catch (_) {}
-                        }
-                        items.forEach((item) => {
-                            const top = item.snippet?.topLevelComment?.snippet || {};
-                            const vTitle = videoTitleMap[top.videoId] || account.page_name || account.username || 'YouTube Video';
-                            const authorName = top.authorDisplayName || 'YouTube User';
-                            comments.push({
-                                id: item.id || `yt-${top.videoId}-${comments.length}`,
-                                name: authorName,
-                                username: authorName.startsWith('@') ? authorName : `@${authorName}`,
-                                text: top.textDisplay || '',
-                                postTitle: vTitle,
-                                time: top.publishedAt ? new Date(top.publishedAt).toLocaleString() : 'Recent',
-                                avatar: top.authorProfileImageUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=ef4444&color=fff`,
-                                platform: "youtube",
-                            });
-                        });
-                    } catch (ytChanErr) {
-                        console.warn("[Comments API] YouTube channel comments fetch error:", ytChanErr.message);
-                    }
+                    });
                 }
-
-                if (comments.length === 0) {
-                    const posts = await getAllPosts(req.companyId, req.clientCompanyId);
-                    const ytPosts = posts.filter(
-                        (p) => p.status === "Published" && ((p.platforms || []).includes(account.id) || p.platform_publications?.[account.id])
-                    );
-                    for (const post of ytPosts) {
-                        try {
-                            const ytComments = await getPostYoutubeComments(post, 25, req.companyId, req.clientCompanyId);
-                            ytComments.forEach((c) => {
-                                if (c.accountId === account.id || !c.accountId) {
-                                    comments.push({
-                                        id: c.id,
-                                        name: c.author || 'YouTube User',
-                                        username: `@${(c.author || 'user').toLowerCase().replace(/\s+/g, '')}`,
-                                        text: c.text || '',
-                                        postTitle: post.caption || post.title || 'YouTube Video',
-                                        time: c.publishedAt ? new Date(c.publishedAt).toLocaleString() : 'Recent',
-                                        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(c.author || 'YouTube')}&background=ef4444&color=fff`,
-                                        platform: "youtube",
-                                    });
-                                }
-                            });
-                        } catch (ytErr) {
-                            console.warn("[Comments API] YouTube post comments error:", ytErr.message);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn("[Comments API] YouTube handler error:", e.message);
+            } catch (ytChanErr) {
+                console.warn("[Comments API] Fast YouTube comments error:", ytChanErr.message);
             }
         }
     }
 
+    // Include comments from published posts in CRM database for this account
+    try {
+        const posts = await getAllPosts(req.companyId, req.clientCompanyId);
+        const accPosts = posts.filter(
+            (p) => p.status === "Published" && ((p.platforms || []).includes(account.id) || p.platform_publications?.[account.id])
+        );
+        for (const p of accPosts) {
+            const pComments = await getPostAllComments(p, 20, req.companyId, req.clientCompanyId);
+            for (const pc of pComments) {
+                if (pc.accountId === account.id || pc.platform === account.platform) {
+                    if (!comments.some((existing) => existing.id === pc.id)) {
+                        comments.push({
+                            id: pc.id,
+                            name: pc.author || pc.name || account.username || 'User',
+                            username: pc.username || `@${pc.author || 'user'}`,
+                            text: pc.text,
+                            postTitle: p.caption || 'Social Post',
+                            time: pc.publishedAt ? new Date(pc.publishedAt).toLocaleString() : 'Recent',
+                            avatar: pc.avatar,
+                            platform: pc.platform || account.platform,
+                            accountId: account.id,
+                        });
+                    }
+                }
+            }
+        }
+    } catch (crmErr) {
+        console.warn("[Comments API] CRM post comments fetch warning:", crmErr.message);
+    }
+
+    ACCOUNT_COMMENTS_CACHE.set(cacheKey, { timestamp: now, comments });
     res.json({ success: true, count: comments.length, comments });
 });
 

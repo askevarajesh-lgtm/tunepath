@@ -142,6 +142,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
         setIsConvertModalOpen(false);
         setConvertingLead(null);
         convertForm.resetFields();
+        refetchServerLeads?.();
         refetch?.();
       } else {
         message.error(data.message || 'Failed to create client');
@@ -276,6 +277,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       setAssigningLeads([]);
       assignForm.resetFields();
       setSelectedRowKeys([]);
+      refetchServerLeads?.();
       refetch?.();
     } catch (error) {
       message.error(error?.data?.message || error?.message || 'Failed to assign department');
@@ -493,6 +495,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
         try {
           await deleteLead(record._id).unwrap();
           message.success('Lead deleted successfully');
+          refetchServerLeads?.();
           refetch?.();
         } catch (error) {
           message.error('Failed to delete lead');
@@ -520,16 +523,15 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
           await createLead(payload).unwrap();
           message.success('Lead created successfully');
         }
-        refetch?.();
         setIsModalOpen(false);
         setEditingLead(null);
         form.resetFields();
         setLeadCountryCode('91');
         setLeadCountryIso('IN');
+        refetchServerLeads?.();
+        refetch?.();
       } catch (error) {
         message.error(error?.data?.message || error.message || 'Failed to save lead');
-      } finally {
-        refetchServerLeads?.();
       }
     });
   };
@@ -586,6 +588,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
           const res = await bulkDeleteLeads(selectedRowKeys).unwrap();
           message.success(res.message || 'Leads deleted successfully');
           setSelectedRowKeys([]);
+          refetchServerLeads?.();
           refetch?.();
         } catch (err) {
           message.error(err.data?.message || err.message || 'Failed to delete leads');
@@ -797,7 +800,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
           columns={columns} 
           dataSource={displayLeads} 
           rowKey="_id"
-          loading={isLoading || isServerLeadsLoading}
+          loading={isServerLeadsLoading}
           pagination={{ 
             current: currentPage,
             pageSize: pageSize,
