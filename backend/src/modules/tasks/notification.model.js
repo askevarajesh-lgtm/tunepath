@@ -8,6 +8,12 @@ const notificationSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
+    subAgencyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SubAgency",
+      default: null,
+      index: true,
+    },
     taskId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Task",
@@ -66,6 +72,7 @@ const notificationSchema = new mongoose.Schema(
         "workspace_task_verification_failed",
         "form_submission",
         "lead_reminder",
+        "project_delegated",
       ],
     },
     title: {

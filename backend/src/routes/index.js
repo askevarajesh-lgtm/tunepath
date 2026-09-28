@@ -22,6 +22,7 @@ const superadminRoutes = require('../modules/superadmin/superadmin.routes');
 const commanderRoutes = require('../modules/commander/commander.routes');
 const packageRoutes = require('../modules/packages/package.routes');
 const brandRoutes = require('../modules/accounts/brand.routes');
+const subAgencyRoutes = require('../modules/subAgencies/subAgency.routes');
 const departmentRoutes = require('../modules/departments/department.routes');
 const roleRoutes = require('../modules/roles/role.routes');
 const mediaRoutes = require('../modules/media/media.routes');
@@ -82,6 +83,7 @@ router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
 router.use('/auth/canva', canvaRoutes);
 router.use('/agencies', agencyRoutes);
+router.use('/sub-agencies', subAgencyRoutes);
 router.use('/brands', brandRoutes);
 
 router.use('/agency/overview', agencyOverviewRoutes);

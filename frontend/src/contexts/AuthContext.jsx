@@ -71,6 +71,8 @@ export const AuthProvider = ({ children }) => {
         navigate('/agency/overview');
       } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(user.role) || Boolean(user.brandId)) {
         navigate('/client/dashboard');
+      } else if (user.role === 'sub_agency_super_admin') {
+        navigate('/sub-agency/dashboard');
       } else {
         navigate('/user/dashboard');
       }

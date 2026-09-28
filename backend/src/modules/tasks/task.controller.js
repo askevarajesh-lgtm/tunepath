@@ -5,11 +5,26 @@ const {
   sendError,
   sendValidationError,
 } = require('./shimResponse');
+const { withClientSanitization } = require("../../utils/clientSanitizer");
+
+const enforceSubAgencyTaskAccess = async (req, taskId) => {
+  if (req.user?.subAgencyId) {
+    const Task = require('./task.model');
+    const existingTask = await Task.findById(taskId);
+    if (!existingTask || existingTask.subAgencyId?.toString() !== req.user.subAgencyId.toString()) {
+       return false;
+    }
+  }
+  return true;
+};
 
 const getAllTasks = async (req, res) => {
   try {
     // Normalize filters
     const query = { ...req.query };
+    if (req.user?.subAgencyId) {
+      query.subAgencyId = req.user.subAgencyId;
+    }
     if (query.projectId === "null" || query.projectId === "")
       query.projectId = null;
     if (query.assignedTo === "null" || query.assignedTo === "")
@@ -25,11 +40,11 @@ const getAllTasks = async (req, res) => {
     );
     // If pagination exists, return paginated response, otherwise return legacy format
     if (result.pagination) {
-      return sendSuccess(res, "Tasks retrieved successfully", result);
+      return sendSuccess(res, "Tasks retrieved successfully", withClientSanitization(req, result));
     }
     // Legacy format for backward compatibility
     return sendSuccess(res, "Tasks retrieved successfully", {
-      tasks: result.data || result,
+      tasks: withClientSanitization(req, result.data || result),
     });
   } catch (error) {
     return sendError(res, 500, error.message);
@@ -38,13 +53,16 @@ const getAllTasks = async (req, res) => {
 
 const getTasksDropdown = async (req, res) => {
   try {
+    if (req.user?.subAgencyId) {
+      req.query.subAgencyId = req.user.subAgencyId;
+    }
     const tasks = await taskService.getTasksDropdown(
       req.companyId,
       req.query,
       req.user?.role,
       req.user?._id,
     );
-    return sendSuccess(res, "Tasks retrieved successfully", { tasks });
+    return sendSuccess(res, "Tasks retrieved successfully", { tasks: withClientSanitization(req, tasks) });
   } catch (error) {
     return sendError(res, 500, error.message);
   }
@@ -58,9 +76,52 @@ const getTaskById = async (req, res) => {
       req.user?.role,
       req.user?._id,
     );
-    return sendSuccess(res, "Task retrieved successfully", { task });
+    
+    if (req.user?.subAgencyId && task?.subAgencyId?.toString() !== req.user.subAgencyId.toString()) {
+       return sendError(res, 403, "You do not have access to this task");
+    }
+
+    return sendSuccess(res, "Task retrieved successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 404, error.message);
+  }
+};
+
+const delegateTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { subAgencyId } = req.body;
+
+    const Task = require('./task.model');
+    const task = await Task.findOne({ _id: id, companyId: req.companyId });
+    
+    if (!task) {
+      return sendError(res, 404, "Task not found");
+    }
+
+    if (!subAgencyId || subAgencyId === "null" || subAgencyId === null) {
+      task.subAgencyId = null;
+      task.delegatedByUserId = null;
+      task.delegatedAt = null;
+    } else {
+      const SubAgency = require('../subAgencies/subAgency.model');
+      const subAgency = await SubAgency.findOne({ _id: subAgencyId, mainAgencyId: req.companyId });
+      
+      if (!subAgency) {
+         return sendError(res, 403, "Invalid Sub Agency or it does not belong to your agency");
+      }
+
+      task.subAgencyId = subAgencyId;
+      task.delegatedByUserId = req.user._id;
+      task.delegatedAt = new Date();
+    }
+    
+    await task.save();
+
+    return sendSuccess(res, "Task delegation updated successfully", { task: withClientSanitization(req, task) });
+  } catch (error) {
+    console.error("[Task Controller] Error delegating task:", error);
+    return sendError(res, 500, error.message);
   }
 };
 
@@ -70,12 +131,23 @@ const createTask = async (req, res) => {
     if (!errors.isEmpty()) {
       return sendValidationError(res, errors.array());
     }
+    
+    // Inject Sub Agency context automatically and verify project delegation
+    if (req.user?.subAgencyId) {
+      const Project = require('../projects/project.model');
+      const project = await Project.findById(req.body.projectId);
+      if (!project || project.subAgencyId?.toString() !== req.user.subAgencyId.toString()) {
+         return sendError(res, 403, "You can only create tasks for projects delegated to your Sub Agency.");
+      }
+      req.body.subAgencyId = req.user.subAgencyId;
+    }
+
     const task = await taskService.createTask(
       req.body,
       req.companyId,
       req.user._id,
     );
-    return sendSuccess(res, "Task created successfully", { task });
+    return sendSuccess(res, "Task created successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -96,13 +168,26 @@ const createBulkTasks = async (req, res) => {
 
 const updateTask = async (req, res) => {
   try {
+    if (req.user?.subAgencyId) {
+      const Task = require('./task.model');
+      const existingTask = await Task.findById(req.params.id);
+      if (!existingTask || existingTask.subAgencyId?.toString() !== req.user.subAgencyId.toString()) {
+         return sendError(res, 403, "You do not have access to this task");
+      }
+      delete req.body.companyId;
+      delete req.body.clientId;
+      delete req.body.tenantCompanyId;
+      delete req.body.subAgencyId;
+      delete req.body.delegatedByUserId;
+    }
+
     const task = await taskService.updateTask(
       req.params.id,
       { ...req.body, _requesterRole: req.user?.role },
       req.companyId,
       req.user._id,
     );
-    return sendSuccess(res, "Task updated successfully", { task });
+    return sendSuccess(res, "Task updated successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -110,6 +195,9 @@ const updateTask = async (req, res) => {
 
 const holdTask = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const { holdReason } = req.body;
     const task = await taskService.holdTask(
       req.params.id,
@@ -118,7 +206,7 @@ const holdTask = async (req, res) => {
       req.user?.role,
       req.companyId
     );
-    return sendSuccess(res, "Task placed on hold successfully", { task });
+    return sendSuccess(res, "Task placed on hold successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -126,13 +214,16 @@ const holdTask = async (req, res) => {
 
 const submitTask = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const task = await taskService.submitTask(
       req.params.id,
       req.body,
       req.companyId,
       req.user._id,
     );
-    return sendSuccess(res, "Task submitted successfully", { task });
+    return sendSuccess(res, "Task submitted successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -141,6 +232,9 @@ const submitTask = async (req, res) => {
 // New validation endpoint
 const validateTask = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return sendValidationError(res, errors.array());
@@ -157,7 +251,7 @@ const validateTask = async (req, res) => {
       isValid
         ? "Task validated successfully"
         : "Task rejected. Rework requested",
-      { task },
+      { task: withClientSanitization(req, task) },
     );
   } catch (error) {
     return sendError(res, 400, error.message);
@@ -167,8 +261,11 @@ const validateTask = async (req, res) => {
 // Legacy endpoints for backward compatibility
 const approveTask = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const task = await taskService.approveTask(req.params.id, req.companyId);
-    return sendSuccess(res, "Task approved successfully", { task });
+    return sendSuccess(res, "Task approved successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -176,12 +273,15 @@ const approveTask = async (req, res) => {
 
 const clientApproveTask = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const task = await taskService.clientApproveTask(
       req.params.id,
       req.user?._id,
       req.companyId,
     );
-    return sendSuccess(res, "Task approved by client successfully", { task });
+    return sendSuccess(res, "Task approved by client successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -189,13 +289,16 @@ const clientApproveTask = async (req, res) => {
 
 const requestRework = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const { feedback } = req.body;
     const task = await taskService.requestRework(
       req.params.id,
       feedback,
       req.companyId,
     );
-    return sendSuccess(res, "Rework requested successfully", { task });
+    return sendSuccess(res, "Rework requested successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -206,7 +309,7 @@ const getTasksByProject = async (req, res) => {
   try {
     const { projectId } = req.params;
     const tasks = await taskService.getTasksByProject(projectId, req.companyId);
-    return sendSuccess(res, "Tasks retrieved successfully", { tasks });
+    return sendSuccess(res, "Tasks retrieved successfully", { tasks: withClientSanitization(req, tasks) });
   } catch (error) {
     return sendError(res, 500, error.message);
   }
@@ -221,7 +324,7 @@ const getTasksByDepartment = async (req, res) => {
       req.companyId,
       req.query,
     );
-    return sendSuccess(res, "Tasks retrieved successfully", { tasks });
+    return sendSuccess(res, "Tasks retrieved successfully", { tasks: withClientSanitization(req, tasks) });
   } catch (error) {
     return sendError(res, 500, error.message);
   }
@@ -284,7 +387,7 @@ const getTasksForKanban = async (req, res) => {
       req.user?.role,
       req.user?._id,
     );
-    return sendSuccess(res, "Tasks retrieved successfully", { tasks });
+    return sendSuccess(res, "Tasks retrieved successfully", { tasks: withClientSanitization(req, tasks) });
   } catch (error) {
     return sendError(res, 500, error.message);
   }
@@ -293,6 +396,9 @@ const getTasksForKanban = async (req, res) => {
 // Update task status and order (drag & drop)
 const updateTaskStatusAndOrder = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const { id } = req.params;
     // Handle both FormData (with file) and JSON requests
     const status = req.body.status;
@@ -318,7 +424,7 @@ const updateTaskStatusAndOrder = async (req, res) => {
       taskCategory,
       statusScope,
     );
-    return sendSuccess(res, "Task updated successfully", { task });
+    return sendSuccess(res, "Task updated successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -326,6 +432,9 @@ const updateTaskStatusAndOrder = async (req, res) => {
 
 const updateScreenshot = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const { id, attachmentId } = req.params;
     const screenshotUrl = req.file?.path || req.cloudinaryResult?.url || null;
 
@@ -340,7 +449,7 @@ const updateScreenshot = async (req, res) => {
       req.user._id,
       req.companyId,
     );
-    return sendSuccess(res, "Screenshot updated successfully", { task });
+    return sendSuccess(res, "Screenshot updated successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -350,6 +459,13 @@ const updateScreenshot = async (req, res) => {
 const updateTasksOrder = async (req, res) => {
   try {
     const { updates } = req.body;
+    if (req.user?.subAgencyId && updates && updates.length) {
+      for (const update of updates) {
+        if (!(await enforceSubAgencyTaskAccess(req, update._id))) {
+          return sendError(res, 403, "You do not have access to some of these tasks");
+        }
+      }
+    }
     const result = await taskService.updateTasksOrder(
       updates,
       req.user._id,
@@ -364,6 +480,9 @@ const updateTasksOrder = async (req, res) => {
 // Add comment to task
 const addComment = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const { id } = req.params;
     const comment = await taskService.addComment(
       id,
@@ -372,7 +491,7 @@ const addComment = async (req, res) => {
       req.companyId,
       req.user?.role,
     );
-    return sendSuccess(res, "Comment added successfully", { comment });
+    return sendSuccess(res, "Comment added successfully", { comment: withClientSanitization(req, comment) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -381,6 +500,9 @@ const addComment = async (req, res) => {
 // Get task comments
 const getTaskComments = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const { id } = req.params;
     const comments = await taskService.getTaskComments(
       id,
@@ -388,7 +510,7 @@ const getTaskComments = async (req, res) => {
       req.user?.role,
       req.user?.clientUserId || req.user?._id,
     );
-    return sendSuccess(res, "Comments retrieved successfully", { comments });
+    return sendSuccess(res, "Comments retrieved successfully", { comments: withClientSanitization(req, comments) });
   } catch (error) {
     return sendError(res, 500, error.message);
   }
@@ -397,6 +519,9 @@ const getTaskComments = async (req, res) => {
 // Get task activity
 const getTaskActivity = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const { id } = req.params;
     const activity = await taskService.getTaskActivity(
       id,
@@ -404,7 +529,7 @@ const getTaskActivity = async (req, res) => {
       req.user?.role,
       req.user?.clientUserId || req.user?._id,
     );
-    return sendSuccess(res, "Activity retrieved successfully", { activity });
+    return sendSuccess(res, "Activity retrieved successfully", { activity: withClientSanitization(req, activity) });
   } catch (error) {
     return sendError(res, 500, error.message);
   }
@@ -507,6 +632,9 @@ const updateNotificationSettings = async (req, res) => {
 
 const deleteTask = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const { id } = req.params;
     await taskService.deleteTask(id, req.companyId);
     return sendSuccess(res, "Task deleted successfully");
@@ -517,6 +645,9 @@ const deleteTask = async (req, res) => {
 
 const sendTaskReminder = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const { id } = req.params;
     await taskService.sendTaskReminder(id, req.user._id, req.companyId);
     return sendSuccess(res, "Reminder sent successfully");
@@ -557,13 +688,16 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (req, res) => {
 
 const reopenTask = async (req, res) => {
   try {
+    if (!(await enforceSubAgencyTaskAccess(req, req.params.id))) {
+      return sendError(res, 403, "You do not have access to this task");
+    }
     const task = await taskService.reopenTask(
       req.params.id,
       req.body,
       req.companyId,
       req.user._id,
     );
-    return sendSuccess(res, "Correction task created successfully", { task });
+    return sendSuccess(res, "Correction task created successfully", { task: withClientSanitization(req, task) });
   } catch (error) {
     return sendError(res, 400, error.message);
   }
@@ -573,6 +707,7 @@ module.exports = {
   getAllTasks,
   getTasksDropdown,
   getTaskById,
+  delegateTask,
   createTask,
   createBulkTasks,
   reopenTask,

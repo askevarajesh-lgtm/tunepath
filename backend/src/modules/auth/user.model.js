@@ -32,6 +32,8 @@ const UserSchema = new mongoose.Schema({
       'agency_super_admin',
       'agency_manager',
       'agency_client',
+      'sub_agency_super_admin',
+      'sub_agency_user',
       'brand_super_admin',
       'brand_manager',
       'user'
@@ -68,6 +70,7 @@ const UserSchema = new mongoose.Schema({
   customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'Role', default: null },
   roleName: { type: String, default: null },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  subAgencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'SubAgency', default: null, index: true },
 
   // Agency Specific Fields
   logo: { type: String, default: null },

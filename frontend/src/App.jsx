@@ -13,6 +13,8 @@ import AgencyLayout from './layouts/AgencyLayout';
 import ClientLayout from './layouts/ClientLayout';
 import UserLayout from './layouts/UserLayout';
 import PlaceholderPage from './components/PlaceholderPage';
+import SubAgencyLayout from './layouts/SubAgencyLayout';
+import { SubAgencyDashboard, SubAgencyProjects, SubAgencyTasks, SubAgencyUsers, SubAgencySettings } from './pages/SubAgency';
 import { 
   Users, HeartHandshake, Monitor, MessageCircle, TrendingUp, Zap, 
   CheckSquare, Globe, PieChart, BarChart2, GitMerge, LineChart, 
@@ -112,6 +114,7 @@ import AgencySupportTab from './pages/AgencyPortal/tabs/SupportTab';
 import AgencyReportsTab from './pages/AgencyPortal/tabs/AgencyReportsTab';
 import AgencySettingsTab from './pages/AgencyPortal/tabs/AgencySettingsTab';
 import AgencyUsersTab from './pages/AgencyPortal/tabs/AgencyUsersTab';
+import AgencySubAgenciesTab from './pages/AgencyPortal/tabs/AgencySubAgenciesTab';
 
 // Client Portal Tabs
 import ClientDashboardTab from './pages/ClientPortal/tabs/DashboardTab';
@@ -202,6 +205,7 @@ const ProtectedRoute = ({ allowedRoles }) => {
     if (role === 'agency_super_admin') return <Navigate to="/agency/admin-overview" replace />;
     if (['agency_manager', 'agency'].includes(role)) return <Navigate to="/agency/overview" replace />;
     if (isClientUser) return <Navigate to="/client/dashboard" replace />;
+    if (role === 'sub_agency_super_admin') return <Navigate to="/sub-agency/dashboard" replace />;
     return <Navigate to="/user/dashboard" replace />;
   }
   
@@ -281,6 +285,7 @@ const AppRoutes = () => {
           role === 'agency_super_admin' ? '/agency/admin-overview' :
           ['agency_manager', 'agency'].includes(role) ? '/agency/overview' : 
           (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) || Boolean(user?.brandId)) ? '/client/dashboard' :
+          role === 'sub_agency_super_admin' ? '/sub-agency/dashboard' :
           '/user/dashboard'
         } replace />
       ) : <SignIn />} />
@@ -438,6 +443,7 @@ const AppRoutes = () => {
           <Route path="intelligence/reporting" element={<Reports />} />
           <Route path="settings" element={role === 'agency_super_admin' ? <ErrorBoundary><AgencySettingsTab /></ErrorBoundary> : <ErrorBoundary><SettingsPage /></ErrorBoundary>} />
           <Route path="users" element={<AgencyUsersTab />} />
+          <Route path="sub-agencies" element={<AgencySubAgenciesTab />} />
           <Route path="support" element={<AgencySupportTab />} />
           
           {/* Agency Manager Dynamic Modules */}
@@ -736,6 +742,18 @@ const AppRoutes = () => {
           </Route>
           
           <Route path="settings" element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
+        </Route>
+      </Route>
+
+      {/* Sub Agency Portal Routes */}
+      <Route element={<ProtectedRoute allowedRoles={['sub_agency_super_admin']} />}>
+        <Route path="/sub-agency" element={<SubAgencyLayout />}>
+          <Route index element={<Navigate to="/sub-agency/dashboard" replace />} />
+          <Route path="dashboard" element={<SubAgencyDashboard />} />
+          <Route path="projects" element={<SubAgencyProjects />} />
+          <Route path="projects/:id" element={<ProjectDetail />} />
+          <Route path="tasks/*" element={<SubAgencyTasks />} />
+          <Route path="settings/*" element={<SubAgencySettings />} />
         </Route>
       </Route>
 

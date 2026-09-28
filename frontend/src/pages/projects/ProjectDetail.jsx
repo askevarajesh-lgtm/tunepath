@@ -60,7 +60,9 @@ import {
   useDeactivateProjectMutation,
   useUpdateProjectMilestonesMutation,
   useRenewProjectMutation,
+  useDelegateProjectMutation
 } from "../../api/projectApi";
+import { getSubAgencies } from "../../api/subAgencyApi";
 import { useGetUsersDropdownQuery } from "../../api/userApi";
 import {
   useGetCorrectionsByProjectQuery,
@@ -194,7 +196,8 @@ const ProjectDetail = () => {
 
   const { data, isLoading, error, refetch: refetchProject } = useGetProjectByIdQuery(id);
   const { data: correctionsData, refetch: refetchCorrections } = useGetCorrectionsByProjectQuery(id);
-  const { data: plData } = useGetProjectPLQuery(id);
+  const isSubAgencyUser = ['sub_agency_super_admin', 'sub_agency_user'].includes(currentUser?.role);
+  const { data: plData } = useGetProjectPLQuery(id, { skip: !id || isSubAgencyUser });
   const { data: timelineData, isLoading: isLoadingTimeline, refetch: refetchTimeline } =
     useGetTimelineEventsQuery(
       { entityType: "Project", entityId: id },
@@ -227,6 +230,34 @@ const ProjectDetail = () => {
   const [milestoneForm] = Form.useForm();
   const [updateProjectMilestones, { isLoading: isUpdatingMilestones }] =
     useUpdateProjectMilestonesMutation();
+  const [delegateProject] = useDelegateProjectMutation();
+
+  const [subAgencies, setSubAgencies] = useState([]);
+  const [isDelegating, setIsDelegating] = useState(false);
+  const [delegateModalOpen, setDelegateModalOpen] = useState(false);
+  const [selectedSubAgency, setSelectedSubAgency] = useState(null);
+
+  React.useEffect(() => {
+    if (canPerformAction(currentUser?.role, "edit-project")) {
+      getSubAgencies().then((res) => {
+        if (res.data) setSubAgencies(res.data);
+      }).catch(console.error);
+    }
+  }, [currentUser]);
+
+  const handleDelegateProject = async () => {
+    try {
+      setIsDelegating(true);
+      await delegateProject({ id, subAgencyId: selectedSubAgency }).unwrap();
+      message.success("Project delegation updated successfully");
+      setDelegateModalOpen(false);
+      refetch();
+    } catch (err) {
+      message.error(err.data?.message || "Failed to delegate project");
+    } finally {
+      setIsDelegating(false);
+    }
+  };
   const [dynamicReviews, setDynamicReviews] = useState([]);
 
   const project = data?.data?.project;
@@ -1057,6 +1088,58 @@ const ProjectDetail = () => {
                 )}
               </Descriptions>
             </Card>
+
+            {/* Sub Agency Delegation UI */}
+            {['agency_super_admin', 'agency_manager'].includes(currentUser?.role) && (
+              <Card title="Execution / Assigned Sub Agency" style={{ marginBottom: 16 }} size="small">
+                {project.subAgencyId ? (
+                  <div>
+                    <Descriptions bordered column={1} size="small" style={{ marginBottom: 16 }}>
+                      <Descriptions.Item label="Sub Agency">{project.subAgencyId?.name || "Assigned"}</Descriptions.Item>
+                      {project.delegatedByUserId && (
+                        <Descriptions.Item label="Assigned by">{project.delegatedByUserId.name || "System"}</Descriptions.Item>
+                      )}
+                      {project.delegatedAt && (
+                        <Descriptions.Item label="Assigned on">{dayjs(project.delegatedAt).format("DD MMM YYYY HH:mm")}</Descriptions.Item>
+                      )}
+                    </Descriptions>
+                    <Space>
+                      <Button onClick={() => setDelegateModalOpen(true)}>Change</Button>
+                      <Button 
+                        danger 
+                        onClick={() => {
+                          setSelectedSubAgency(null);
+                          Modal.confirm({
+                            title: 'Remove Assignment?',
+                            content: 'Are you sure you want to remove this Sub Agency assignment?',
+                            onOk: async () => {
+                              try {
+                                setIsDelegating(true);
+                                await delegateProject({ id, subAgencyId: null }).unwrap();
+                                message.success("Assignment removed");
+                                refetch();
+                              } catch(e) {
+                                message.error(e.data?.message || "Failed to remove assignment");
+                              } finally {
+                                setIsDelegating(false);
+                              }
+                            }
+                          });
+                        }}
+                        loading={isDelegating}
+                      >
+                        Remove Assignment
+                      </Button>
+                    </Space>
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ color: token.colorTextSecondary, marginBottom: 16 }}>Current: Not Assigned</p>
+                    <Button type="primary" onClick={() => setDelegateModalOpen(true)}>Assign</Button>
+                  </div>
+                )}
+              </Card>
+            )}
 
             <Card
               title="Client & Invoice Information"
@@ -2848,6 +2931,28 @@ const ProjectDetail = () => {
           </Form.Item>
         </Form>
       </Modal>
+
+        <Modal
+          title="Delegate Project to Sub Agency"
+          open={delegateModalOpen}
+          onOk={handleDelegateProject}
+          onCancel={() => {
+            setDelegateModalOpen(false);
+            setSelectedSubAgency(null);
+          }}
+          confirmLoading={isDelegating}
+        >
+          <div style={{ marginBottom: 16 }}>
+            <p>Select a Sub Agency to execute this project.</p>
+            <Select
+              style={{ width: "100%" }}
+              placeholder="Select Sub Agency"
+              value={selectedSubAgency}
+              onChange={setSelectedSubAgency}
+              options={subAgencies.map(sa => ({ label: sa.name, value: sa._id }))}
+            />
+          </div>
+        </Modal>
 
       {currentUser?.role === "client" && (
         <Modal

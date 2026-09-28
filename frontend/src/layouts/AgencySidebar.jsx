@@ -273,6 +273,10 @@ const AgencySidebar = ({ collapsed, setCollapsed }) => {
   if (!isClientSelected && ['agency_super_admin', 'agency_manager', 'agency_client'].includes(role)) {
     settingsChildren.push({ key: '/agency/support', icon: getIcon(HelpCircle), label: 'Support' });
   }
+  // Sub Agencies: Only for agency admins and managers
+  if (['agency_super_admin', 'agency_manager'].includes(role)) {
+    settingsChildren.push({ key: '/agency/sub-agencies', icon: getIcon(Briefcase), label: 'Sub Agencies' });
+  }
   // Settings item itself: always shown, unaffected by client selection
   if (feats.includes('settings') || hasAgencyFullAccess) settingsChildren.push({ key: '/agency/settings', icon: getIcon(Settings), label: 'Settings' });
 

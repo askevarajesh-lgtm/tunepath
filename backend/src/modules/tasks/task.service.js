@@ -429,6 +429,20 @@ const enforceTaskNotificationChannelsByIntegration = (
 
 // Helper function to create and emit notification
 const createAndEmitNotification = async (notificationData) => {
+  // Automatically inject subAgencyId if this notification is tied to a task with a subAgencyId
+  if (notificationData.taskId && !notificationData.subAgencyId) {
+    try {
+      const Task = require('./task.model');
+      const task = await Task.findById(notificationData.taskId).select('subAgencyId');
+      if (task && task.subAgencyId) {
+        notificationData.subAgencyId = task.subAgencyId;
+      }
+    } catch (err) {
+      console.error("Error fetching subAgencyId for notification:", err);
+    }
+  }
+
+  const Notification = require('./notification.model');
   const notification = await Notification.create(notificationData);
 
   // Populate and emit via Socket.IO
@@ -666,6 +680,10 @@ const getAllTasks = async (
   const clientCompanyIds = await getClientCompanyIds(tenantCompanyId);
   const isGlobalAdmin = ["supreme_super_admin"].includes(userRole);
 
+  if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole)) {
+    delete reqQuery.subAgencyId;
+  }
+
   // Role-based filtering: Only super_admin and admin can see all tasks.
   // All other roles (including coordinators, managers) only see tasks
   // where they are assignedTo or listed in the watchers array.
@@ -776,8 +794,8 @@ const getAllTasks = async (
 
   if (reqQuery.status) additionalFilters.status = reqQuery.status;
 
-  if (reqQuery.status) additionalFilters.status = reqQuery.status;
   if (reqQuery.companyId) additionalFilters.companyId = reqQuery.companyId;
+  if (reqQuery.subAgencyId) additionalFilters.subAgencyId = reqQuery.subAgencyId;
   if (reqQuery.department && reqQuery.department !== "all") {
     let deptValue = reqQuery.department;
     const deptFilter = await buildDepartmentFilterAsync(
@@ -1023,6 +1041,10 @@ const getTasksDropdown = async (
 ) => {
   const clientCompanyIds = await getClientCompanyIds(tenantCompanyId);
   const isGlobalAdmin = ["supreme_super_admin"].includes(userRole);
+
+  if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole)) {
+    delete reqQuery.subAgencyId;
+  }
 
   const additionalFilters = {};
   if (!isGlobalAdmin) {

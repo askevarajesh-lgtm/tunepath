@@ -74,6 +74,17 @@ const taskSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    subAgencyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "SubAgency",
+      default: null,
+      index: true,
+    },
+    delegatedByUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
 
     // Assignment
     assignedTo: {

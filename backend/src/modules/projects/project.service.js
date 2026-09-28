@@ -969,6 +969,8 @@ const resolveProjectListQueryOptions = async (
   
   if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) && userId) {
     clientIdFilter = userId;
+    delete q.subAgencyId;
+    delete q.delegatedByUserId;
   }
   
   if (
@@ -1025,6 +1027,7 @@ const resolveProjectListQueryOptions = async (
       ...(q.companyId && !clientIdFilter && { clientId: q.companyId }),
       ...(q.clientId && !clientIdFilter && { clientId: q.clientId }),
       ...(!isGlobalAdmin && tenantCompanyId && { companyId: tenantCompanyId }),
+      ...(q.subAgencyId && { subAgencyId: q.subAgencyId }),
       ...(masterItemIdFilter && { masterItemId: masterItemIdFilter }),
       ...(q.departments?.length && {
         departments: { $in: q.departments },

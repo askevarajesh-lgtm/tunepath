@@ -62,6 +62,11 @@ router.get(
   projectController.getProjectById,
 );
 router.post(
+  "/:id/delegate",
+  permissionMiddleware("edit-project"),
+  projectController.delegateProject,
+);
+router.post(
   "/",
   permissionMiddleware("create-project"),
   createProjectValidation,

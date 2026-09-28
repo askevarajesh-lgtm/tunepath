@@ -129,6 +129,11 @@ router.get(
   taskController.getTaskActivity,
 );
 router.post(
+  "/:id/delegate",
+  _permMiddleware("edit-task"),
+  taskController.delegateTask,
+);
+router.post(
   "/bulk",
   _permMiddleware("create-task"),
   taskController.createBulkTasks,

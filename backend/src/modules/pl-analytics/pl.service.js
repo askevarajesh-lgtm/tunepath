@@ -33,37 +33,41 @@ const calculateProjectPL = async (projectId, tenantCompanyId) => {
 
   const invoice = project.invoiceId;
 
-  if (!invoice) {
-    throw new Error("Invoice not found for project");
-  }
-
-  // Revenue side
-  // Handle tax as object { cgst, sgst, igst, total } or number
-  const taxAmount =
-    typeof invoice.tax === "object" && invoice.tax !== null
-      ? invoice.tax.total || 0
-      : invoice.tax || 0;
-
-  const hasCampaignItems = (invoice.items || []).some(
-    (item) => item.category === "campaign",
-  );
-  const campaignAmount = Number(invoice.campaignAmount) || 0;
-  const rawHandling =
-    invoice.handlingAmount !== undefined && invoice.handlingAmount !== null
-      ? invoice.handlingAmount
-      : invoice.subtotal || 0;
-
-  const netRevenue =
-    !hasCampaignItems && campaignAmount > 0
-      ? Math.max(0, rawHandling - campaignAmount)
-      : rawHandling;
-
-  const revenue = {
-    invoiceAmount: invoice.total,
-    taxes: taxAmount,
-    discounts: 0, // Can be added later
-    netRevenue: netRevenue,
+  // Handle revenue gracefully if there is no invoice yet
+  let revenue = {
+    invoiceAmount: 0,
+    taxes: 0,
+    discounts: 0,
+    netRevenue: 0,
   };
+
+  if (invoice) {
+    const taxAmount =
+      typeof invoice.tax === "object" && invoice.tax !== null
+        ? invoice.tax.total || 0
+        : invoice.tax || 0;
+
+    const hasCampaignItems = (invoice.items || []).some(
+      (item) => item.category === "campaign",
+    );
+    const campaignAmount = Number(invoice.campaignAmount) || 0;
+    const rawHandling =
+      invoice.handlingAmount !== undefined && invoice.handlingAmount !== null
+        ? invoice.handlingAmount
+        : invoice.subtotal || 0;
+
+    const netRevenue =
+      !hasCampaignItems && campaignAmount > 0
+        ? Math.max(0, rawHandling - campaignAmount)
+        : rawHandling;
+
+    revenue = {
+      invoiceAmount: invoice.total,
+      taxes: taxAmount,
+      discounts: 0,
+      netRevenue: netRevenue,
+    };
+  }
 
   // Cost side
   // 1. Staff cost (from tasks)

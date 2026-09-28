@@ -6,9 +6,13 @@ const {
   sendError,
   sendValidationError,
 } = require("./shimResponse");
+const { withClientSanitization } = require("../../utils/clientSanitizer");
 
 const getAllProjects = async (req, res) => {
   try {
+    if (req.user?.subAgencyId) {
+      req.query.subAgencyId = req.user.subAgencyId;
+    }
     const result = await projectService.getAllProjects(
       req.companyId,
       req.query,
@@ -17,11 +21,11 @@ const getAllProjects = async (req, res) => {
     );
     // If pagination exists, return paginated response, otherwise return legacy format
     if (result.pagination) {
-      return sendSuccess(res, "Projects retrieved successfully", result);
+      return sendSuccess(res, "Projects retrieved successfully", withClientSanitization(req, result));
     }
     // Legacy format for backward compatibility
     return sendSuccess(res, "Projects retrieved successfully", {
-      projects: result.data || result,
+      projects: withClientSanitization(req, result.data || result),
     });
   } catch (error) {
     return sendError(res, 500, error.message);
@@ -30,6 +34,9 @@ const getAllProjects = async (req, res) => {
 
 const getProjectListSummaryStats = async (req, res) => {
   try {
+    if (req.user?.subAgencyId) {
+      req.query.subAgencyId = req.user.subAgencyId;
+    }
     const summary = await projectService.getProjectListSummaryStats(
       req.companyId,
       req.query,
@@ -37,7 +44,7 @@ const getProjectListSummaryStats = async (req, res) => {
       req.user?.clientUserId || req.user?._id,
     );
     return sendSuccess(res, "Project summary retrieved successfully", {
-      summary,
+      summary: withClientSanitization(req, summary),
     });
   } catch (error) {
     return sendError(res, 500, error.message);
@@ -46,6 +53,9 @@ const getProjectListSummaryStats = async (req, res) => {
 
 const getUnassignedDeliverablesSummary = async (req, res) => {
   try {
+    if (req.user?.subAgencyId) {
+      req.query.subAgencyId = req.user.subAgencyId;
+    }
     const summary = await projectService.getUnassignedDeliverablesSummary(
       req.companyId,
       req.query,
@@ -64,6 +74,9 @@ const getUnassignedDeliverablesSummary = async (req, res) => {
 
 const getProjectReport = async (req, res) => {
   try {
+    if (req.user?.subAgencyId) {
+      req.query.subAgencyId = req.user.subAgencyId;
+    }
     const report = await projectService.getProjectReport(
       req.companyId,
       req.query,
@@ -71,7 +84,7 @@ const getProjectReport = async (req, res) => {
       req.user?.clientUserId || req.user?._id,
     );
     return sendSuccess(res, "Project report retrieved successfully", {
-      report,
+      report: withClientSanitization(req, report),
     });
   } catch (error) {
     return sendError(res, 500, error.message);
@@ -80,12 +93,15 @@ const getProjectReport = async (req, res) => {
 
 const getProjectsDropdown = async (req, res) => {
   try {
+    if (req.user?.subAgencyId) {
+      req.query.subAgencyId = req.user.subAgencyId;
+    }
     const projects = await projectService.getProjectsDropdown(req.companyId, {
       ...req.query,
       userRole: req.user?.role,
       userId: req.user?.clientUserId || req.user?._id,
     });
-    return sendSuccess(res, "Projects retrieved successfully", { projects });
+    return sendSuccess(res, "Projects retrieved successfully", { projects: withClientSanitization(req, projects) });
   } catch (error) {
     return sendError(res, 500, error.message);
   }
@@ -99,7 +115,12 @@ const getProjectById = async (req, res) => {
       req.user?.role,
       req.user?.clientUserId || req.user?._id,
     );
-    return sendSuccess(res, "Project retrieved successfully", { project });
+    
+    if (req.user?.subAgencyId && project?.subAgencyId?.toString() !== req.user.subAgencyId.toString()) {
+       return sendError(res, 403, "You do not have access to this project");
+    }
+
+    return sendSuccess(res, "Project retrieved successfully", { project: withClientSanitization(req, project) });
   } catch (error) {
     return sendError(res, 404, error.message);
   }
@@ -147,8 +168,83 @@ const createProject = async (req, res) => {
   }
 };
 
+const delegateProject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { subAgencyId } = req.body;
+
+    const Project = require('./project.model');
+    const project = await Project.findOne({ _id: id, companyId: req.companyId });
+    
+    if (!project) {
+      return sendError(res, 404, "Project not found");
+    }
+
+    if (!subAgencyId || subAgencyId === "null" || subAgencyId === null) {
+      // Remove delegation
+      project.subAgencyId = null;
+      project.delegatedByUserId = null;
+      project.delegatedAt = null;
+    } else {
+      // Add/Change delegation
+      const SubAgency = require('../subAgencies/subAgency.model');
+      const subAgency = await SubAgency.findOne({ _id: subAgencyId, mainAgencyId: req.companyId });
+      
+      if (!subAgency) {
+         return sendError(res, 403, "Invalid Sub Agency or it does not belong to your agency");
+      }
+
+      // Check if this is a new assignment to a different Sub Agency
+      const isNewDelegation = project.subAgencyId?.toString() !== subAgencyId.toString();
+
+      project.subAgencyId = subAgencyId;
+      project.delegatedByUserId = req.user._id;
+      project.delegatedAt = new Date();
+      
+      if (isNewDelegation) {
+         const User = require('../auth/user.model');
+         const subAgencyAdmins = await User.find({ subAgencyId, role: "sub_agency_super_admin" });
+         if (subAgencyAdmins.length > 0) {
+           const Notification = require('../tasks/notification.model');
+           const notifications = subAgencyAdmins.map(admin => ({
+             userId: admin._id,
+             subAgencyId: subAgencyId,
+             type: "project_delegated",
+             title: "New Project Delegated",
+             message: `Project "${project.name}" has been delegated to your agency by ${req.user.name}.`,
+             channels: { inApp: true }
+           }));
+           await Notification.insertMany(notifications);
+         }
+      }
+    }
+    
+    await project.save();
+
+    return sendSuccess(res, "Project delegation updated successfully", { project });
+  } catch (error) {
+    console.error("[Project Controller] Error delegating project:", error);
+    return sendError(res, 500, error.message);
+  }
+};
+
 const updateProject = async (req, res) => {
   try {
+    // Sub Agency Isolation: Sub Agencies cannot update core ownership logic or arbitrary fields
+    if (req.user?.subAgencyId) {
+      const Project = require('./project.model');
+      const existingProject = await Project.findById(req.params.id);
+      if (!existingProject || existingProject.subAgencyId?.toString() !== req.user.subAgencyId.toString()) {
+         return sendError(res, 403, "You do not have access to this project");
+      }
+      // Force ignore any attempts to change ownership or delegation
+      delete req.body.companyId;
+      delete req.body.clientId;
+      delete req.body.tenantCompanyId;
+      delete req.body.subAgencyId;
+      delete req.body.delegatedByUserId;
+    }
+
     const project = await projectService.updateProject(
       req.params.id,
       req.body,
@@ -484,6 +580,7 @@ module.exports = {
   getProjectsDropdown,
   getProjectById,
   createProject,
+  delegateProject,
   updateProject,
   deleteProject,
   bulkDeleteProjects,

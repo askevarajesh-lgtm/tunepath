@@ -130,6 +130,7 @@ export const useBulkDeleteProjectsMutation = createMutationHook((data) => ({ url
 export const useRenewProjectMutation = createMutationHook((id) => ({ url: `/projects/${id}/renew`, method: 'POST' }));
 export const useUpdateProjectMutation = createMutationHook(({ id, ...data }) => ({ url: `/projects/${id}`, method: 'PUT', data }));
 export const useCreateProjectMutation = createMutationHook((data) => ({ url: '/projects', method: 'POST', data }));
+export const useDelegateProjectMutation = createMutationHook(({ id, subAgencyId }) => ({ url: `/projects/${id}/delegate`, method: 'POST', data: { subAgencyId } }));
 
 export const useSubmitForClientReviewMutation = createMutationHook((id) => ({ url: `/projects/${id}/submit-review`, method: 'POST' }));
 export const useClientApproveMutation = createMutationHook((id) => ({ url: `/projects/${id}/client-approve`, method: 'POST' }));

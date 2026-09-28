@@ -34,6 +34,10 @@ const authMiddleware = async (req, res, next) => {
                 }
               }
               req.user.adminId = dbUser.adminId;
+              if (dbUser.subAgencyId) {
+                req.user.subAgencyId = dbUser.subAgencyId;
+                req.subAgencyId = dbUser.subAgencyId;
+              }
             }
           } catch (dbErr) {
             console.error("AuthMiddleware DB lookup error:", dbErr);
@@ -104,7 +108,11 @@ const authMiddleware = async (req, res, next) => {
     // Soft Impersonation for Agency Users
     // This allows Agency Managers to seamlessly use the client portal context across all modules
     const agencyRoles = ['agency_manager', 'agency_super_admin', 'agency', 'commander_admin'];
-    if (agencyRoles.includes(req.user.role)) {
+    
+    // Explicitly prevent sub agency users from triggering Main Agency soft impersonation
+    const isSubAgencyRole = ['sub_agency_super_admin', 'sub_agency_user'].includes(req.user.role);
+
+    if (agencyRoles.includes(req.user.role) && !isSubAgencyRole) {
        req.user.originalRole = req.user.role;
        req.user.role = 'brand_manager'; // Act as a client manager to isolate data
        req.user.brandId = req.selectedClientId;
