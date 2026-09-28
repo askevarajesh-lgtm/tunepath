@@ -16,6 +16,7 @@ router.route('/:id')
 
 router.post('/:id/approve', proposalController.approveProposal);
 router.post('/:id/generate-invoice', proposalController.generateInvoice);
+router.post('/:id/approve-and-generate-invoice', proposalController.approveAndGenerateInvoice);
 router.get('/:id/pdf', proposalController.generatePDF);
 
 module.exports = router;
