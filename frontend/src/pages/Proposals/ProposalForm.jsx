@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Form, Input, InputNumber, Select, Button, Space, Descriptions, Tag, message, Row, Col, Switch, Divider } from 'antd';
+import { Card, Form, Input, InputNumber, Select, Button, Space, Descriptions, Tag, message, Row, Col, Switch, Divider, Checkbox } from 'antd';
 import { MinusCircleOutlined, PlusOutlined } from '@ant-design/icons';
-import { useNavigate, useParams, useLocation } from 'react-router-dom';
+import { useNavigate, useParams, useLocation, useSearchParams } from 'react-router-dom';
 import { Typography } from 'antd';
 import dayjs from 'dayjs';
 import api from '../../services/api';
@@ -14,13 +14,19 @@ const ProposalForm = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const isEditing = !!id;
+  
+  const flow = searchParams.get('flow');
+  const queryClientId = searchParams.get('clientId');
 
   const [form] = Form.useForm();
   const [clients, setClients] = useState([]);
   const [masterItems, setMasterItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isCustomizing, setIsCustomizing] = useState(false);
+  const [taxSettings, setTaxSettings] = useState({ gstPercentage: 18, gstEnabled: false });
+  const [gstIncluded, setGstIncluded] = useState(false);
 
   const selectedMasterItemId = Form.useWatch('masterItems', form);
   const selectedMasterItem = masterItems.find(item => item._id === selectedMasterItemId);
@@ -28,6 +34,7 @@ const ProposalForm = () => {
   useEffect(() => {
     const init = async () => {
       await fetchClients();
+      await fetchTaxSettings();
       const loadedItems = await fetchMasterItems();
       if (isEditing) {
         await fetchProposal(loadedItems);
@@ -35,6 +42,12 @@ const ProposalForm = () => {
     };
     init();
   }, [id, isEditing]);
+
+  useEffect(() => {
+    if (queryClientId && flow === 'client-to-proposal' && !isEditing && clients.length > 0) {
+      form.setFieldsValue({ clientId: queryClientId });
+    }
+  }, [queryClientId, flow, isEditing, clients, form]);
 
   const fetchProposal = async (loadedMasterItems = []) => {
     try {
@@ -64,9 +77,13 @@ const ProposalForm = () => {
           name: proposal.name,
           clientId: proposal.clientId?._id || proposal.clientId,
           masterItems: masterItemId,
-          grandTotal: proposal.grandTotal,
+          subtotal: proposal.subtotal || proposal.grandTotal,
           notes: proposal.notes
         });
+
+        if (proposal.tax > 0) {
+          setGstIncluded(true);
+        }
 
         // If the master item is custom, switch to customizing mode and populate fields
         if (proposalMasterItem && typeof proposalMasterItem === 'object' && proposalMasterItem.isCustom) {
@@ -99,7 +116,7 @@ const ProposalForm = () => {
     if (selectedMasterItem && !isCustomizing) {
       const basePrice = selectedMasterItem.price || 0;
       const campAmt = selectedMasterItem.isCampaign ? (selectedMasterItem.campaignDetails?.campaignAmount || 0) : 0;
-      form.setFieldsValue({ grandTotal: basePrice + campAmt });
+      form.setFieldsValue({ subtotal: basePrice + campAmt });
     }
   }, [selectedMasterItem, isCustomizing, form]);
 
@@ -113,7 +130,7 @@ const ProposalForm = () => {
       if (needsRecalc) {
         const cPrice = allValues.customPrice || 0;
         const cCampAmt = allValues.customIsCampaign ? (allValues.customCampaignDetails?.campaignAmount || 0) : 0;
-        form.setFieldsValue({ grandTotal: cPrice + cCampAmt });
+        form.setFieldsValue({ subtotal: cPrice + cCampAmt });
       }
     }
   };
@@ -126,6 +143,21 @@ const ProposalForm = () => {
       }
     } catch (error) {
       console.error('Failed to fetch clients:', error);
+    }
+  };
+
+  const fetchTaxSettings = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch('/api/agency/settings/profile', {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && data.data?.taxSettings) {
+        setTaxSettings(data.data.taxSettings);
+      }
+    } catch (error) {
+      console.error('Failed to fetch tax settings:', error);
     }
   };
 
@@ -154,12 +186,18 @@ const ProposalForm = () => {
     try {
       setLoading(true);
       
+      const subtotalVal = values.subtotal || 0;
+      const taxAmount = gstIncluded && taxSettings.gstEnabled ? (subtotalVal * taxSettings.gstPercentage / 100) : 0;
+      const finalGrandTotal = subtotalVal + taxAmount;
+
       const payload = {
         name: values.name,
         clientId: values.clientId,
         masterItems: [values.masterItems], // Backend expects array
-        subtotal: values.grandTotal, // Mirror total
-        grandTotal: values.grandTotal,
+        subtotal: subtotalVal,
+        tax: taxAmount,
+        discount: 0,
+        grandTotal: finalGrandTotal,
         notes: values.notes,
         status: 'Draft'
       };
@@ -192,8 +230,22 @@ const ProposalForm = () => {
       }
 
       if (res.data?.success) {
-        message.success(`Proposal ${isEditing ? 'updated' : 'created'} successfully`);
-        navigate(`${getBaseRoute()}/proposals`);
+        if (form.getFieldValue('submitAction') === 'approve_and_invoice') {
+          const proposalId = isEditing ? id : res.data.data._id;
+          const approveRes = await api.post(`/proposals/${proposalId}/approve-and-generate-invoice`);
+          if (approveRes.data?.success) {
+            message.success('Proposal approved and invoice generated successfully');
+            navigate(`${getBaseRoute()}/invoices/${approveRes.data.data.invoice._id}?flow=proposal-to-invoice`);
+          } else {
+            message.error(approveRes.data?.message || 'Failed to generate invoice');
+            if (!isEditing) {
+               navigate(`${getBaseRoute()}/proposals/${proposalId}`);
+            }
+          }
+        } else {
+          message.success(`Proposal ${isEditing ? 'updated' : 'created'} successfully`);
+          navigate(`${getBaseRoute()}/proposals`);
+        }
       } else {
         message.error(res.data?.message || "Operation failed");
       }
@@ -478,7 +530,7 @@ const ProposalForm = () => {
             </div>
           )}
 
-          <Form.Item label="Total Amount" name="grandTotal" rules={[{ required: true }]}>
+          <Form.Item label="Subtotal" name="subtotal" rules={[{ required: true }]}>
             <InputNumber 
               style={{ width: '100%' }} 
               prefix="₹" 
@@ -487,12 +539,70 @@ const ProposalForm = () => {
             />
           </Form.Item>
 
+          {taxSettings.gstEnabled && (
+            <div style={{ marginBottom: 24, padding: '16px 24px', border: '1px solid var(--border-color)', borderRadius: 8, background: 'var(--bg-secondary)' }}>
+              <div style={{ marginBottom: 16 }}>
+                <Checkbox checked={gstIncluded} onChange={(e) => setGstIncluded(e.target.checked)}>
+                  <span style={{ fontWeight: 600 }}>GST Included</span>
+                </Checkbox>
+              </div>
+              {gstIncluded && (
+                <div style={{ background: 'var(--bg-primary)', padding: '12px 16px', borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <Typography.Text strong>Tax Type: GST (CGST+SGST) ({taxSettings.gstPercentage}%)</Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 13 }}>Tax calculated at {taxSettings.gstPercentage}% as per proposal.</Typography.Text>
+                </div>
+              )}
+            </div>
+          )}
+
+          <Form.Item shouldUpdate={(prevValues, currentValues) => prevValues.subtotal !== currentValues.subtotal}>
+            {() => {
+              const subtotalVal = form.getFieldValue('subtotal') || 0;
+              const taxAmount = gstIncluded && taxSettings.gstEnabled ? (subtotalVal * taxSettings.gstPercentage / 100) : 0;
+              const finalGrandTotal = subtotalVal + taxAmount;
+              const cgst = taxAmount / 2;
+              const sgst = taxAmount / 2;
+
+              return (
+                <div style={{ padding: 24, background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end' }}>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, width: '100%', maxWidth: 400 }}>
+                      <span style={{ fontWeight: 600, flex: 1, textAlign: 'right' }}>Subtotal:</span>
+                      <span style={{ width: 150, textAlign: 'right' }}>₹{subtotalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    {gstIncluded && taxSettings.gstEnabled && (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, width: '100%', maxWidth: 400 }}>
+                          <span style={{ fontWeight: 600, flex: 1, textAlign: 'right' }}>Tax (GST (CGST+SGST) ({taxSettings.gstPercentage}%)):</span>
+                          <span style={{ width: 150, textAlign: 'right' }}>₹{taxAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, width: '100%', maxWidth: 400, color: 'var(--text-secondary)', fontSize: 13 }}>
+                          <span style={{ flex: 1, textAlign: 'right' }}>CGST ({taxSettings.gstPercentage / 2}%): ₹{cgst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} | SGST ({taxSettings.gstPercentage / 2}%): ₹{sgst.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                          <span style={{ width: 150 }}></span>
+                        </div>
+                      </>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, width: '100%', maxWidth: 400, marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-color)' }}>
+                      <span style={{ fontWeight: 800, fontSize: 16, flex: 1, textAlign: 'right' }}>Total (Proposal):</span>
+                      <span style={{ width: 150, fontWeight: 800, fontSize: 16, textAlign: 'right' }}>₹{subtotalVal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, width: '100%', maxWidth: 400, marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-color)' }}>
+                      <span style={{ fontWeight: 800, fontSize: 18, color: '#52c41a', flex: 1, textAlign: 'right' }}>Grand Total (Payable):</span>
+                      <span style={{ width: 150, fontWeight: 800, fontSize: 18, color: '#52c41a', textAlign: 'right' }}>₹{finalGrandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            }}
+          </Form.Item>
+
           <Form.Item label="Notes" name="notes">
             <TextArea rows={4} placeholder="Add any additional notes for the client..." />
           </Form.Item>
 
           <Space style={{ marginTop: 16 }}>
-            <Button type="primary" htmlType="submit" loading={loading}>{isEditing ? 'Update' : 'Save'}</Button>
+            <Button type="primary" htmlType="submit" onClick={() => form.setFieldsValue({ submitAction: 'save' })} loading={loading}>{isEditing ? 'Update' : 'Save'}</Button>
+            <Button type="primary" htmlType="submit" onClick={() => form.setFieldsValue({ submitAction: 'approve_and_invoice' })} loading={loading} style={{ background: 'var(--accent-secondary, #1890ff)' }}>Approve Proposal & Create Invoice</Button>
             <Button onClick={() => navigate(`${getBaseRoute()}/proposals`)} disabled={loading}>Cancel</Button>
           </Space>
         </Form>

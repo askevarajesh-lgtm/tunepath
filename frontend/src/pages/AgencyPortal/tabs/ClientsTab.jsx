@@ -217,7 +217,14 @@ const ClientsTab = () => {
     }
   }, [location.state, form]);
 
-  const handleCreateClient = async (values) => {
+  const getBaseRoute = () => {
+    if (location.pathname.startsWith("/client")) return "/client/workspace";
+    if (location.pathname.startsWith("/agency")) return "/agency";
+    if (location.pathname.startsWith("/user")) return "/user/workspace";
+    return "/workspace";
+  };
+
+  const handleCreateClient = async (values, createProposal = false) => {
     try {
       setLoading(true);
 
@@ -252,6 +259,9 @@ const ClientsTab = () => {
         setClientCountryIso('IN');
         setCreateDealId(null);
         fetchClients();
+        if (createProposal) {
+          navigate(`${getBaseRoute()}/proposals/new?clientId=${data.data._id}&flow=client-to-proposal`);
+        }
       } else {
         message.error(data.message || 'Failed to create client');
       }
@@ -962,7 +972,7 @@ const ClientsTab = () => {
         open={isCreateModalOpen}
         onCancel={() => setIsCreateModalOpen(false)}
         footer={null}
-        width={520}
+        width={800}
         closeIcon={<span style={{ color: 'var(--text-tertiary)', fontSize: 20 }}>×</span>}
         styles={{
           header: { padding: '24px 24px 16px 24px', borderBottom: '1px solid var(--border-color)' },
@@ -973,7 +983,7 @@ const ClientsTab = () => {
         <Form
           form={form}
           layout="vertical"
-          onFinish={handleCreateClient}
+          onFinish={(values) => handleCreateClient(values, form.getFieldValue('submitAction') === 'create_and_proposal')}
           requiredMark={true}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
@@ -1185,10 +1195,20 @@ const ClientsTab = () => {
             <Button
               type="primary"
               htmlType="submit"
+              onClick={() => form.setFieldsValue({ submitAction: 'create' })}
               loading={loading}
               style={{ background: 'var(--accent-primary)', fontWeight: 700, borderRadius: 8, height: 44, padding: '0 24px' }}
             >
-              Save
+              Create Client
+            </Button>
+            <Button
+              type="primary"
+              htmlType="submit"
+              onClick={() => form.setFieldsValue({ submitAction: 'create_and_proposal' })}
+              loading={loading}
+              style={{ background: 'var(--accent-secondary, #1890ff)', fontWeight: 700, borderRadius: 8, height: 44, padding: '0 24px' }}
+            >
+              Save & Create Proposal
             </Button>
           </div>
         </Form>

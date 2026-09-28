@@ -251,6 +251,65 @@ exports.generateInvoice = async (req, res, next) => {
   }
 };
 
+// Approve and Generate Invoice
+exports.approveAndGenerateInvoice = async (req, res, next) => {
+  try {
+    const proposal = await Proposal.findOne({ _id: req.params.id, isDeleted: false });
+    if (!proposal) {
+      return res.status(404).json({ success: false, message: 'Proposal not found' });
+    }
+
+    proposal.status = 'Approved';
+    proposal.updatedBy = req.user._id;
+
+    // Check if invoice already exists
+    const existingInvoice = await Invoice.findOne({ proposalId: proposal._id, isDeleted: false });
+    if (existingInvoice) {
+      proposal.status = 'Converted to Invoice';
+      await proposal.save();
+      return res.status(200).json({
+        success: true,
+        data: {
+          proposal,
+          invoice: existingInvoice
+        },
+        message: 'Proposal approved. Invoice already exists.'
+      });
+    }
+
+    // Create Invoice
+    const invoiceData = {
+      proposalId: proposal._id,
+      clientId: proposal.clientId,
+      amount: proposal.subtotal,
+      tax: proposal.tax,
+      discount: proposal.discount,
+      grandTotal: proposal.grandTotal,
+      dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000), // Default +15 days
+      createdBy: req.user._id,
+      adminId: proposal.adminId,
+      agencyId: proposal.agencyId,
+      brandId: proposal.brandId
+    };
+
+    const invoice = await Invoice.create(invoiceData);
+
+    proposal.status = 'Converted to Invoice';
+    await proposal.save();
+
+    res.status(200).json({
+      success: true,
+      data: {
+        proposal,
+        invoice
+      },
+      message: 'Proposal approved and invoice generated successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Generate PDF (Mock implementation)
 exports.generatePDF = async (req, res, next) => {
   try {

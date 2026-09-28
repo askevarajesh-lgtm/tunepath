@@ -652,7 +652,9 @@ const ProfessionalInvoice = ({ invoice }) => {
                       fontSize: 12,
                     }}
                   >
-                    <span style={{ color: "var(--text-secondary)" }}>Tax. Vit (15%):</span>
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      Tax ({invoice.tax > 0 && invoice.amount > 0 ? Math.round((invoice.tax / invoice.amount) * 100) : 0}%):
+                    </span>
                     <strong style={{ color: "var(--text-primary)" }}>
                       {invoice.tax > 0 ? formatCurrency(invoice.tax) : formatCurrency(0)}
                     </strong>
@@ -665,7 +667,9 @@ const ProfessionalInvoice = ({ invoice }) => {
                       fontSize: 12,
                     }}
                   >
-                    <span style={{ color: "var(--text-secondary)" }}>Discount 5%:</span>
+                    <span style={{ color: "var(--text-secondary)" }}>
+                      Discount ({invoice.discount > 0 && invoice.amount > 0 ? Math.round((invoice.discount / invoice.amount) * 100) : 0}%):
+                    </span>
                     <strong style={{ color: "#ef4444" }}>
                       {invoice.discount > 0 ? `- ${formatCurrency(invoice.discount)}` : formatCurrency(0)}
                     </strong>
