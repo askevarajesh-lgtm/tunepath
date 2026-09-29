@@ -160,7 +160,7 @@ exports.getAgencyExecutiveDashboard = async (agencyId, queryMonth, queryYear, qu
   };
 };
 
-exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, queryClientId) => {
+exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, queryClientId, subAgencyId = null) => {
   const now = new Date();
   
   let startOfPeriod;
@@ -199,6 +199,7 @@ exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, q
   // Tasks Due Today & Overdue
   let taskQuery = { tenantCompanyId: { $in: [agencyId, ...clientIds] }, status: { $nin: ['done', 'complete', 'completed', 'validated', 'approved'] } };
   if (queryClientId) taskQuery.companyId = queryClientId;
+  if (subAgencyId) taskQuery.subAgencyId = subAgencyId;
   
   const activeTasks = await Task.find(taskQuery).populate('assignedTo', 'name').populate('companyId', 'companyName');
   
@@ -219,6 +220,7 @@ exports.getAgencyOperationsDashboard = async (agencyId, queryMonth, queryYear, q
   // Active Projects
   let projectQuery = { companyId: { $in: [agencyId, ...clientIds] }, status: { $ne: 'completed' } };
   if (queryClientId) projectQuery.clientId = queryClientId;
+  if (subAgencyId) projectQuery.subAgencyId = subAgencyId;
   const activeProjects = await Project.find(projectQuery).populate('clientId', 'companyName').sort({ endDate: 1 });
 
   return {

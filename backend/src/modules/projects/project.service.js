@@ -991,6 +991,14 @@ const resolveProjectListQueryOptions = async (
     q.departments = WEBSITE_COORDINATOR_DEPARTMENTS;
   }
 
+  // FORCE Sub Agency restriction
+  if (['sub_agency_super_admin', 'sub_agency_user'].includes(userRole)) {
+    if (!q.subAgencyId) {
+       // If no subAgencyId is present on the query for a Sub Agency user, block access immediately.
+       return { ok: false };
+    }
+  }
+
   const pickItemNameParam = (v) => {
     if (v == null || v === "") return "";
     const x = Array.isArray(v) ? v[0] : v;
@@ -1410,6 +1418,13 @@ const getProjectsDropdown = async (tenantCompanyId, reqQuery = {}) => {
     }
   }
 
+  // FORCE Sub Agency restriction
+  if (['sub_agency_super_admin', 'sub_agency_user'].includes(reqQuery.userRole)) {
+    if (!reqQuery.subAgencyId) {
+       return [];
+    }
+  }
+
   // website_coordinator only sees website-designing and web-application-development projects
   let masterItemIdFilter = reqQuery.masterItemId || null;
   const websiteCoordinatorProjectFilter =
@@ -1481,6 +1496,7 @@ const getProjectsDropdown = async (tenantCompanyId, reqQuery = {}) => {
     additionalFilters: {
       ...(!isGlobalAdmin && { companyId: tenantCompanyId }),
       ...(clientIdFilter && { clientId: clientIdFilter }),
+      ...(reqQuery.subAgencyId && { subAgencyId: reqQuery.subAgencyId }),
       isActive: { $ne: false }, // Only show active projects in dropdown (handle missing field on old projects)
       // Default to excluding inactive/closed if status is not provided
       ...(reqQuery.status

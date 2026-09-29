@@ -59,6 +59,7 @@ const ProjectList = () => {
   const getBaseRoute = () => {
     if (location.pathname.startsWith("/client")) return "/client/workspace";
     if (location.pathname.startsWith("/agency")) return "/agency";
+    if (location.pathname.startsWith("/sub-agency")) return "/sub-agency";
     if (location.pathname.startsWith("/user")) return "/user/workspace";
     return "/workspace";
   };

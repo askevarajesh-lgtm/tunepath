@@ -128,6 +128,9 @@ const getProjectById = async (req, res) => {
 
 const createProject = async (req, res) => {
   try {
+    if (['sub_agency_super_admin', 'sub_agency_user'].includes(req.user?.role)) {
+       return sendError(res, 403, "Forbidden: Sub Agencies cannot create projects");
+    }
     const Task = require('../tasks/task.model');
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -170,6 +173,11 @@ const createProject = async (req, res) => {
 
 const delegateProject = async (req, res) => {
   try {
+    // Only Main Agency admins can delegate projects
+    if (!['agency_super_admin', 'agency_manager'].includes(req.user?.role)) {
+       return sendError(res, 403, "Forbidden: Only Agency Admins can delegate projects");
+    }
+
     const { id } = req.params;
     const { subAgencyId } = req.body;
 
@@ -258,6 +266,9 @@ const updateProject = async (req, res) => {
 
 const deleteProject = async (req, res) => {
   try {
+    if (req.user?.subAgencyId) {
+      return sendError(res, 403, "Forbidden: Sub Agencies cannot delete projects");
+    }
     await projectService.deleteProject(req.params.id, req.companyId);
     return sendSuccess(res, "Project deleted successfully");
   } catch (error) {
@@ -489,6 +500,9 @@ const updateProjectMilestones = async (req, res) => {
 
 const bulkDeleteProjects = async (req, res) => {
   try {
+    if (req.user?.subAgencyId) {
+      return sendError(res, 403, "Forbidden: Sub Agencies cannot delete projects");
+    }
     const { projectIds } = req.body;
     if (!projectIds || !Array.isArray(projectIds)) {
       return sendError(res, 400, "Project IDs array is required");

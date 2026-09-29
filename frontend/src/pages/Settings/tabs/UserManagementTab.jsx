@@ -218,8 +218,9 @@ const UserManagementTab = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const isSubAgency = user?.role === 'sub_agency_super_admin';
       const [usersRes, deptsRes, rolesRes] = await Promise.all([
-        api.get('/users'),
+        api.get(isSubAgency ? '/sub-agencies/users' : '/users'),
         api.get('/departments'),
         api.get('/roles')
       ]);
@@ -253,7 +254,9 @@ const UserManagementTab = () => {
   // Handlers
   const handleToggleUserStatus = async (record) => {
     try {
-      await api.put(`/users/${record._id}`, { isActive: !record.isActive });
+      const isSubAgency = user?.role === 'sub_agency_super_admin';
+      const putEndpoint = isSubAgency ? `/sub-agencies/users/${record._id}` : `/users/${record._id}`;
+      await api.put(putEndpoint, { isActive: !record.isActive });
       message.success('Status updated');
       fetchData();
     } catch (err) {
@@ -263,7 +266,9 @@ const UserManagementTab = () => {
 
   const handleDeleteUser = async (id) => {
     try {
-      await api.delete(`/users/${id}`);
+      const isSubAgency = user?.role === 'sub_agency_super_admin';
+      const delEndpoint = isSubAgency ? `/users/${id}` : `/users/${id}`;
+      await api.delete(delEndpoint);
       message.success('User deleted');
       fetchData();
     } catch (err) {
@@ -549,12 +554,15 @@ const UserManagementTab = () => {
     try {
       const values = await userForm.validateFields();
       setSubmitLoading(true);
+      const isSubAgency = user?.role === 'sub_agency_super_admin';
       const payload = { ...values, isActive: values.status === 'active', countryCode: userCountryCode };
       if (userModal.record) {
-        await api.put(`/users/${userModal.record._id}`, payload);
+        const putEndpoint = isSubAgency ? `/sub-agencies/users/${userModal.record._id}` : `/users/${userModal.record._id}`;
+        await api.put(putEndpoint, payload);
         message.success('User updated');
       } else {
-        await api.post('/users', payload);
+        const postEndpoint = isSubAgency ? `/sub-agencies/users` : '/users';
+        await api.post(postEndpoint, payload);
         message.success('User created successfully');
       }
       setUserModal({ open: false, record: null });

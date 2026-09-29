@@ -9,7 +9,12 @@ import { isValidPhoneNumber } from 'libphonenumber-js';
 const { Title, Text } = Typography;
 const { Option } = Select;
 
+import { useAuth } from '../../../contexts/AuthContext';
+
 const AgencyUsersTab = () => {
+  const { user } = useAuth();
+  const isSubAgency = user?.role === 'sub_agency_super_admin';
+
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -31,10 +36,15 @@ const AgencyUsersTab = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/agency/users');
+      const endpoint = isSubAgency ? `/sub-agencies/${user.subAgencyId}/users` : '/agency/users';
+      const res = await api.get(endpoint);
       if (res.data && res.data.success) {
-        const managerRoles = ['agency_manager', 'agency_super_admin'];
-        setUsers((res.data.data || []).filter(u => managerRoles.includes(u.role)));
+        if (isSubAgency) {
+           setUsers(res.data.data.users || []);
+        } else {
+           const managerRoles = ['agency_manager', 'agency_super_admin'];
+           setUsers((res.data.data || []).filter(u => managerRoles.includes(u.role)));
+        }
       }
     } catch (err) {
       console.error(err);
@@ -55,7 +65,11 @@ const AgencyUsersTab = () => {
         countryCode: userCountryCode
       };
 
-      const res = await api.post('/agency/users', payload);
+      const endpoint = isSubAgency ? `/sub-agencies/${user.subAgencyId}/users` : '/agency/users';
+      if (isSubAgency) {
+         payload.role = 'sub_agency_user';
+      }
+      const res = await api.post(endpoint, payload);
       
       if (res.data.success) {
         message.success('User created successfully');
@@ -76,7 +90,8 @@ const AgencyUsersTab = () => {
   const handleDeleteUser = async (userId) => {
     try {
       setLoading(true);
-      const res = await api.delete(`/agency/users/${userId}`);
+      const endpoint = isSubAgency ? `/users/${userId}` : `/agency/users/${userId}`;
+      const res = await api.delete(endpoint);
       if (res.data.success) {
         message.success('User deleted successfully');
         fetchUsers();
@@ -101,7 +116,12 @@ const AgencyUsersTab = () => {
         payload.password = values.password;
       }
 
-      const res = await api.put(`/agency/users/${editingUser._id}`, payload);
+      if (isSubAgency && values.isActive !== undefined) {
+         payload.isActive = values.isActive;
+      }
+
+      const endpoint = isSubAgency ? `/users/${editingUser._id}` : `/agency/users/${editingUser._id}`;
+      const res = await api.put(endpoint, payload);
       
       if (res.data.success) {
         message.success('User updated successfully');

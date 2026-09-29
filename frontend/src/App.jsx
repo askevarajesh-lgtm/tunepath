@@ -114,6 +114,7 @@ import AgencySupportTab from './pages/AgencyPortal/tabs/SupportTab';
 import AgencyReportsTab from './pages/AgencyPortal/tabs/AgencyReportsTab';
 import AgencySettingsTab from './pages/AgencyPortal/tabs/AgencySettingsTab';
 import AgencyUsersTab from './pages/AgencyPortal/tabs/AgencyUsersTab';
+import UserManagementTab from './pages/Settings/tabs/UserManagementTab';
 import AgencySubAgenciesTab from './pages/AgencyPortal/tabs/AgencySubAgenciesTab';
 
 // Client Portal Tabs
@@ -749,11 +750,12 @@ const AppRoutes = () => {
       <Route element={<ProtectedRoute allowedRoles={['sub_agency_super_admin']} />}>
         <Route path="/sub-agency" element={<SubAgencyLayout />}>
           <Route index element={<Navigate to="/sub-agency/dashboard" replace />} />
-          <Route path="dashboard" element={<SubAgencyDashboard />} />
-          <Route path="projects" element={<SubAgencyProjects />} />
+          <Route path="dashboard" element={<OverviewTab />} />
+          <Route path="projects" element={<ProjectList />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
-          <Route path="tasks/*" element={<SubAgencyTasks />} />
-          <Route path="settings/*" element={<SubAgencySettings />} />
+          <Route path="tasks/*" element={<TasksPage />} />
+          <Route path="settings" element={<AgencySettingsTab />} />
+          <Route path="settings/users" element={<UserManagementTab />} />
         </Route>
       </Route>
 

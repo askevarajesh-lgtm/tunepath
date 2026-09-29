@@ -26,6 +26,10 @@ const validRolesForAdmin = [
 
 exports.getUsers = async (req, res, next) => {
   try {
+    if (['sub_agency_super_admin', 'sub_agency_user'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Sub Agency roles cannot access generic user list' });
+    }
+
     let queryFilter = {};
     if (req.query.role) queryFilter.role = req.query.role;
     
@@ -64,6 +68,10 @@ exports.getUsers = async (req, res, next) => {
 
 exports.getUsersDropdown = async (req, res, next) => {
   try {
+    if (['sub_agency_super_admin', 'sub_agency_user'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Sub Agency roles cannot access generic user list' });
+    }
+
     let queryFilter = {};
     if (req.query.role) queryFilter.role = req.query.role;
     
@@ -134,6 +142,13 @@ exports.getUser = async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
+
+    if (['sub_agency_super_admin', 'sub_agency_user'].includes(req.user.role)) {
+      if (!user.subAgencyId || user.subAgencyId.toString() !== req.user.subAgencyId.toString()) {
+         return res.status(403).json({ success: false, message: 'Forbidden' });
+      }
+    }
+
     res.status(200).json({ success: true, data: user });
   } catch (error) {
     next(error);
@@ -142,6 +157,10 @@ exports.getUser = async (req, res, next) => {
 
 exports.createUser = async (req, res, next) => {
   try {
+    if (['sub_agency_super_admin', 'sub_agency_user'].includes(req.user.role)) {
+      return res.status(403).json({ success: false, message: 'Forbidden: Sub Agency roles must use dedicated Sub Agency endpoints to create users' });
+    }
+
     const userData = { ...req.body };
     
     // Validate Email & Check for Duplicates
@@ -357,6 +376,15 @@ exports.updateUser = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
+    // Security Authorization: Enforce Sub Agency scope
+    if (req.user.role === 'sub_agency_super_admin') {
+      if (!existingUser.subAgencyId || existingUser.subAgencyId.toString() !== req.user.subAgencyId.toString()) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only modify users within your Sub Agency' });
+      }
+    } else if (req.user.role === 'sub_agency_user') {
+      return res.status(403).json({ success: false, message: 'Forbidden: Sub Agency Users cannot modify users' });
+    }
+
     // Check if Email already exists for another user
     if (updateData.email) {
       const emailQuery = updateData.email.trim();
@@ -449,10 +477,29 @@ exports.updateUser = async (req, res, next) => {
 
 exports.deleteUser = async (req, res, next) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
+
+    // Security Authorization: Enforce Sub Agency scope
+    if (req.user.role === 'sub_agency_super_admin') {
+      if (!user.subAgencyId || user.subAgencyId.toString() !== req.user.subAgencyId.toString()) {
+        return res.status(403).json({ success: false, message: 'Forbidden: You can only delete users within your Sub Agency' });
+      }
+      
+      // Prevent deleting the last sub_agency_super_admin
+      if (user.role === 'sub_agency_super_admin' && user.isActive !== false) {
+        const adminCount = await User.countDocuments({ subAgencyId: user.subAgencyId, role: 'sub_agency_super_admin', isActive: true });
+        if (adminCount <= 1) {
+          return res.status(400).json({ success: false, message: 'Cannot delete the last active Sub Agency Super Admin' });
+        }
+      }
+    } else if (req.user.role === 'sub_agency_user') {
+      return res.status(403).json({ success: false, message: 'Forbidden: Sub Agency Users cannot delete users' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
     res.status(200).json({ success: true, data: {} });
   } catch (error) {
     next(error);

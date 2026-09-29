@@ -30,8 +30,7 @@ router
 // Sub Agency User Management (Main Agency View)
 router
   .route("/:id/users")
-  .get(requireRole(["agency_super_admin", "agency_manager"]), getMainAgencySubAgencyUsers)
-  .post(requireRole(["agency_super_admin", "agency_manager"]), createMainAgencySubAgencyUser);
+  .get(requireRole(["agency_super_admin", "agency_manager"]), getMainAgencySubAgencyUsers);
 
 router
   .route("/:subAgencyId/users/:userId")

@@ -122,6 +122,7 @@ const ROLES_WITH_FULL_TASK_ACCESS = [
   "agency_manager",
   "brand_super_admin",
   "brand_manager",
+  "sub_agency_super_admin",
 ];
 
 const toHyphenatedSlug = (value = "") =>
@@ -684,6 +685,13 @@ const getAllTasks = async (
     delete reqQuery.subAgencyId;
   }
 
+  // FORCE Sub Agency restriction
+  if (['sub_agency_super_admin', 'sub_agency_user'].includes(userRole)) {
+    if (!reqQuery.subAgencyId) {
+      return { data: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 0 } };
+    }
+  }
+
   // Role-based filtering: Only super_admin and admin can see all tasks.
   // All other roles (including coordinators, managers) only see tasks
   // where they are assignedTo or listed in the watchers array.
@@ -794,8 +802,12 @@ const getAllTasks = async (
 
   if (reqQuery.status) additionalFilters.status = reqQuery.status;
 
-  if (reqQuery.companyId) additionalFilters.companyId = reqQuery.companyId;
+  if (reqQuery.companyId && !['sub_agency_super_admin', 'sub_agency_user'].includes(userRole)) additionalFilters.companyId = reqQuery.companyId;
   if (reqQuery.subAgencyId) additionalFilters.subAgencyId = reqQuery.subAgencyId;
+  if (['sub_agency_super_admin', 'sub_agency_user'].includes(userRole) && reqQuery.subAgencyId) {
+    additionalFilters.subAgencyId = reqQuery.subAgencyId;
+    delete additionalFilters.companyId; // Do not filter by companyId if subAgencyId is used for isolation
+  }
   if (reqQuery.department && reqQuery.department !== "all") {
     let deptValue = reqQuery.department;
     const deptFilter = await buildDepartmentFilterAsync(

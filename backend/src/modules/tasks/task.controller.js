@@ -89,6 +89,11 @@ const getTaskById = async (req, res) => {
 
 const delegateTask = async (req, res) => {
   try {
+    // Only Main Agency admins can delegate tasks
+    if (!['agency_super_admin', 'agency_manager'].includes(req.user?.role)) {
+       return sendError(res, 403, "Forbidden: Only Agency Admins can delegate tasks");
+    }
+
     const { id } = req.params;
     const { subAgencyId } = req.body;
 

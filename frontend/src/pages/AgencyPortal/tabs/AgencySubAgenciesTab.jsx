@@ -382,9 +382,6 @@ const AgencySubAgenciesTab = () => {
         width={800}
       >
         <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-          <Button type="primary" onClick={() => setIsUserModalOpen(true)} icon={<Plus size={16} />} style={{ borderRadius: 8, background: 'var(--accent-primary)', fontWeight: 600 }}>
-            Add User
-          </Button>
         </div>
         <Table 
           columns={userColumns} 

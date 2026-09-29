@@ -37,7 +37,7 @@ import { PERMISSION_ACTIONS, isSeniorUser } from "../../utils/actionPermissions"
 import KanbanBoard from "./KanbanBoard";
 import TaskListView from "./TaskListView";
 import TaskCalendarView from "./TaskCalendarView";
-import TaskDetailDrawer from "./TaskDetailDrawer";
+import TaskDetailDrawer from "../tasks/TaskDetailDrawer";
 import TaskSettings from "./TaskSettings";
 import NotificationSettings from "./NotificationSettings";
 import TaskCompletionCelebrate from "./TaskCompletionCelebrate";
@@ -65,6 +65,7 @@ const TasksPage = () => {
   const getBaseRoute = () => {
     if (location.pathname.startsWith("/client")) return "/client/workspace";
     if (location.pathname.startsWith("/agency")) return "/agency/workspace";
+    if (location.pathname.startsWith("/sub-agency")) return "/sub-agency";
     if (location.pathname.startsWith("/user")) return "/user/workspace";
     return "/workspace";
   };
@@ -75,7 +76,8 @@ const TasksPage = () => {
     "agency_super_admin",
     "brand_super_admin",
     "agency_manager",
-    "brand_manager"
+    "brand_manager",
+    "sub_agency_super_admin"
   ];
   const isAdmin = isSenior || adminRoles.includes(userRole);
   const userType = (user?.type || "").toLowerCase().trim();
@@ -372,6 +374,7 @@ const TasksPage = () => {
       "agency_manager",
       "commander_admin",
       "supreme_super_admin",
+      "sub_agency_super_admin"
     ].includes(user.role);
   }, [user]);
 
