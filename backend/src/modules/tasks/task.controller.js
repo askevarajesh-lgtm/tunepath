@@ -163,8 +163,36 @@ const createTask = async (req, res) => {
 
 const createBulkTasks = async (req, res) => {
   try {
+    // Sub-agency users: stamp every task with their subAgencyId (same as createTask),
+    // otherwise tasks are saved with subAgencyId=null and are filtered out of the
+    // Kanban/List views, which query strictly by subAgencyId.
+    let bulkBody = req.body;
+    if (req.user?.subAgencyId) {
+      const subAgencyId = req.user.subAgencyId.toString();
+      const rawTasks = Array.isArray(req.body) ? req.body : (req.body?.tasks || []);
+      const Project = require('../projects/project.model');
+
+      // Verify every referenced project is delegated to this sub-agency
+      const projectIds = [
+        ...new Set(rawTasks.map((t) => t && t.projectId).filter(Boolean).map(String)),
+      ];
+      for (const projectId of projectIds) {
+        const project = await Project.findById(projectId);
+        if (!project || project.subAgencyId?.toString() !== subAgencyId) {
+          return sendError(
+            res,
+            403,
+            "You can only create tasks for projects delegated to your Sub Agency.",
+          );
+        }
+      }
+
+      const stamped = rawTasks.map((t) => ({ ...t, subAgencyId }));
+      bulkBody = Array.isArray(req.body) ? stamped : { ...req.body, tasks: stamped };
+    }
+
     const result = await taskService.createBulkTasks(
-      req.body,
+      bulkBody,
       req.companyId,
       req.user._id,
     );

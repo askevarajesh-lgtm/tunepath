@@ -3530,6 +3530,7 @@ const getTasksForKanban = async (
     .populate("assignedBy", "name email")
     .populate("createdBy", "name email profileImage")
     .populate("watchers", "name email avatar")
+    .populate("subAgencyId", "name")
     .sort({ order: 1, createdAt: -1 })
     .lean();
 

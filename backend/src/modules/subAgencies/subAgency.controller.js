@@ -1,6 +1,31 @@
 const mongoose = require("mongoose");
 const SubAgency = require("./subAgency.model");
 const User = require("../auth/user.model");
+const Department = require("../departments/department.model");
+
+// Resolve a department for a Sub Agency. Returns { id, name } (both null when no dept given).
+// Throws if the department does not exist or belongs to another Sub Agency.
+const resolveSubAgencyDepartment = async (departmentId, subAgencyId) => {
+  if (!departmentId) return { id: null, name: null };
+  const dept = await Department.findById(departmentId).select("name subAgencyId");
+  if (!dept || (dept.subAgencyId && dept.subAgencyId.toString() !== subAgencyId.toString())) {
+    const err = new Error("Department not found for this Sub Agency");
+    err.status = 400;
+    throw err;
+  }
+  return { id: dept._id, name: dept.name };
+};
+
+// Make sure every user carries a departmentName (older records only stored departmentId).
+const withDepartmentNames = async (users) => {
+  const ids = [...new Set(users.filter((u) => u.departmentId && !u.departmentName).map((u) => String(u.departmentId)))];
+  if (!ids.length) return users;
+  const depts = await Department.find({ _id: { $in: ids } }).select("name").lean();
+  const nameById = new Map(depts.map((d) => [String(d._id), d.name]));
+  return users.map((u) =>
+    u.departmentId && !u.departmentName ? { ...u, departmentName: nameById.get(String(u.departmentId)) || null } : u
+  );
+};
 
 // @desc    Create a new Sub Agency
 // @route   POST /api/sub-agencies
@@ -136,8 +161,8 @@ exports.getSubAgencyUsers = async (req, res) => {
       return res.status(403).json({ success: false, error: "Not a Sub Agency user" });
     }
 
-    const users = await User.find({ subAgencyId }).select("-password");
-    res.status(200).json({ success: true, data: users });
+    const users = await User.find({ subAgencyId }).select("-password").lean();
+    res.status(200).json({ success: true, data: await withDepartmentNames(users) });
   } catch (error) {
     console.error("Get Sub Agency users error:", error);
     res.status(500).json({ success: false, error: "Server Error", message: error.message });
@@ -206,6 +231,8 @@ exports.createSubAgencyUser = async (req, res) => {
       roleName = role.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     }
 
+    const dept = await resolveSubAgencyDepartment(req.body.departmentId, subAgencyId);
+
     const newUser = new User({
       name,
       email,
@@ -215,7 +242,8 @@ exports.createSubAgencyUser = async (req, res) => {
       customRoleId,
       roleName,
       subAgencyId,
-      departmentId: req.body.departmentId || null,
+      departmentId: dept.id,
+      departmentName: dept.name,
       companyName: req.user.companyName,
       isActive: true,
       createdBy: req.user._id,
@@ -228,6 +256,9 @@ exports.createSubAgencyUser = async (req, res) => {
 
     res.status(201).json({ success: true, data: newUser });
   } catch (error) {
+    if (error.status === 400) {
+      return res.status(400).json({ success: false, error: error.message, message: error.message });
+    }
     console.error("Create Sub Agency user error:", error);
     res.status(500).json({ success: false, error: "Server Error", message: error.message });
   }
@@ -305,6 +336,13 @@ exports.updateSubAgencyUser = async (req, res) => {
     if (phone !== undefined) targetUser.phone = phone;
     if (isActive !== undefined) targetUser.isActive = isActive;
 
+    // Department (keep departmentId and departmentName in sync)
+    if (req.body.departmentId !== undefined) {
+      const dept = await resolveSubAgencyDepartment(req.body.departmentId || null, subAgencyId);
+      targetUser.departmentId = dept.id;
+      targetUser.departmentName = dept.name;
+    }
+
     // Notice: We specifically ignore attempts to modify email, subAgencyId, agencyId, or companyId.
 
     await targetUser.save();
@@ -312,6 +350,9 @@ exports.updateSubAgencyUser = async (req, res) => {
 
     res.status(200).json({ success: true, data: targetUser });
   } catch (error) {
+    if (error.status === 400) {
+      return res.status(400).json({ success: false, error: error.message, message: error.message });
+    }
     console.error("Update Sub Agency user error:", error);
     res.status(500).json({ success: false, error: "Server Error", message: error.message });
   }
@@ -335,8 +376,8 @@ exports.getMainAgencySubAgencyUsers = async (req, res) => {
       return res.status(404).json({ success: false, error: "Sub Agency not found or not owned by you" });
     }
 
-    const users = await User.find({ subAgencyId }).select("-password");
-    res.status(200).json({ success: true, data: users });
+    const users = await User.find({ subAgencyId }).select("-password").lean();
+    res.status(200).json({ success: true, data: await withDepartmentNames(users) });
   } catch (error) {
     console.error("Get Main Agency Sub Agency users error:", error);
     res.status(500).json({ success: false, error: "Server Error", message: error.message });

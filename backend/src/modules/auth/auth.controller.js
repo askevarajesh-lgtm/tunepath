@@ -704,7 +704,7 @@ exports.impersonate = async (req, res, next) => {
     const { userId } = req.params;
     
     // Security check: Only allow specific roles to impersonate
-    const allowedRoles = ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency_client', 'brand_super_admin', 'brand_manager'];
+    const allowedRoles = ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager', 'agency_client', 'brand_super_admin', 'brand_manager', 'sub_agency_super_admin'];
     
     let hasPermission = allowedRoles.includes(req.user.role);
     let isCustomAgencyRoleWithPerm = false;
@@ -740,6 +740,15 @@ exports.impersonate = async (req, res, next) => {
       if (targetUser.agencyId?._id?.toString() !== userAgencyId.toString() && targetUser._id.toString() !== userAgencyId.toString()) {
         return res.status(403).json({ success: false, error: 'User does not belong to your agency' });
       }
+    } else if (req.user.role === 'sub_agency_super_admin') {
+      // Sub Agency Super Admin may only log in as users of their own Sub Agency
+      const mySubAgencyId = req.user.subAgencyId || (await User.findById(req.user._id).select('subAgencyId'))?.subAgencyId;
+      if (!mySubAgencyId || !targetUser.subAgencyId || targetUser.subAgencyId.toString() !== mySubAgencyId.toString()) {
+        return res.status(403).json({ success: false, error: 'User does not belong to your Sub Agency' });
+      }
+      if (targetUser.isActive === false) {
+        return res.status(403).json({ success: false, error: 'This user is deactivated. Activate the user first.' });
+      }
     } else if (req.user.role === 'agency_client') {
       // Must belong to the same brand (i.e. agency_client._id == targetUser.brandId)
       if (targetUser.brandId?._id?.toString() !== req.user._id.toString()) {
@@ -764,6 +773,7 @@ exports.impersonate = async (req, res, next) => {
       agencyId: targetUser.agencyId ? targetUser.agencyId._id : null,
       brandId: targetUser.brandId ? targetUser.brandId._id : null,
       workspaceId: targetUser.workspaceId || targetUser.agencyId || targetUser.brandId || targetUser._id,
+      subAgencyId: targetUser.subAgencyId || null,
       impersonatorId: req.user._id // keep track of who is actually logged in
     };
 
