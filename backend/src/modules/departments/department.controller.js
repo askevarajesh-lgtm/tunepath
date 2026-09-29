@@ -3,6 +3,14 @@ const Department = require('./department.model');
 exports.getDepartments = async (req, res, next) => {
   try {
     let queryFilter = {};
+    if (req.user.role === 'sub_agency_user' || req.user.role === 'sub_agency_super_admin') {
+      if (!req.user.subAgencyId) return res.status(403).json({ success: false, message: 'Not a Sub Agency user' });
+      queryFilter.subAgencyId = req.user.subAgencyId;
+    } else 
+    if (req.user.role === 'sub_agency_user' || req.user.role === 'sub_agency_super_admin') {
+      if (!req.user.subAgencyId) return res.status(403).json({ success: false, message: 'Not a Sub Agency user' });
+      queryFilter.subAgencyId = req.user.subAgencyId;
+    } else 
     if (req.query.clientId || req.query.brandId || req.query.companyId) {
       queryFilter.brandId = req.query.clientId || req.query.brandId || req.query.companyId;
     } else if (req.user.role === 'commander_admin') {
@@ -58,8 +66,12 @@ exports.getDepartmentsDynamic = async (req, res, next) => {
 
 exports.createDepartment = async (req, res, next) => {
   try {
+    if (req.user.role === 'sub_agency_user') return res.status(403).json({ success: false, message: 'Forbidden' });
     const data = { ...req.body };
-    if (req.user.role === 'commander_admin') {
+    if (req.user.role === 'sub_agency_super_admin') {
+      if (!req.user.subAgencyId) return res.status(403).json({ success: false, message: 'Not a Sub Agency user' });
+      data.subAgencyId = req.user.subAgencyId;
+    } else if (req.user.role === 'commander_admin') {
       data.adminId = req.user._id;
     } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
       data.brandId = req.user.brandId || (['agency_client', 'brand_super_admin', 'brand_manager'].includes(req.user.role) ? req.user._id : null);
@@ -78,7 +90,8 @@ exports.createDepartment = async (req, res, next) => {
     let existingQuery = {
       name: { $regex: new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
     };
-    if (data.brandId) existingQuery.brandId = data.brandId;
+    if (data.subAgencyId) existingQuery.subAgencyId = data.subAgencyId;
+    else if (data.brandId) existingQuery.brandId = data.brandId;
     else if (data.agencyId) existingQuery.agencyId = data.agencyId;
     else if (data.adminId) existingQuery.adminId = data.adminId;
 
@@ -96,7 +109,13 @@ exports.createDepartment = async (req, res, next) => {
 
 exports.updateDepartment = async (req, res, next) => {
   try {
+    if (req.user.role === 'sub_agency_user') return res.status(403).json({ success: false, message: 'Forbidden' });
+    if (req.user.role === 'sub_agency_user') return res.status(403).json({ success: false, message: 'Forbidden' });
     const { name } = req.body;
+    if (req.user.role === 'sub_agency_super_admin') {
+      const current = await Department.findById(req.params.id);
+      if (!current || !current.subAgencyId || current.subAgencyId.toString() !== req.user.subAgencyId.toString()) return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     if (name) {
       const trimmedName = name.trim();
       const current = await Department.findById(req.params.id);
@@ -105,7 +124,8 @@ exports.updateDepartment = async (req, res, next) => {
           _id: { $ne: req.params.id },
           name: { $regex: new RegExp(`^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
         };
-        if (current.brandId) existingQuery.brandId = current.brandId;
+        if (current.subAgencyId) existingQuery.subAgencyId = current.subAgencyId;
+        else if (current.brandId) existingQuery.brandId = current.brandId;
         else if (current.agencyId) existingQuery.agencyId = current.agencyId;
         else if (current.adminId) existingQuery.adminId = current.adminId;
 
@@ -125,6 +145,17 @@ exports.updateDepartment = async (req, res, next) => {
 
 exports.deleteDepartment = async (req, res, next) => {
   try {
+    if (req.user.role === 'sub_agency_user') return res.status(403).json({ success: false, message: 'Forbidden' });
+    const current = await Department.findById(req.params.id);
+    if (!current) return res.status(404).json({ success: false, message: 'Not found' });
+    if (req.user.role === 'sub_agency_super_admin') {
+      if (!current.subAgencyId || current.subAgencyId.toString() !== req.user.subAgencyId.toString()) return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
+    if (req.user.role === 'sub_agency_user') return res.status(403).json({ success: false, message: 'Forbidden' });
+    if (req.user.role === 'sub_agency_super_admin') {
+      const current = await Department.findById(req.params.id);
+      if (!current || !current.subAgencyId || current.subAgencyId.toString() !== req.user.subAgencyId.toString()) return res.status(403).json({ success: false, message: 'Forbidden' });
+    }
     const department = await Department.findByIdAndDelete(req.params.id);
     if (!department) return res.status(404).json({ success: false, message: 'Not found' });
     res.status(200).json({ success: true, data: {} });

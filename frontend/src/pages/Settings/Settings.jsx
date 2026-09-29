@@ -146,8 +146,10 @@ const SettingsPage = () => {
     }
   } else if (['agency_manager', 'brand_manager'].includes(role)) {
     allowedKeys = [showIntegrationsTab ? '2' : null, '4', '7', '12', '9', '11'].filter(Boolean);
+  } else if (role === 'sub_agency_super_admin') {
+    allowedKeys = ['9', '7', '4'];
   } else {
-    // agency_user, brand_team_user, client, agency_client
+    // agency_user, brand_team_user, client, agency_client, sub_agency_user
     allowedKeys = [showIntegrationsTab ? '2' : null, '4', '9'].filter(Boolean);
   }
 

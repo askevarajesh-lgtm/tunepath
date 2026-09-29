@@ -23,7 +23,7 @@ const getAllTasks = async (req, res) => {
     // Normalize filters
     const query = { ...req.query };
     if (req.user?.subAgencyId) {
-      query.subAgencyId = req.user.subAgencyId;
+      query.subAgencyId = req.user.subAgencyId.toString();
     }
     if (query.projectId === "null" || query.projectId === "")
       query.projectId = null;
@@ -53,12 +53,13 @@ const getAllTasks = async (req, res) => {
 
 const getTasksDropdown = async (req, res) => {
   try {
+    const finalQuery = { ...req.query };
     if (req.user?.subAgencyId) {
-      req.query.subAgencyId = req.user.subAgencyId;
+      finalQuery.subAgencyId = req.user.subAgencyId.toString();
     }
     const tasks = await taskService.getTasksDropdown(
       req.companyId,
-      req.query,
+      finalQuery,
       req.user?.role,
       req.user?._id,
     );
@@ -139,12 +140,14 @@ const createTask = async (req, res) => {
     
     // Inject Sub Agency context automatically and verify project delegation
     if (req.user?.subAgencyId) {
-      const Project = require('../projects/project.model');
-      const project = await Project.findById(req.body.projectId);
-      if (!project || project.subAgencyId?.toString() !== req.user.subAgencyId.toString()) {
-         return sendError(res, 403, "You can only create tasks for projects delegated to your Sub Agency.");
+      if (req.body.projectId) {
+        const Project = require('../projects/project.model');
+        const project = await Project.findById(req.body.projectId);
+        if (!project || project.subAgencyId?.toString() !== req.user.subAgencyId.toString()) {
+           return sendError(res, 403, "You can only create tasks for projects delegated to your Sub Agency.");
+        }
       }
-      req.body.subAgencyId = req.user.subAgencyId;
+      req.body.subAgencyId = req.user.subAgencyId.toString();
     }
 
     const task = await taskService.createTask(

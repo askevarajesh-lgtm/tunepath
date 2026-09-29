@@ -251,7 +251,7 @@ const ProjectDetail = () => {
       await delegateProject({ id, subAgencyId: selectedSubAgency }).unwrap();
       message.success("Project delegation updated successfully");
       setDelegateModalOpen(false);
-      refetch();
+      refetchProject();
     } catch (err) {
       message.error(err.data?.message || "Failed to delegate project");
     } finally {
@@ -1117,7 +1117,7 @@ const ProjectDetail = () => {
                                 setIsDelegating(true);
                                 await delegateProject({ id, subAgencyId: null }).unwrap();
                                 message.success("Assignment removed");
-                                refetch();
+                                refetchProject();
                               } catch(e) {
                                 message.error(e.data?.message || "Failed to remove assignment");
                               } finally {

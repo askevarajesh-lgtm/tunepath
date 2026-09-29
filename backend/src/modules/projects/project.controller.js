@@ -10,15 +10,17 @@ const { withClientSanitization } = require("../../utils/clientSanitizer");
 
 const getAllProjects = async (req, res) => {
   try {
+    const finalQuery = { ...req.query };
     if (req.user?.subAgencyId) {
-      req.query.subAgencyId = req.user.subAgencyId;
+      finalQuery.subAgencyId = req.user.subAgencyId.toString();
     }
     const result = await projectService.getAllProjects(
       req.companyId,
-      req.query,
+      finalQuery,
       req.user?.role,
       req.user?.clientUserId || req.user?._id,
     );
+
     // If pagination exists, return paginated response, otherwise return legacy format
     if (result.pagination) {
       return sendSuccess(res, "Projects retrieved successfully", withClientSanitization(req, result));
@@ -34,12 +36,13 @@ const getAllProjects = async (req, res) => {
 
 const getProjectListSummaryStats = async (req, res) => {
   try {
+    const finalQuery = { ...req.query };
     if (req.user?.subAgencyId) {
-      req.query.subAgencyId = req.user.subAgencyId;
+      finalQuery.subAgencyId = req.user.subAgencyId.toString();
     }
     const summary = await projectService.getProjectListSummaryStats(
       req.companyId,
-      req.query,
+      finalQuery,
       req.user?.role,
       req.user?.clientUserId || req.user?._id,
     );
@@ -53,12 +56,13 @@ const getProjectListSummaryStats = async (req, res) => {
 
 const getUnassignedDeliverablesSummary = async (req, res) => {
   try {
+    const finalQuery = { ...req.query };
     if (req.user?.subAgencyId) {
-      req.query.subAgencyId = req.user.subAgencyId;
+      finalQuery.subAgencyId = req.user.subAgencyId.toString();
     }
     const summary = await projectService.getUnassignedDeliverablesSummary(
       req.companyId,
-      req.query,
+      finalQuery,
       req.user?.role,
       req.user?.clientUserId || req.user?._id,
     );
@@ -74,12 +78,13 @@ const getUnassignedDeliverablesSummary = async (req, res) => {
 
 const getProjectReport = async (req, res) => {
   try {
+    const finalQuery = { ...req.query };
     if (req.user?.subAgencyId) {
-      req.query.subAgencyId = req.user.subAgencyId;
+      finalQuery.subAgencyId = req.user.subAgencyId.toString();
     }
     const report = await projectService.getProjectReport(
       req.companyId,
-      req.query,
+      finalQuery,
       req.user?.role,
       req.user?.clientUserId || req.user?._id,
     );
@@ -93,11 +98,12 @@ const getProjectReport = async (req, res) => {
 
 const getProjectsDropdown = async (req, res) => {
   try {
+    const finalQuery = { ...req.query };
     if (req.user?.subAgencyId) {
-      req.query.subAgencyId = req.user.subAgencyId;
+      finalQuery.subAgencyId = req.user.subAgencyId.toString();
     }
     const projects = await projectService.getProjectsDropdown(req.companyId, {
-      ...req.query,
+      ...finalQuery,
       userRole: req.user?.role,
       userId: req.user?.clientUserId || req.user?._id,
     });
@@ -137,7 +143,7 @@ const createProject = async (req, res) => {
       return sendValidationError(res, errors.array());
     }
 
-    console.log("[Project Controller] Creating project with data:", req.body);
+
 
     const invoice = await Invoice.findOne({ _id: req.body.invoiceId, isDeleted: false });
     if (!invoice) return sendError(res, 404, "Invoice not found");
@@ -163,7 +169,7 @@ const createProject = async (req, res) => {
 
     // DISABLED: Automatic task creation when creating a project.
     // Tasks should only be created manually by coordinators/admins when needed.
-    console.log("[Project Controller] Project created successfully:", project._id);
+
     return sendSuccess(res, "Project created successfully", { project });
   } catch (error) {
     console.error("[Project Controller] Error creating project:", error);

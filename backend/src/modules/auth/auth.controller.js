@@ -178,7 +178,8 @@ exports.signin = async (req, res, next) => {
         role: user.role,
         agencyId: user.agencyId ? user.agencyId._id : null,
         brandId: user.brandId ? user.brandId._id : null,
-        workspaceId: user.workspaceId
+        workspaceId: user.workspaceId,
+        subAgencyId: user.subAgencyId || null
       },
       process.env.JWT_SECRET || 'super_secret_jwt_key_12345',
       { expiresIn: process.env.JWT_EXPIRES_IN || '30d' }
@@ -508,7 +509,8 @@ exports.impersonate = async (req, res, next) => {
         role: user.role,
         agencyId: user.agencyId ? user.agencyId._id : null,
         brandId: user.brandId ? user.brandId._id : null,
-        workspaceId: user.workspaceId
+        workspaceId: user.workspaceId,
+        subAgencyId: user.subAgencyId || null
       },
       process.env.JWT_SECRET || 'super_secret_jwt_key_12345',
       { expiresIn: '7d' }

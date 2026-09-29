@@ -42,9 +42,9 @@ const SubAgencySidebar = ({ collapsed, setCollapsed }) => {
     {
       key: 'settings',
       label: 'SETTINGS',
-      icon: getIcon(Settings),
+      type: 'group',
       children: [
-        { key: '/sub-agency/settings/users', label: 'Users' },
+        { key: '/sub-agency/settings', icon: getIcon(Settings), label: 'Settings' },
       ],
     }
   ];

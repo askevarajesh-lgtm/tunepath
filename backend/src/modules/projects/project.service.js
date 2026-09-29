@@ -983,6 +983,7 @@ const resolveProjectListQueryOptions = async (
     if (user && user.assignedClients && user.assignedClients.length > 0) {
       clientIdFilter = { $in: user.assignedClients };
     } else {
+      require('fs').appendFileSync('debug_resolve.log', "Returning false because salesperson has no assignedClients\\n");
       return { ok: false };
     }
   }
@@ -2457,6 +2458,12 @@ const checkAndMarkProjectCompleted = async (
 ) => {
   const project = await Project.findById(projectId);
   if (!project) return;
+
+  // IMPORTANT: Skip auto-completion for delegated projects. The Main Agency will review
+  // and manually complete the task representing the project delegation.
+  if (project.subAgencyId) {
+    return;
+  }
 
   const dynamicCategories = Array.isArray(project.selectedCategories) ? project.selectedCategories : [];
   const hasDynamicCategories = dynamicCategories.length > 0;

@@ -14,7 +14,6 @@ import ClientLayout from './layouts/ClientLayout';
 import UserLayout from './layouts/UserLayout';
 import PlaceholderPage from './components/PlaceholderPage';
 import SubAgencyLayout from './layouts/SubAgencyLayout';
-import { SubAgencyDashboard, SubAgencyProjects, SubAgencyTasks, SubAgencyUsers, SubAgencySettings } from './pages/SubAgency';
 import { 
   Users, HeartHandshake, Monitor, MessageCircle, TrendingUp, Zap, 
   CheckSquare, Globe, PieChart, BarChart2, GitMerge, LineChart, 
@@ -754,8 +753,7 @@ const AppRoutes = () => {
           <Route path="projects" element={<ProjectList />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
           <Route path="tasks/*" element={<TasksPage />} />
-          <Route path="settings" element={<AgencySettingsTab />} />
-          <Route path="settings/users" element={<UserManagementTab />} />
+          <Route path="settings" element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
         </Route>
       </Route>
 

@@ -62,10 +62,10 @@ const calculateProjectPL = async (projectId, tenantCompanyId) => {
         : rawHandling;
 
     revenue = {
-      invoiceAmount: invoice.total,
-      taxes: taxAmount,
+      invoiceAmount: Number(invoice.total) || 0,
+      taxes: Number(taxAmount) || 0,
       discounts: 0,
-      netRevenue: netRevenue,
+      netRevenue: Number(netRevenue) || 0,
     };
   }
 
@@ -78,7 +78,7 @@ const calculateProjectPL = async (projectId, tenantCompanyId) => {
       const user = await User.findById(task.assignedTo).select("role");
       if (user) {
         const roleCost = ROLE_HOURLY_COST[user.role] || 0;
-        staffCost += task.timeSpent * roleCost;
+        staffCost += (Number(task.timeSpent) || 0) * roleCost;
       }
     }
   }
@@ -87,7 +87,7 @@ const calculateProjectPL = async (projectId, tenantCompanyId) => {
   const correctionCost = 0; // Corrections module not available in new CRM
 
   // 3. Campaign actual spend (from campaigns linked to this project or client)
-  const Campaign = require("../campaigns/campaign.model");
+  const { Campaign } = require("../campaigns/campaign.model");
   const projectCampaigns = await Campaign.find({
     $or: [{ projectId }, { clientCompanyId: project.clientId }],
     companyId: tenantCompanyId,
@@ -120,7 +120,7 @@ const calculateProjectPL = async (projectId, tenantCompanyId) => {
     {
       tenantCompanyId,
       projectId,
-      invoiceId: invoice._id,
+      invoiceId: invoice ? invoice._id : null,
       entryType: "revenue",
       revenue,
       cost: {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Typography, Card, Table, Tag, Button, Input, Modal, Form, Dropdown, message, Avatar, Select } from 'antd';
 import { motion } from 'framer-motion';
-import { Plus, MoreVertical, Edit2, Trash2, Mail, Shield, User as UserIcon, Briefcase, Users } from 'lucide-react';
+import { Plus, MoreVertical, Edit2, Trash2, Mail, Shield, User as UserIcon, Briefcase, Users, Eye } from 'lucide-react';
 import api from '../../../services/api';
 import PhoneInput from '../../../components/common/PhoneInput';
 import { isValidPhoneNumber } from 'libphonenumber-js';
@@ -15,6 +15,9 @@ const AgencySubAgenciesTab = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [form] = Form.useForm();
+  const [isViewModalOpen, setIsViewModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editForm] = Form.useForm();
 
   // Country code state for Sub Agency Create
   const [saCountryCode, setSaCountryCode] = useState('91');
@@ -101,16 +104,64 @@ const AgencySubAgenciesTab = () => {
     }
   };
 
+  
+  const handleEditSubAgency = async (values) => {
+    try {
+      setSubmitLoading(true);
+      const res = await api.put(`/sub-agencies/${selectedSubAgency._id}`, values);
+      if (res.data.success) {
+        message.success('Sub Agency updated successfully');
+        setIsEditModalOpen(false);
+        fetchSubAgencies();
+      }
+    } catch (err) {
+      console.error(err);
+      message.error(err.response?.data?.message || err.response?.data?.error || 'Failed to update sub agency');
+    } finally {
+      setSubmitLoading(false);
+    }
+  };
+
+  const handleDeleteSubAgency = async (id) => {
+    try {
+      const res = await api.delete(`/sub-agencies/${id}`);
+      if (res.data.success) {
+        message.success('Sub Agency deleted successfully');
+        fetchSubAgencies();
+      }
+    } catch (err) {
+      console.error(err);
+      message.error(err.response?.data?.message || err.response?.data?.error || 'Failed to delete sub agency');
+    }
+  };
+
   const handleMenuClick = (e, record) => {
-    if (e.key === 'manage_users') {
+    if (e.key === 'view') {
       setSelectedSubAgency(record);
-      setIsUsersModalOpen(true);
-      fetchSubAgencyUsers(record._id);
+      setIsViewModalOpen(true);
+    } else if (e.key === 'edit') {
+      setSelectedSubAgency(record);
+      editForm.setFieldsValue({
+        name: record.name,
+        email: record.email,
+        phone: record.phone
+      });
+      setIsEditModalOpen(true);
+    } else if (e.key === 'delete') {
+      Modal.confirm({
+        title: 'Delete Sub Agency',
+        content: `Are you sure you want to delete ${record.name}? This action cannot be undone.`,
+        okText: 'Delete',
+        okType: 'danger',
+        onOk: () => handleDeleteSubAgency(record._id)
+      });
     }
   };
 
   const getActionMenu = () => [
-    { key: 'manage_users', icon: <Users size={16} />, label: 'Manage Users' }
+    { key: 'view', icon: <Eye size={16} />, label: 'View Sub Agency' },
+    { key: 'edit', icon: <Edit2 size={16} />, label: 'Edit Sub Agency' },
+    { key: 'delete', icon: <Trash2 size={16} />, label: 'Delete Sub Agency' }
   ];
 
   const columns = [
@@ -533,8 +584,81 @@ const AgencySubAgenciesTab = () => {
         </Form>
       </Modal>
 
+    
+      {/* View Sub Agency Modal */}
+      <Modal
+        title={<span style={{ fontWeight: 700, fontSize: 18 }}><Eye size={18} style={{ marginRight: 8, verticalAlign: '-3px' }}/> View Sub Agency</span>}
+        open={isViewModalOpen}
+        onCancel={() => setIsViewModalOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setIsViewModalOpen(false)} style={{ borderRadius: 8, fontWeight: 600 }}>Close</Button>
+        ]}
+        className="glass-modal"
+        centered
+        width={500}
+      >
+        {selectedSubAgency && (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Name</Text>
+              <Text style={{ fontWeight: 600, fontSize: 16 }}>{selectedSubAgency.name}</Text>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Email Address</Text>
+              <Text style={{ fontWeight: 600, fontSize: 16 }}>{selectedSubAgency.email}</Text>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Phone Number</Text>
+              <Text style={{ fontWeight: 600, fontSize: 16 }}>{selectedSubAgency.phone || 'N/A'}</Text>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Status</Text>
+              <Tag color={selectedSubAgency.isActive ? 'success' : 'default'}>{selectedSubAgency.isActive ? 'Active' : 'Inactive'}</Tag>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>Created Date</Text>
+              <Text style={{ fontWeight: 600, fontSize: 16 }}>{new Date(selectedSubAgency.createdAt).toLocaleDateString()}</Text>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit Sub Agency Modal */}
+      <Modal
+        title={<span style={{ fontWeight: 700, fontSize: 18 }}><Edit2 size={18} style={{ marginRight: 8, verticalAlign: '-3px' }}/> Edit Sub Agency</span>}
+        open={isEditModalOpen}
+        onCancel={() => setIsEditModalOpen(false)}
+        footer={null}
+        className="glass-modal"
+        centered
+        width={500}
+      >
+        <Form form={editForm} layout="vertical" onFinish={handleEditSubAgency} style={{ marginTop: 24 }}>
+          <Form.Item label={<Text style={{ fontWeight: 600 }}>Agency Name</Text>} name="name" rules={[{ required: true, message: 'Name is required' }]}>
+            <Input placeholder="Enter sub agency name" style={{ borderRadius: 8 }} size="large" />
+          </Form.Item>
+          
+          <Form.Item label={<Text style={{ fontWeight: 600 }}>Email Address</Text>} name="email" rules={[
+            { required: true, message: 'Email address is required' },
+            { type: 'email', message: 'Please enter a valid email address' }
+          ]}>
+            <Input placeholder="contact@agency.com" style={{ borderRadius: 8 }} size="large" />
+          </Form.Item>
+
+          <Form.Item label={<Text style={{ fontWeight: 600 }}>Phone Number</Text>} name="phone">
+             <Input placeholder="+1 234 567 8900" style={{ borderRadius: 8 }} size="large" />
+          </Form.Item>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 32 }}>
+            <Button onClick={() => setIsEditModalOpen(false)} style={{ borderRadius: 8, fontWeight: 600 }} size="large">Cancel</Button>
+            <Button type="primary" htmlType="submit" loading={submitLoading} style={{ background: 'var(--accent-primary)', borderRadius: 8, fontWeight: 600 }} size="large">Save Changes</Button>
+          </div>
+        </Form>
+      </Modal>
+
     </motion.div>
   );
 };
+
 
 export default AgencySubAgenciesTab;

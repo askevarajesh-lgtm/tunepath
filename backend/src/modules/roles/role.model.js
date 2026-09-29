@@ -8,6 +8,7 @@ const RoleSchema = new mongoose.Schema({
   adminId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   agencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   brandId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  subAgencyId: { type: mongoose.Schema.Types.ObjectId, ref: 'SubAgency', default: null },
   permissions: { type: Object, default: {} }
 }, { timestamps: true });
 
