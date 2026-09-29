@@ -19,6 +19,8 @@ const { Title, Text } = Typography;
 const DeliverablesPage = () => {
   const { isDark } = useTheme();
   const { user } = useAuth();
+  // Client-side logins must not see who a task is assigned to
+  const isClientUser = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(user?.role);
   const [selectedProjectForTasks, setSelectedProjectForTasks] = useState(null);
   const [selectedTaskDetails, setSelectedTaskDetails] = useState(null);
   const [showCelebration, setShowCelebration] = useState(false);
@@ -850,12 +852,12 @@ const DeliverablesPage = () => {
                 );
               }
             },
-            {
+            ...(isClientUser ? [] : [{
               title: 'Assigned To',
               dataIndex: 'assignedTo',
               key: 'assignedTo',
-              render: (user) => user?.name || 'Unassigned'
-            },
+              render: (assignee) => assignee?.name || 'Unassigned'
+            }]),
             {
               title: 'Due Date',
               dataIndex: 'dueDate',

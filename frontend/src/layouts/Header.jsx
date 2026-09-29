@@ -142,6 +142,8 @@ const Header = ({ collapsed, setCollapsed }) => {
                 window.location.href = '/agency/overview';
             } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(parsedUser.role)) {
                 window.location.href = '/client/dashboard';
+            } else if (parsedUser.role === 'sub_agency_super_admin') {
+                window.location.href = '/sub-agency/dashboard';
             } else {
                 window.location.href = '/user/dashboard';
             }

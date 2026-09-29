@@ -399,11 +399,15 @@ const UserManagementTab = () => {
       render: (_, record) => (
         <Space size="middle">
           <Button type="text" icon={<EyeOutlined />} onClick={() => handleOpenViewUser(record)} style={{ color: 'var(--accent-info)', fontWeight: 600 }}>View</Button>
-          <Button type="text" icon={<LoginOutlined />} onClick={() => handleImpersonate(record)} style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Login as User</Button>
+          {record.role !== 'sub_agency_super_admin' && (
+            <Button type="text" icon={<LoginOutlined />} onClick={() => handleImpersonate(record)} style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Login as User</Button>
+          )}
           <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenEditUser(record)} style={{ color: 'var(--accent-secondary)', fontWeight: 600 }}>Edit</Button>
-          <Popconfirm title="Delete this user?" onConfirm={() => handleDeleteUser(record._id)}>
-            <Button type="text" danger icon={<DeleteOutlined />} style={{ fontWeight: 600 }}>Delete</Button>
-          </Popconfirm>
+          {record.role !== 'sub_agency_super_admin' && (
+            <Popconfirm title="Delete this user?" onConfirm={() => handleDeleteUser(record._id)}>
+              <Button type="text" danger icon={<DeleteOutlined />} style={{ fontWeight: 600 }}>Delete</Button>
+            </Popconfirm>
+          )}
         </Space>
       )
     }
@@ -779,6 +783,7 @@ const UserManagementTab = () => {
                                         >
                                           {u.isActive ? 'ACTIVE' : 'INACTIVE'}
                                         </span>
+                                        {u.role !== 'sub_agency_super_admin' && (
                                         <Dropdown menu={{ items: getCardMenuItems(u) }} trigger={['click']} placement="bottomRight">
                                           <Button
                                             type="text"
@@ -794,6 +799,7 @@ const UserManagementTab = () => {
                                             }}
                                           />
                                         </Dropdown>
+                                        )}
                                       </div>
                                     </div>
 

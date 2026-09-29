@@ -404,6 +404,28 @@ const TaskCardInner = ({
               )}
             </span>
           )}
+          {/* Created by a Sub Agency - shown to main agency / other viewers (hidden for sub agency users themselves) */}
+          {task.subAgencyId &&
+            !["sub_agency_super_admin", "sub_agency_user"].includes(user?.role) && (
+              <span
+                title={task.subAgencyId?.name ? `Sub Agency: ${task.subAgencyId.name}` : "Created by Sub Agency"}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  fontSize: 9.5,
+                  fontWeight: 800,
+                  color: isDark ? "#c4b5fd" : "#6d28d9",
+                  background: isDark ? "rgba(139,92,246,0.18)" : "#ede9fe",
+                  border: isDark ? "1px solid rgba(139,92,246,0.4)" : "1px solid #ddd6fe",
+                  borderRadius: 4,
+                  padding: "2px 6px",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Sub Agency
+              </span>
+            )}
         </div>
 
         {/* Title */}
