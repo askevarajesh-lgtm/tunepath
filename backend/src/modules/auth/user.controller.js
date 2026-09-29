@@ -36,9 +36,9 @@ exports.getUsers = async (req, res, next) => {
       queryFilter.adminId = req.user._id;
       queryFilter.agencyId = null;
       queryFilter.brandId = null;
-    } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
-      queryFilter.brandId = req.user.brandId || (req.user.role === 'agency_client' ? req.user._id : null);
-      if (req.user.role === 'brand_manager' || req.user.role === 'agency_client' || req.user.role === 'user') {
+    } else if (['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'agency_client', 'client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId) || (req.companyId && req.user.role?.startsWith('brand'))) {
+      queryFilter.brandId = req.user.brandId || req.companyId || (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(req.user.role) ? req.user._id : null);
+      if (req.user.role === 'brand_manager' || req.user.role === 'agency_client' || req.user.role === 'user' || req.user.role === 'brand_team_user') {
         queryFilter.role = { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'brand_super_admin'] };
       } else {
         queryFilter.role = { $nin: ['supreme_super_admin', 'commander_admin', 'agency_super_admin'] };
@@ -178,8 +178,8 @@ exports.createUser = async (req, res, next) => {
       let scopeQuery = {};
       if (req.user.role === 'commander_admin') {
         scopeQuery = { adminId: req.user._id };
-      } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
-        scopeQuery = { brandId: req.user.brandId || (['agency_client', 'brand_super_admin', 'brand_manager'].includes(req.user.role) ? req.user._id : null) };
+      } else if (['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'agency_client', 'client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId) || (req.companyId && req.user.role?.startsWith('brand'))) {
+        scopeQuery = { brandId: req.user.brandId || req.companyId || (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(req.user.role) ? req.user._id : null) };
       } else {
         scopeQuery = { agencyId: req.companyId || req.user.agencyId || req.user._id };
       }
@@ -211,8 +211,8 @@ exports.createUser = async (req, res, next) => {
       userData.agencyId = null;
       userData.brandId = null;
       if (!SYSTEM_ROLES.includes(incomingRole)) userData.role = 'user';
-    } else if (['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
-      const parentBrandId = req.user.brandId || (['agency_client', 'brand_super_admin', 'brand_manager'].includes(req.user.role) ? req.user._id : null);
+    } else if (['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'agency_client', 'client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId) || (req.companyId && req.user.role?.startsWith('brand'))) {
+      const parentBrandId = req.user.brandId || req.companyId || (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(req.user.role) ? req.user._id : null);
       userData.brandId = parentBrandId;
       userData.agencyId = req.user.agencyId || null;
       if (req.user.adminId) userData.adminId = req.user.adminId;

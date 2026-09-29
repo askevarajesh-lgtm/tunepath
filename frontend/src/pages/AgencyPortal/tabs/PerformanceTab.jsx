@@ -183,14 +183,16 @@ const PerformanceTab = () => {
                     <Avatar style={{ backgroundColor: 'var(--text-tertiary)', fontWeight: 700 }}>{member.initials}</Avatar>
                     <Text style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{member.name}</Text>
                   </div>
-                  <Text style={{ color: 'var(--text-primary)', fontWeight: 800, width: 120 }}>Tasks Completed: {member.tasksCompleted}</Text>
+                  <Text style={{ color: 'var(--text-primary)', fontWeight: 800, width: 140 }}>Tasks Completed: {member.tasksCompleted}</Text>
                   <Text style={{ color: 'var(--text-secondary)', fontWeight: 600, width: 120 }}>Assigned: {member.tasksAssigned}</Text>
-                  <Text style={{ color: 'var(--text-secondary)', fontWeight: 600, width: 100 }}>SLA {member.sla}</Text>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 80, color: 'var(--text-primary)', fontWeight: 600 }}>
+                  <Text style={{ color: 'var(--text-secondary)', fontWeight: 600, width: 140 }}>SLA Balance: {member.sla}</Text>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: 80, color: 'var(--text-primary)', fontWeight: 600, justifyContent: 'flex-end' }}>
                     {member.status === 'good' ? (
                       <div style={{ background: 'var(--accent-primary)', color: '#fff', borderRadius: 4, padding: 2, display: 'flex' }}><CheckSquare size={14} /></div>
-                    ) : (
+                    ) : member.status === 'warning' ? (
                       <div style={{ background: 'var(--accent-warning)', color: '#fff', borderRadius: 4, padding: 2, display: 'flex' }}><AlertTriangle size={14} /></div>
+                    ) : (
+                      <div style={{ background: 'var(--accent-danger)', color: '#fff', borderRadius: 4, padding: 2, display: 'flex' }}><AlertTriangle size={14} /></div>
                     )}
                   </div>
                 </div>

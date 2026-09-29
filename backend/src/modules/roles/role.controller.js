@@ -7,8 +7,8 @@ exports.getRoles = async (req, res, next) => {
       queryFilter.adminId = req.user._id;
       queryFilter.agencyId = null;
       queryFilter.brandId = null;
-    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId)) {
-      queryFilter.brandId = req.user.brandId || req.user._id;
+    } else if (['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'agency_client', 'client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId) || (req.companyId && req.user.role?.startsWith('brand'))) {
+      queryFilter.brandId = req.user.brandId || req.companyId || (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(req.user.role) ? req.user._id : null);
     } else {
       queryFilter.agencyId = req.companyId || req.user.agencyId || req.user._id;
       queryFilter.brandId = null;
@@ -25,8 +25,8 @@ exports.createRole = async (req, res, next) => {
     const data = { ...req.body };
     if (req.user.role === 'commander_admin') {
       data.adminId = req.user._id;
-    } else if (['brand_super_admin', 'brand_manager'].includes(req.user.role)) {
-      data.brandId = req.user.brandId || req.user._id;
+    } else if (['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'agency_client', 'client'].includes(req.user.role) || (req.user.role === 'user' && req.user.brandId) || (req.companyId && req.user.role?.startsWith('brand'))) {
+      data.brandId = req.user.brandId || req.companyId || (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(req.user.role) ? req.user._id : null);
       data.agencyId = req.companyId || req.user.agencyId;
       if (req.user.adminId) data.adminId = req.user.adminId;
     } else {

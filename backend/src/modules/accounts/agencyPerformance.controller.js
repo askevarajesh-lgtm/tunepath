@@ -228,10 +228,7 @@ exports.getAgencyPerformance = async (req, res, next) => {
     const teamTasks = await Task.aggregate([
       { 
         $match: { 
-          $or: [
-            { assignedTo: { $in: teamIds } },
-            { createdBy: { $in: teamIds } }
-          ] 
+          assignedTo: { $in: teamIds }
         } 
       },
       { 
@@ -240,27 +237,9 @@ exports.getAgencyPerformance = async (req, res, next) => {
           total: { $sum: 1 }, 
           completed: { 
             $sum: { 
-              $cond: [{ $in: ['$status', completedStatuses] }, 1, 0] 
+              $cond: [{ $in: [{ $toLower: '$status' }, ['completed', 'complete', 'validated', 'done', 'approved']] }, 1, 0] 
             } 
           } 
-        } 
-      }
-    ]);
-
-    const teamSlas = await SlaRecord.aggregate([
-      { 
-        $match: { 
-          $or: [
-            { assignedTo: { $in: teamIds } },
-            { agencyId: { $in: teamIds } }
-          ] 
-        } 
-      },
-      { 
-        $group: { 
-          _id: '$assignedTo', 
-          total: { $sum: 1 }, 
-          breached: { $sum: { $cond: [{ $eq: ['$status', 'Breached'] }, 1, 0] } } 
         } 
       }
     ]);
@@ -270,10 +249,10 @@ exports.getAgencyPerformance = async (req, res, next) => {
       const tasksAssigned = taskObj ? taskObj.total : 0;
       const tasksCompleted = taskObj ? taskObj.completed : 0;
 
-      const slaObj = teamSlas.find(sl => sl._id && sl._id.toString() === t._id.toString());
       let slaPerc = 0;
       if (tasksAssigned > 0) {
-        slaPerc = Math.round(((tasksAssigned - tasksCompleted) / tasksAssigned) * 100);
+        const remaining = Math.max(0, tasksAssigned - tasksCompleted);
+        slaPerc = Math.round((remaining / tasksAssigned) * 100);
       }
 
       const initials = (t.name || 'U').split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
@@ -287,7 +266,7 @@ exports.getAgencyPerformance = async (req, res, next) => {
         sla: `${slaPerc}%`,
         tasksAssigned,
         tasksCompleted,
-        status: slaPerc <= 5 ? 'good' : (slaPerc <= 15 ? 'warning' : 'danger')
+        status: slaPerc <= 25 ? 'good' : (slaPerc <= 50 ? 'warning' : 'danger')
       };
     }).sort((a, b) => b.tasksCompleted - a.tasksCompleted);
 

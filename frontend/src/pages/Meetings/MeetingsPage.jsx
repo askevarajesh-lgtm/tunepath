@@ -605,14 +605,20 @@ const MeetingsPage = () => {
                 />
               </Tooltip>
               {record.status !== 'completed' && record.status !== 'cancelled' && (
-                <Tooltip title="Mark Completed">
-                  <Button 
-                    type="link" 
-                    icon={<CheckCircleOutlined />} 
-                    onClick={() => handleStatusUpdate(record._id, 'completed')}
-                    style={{ color: '#52c41a' }}
-                  />
-                </Tooltip>
+                <Popconfirm
+                  title="Are you willing to complete the meeting priorly?"
+                  onConfirm={() => handleStatusUpdate(record._id, 'completed')}
+                  okText="Yes"
+                  cancelText="No"
+                >
+                  <Tooltip title="Mark Completed">
+                    <Button 
+                      type="link" 
+                      icon={<CheckCircleOutlined />} 
+                      style={{ color: '#52c41a' }}
+                    />
+                  </Tooltip>
+                </Popconfirm>
               )}
               <Popconfirm
                 title="Are you sure to delete this meeting?"

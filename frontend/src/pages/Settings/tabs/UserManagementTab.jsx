@@ -224,15 +224,23 @@ const UserManagementTab = () => {
         api.get('/roles')
       ]);
       const allUsers = usersRes.data?.data || [];
-      const excludedRoles = [
-        'supreme_super_admin', 'superadmin', 'super_admin', 'commander_admin', 'admin',
-        'agency_super_admin', 'agency_manager',
-        'brand_super_admin', 'brand_manager', 'brand_admin',
-        'manager', 'agency_client', 'client'
-      ];
-      setUsers(allUsers.filter(u => !u.brandId && (u.customRoleId || !excludedRoles.includes(u.role))));
-      setDepartments((deptsRes.data?.data || []).filter(d => !d.brandId));
-      setRoles((rolesRes.data?.data || []).filter(r => !r.brandId));
+      const isBrandUser = ['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'agency_client', 'client'].includes(user?.role) || Boolean(user?.brandId);
+
+      if (isBrandUser) {
+        setUsers(allUsers.filter(u => u._id !== (user?._id || user?.id) && (u.customRoleId || !['supreme_super_admin', 'commander_admin', 'superadmin', 'super_admin'].includes(u.role))));
+        setDepartments(deptsRes.data?.data || []);
+        setRoles(rolesRes.data?.data || []);
+      } else {
+        const excludedRoles = [
+          'supreme_super_admin', 'superadmin', 'super_admin', 'commander_admin', 'admin',
+          'agency_super_admin', 'agency_manager',
+          'brand_super_admin', 'brand_manager', 'brand_admin',
+          'manager', 'agency_client', 'client'
+        ];
+        setUsers(allUsers.filter(u => !u.brandId && (u.customRoleId || !excludedRoles.includes(u.role))));
+        setDepartments((deptsRes.data?.data || []).filter(d => !d.brandId));
+        setRoles((rolesRes.data?.data || []).filter(r => !r.brandId));
+      }
     } catch (err) {
       console.error(err);
       message.error('Failed to load data');
@@ -243,7 +251,7 @@ const UserManagementTab = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [user?._id, user?.role]);
 
   // View mode & pagination for users
   const [viewMode, setViewMode] = useState('card');
@@ -515,6 +523,7 @@ const UserManagementTab = () => {
         message.success('Department created');
       }
       setDeptModal({ open: false, record: null });
+      deptForm.resetFields();
       fetchData();
     } catch (err) {
       console.error(err);
