@@ -178,6 +178,7 @@ const TaskForm = () => {
   ] = useState(false);
 
   const getBaseRoute = () => {
+    if (location.pathname.startsWith("/sub-agency")) return "/sub-agency";
     if (location.pathname.startsWith("/client")) return "/client/workspace";
     if (location.pathname.startsWith("/agency")) return "/agency/workspace";
     if (location.pathname.startsWith("/user")) return "/user/workspace";
@@ -539,6 +540,8 @@ const TaskForm = () => {
         const uDeptId = u.departmentId?._id ? String(u.departmentId._id) : (typeof u.departmentId === "string" ? u.departmentId : "");
         const uDeptName = (u.departmentName || u.departmentId?.name || u.department || "").toLowerCase();
         const uDeptSlug = (u.departmentId?.slug || resolveUserDepartmentSlug(u, departments, roles) || "").toLowerCase();
+
+        if (['sub_agency_super_admin', 'sub_agency_user'].includes(u.role)) return true;
 
         const isIdMatch = targetId && uDeptId && uDeptId === targetId;
         const isNameMatch = targetName && uDeptName && (uDeptName.includes(targetName) || targetName.includes(uDeptName));
@@ -908,6 +911,23 @@ const TaskForm = () => {
     finalAvailableCompanies,
     form,
   ]);
+
+  // Default Client selection for Sub Agency users — pre-select the Main Agency
+  useEffect(() => {
+    if (isEdit || selectedProject?.clientId || !currentUser) return;
+    const isSubAgencyRole = ['sub_agency_super_admin', 'sub_agency_user'].includes(currentUser.role);
+    if (isSubAgencyRole && currentUser.agencyId && finalAvailableCompanies.length > 0) {
+      const currentCompanyId = form.getFieldValue('companyId');
+      if (!currentCompanyId) {
+        const mainAgency = finalAvailableCompanies.find(c => String(c._id) === String(currentUser.agencyId));
+        if (mainAgency) {
+          form.setFieldsValue({ companyId: mainAgency._id });
+          setSelectedCompanyId(mainAgency._id);
+        }
+      }
+    }
+  }, [isEdit, currentUser, selectedProject, finalAvailableCompanies, form]);
+
 
   // Set default watchers based on company contact when company changes
   useEffect(() => {

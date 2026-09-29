@@ -372,6 +372,12 @@ const getTasksForKanban = async (req, res) => {
   try {
     // Normalize projectId - convert empty string or "null" string to null
     const query = { ...req.query };
+
+    // Enforce sub-agency isolation: only show tasks belonging to this sub-agency
+    if (req.user?.subAgencyId) {
+      query.subAgencyId = req.user.subAgencyId.toString();
+    }
+
     if (
       query.projectId &&
       (query.projectId === "null" || query.projectId === "")

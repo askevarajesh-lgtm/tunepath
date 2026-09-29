@@ -7,10 +7,7 @@ exports.getDepartments = async (req, res, next) => {
       if (!req.user.subAgencyId) return res.status(403).json({ success: false, message: 'Not a Sub Agency user' });
       queryFilter.subAgencyId = req.user.subAgencyId;
     } else 
-    if (req.user.role === 'sub_agency_user' || req.user.role === 'sub_agency_super_admin') {
-      if (!req.user.subAgencyId) return res.status(403).json({ success: false, message: 'Not a Sub Agency user' });
-      queryFilter.subAgencyId = req.user.subAgencyId;
-    } else 
+
     if (req.query.clientId || req.query.brandId || req.query.companyId) {
       queryFilter.brandId = req.query.clientId || req.query.brandId || req.query.companyId;
     } else if (req.user.role === 'commander_admin') {
@@ -39,7 +36,10 @@ exports.getDepartments = async (req, res, next) => {
 exports.getDepartmentsDynamic = async (req, res, next) => {
   try {
     let queryFilter = {};
-    if (req.query.clientId || req.query.brandId || req.query.companyId) {
+    if (req.user.role === 'sub_agency_user' || req.user.role === 'sub_agency_super_admin') {
+      if (!req.user.subAgencyId) return res.status(403).json({ success: false, message: 'Not a Sub Agency user' });
+      queryFilter.subAgencyId = req.user.subAgencyId;
+    } else if (req.query.clientId || req.query.brandId || req.query.companyId) {
       queryFilter.brandId = req.query.clientId || req.query.brandId || req.query.companyId;
     } else if (req.user.role === 'commander_admin') {
       queryFilter.adminId = req.user._id;

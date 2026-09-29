@@ -3222,6 +3222,14 @@ const getTasksForKanban = async (
   const query = {
     tenantCompanyId: { $in: [tenantCompanyId, ...clientCompanyIds] },
   };
+  if (filters.subAgencyId) {
+    // Sub-agency isolation: bypass tenantCompanyId filter and use subAgencyId exclusively
+    // This avoids mismatches where the task's tenantCompanyId might differ from req.companyId
+    delete query.tenantCompanyId;
+    query.subAgencyId = mongoose.Types.ObjectId.isValid(filters.subAgencyId)
+      ? new mongoose.Types.ObjectId(filters.subAgencyId)
+      : filters.subAgencyId;
+  }
   const userObjId =
     userId && mongoose.Types.ObjectId.isValid(userId)
       ? new mongoose.Types.ObjectId(userId)
@@ -3307,6 +3315,7 @@ const getTasksForKanban = async (
   if (filters.companyId) query.companyId = filters.companyId;
   if (filters.createdBy) query.createdBy = filters.createdBy;
   if (filters.taskCategory) query.taskCategory = filters.taskCategory;
+  // Sub-agency isolation handled above (tenantCompanyId removed, subAgencyId set as ObjectId)
 
   // Handle Date Range Filters for Kanban
   if (filters.startDate || filters.endDate || filters.dueDate) {
@@ -3466,7 +3475,8 @@ const getTasksForKanban = async (
     // 1. Not completed/validated AND due today or in the future (overdue tasks are hidden)
     // 2. OR completed/validated TODAY
     const todayStart = new Date();
-    todayStart.setUTCHours(0, 0, 0, 0);
+    // Use local midnight (not UTC midnight) to avoid timezone issues (e.g. IST = UTC+5:30)
+    todayStart.setHours(0, 0, 0, 0);
 
     const statusOrFilter = [
       {

@@ -27,7 +27,10 @@ const validRolesForAdmin = [
 exports.getUsers = async (req, res, next) => {
   try {
     if (['sub_agency_super_admin', 'sub_agency_user'].includes(req.user.role)) {
-      return res.status(403).json({ success: false, message: 'Forbidden: Sub Agency roles cannot access generic user list' });
+      let qf = { subAgencyId: req.user.subAgencyId };
+      if (req.query.role) qf.role = req.query.role;
+      const users = await User.find(qf).select('-password').sort({ createdAt: -1 });
+      return res.status(200).json({ success: true, count: users.length, data: users });
     }
 
     let queryFilter = {};
@@ -71,7 +74,10 @@ exports.getUsers = async (req, res, next) => {
 exports.getUsersDropdown = async (req, res, next) => {
   try {
     if (['sub_agency_super_admin', 'sub_agency_user'].includes(req.user.role)) {
-      return res.status(403).json({ success: false, message: 'Forbidden: Sub Agency roles cannot access generic user list' });
+      let qf = { subAgencyId: req.user.subAgencyId };
+      if (req.query.role) qf.role = req.query.role;
+      const users = await User.find(qf).select('name email role profileImage avatar designation _id').sort({ name: 1 });
+      return res.status(200).json({ success: true, count: users.length, data: { users } });
     }
 
     let queryFilter = {};

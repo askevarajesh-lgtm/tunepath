@@ -752,6 +752,9 @@ const AppRoutes = () => {
           <Route path="dashboard" element={<OverviewTab />} />
           <Route path="projects" element={<ProjectList />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
+          <Route path="tasks" element={<TasksPage />} />
+          <Route path="tasks/new" element={<TaskForm />} />
+          <Route path="tasks/:id/edit" element={<TaskForm />} />
           <Route path="tasks/*" element={<TasksPage />} />
           <Route path="settings" element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
         </Route>

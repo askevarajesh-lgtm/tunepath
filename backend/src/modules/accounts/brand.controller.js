@@ -7,11 +7,19 @@ exports.getBrands = async (req, res, next) => {
     const isAdmin = ['supreme_super_admin', 'commander_admin'].includes(req.user.role);
     const isAgencyAdmin = ['agency_super_admin', 'agency_manager'].includes(req.user.role);
     const isBrandUser = ['brand_super_admin', 'brand_manager', 'agency_client'].includes(req.user.role);
-    const isEmployee = !isAdmin && !isAgencyAdmin && !isBrandUser;
+    const isSubAgencyUser = ['sub_agency_super_admin', 'sub_agency_user'].includes(req.user.role);
+    const isEmployee = !isAdmin && !isAgencyAdmin && !isBrandUser && !isSubAgencyUser;
 
     let filter = {};
 
-    if (isBrandUser) {
+    if (isSubAgencyUser) {
+      // Show the Main Agency (the agency that owns this sub-agency) as the client
+      const mainAgencyId = req.user.agencyId;
+      if (!mainAgencyId) {
+        return res.status(400).json({ success: false, message: 'No main agency associated with this sub-agency user' });
+      }
+      filter._id = mainAgencyId;
+    } else if (isBrandUser) {
       const brandId = req.companyId || req.user.tenantCompanyId || req.user.brandId || req.user._id;
       filter._id = brandId;
     } else if (isAgencyAdmin || isEmployee) {
