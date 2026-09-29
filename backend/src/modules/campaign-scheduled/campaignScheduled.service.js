@@ -2109,13 +2109,17 @@ async function getInstagramPostMetrics(account, externalId) {
   if (!account || !externalId) return { likes: 0, comments: 0, shares: 0 };
 
   try {
-    const mediaRes = await axios.get(`${META_GRAPH}/${externalId}`, {
-      params: {
-        fields: "caption,like_count,comments_count,permalink,timestamp",
-        access_token: account.access_token,
-      },
-      timeout: 3000,
-    });
+    const mediaRes = await executeMetaGraphApi(
+      (token) =>
+        axios.get(`${META_GRAPH}/${externalId}`, {
+          params: {
+            fields: "caption,like_count,comments_count,permalink,timestamp",
+            access_token: token,
+          },
+          timeout: 4000,
+        }),
+      account,
+    );
 
     const likes = Number(mediaRes.data?.like_count) || 0;
     const comments = Number(mediaRes.data?.comments_count) || 0;
@@ -2348,15 +2352,15 @@ let LAST_METRIC_REFRESH_TIME = {};
 async function refreshPublishedPostMetrics(companyId, clientCompanyId = null, force = false) {
   const scopeKey = `${companyId || "default"}_${clientCompanyId || "none"}`;
   const now = Date.now();
-  if (!force && LAST_METRIC_REFRESH_TIME[scopeKey] && (now - LAST_METRIC_REFRESH_TIME[scopeKey] < 300000)) {
-    return []; // Skip if refreshed in last 5 minutes
+  if (!force && LAST_METRIC_REFRESH_TIME[scopeKey] && (now - LAST_METRIC_REFRESH_TIME[scopeKey] < 20000)) {
+    return []; // Skip if refreshed in last 20 seconds
   }
   LAST_METRIC_REFRESH_TIME[scopeKey] = now;
 
   const published = await Post.find({
     status: "Published",
     ...buildScopeQuery(companyId, clientCompanyId),
-  }).sort({ published_at: -1 }).limit(10).lean();
+  }).sort({ published_at: -1, createdAt: -1 }).limit(25).lean();
 
   const refreshed = await Promise.allSettled(
     published.map((post) =>

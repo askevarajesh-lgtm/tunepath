@@ -2010,7 +2010,7 @@ router.post("/posts/refresh-metrics", async (req, res) => {
 });
 
 const LIVE_ACCOUNT_STATS_CACHE = new Map();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minute TTL cache
+const CACHE_TTL_MS = 30 * 1000; // 30s TTL cache
 
 async function getOrFetchAccountLiveStats(acc, forceRefresh = false) {
     const cacheKey = String(acc.id);
@@ -2041,30 +2041,39 @@ async function getOrFetchAccountLiveStats(acc, forceRefresh = false) {
         try {
             const targetId = acc.ig_user_id || acc.page_id || "me";
             const fields = acc.platform === "instagram" ? "id,name,username,followers_count" : "id,name,fan_count,followers_count";
-            const graphRes = await axios.get(`${META_GRAPH}/${targetId}`, {
-                params: { access_token: acc.access_token, fields },
-                timeout: 1500
-            }).catch(() => null);
+            const graphRes = await executeMetaGraphApi(
+                (token) => axios.get(`${META_GRAPH}/${targetId}`, {
+                    params: { access_token: token, fields },
+                    timeout: 3000
+                }),
+                acc
+            ).catch(() => null);
 
             if (graphRes?.data) {
                 followers = graphRes.data.followers_count ?? graphRes.data.fan_count ?? followers;
             }
 
             if (acc.platform === "instagram" && acc.ig_user_id) {
-                const mediaRes = await axios.get(`${META_GRAPH}/${acc.ig_user_id}/media`, {
-                    params: { access_token: acc.access_token, fields: "id,like_count,comments_count", limit: 15 },
-                    timeout: 4000
-                }).catch(() => null);
+                const mediaRes = await executeMetaGraphApi(
+                    (token) => axios.get(`${META_GRAPH}/${acc.ig_user_id}/media`, {
+                        params: { access_token: token, fields: "id,like_count,comments_count", limit: 25 },
+                        timeout: 5000
+                    }),
+                    acc
+                ).catch(() => null);
                 const mediaList = mediaRes?.data?.data || [];
                 if (mediaList.length > 0) {
                     likes = mediaList.reduce((sum, m) => sum + (m.like_count || 0), 0);
                     comments = mediaList.reduce((sum, m) => sum + (m.comments_count || 0), 0);
                 }
             } else if (acc.platform === "facebook" && acc.page_id) {
-                const fbPostsRes = await axios.get(`${META_GRAPH}/${acc.page_id}/published_posts`, {
-                    params: { access_token: acc.access_token, fields: "id,reactions.summary(true),comments.summary(true),shares", limit: 15 },
-                    timeout: 4000
-                }).catch(() => null);
+                const fbPostsRes = await executeMetaGraphApi(
+                    (token) => axios.get(`${META_GRAPH}/${acc.page_id}/published_posts`, {
+                        params: { access_token: token, fields: "id,reactions.summary(true),comments.summary(true),shares", limit: 25 },
+                        timeout: 5000
+                    }),
+                    acc
+                ).catch(() => null);
                 const fbPostList = fbPostsRes?.data?.data || [];
                 if (fbPostList.length > 0) {
                     likes = fbPostList.reduce((sum, m) => {
@@ -2617,7 +2626,7 @@ router.get("/accounts/:id/likers", async (req, res) => {
 });
 
 const ACCOUNT_COMMENTS_CACHE = new Map();
-const COMMENTS_CACHE_TTL_MS = 60 * 1000;
+const COMMENTS_CACHE_TTL_MS = 15 * 1000;
 
 router.get("/accounts/:id/comments-list", async (req, res) => {
     const account = await Account.findOne({
@@ -2640,17 +2649,23 @@ router.get("/accounts/:id/comments-list", async (req, res) => {
     if (account.access_token || account.platform === "youtube") {
         if (account.platform === "instagram" && account.ig_user_id) {
             try {
-                const mediaRes = await axios.get(`${META_GRAPH}/${account.ig_user_id}/media`, {
-                    params: { access_token: account.access_token, fields: "id,caption,timestamp", limit: 10 },
-                    timeout: 4000
-                }).catch(() => null);
+                const mediaRes = await executeMetaGraphApi(
+                    (token) => axios.get(`${META_GRAPH}/${account.ig_user_id}/media`, {
+                        params: { access_token: token, fields: "id,caption,timestamp", limit: 15 },
+                        timeout: 5000
+                    }),
+                    account
+                ).catch(() => null);
                 const mediaList = mediaRes?.data?.data || [];
                 
                 const commentPromises = mediaList.map((media) =>
-                    axios.get(`${META_GRAPH}/${media.id}/comments`, {
-                        params: { access_token: account.access_token, fields: "id,text,username,timestamp,like_count,from{id,username}", limit: 20 },
-                        timeout: 4000
-                    }).then((commRes) => ({ media, comms: commRes?.data?.data || [] })).catch(() => ({ media, comms: [] }))
+                    executeMetaGraphApi(
+                        (token) => axios.get(`${META_GRAPH}/${media.id}/comments`, {
+                            params: { access_token: token, fields: "id,text,username,timestamp,like_count,from{id,username}", limit: 25 },
+                            timeout: 5000
+                        }),
+                        account
+                    ).then((commRes) => ({ media, comms: commRes?.data?.data || [] })).catch(() => ({ media, comms: [] }))
                 );
 
                 const results = await Promise.allSettled(commentPromises);
@@ -2679,17 +2694,23 @@ router.get("/accounts/:id/comments-list", async (req, res) => {
             }
         } else if (account.platform === "facebook" && account.page_id) {
             try {
-                const fbPostsRes = await axios.get(`${META_GRAPH}/${account.page_id}/published_posts`, {
-                    params: { access_token: account.access_token, fields: "id,message,created_time", limit: 10 },
-                    timeout: 4000
-                }).catch(() => null);
+                const fbPostsRes = await executeMetaGraphApi(
+                    (token) => axios.get(`${META_GRAPH}/${account.page_id}/published_posts`, {
+                        params: { access_token: token, fields: "id,message,created_time", limit: 15 },
+                        timeout: 5000
+                    }),
+                    account
+                ).catch(() => null);
                 const fbPosts = fbPostsRes?.data?.data || [];
 
                 const commentPromises = fbPosts.map((fbPost) =>
-                    axios.get(`${META_GRAPH}/${fbPost.id}/comments`, {
-                        params: { access_token: account.access_token, fields: "id,message,from,created_time,like_count", limit: 20 },
-                        timeout: 4000
-                    }).then((commRes) => ({ fbPost, comms: commRes?.data?.data || [] })).catch(() => ({ fbPost, comms: [] }))
+                    executeMetaGraphApi(
+                        (token) => axios.get(`${META_GRAPH}/${fbPost.id}/comments`, {
+                            params: { access_token: token, fields: "id,message,from,created_time,like_count", limit: 25 },
+                            timeout: 5000
+                        }),
+                        account
+                    ).then((commRes) => ({ fbPost, comms: commRes?.data?.data || [] })).catch(() => ({ fbPost, comms: [] }))
                 );
 
                 const results = await Promise.allSettled(commentPromises);

@@ -210,20 +210,42 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
     }
   };
 
-  const fetchAnalytics = async (forceRefresh = false) => {
-    setLoading(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const fetchAnalytics = async (forceRefresh = false, background = false) => {
+    if (!background) setLoading(true);
     try {
       const data = await campaignScheduledApi.getAnalytics(activeClientId, forceRefresh);
       setAnalytics(data);
     } catch (err) {
       console.error("Failed to fetch analytics:", err);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
+    }
+  };
+
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      await campaignScheduledApi.refreshPostMetrics(activeClientId).catch(() => {});
+      await fetchAnalytics(true, false);
+      message.success("Live metrics, likes & comments synced from social channels!");
+    } catch (err) {
+      message.error("Sync completed with warnings");
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   useEffect(() => {
-    fetchAnalytics();
+    fetchAnalytics(true, false);
+    const intervalId = window.setInterval(() => {
+      fetchAnalytics(true, true);
+    }, 45000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
   }, [activeClientId, refreshTrigger]);
 
   const platformIcons = {
@@ -531,6 +553,22 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
                 </Select.Option>
               ))}
             </Select>
+
+            <Button
+              type="primary"
+              icon={<ReloadOutlined spin={isSyncing} />}
+              loading={isSyncing}
+              onClick={handleManualSync}
+              style={{
+                borderRadius: 10,
+                fontWeight: 600,
+                background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
+                borderColor: "#4f46e5",
+                boxShadow: "0 2px 8px rgba(99, 102, 241, 0.25)",
+              }}
+            >
+              Sync Live Metrics
+            </Button>
           </Space>
         </div>
       </div>

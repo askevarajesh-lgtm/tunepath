@@ -559,20 +559,20 @@ export default function CampaignScheduledPage() {
   };
 
   useEffect(() => {
-    if (activeTab !== "campaigns") return;
+    if (activeTab !== "campaigns" && activeTab !== "dashboard") return;
     let cancelled = false;
 
     const refreshMetrics = () => {
       campaignScheduledApi
         .refreshPostMetrics(activeClientId)
         .then((nextPosts) => {
-          if (!cancelled) setPosts(nextPosts);
+          if (!cancelled && Array.isArray(nextPosts)) setPosts(nextPosts);
         })
         .catch(() => {});
     };
 
     refreshMetrics();
-    const intervalId = window.setInterval(refreshMetrics, 60000);
+    const intervalId = window.setInterval(refreshMetrics, 45000);
 
     return () => {
       cancelled = true;
