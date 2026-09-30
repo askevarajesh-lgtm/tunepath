@@ -1474,6 +1474,8 @@ const KanbanBoard = ({
   onAddTask,
   departmentFilter,
   onTaskCompleted,
+  selectedDate,
+  onSelectedDateChange,
 }) => {
   const { isDark } = useTheme();
   const [selectedProject, setSelectedProject] = useState(null);
@@ -1488,7 +1490,7 @@ const KanbanBoard = ({
     [screenshotFile],
   );
   const [selectedUser, setSelectedUser] = useState(null);
-  const [selectedDate, setSelectedDate] = useState(dayjs());
+  const [selectedStatus, setSelectedStatus] = useState(null);
   const [isReopenModalVisible, setIsReopenModalVisible] = useState(false);
   const [taskToReopen, setTaskToReopen] = useState(null);
 
@@ -1941,6 +1943,7 @@ const KanbanBoard = ({
 
       Object.keys(tasks).forEach((statusId) => {
         filteredTasks[statusId] = tasks[statusId].filter((task) => {
+          if (selectedStatus && statusId !== selectedStatus) return false;
           if (!selectedDate) return true;
           return taskMatchesKanbanDay(task, selectedDay);
         });
@@ -1948,7 +1951,7 @@ const KanbanBoard = ({
 
       setTasksByStatus(filteredTasks);
     }
-  }, [tasks, selectedDate]);
+  }, [tasks, selectedDate, selectedStatus]);
 
   useEffect(() => {
     if (typeof window === "undefined") return undefined;
@@ -2687,13 +2690,6 @@ const KanbanBoard = ({
               flex: 1,
             }}
           >
-            {(userRole === "admin" ||
-              userRole === "super_admin" ||
-              userRole === "client" ||
-              userRole === "digital_marketing_manager" ||
-              userRole === "digital_marketing_coordinator" ||
-              userRole === "website_coordinator") && (
-              <>
                 <Select
                   placeholder="Filter by Project"
                   allowClear
@@ -2727,35 +2723,23 @@ const KanbanBoard = ({
                   ))}
                 </Select>
 
-                <Select
-                  placeholder="Assigned By"
-                  allowClear
-                  showSearch
-                  optionFilterProp="children"
-                  style={{ width: 180, ...selectStyle }}
-                  onChange={setSelectedCreator}
-                  value={selectedCreator}
-                >
-                  {users
-                    .filter((u) =>
-                      [
-                        "super_admin",
-                        "admin",
-                        "coordinator",
-                        "digital_marketing_coordinator",
-                        "website_coordinator",
-                        "digital_marketing_manager",
-                        "operations_head",
-                      ].includes(u.role),
-                    )
-                    .map((u) => (
-                      <Option key={u._id} value={u._id}>
-                        {u.name}
-                      </Option>
-                    ))}
-                </Select>
-              </>
-            )}
+
+
+            <Select
+              placeholder="Filter by Status"
+              allowClear
+              showSearch
+              optionFilterProp="children"
+              style={{ width: 140, ...selectStyle }}
+              onChange={setSelectedStatus}
+              value={selectedStatus}
+            >
+              {statuses.map((s) => (
+                <Option key={s.id} value={s.id}>
+                  {s.name}
+                </Option>
+              ))}
+            </Select>
 
             <Select
               placeholder="Priority"
@@ -2785,7 +2769,7 @@ const KanbanBoard = ({
             <DatePicker
               placeholder="Due Date"
               style={{ width: 150, height: 36 }}
-              onChange={setSelectedDate}
+              onChange={onSelectedDateChange}
               value={selectedDate}
             />
 
@@ -2795,7 +2779,8 @@ const KanbanBoard = ({
                 setSelectedUser(null);
                 setSelectedCreator(null);
                 setSelectedPriority(null);
-                setSelectedDate(dayjs());
+                setSelectedStatus(null);
+                onSelectedDateChange(dayjs());
               }}
               style={{
                 fontSize: 12,

@@ -109,7 +109,7 @@ export const useGetAllWorkflowConfigsQuery = createQueryHook((params) => ({ url:
 export const useGetNotificationSettingsQuery = createQueryHook(() => '/tasks/notification-settings');
 export const useGetNotificationsQuery = createQueryHook((params) => ({ url: '/tasks/notifications', params }));
 export const useGetTodayTaskStatsQuery = createQueryHook(() => '/tasks/today-stats');
-export const useGetTodayAssignedDMSummaryQuery = createQueryHook(() => '/tasks/today-assigned-dm-summary');
+export const useGetTodayAssignedDMSummaryQuery = createQueryHook((params) => ({ url: '/tasks/today-assigned-dm-summary', params }));
 
 // Mutations
 export const useCreateTaskMutation = createMutationHook((data) => ({ url: '/tasks', method: 'POST', body: data }));

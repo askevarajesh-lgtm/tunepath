@@ -1,5 +1,6 @@
 import { useAuth } from "../../contexts/AuthContext";
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import dayjs from "dayjs";
 import {
   Button,
   Space,
@@ -102,6 +103,7 @@ const TasksPage = () => {
   ];
 
   const [viewMode, setViewMode] = useState("kanban"); // 'kanban' | 'list' | 'calendar'
+  const [selectedDate, setSelectedDate] = useState(dayjs());
   const [selectedDepartment, setSelectedDepartment] = useState("all");
   const [selectedTask, setSelectedTask] = useState(null);
   const [drawerVisible, setDrawerVisible] = useState(false);
@@ -128,7 +130,7 @@ const TasksPage = () => {
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [isTodayAssignedModalOpen, setIsTodayAssignedModalOpen] = useState(false);
   const [isTodayUnassignedModalOpen, setIsTodayUnassignedModalOpen] = useState(false);
-  const [isTotalTasksModalOpen, setIsTotalTasksModalOpen] = useState(false);
+  const [isRemainingProjectTasksModalOpen, setIsRemainingProjectTasksModalOpen] = useState(false);
 
   const canViewTaskInsightCards =
     ["admin", "super_admin", "agency_manager", "agency_super_admin"].includes(userRole) ||
@@ -140,9 +142,12 @@ const TasksPage = () => {
       skip: !canViewTaskInsightCards,
     });
   const { data: todayAssignedDMData, isLoading: isTodayAssignedLoading } =
-    useGetTodayAssignedDMSummaryQuery(undefined, {
-      skip: !canViewTaskInsightCards,
-    });
+    useGetTodayAssignedDMSummaryQuery(
+      { date: selectedDate ? selectedDate.format("YYYY-MM-DD") : null },
+      {
+        skip: !canViewTaskInsightCards,
+      }
+    );
 
   const { data: dmSettingsData } = useGetDMTeamSettingsQuery();
   const dmSettings = dmSettingsData?.data?.dmTeam || {};
@@ -161,6 +166,32 @@ const TasksPage = () => {
   const todayAssignedCreativeTotalLimit = todayAssignedSummary.totalCapacity || 0;
   const todayUnassignedTotalCount = todayAssignedSummary.totalRemaining || 0;
 
+  const remainingProjectTasks =
+    Number(unassignedSummary.overallUnassignedPosters || 0) +
+    Number(unassignedSummary.overallUnassignedVideos || 0) +
+    Number(unassignedSummary.overallUnassignedShoots || 0) +
+    Number(unassignedSummary.overallUnassignedDynamic || 0);
+
+  const allPendingProjectsMap = new Map();
+  const addProjectToMap = (project, type, count) => {
+    if (!allPendingProjectsMap.has(project._id)) {
+      allPendingProjectsMap.set(project._id, {
+        ...project,
+        pendingBreakdown: {},
+        totalPending: 0
+      });
+    }
+    const p = allPendingProjectsMap.get(project._id);
+    p.pendingBreakdown[type] = (p.pendingBreakdown[type] || 0) + count;
+    p.totalPending += count;
+  };
+
+  (unassignedSummary.posterProjects || []).forEach(p => addProjectToMap(p, 'Posters', p.pendingCount));
+  (unassignedSummary.videoProjects || []).forEach(p => addProjectToMap(p, 'Videos', p.pendingCount));
+  (unassignedSummary.shootProjects || []).forEach(p => addProjectToMap(p, 'Shoots', p.pendingCount));
+  (unassignedSummary.dynamicProjects || []).forEach(p => addProjectToMap(p, 'Dynamic', p.pendingCount));
+
+  const allPendingProjects = Array.from(allPendingProjectsMap.values()).sort((a, b) => b.totalPending - a.totalPending);
 
 
   // Page title based on user role
@@ -285,6 +316,8 @@ const TasksPage = () => {
           onAddTask={handleAddTask}
           departmentFilter={selectedDepartment}
           onTaskCompleted={handleTaskCompleted}
+          selectedDate={selectedDate}
+          onSelectedDateChange={setSelectedDate}
         />
       ),
     },
@@ -498,14 +531,14 @@ const TasksPage = () => {
           <Col style={{ flex: 1, minWidth: 200 }}>
             <Card
               hoverable
-              onClick={() => setIsTotalTasksModalOpen(true)}
+              onClick={() => setIsRemainingProjectTasksModalOpen(true)}
               styles={{ body: summaryCardBody("#1890ff") }}
               style={summaryCardBase}
             >
               <Statistic
-                title="Total Task Count"
-                value={todayAssignedCreativeTotalLimit || 0}
-                loading={isTodayAssignedLoading}
+                title="Remaining Project Deliverables"
+                value={remainingProjectTasks}
+                loading={isUnassignedSummaryLoading}
                 valueStyle={summaryValueStyle}
                 prefix={
                   <AppstoreOutlined
@@ -716,9 +749,9 @@ const TasksPage = () => {
       </Modal>
 
       <Modal
-        title="Task Capacity"
-        open={isTotalTasksModalOpen}
-        onCancel={() => setIsTotalTasksModalOpen(false)}
+        title="Projects with Remaining Tasks"
+        open={isRemainingProjectTasksModalOpen}
+        onCancel={() => setIsRemainingProjectTasksModalOpen(false)}
         footer={null}
         width={700}
         styles={{
@@ -729,60 +762,41 @@ const TasksPage = () => {
           },
         }}
       >
-        <Card
-          size="small"
-          style={{
-            marginBottom: 14,
-            borderRadius: 12,
-            border: "1px solid #91caff",
-            boxShadow: "0 6px 18px rgba(24, 144, 255, 0.08)",
-          }}
-          styles={{ body: { padding: "14px 16px" } }}
-        >
-          <Space direction="vertical" size={4} style={{ width: "100%" }}>
-            <span style={{ color: "#9ca3af", fontSize: 12, fontWeight: 600 }}>
-              TOTAL TASK COUNT (CAPACITY)
-            </span>
-            <Statistic
-              value={todayAssignedCreativeTotalLimit || 0}
-              loading={isTodayAssignedLoading}
-              valueStyle={{ fontSize: 28, fontWeight: 700, color: "#111827" }}
-              prefix={<AppstoreOutlined style={{ color: "#1890ff" }} />}
-            />
-          </Space>
-        </Card>
-        {assignedGrouped.length === 0 ? (
-          <List
-            locale={{ emptyText: "No task capacity configured." }}
-            dataSource={[]}
-            renderItem={() => null}
-          />
-        ) : (
-          assignedGrouped.map((dept) => (
-            <div key={dept.departmentId} style={{ marginBottom: 16 }}>
-              <Title level={5} style={{ marginBottom: 8, color: "var(--accent-primary)", borderBottom: "1px solid #f0f0f0", paddingBottom: 4 }}>
-                {dept.departmentName}
-              </Title>
-              <List
-                dataSource={dept.roles}
-                renderItem={(row) => (
-                  <List.Item
-                    style={{ paddingInline: 0, alignItems: "flex-start" }}
-                    actions={[
-                      <Space key={`row-metrics-${row.roleId}`} size={6}>
-                        <Tag color="blue">Limit: {row.dailyLimit}</Tag>
-                      </Space>,
-                    ]}
+        <List
+          dataSource={allPendingProjects}
+          locale={{ emptyText: "No projects with pending tasks." }}
+          renderItem={(project) => (
+            <List.Item
+              style={{ paddingInline: 0, alignItems: "flex-start" }}
+              actions={[<Tag color="blue" key="total">{project.totalPending} pending</Tag>]}
+            >
+              <List.Item.Meta
+                title={
+                  <Space
+                    style={{ width: "100%", justifyContent: "space-between" }}
                   >
-                    <List.Item.Meta
-                      title={row.roleName}
-                    />
-                  </List.Item>
-                )}
+                    <span style={{ fontWeight: 600 }}>{project.name}</span>
+                    <Tag color={getProjectStatusTagColor(project.status)}>
+                      {(project.status || "").replace(/_/g, " ")}
+                    </Tag>
+                  </Space>
+                }
+                description={
+                  <div>
+                    <div style={{ color: "#6b7280", marginBottom: 4 }}>
+                      Client: {project.clientName}
+                    </div>
+                    <Space size={4} wrap>
+                      {Object.entries(project.pendingBreakdown).map(([type, count]) => (
+                        <Tag key={type}>{type}: {count}</Tag>
+                      ))}
+                    </Space>
+                  </div>
+                }
               />
-            </div>
-          ))
-        )}
+            </List.Item>
+          )}
+        />
       </Modal>
 
       <Modal

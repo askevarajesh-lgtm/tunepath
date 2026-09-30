@@ -6138,6 +6138,7 @@ const getTodayTaskStats = async (
 const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
   tenantCompanyId,
   selectedClientCompanyId = null,
+  selectedDate = null
 ) => {
   const Settings = require("../settings/settings.model");
   const Role = require("../roles/role.model");
@@ -6164,7 +6165,15 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
   const deptMap = new Map(departments.map(d => [d._id.toString(), d.name]));
 
   const clientCompanyIds = await getClientCompanyIds(tenantCompanyId);
-  const now = new Date();
+  let now = new Date();
+  if (selectedDate) {
+    if (typeof selectedDate === 'string' && selectedDate.length === 10) {
+      const [year, month, day] = selectedDate.split('-').map(Number);
+      now = new Date(year, month - 1, day);
+    } else {
+      now = new Date(selectedDate);
+    }
+  }
   const todayStart = new Date(now);
   todayStart.setHours(0, 0, 0, 0);
   const todayEnd = new Date(now);

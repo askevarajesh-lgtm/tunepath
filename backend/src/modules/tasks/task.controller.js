@@ -544,6 +544,7 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (req, res) => {
       await taskService.getTodayAssignedTaskBreakdownForDigitalMarketing(
         req.companyId,
         req.query?.companyId || null,
+        req.query?.date || null
       );
     return sendSuccess(
       res,
