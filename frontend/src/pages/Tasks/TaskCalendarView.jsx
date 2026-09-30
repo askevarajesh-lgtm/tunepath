@@ -280,7 +280,7 @@ const TaskCalendarView = ({ onTaskClick, departmentFilter }) => {
     const dateCellRender = (value, info) => {
         if (info?.type && info.type !== "date") return info.originNode;
         if (!value || !value.isSame(calendarMonth, "month"))
-            return info?.originNode ?? null;
+            return <div className="task-calendar-cell-inner"></div>;
         const key = value.format("YYYY-MM-DD");
         const n = scheduledCountsByDate[key] || 0;
         const notesForDay = scheduledNotesByDate[key] || [];

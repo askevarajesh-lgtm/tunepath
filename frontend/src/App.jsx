@@ -115,7 +115,7 @@ import AgencyUsersTab from './pages/AgencyPortal/tabs/AgencyUsersTab';
 
 // Client Portal Tabs
 import ClientDashboardTab from './pages/ClientPortal/tabs/DashboardTab';
-import BrandUsersTab from './pages/ClientPortal/tabs/BrandUsersTab';
+import BrandManagersTab from './pages/ClientPortal/tabs/BrandManagersTab';
 import BillingTab from './pages/ClientPortal/tabs/BillingTab';
 import ClientPerformanceTab from './pages/ClientPortal/tabs/MyPerformanceTab';
 import ClientLeadsTab from './pages/ClientPortal/tabs/LeadsTab';
@@ -527,7 +527,7 @@ const AppRoutes = () => {
       <Route element={<ProtectedRoute allowedRoles={['supreme_super_admin', 'superadmin', 'agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client', 'user']} />}>
         <Route path="/client" element={<ClientLayout />}>
           <Route index element={<Navigate to="/client/dashboard" replace />} />
-          <Route path="users" element={<BrandUsersTab />} />
+          <Route path="users" element={<BrandManagersTab />} />
           <Route path="billing" element={<BillingTab />} />
           
           <Route path="dashboard" element={<ClientDashboardTab />} />

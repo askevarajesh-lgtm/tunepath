@@ -7,6 +7,7 @@ import api from '../../../services/api';
 import IntegrationsTab from '../../Settings/tabs/IntegrationsTab';
 import ClientIntegrationsTab from './ClientIntegrationsTab';
 import BrandUsersTab from './BrandUsersTab';
+import UserManagementTab from '../../Settings/tabs/UserManagementTab';
 
 const availableFeatures = [
   { id: 'hrms', label: 'HRMS' },
@@ -310,10 +311,17 @@ const ClientSettingsTab = () => {
         children: <SubscriptionContent />,
       }
     ] : []),
+    ...(user?.role === 'brand_manager' ? [
+      {
+        key: '5',
+        label: <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><Users size={16} /> User Management</span>,
+        children: <UserManagementTab />,
+      }
+    ] : []),
     {
       key: '2',
       label: <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600 }}><Link size={16} /> Integrations</span>,
-      children: <ClientIntegrationsTab user={freshUser} />,
+      children: user?.role === 'brand_manager' ? <IntegrationsTab /> : <ClientIntegrationsTab user={freshUser} />,
     },
     ...(user?.role === 'agency_client' ? [
       {

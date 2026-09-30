@@ -227,7 +227,10 @@ const UserManagementTab = () => {
       const isBrandUser = ['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'agency_client', 'client'].includes(user?.role) || Boolean(user?.brandId);
 
       if (isBrandUser) {
-        setUsers(allUsers.filter(u => u._id !== (user?._id || user?.id) && (u.customRoleId || !['supreme_super_admin', 'commander_admin', 'superadmin', 'super_admin'].includes(u.role))));
+        const selfId = user?._id || user?.id;
+        // Brand admins/managers are handled in the Managers page; this tab lists only 'user' role accounts
+        const brandUsers = allUsers.filter(u => u._id !== selfId && u.role === 'user');
+        setUsers(brandUsers);
         setDepartments(deptsRes.data?.data || []);
         setRoles(rolesRes.data?.data || []);
       } else {
@@ -332,7 +335,14 @@ const UserManagementTab = () => {
     return typeof displayRole === 'string' ? displayRole.replace(/_/g, ' ') : 'Member';
   };
 
-  const getCardMenuItems = (record) => [
+  const getCardMenuItems = (record) => record.isSelf ? [
+    {
+      key: 'edit-self',
+      icon: <EditOutlined />,
+      label: 'Edit',
+      onClick: () => handleOpenEditUser(record)
+    }
+  ] : [
     {
       key: 'login-as-user',
       icon: <LoginOutlined style={{ color: 'var(--accent-primary)' }} />,
@@ -402,11 +412,15 @@ const UserManagementTab = () => {
       render: (_, record) => (
         <Space size="middle">
           <Button type="text" icon={<EyeOutlined />} onClick={() => handleOpenViewUser(record)} style={{ color: 'var(--accent-info)', fontWeight: 600 }}>View</Button>
-          <Button type="text" icon={<LoginOutlined />} onClick={() => handleImpersonate(record)} style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Login as User</Button>
+          {!record.isSelf && (
+            <Button type="text" icon={<LoginOutlined />} onClick={() => handleImpersonate(record)} style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Login as User</Button>
+          )}
           <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenEditUser(record)} style={{ color: 'var(--accent-secondary)', fontWeight: 600 }}>Edit</Button>
-          <Popconfirm title="Delete this user?" onConfirm={() => handleDeleteUser(record._id)}>
-            <Button type="text" danger icon={<DeleteOutlined />} style={{ fontWeight: 600 }}>Delete</Button>
-          </Popconfirm>
+          {!record.isSelf && (
+            <Popconfirm title="Delete this user?" onConfirm={() => handleDeleteUser(record._id)}>
+              <Button type="text" danger icon={<DeleteOutlined />} style={{ fontWeight: 600 }}>Delete</Button>
+            </Popconfirm>
+          )}
         </Space>
       )
     }

@@ -14,6 +14,7 @@ import {
   Popconfirm,
   Tooltip,
   Divider,
+  Dropdown,
 } from "antd";
 import { notifySuccess, notifyError } from '../../utils/notify';
 import {
@@ -38,7 +39,7 @@ const { Option } = Select;
 
 const WorkflowTemplateManager = () => {
   const [form] = Form.useForm();
-  const [templateColor, setTemplateColor] = useState("var(--accent-primary)");
+  const [templateColor, setTemplateColor] = useState("#1890ff");
   const [statuses, setStatuses] = useState([]);
   const [editingTemplate, setEditingTemplate] = useState(null);
   const [selectedDepartment, setSelectedDepartment] = useState(null);
@@ -107,7 +108,7 @@ const WorkflowTemplateManager = () => {
       .map((dept) => ({
         value: dept.slug || dept._id,
         label: dept.name,
-        color: "var(--accent-primary)",
+        color: "#1890ff",
       }));
 
     if (isGlobalRole) {
@@ -136,7 +137,7 @@ const WorkflowTemplateManager = () => {
           _key: "to_do",
           id: "to_do",
           name: "To Do",
-          color: "var(--accent-primary)",
+          color: "#1890ff",
           order: 1,
         },
         {
@@ -192,12 +193,24 @@ const WorkflowTemplateManager = () => {
     }
   }, [editingTemplate, allConfigs, form]);
 
-  const handleAddStatus = () => {
+  const handleAddStatus = ({ key }) => {
+    let baseStatus = {};
+    if (key === 'review') {
+      baseStatus = { id: "review", name: "Review", color: "#722ed1" };
+    } else if (key === 'reject') {
+      baseStatus = { id: "Rejected", name: "Rejected", color: "#ff4d4f" };
+    } else if (key === 'complete') {
+      baseStatus = { id: "done", name: "Complete", color: "#52c41a" };
+    }
+
+    if (statuses.some((s) => s.id === baseStatus.id)) {
+      message.warning("Status already exists");
+      return;
+    }
+
     const newStatus = {
+      ...baseStatus,
       _key: `st_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-      id: `status_${Date.now()}`,
-      name: "New Status",
-      color: "var(--accent-primary)",
       order: statuses.length,
     };
     setStatuses([...statuses, newStatus]);
@@ -249,7 +262,7 @@ const WorkflowTemplateManager = () => {
   const handleReset = () => {
     form.resetFields();
     setSelectedDepartment(null);
-    setTemplateColor("var(--accent-primary)");
+    setTemplateColor("#1890ff");
     setStatuses([
       {
         _key: "backlog",
@@ -258,7 +271,7 @@ const WorkflowTemplateManager = () => {
         color: "#8c8c8c",
         order: 0,
       },
-      { _key: "to_do", id: "to_do", name: "To Do", color: "var(--accent-primary)", order: 1 },
+      { _key: "to_do", id: "to_do", name: "To Do", color: "#1890ff", order: 1 },
       {
         _key: "in_progress",
         id: "in_progress",
@@ -330,7 +343,11 @@ const WorkflowTemplateManager = () => {
       handleReset();
       refetchConfigs();
     } catch (error) {
-      notifyError('workflow-template', editingTemplate || 'global', error?.data?.message || "Failed to save workflow template");
+      if (error?.errorFields) {
+        notifyError('workflow-template', editingTemplate || 'global', "Please fill in all required fields (Template Name & Department)");
+        return;
+      }
+      notifyError('workflow-template', editingTemplate || 'global', error?.data?.message || error?.message || "Failed to save workflow template");
     }
   };
 
@@ -591,7 +608,7 @@ const WorkflowTemplateManager = () => {
                 {
                   label: "Recommended Colors",
                   colors: [
-                    "var(--accent-primary)",
+                    "#1890ff",
                     "#52c41a",
                     "#faad14",
                     "#f5222d",
@@ -614,9 +631,18 @@ const WorkflowTemplateManager = () => {
         <Divider>Status Configuration</Divider>
 
         <div style={{ marginBottom: 16 }}>
-          <Button icon={<PlusOutlined />} onClick={handleAddStatus}>
-            Add Status
-          </Button>
+          <Dropdown
+            menu={{
+              items: [
+                { key: 'review', label: 'Review' },
+                { key: 'reject', label: 'Rejected' },
+                { key: 'complete', label: 'Complete' },
+              ],
+              onClick: handleAddStatus,
+            }}
+          >
+            <Button icon={<PlusOutlined />}>Add Status</Button>
+          </Dropdown>
           <div style={{ marginTop: 8, color: "#999", fontSize: "12px" }}>
             Configure the status flow. Tasks will progress through these
             statuses in order. The final status (highest order) is considered

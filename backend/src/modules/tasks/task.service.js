@@ -3515,32 +3515,43 @@ const getTasksForKanban = async (
   // For each task, get its workflow and group by workflow status ID
   const grouped = {};
 
+  const workflowConfigCache = new Map();
+
   for (const task of tasks) {
     const taskStatus = task.status || "created";
 
     // Try to get workflow config for this task's project or department
     let workflowConfig = null;
-    if (task.projectId) {
-      const projectId = task.projectId._id || task.projectId;
-      workflowConfig = await getWorkflowConfig(
-        projectId ? projectId.toString() : null,
-        tenantCompanyId,
-        task.department || null,
-      );
-    }
-    if (!workflowConfig && task.department) {
-      workflowConfig = await getWorkflowConfig(
-        null,
-        tenantCompanyId,
-        task.department,
-      );
-    }
-    if (!workflowConfig) {
-      workflowConfig = await getWorkflowConfig(
-        null,
-        tenantCompanyId,
-        null,
-      );
+    const projectIdStr = task.projectId ? (task.projectId._id || task.projectId).toString() : null;
+    const departmentStr = task.department || null;
+    const cacheKey = `${projectIdStr}_${departmentStr}`;
+    
+    if (workflowConfigCache.has(cacheKey)) {
+      workflowConfig = workflowConfigCache.get(cacheKey);
+    } else {
+      if (task.projectId) {
+        const projectId = task.projectId._id || task.projectId;
+        workflowConfig = await getWorkflowConfig(
+          projectId ? projectId.toString() : null,
+          tenantCompanyId,
+          task.department || null,
+        );
+      }
+      if (!workflowConfig && task.department) {
+        workflowConfig = await getWorkflowConfig(
+          null,
+          tenantCompanyId,
+          task.department,
+        );
+      }
+      if (!workflowConfig) {
+        workflowConfig = await getWorkflowConfig(
+          null,
+          tenantCompanyId,
+          null,
+        );
+      }
+      workflowConfigCache.set(cacheKey, workflowConfig);
     }
 
     // If workflow config exists, use workflow status IDs
