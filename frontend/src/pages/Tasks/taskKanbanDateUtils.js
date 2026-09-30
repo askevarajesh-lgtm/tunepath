@@ -4,18 +4,11 @@ const d = (v) => (v == null || v === "" ? null : dayjs(v));
 const ok = (x) => x && x.isValid();
 
 const FINISHED_STATUSES = [
-    "review",
-    "in_review",
-    "in review",
-    "reviewing",
     "completed",
     "complete",
     "validated",
     "approved",
     "done",
-    "sent_for_client_review",
-    "rejected",
-    "rejected_k",
 ];
 
 export function isTaskFinished(status) {
@@ -26,8 +19,8 @@ export function isTaskFinished(status) {
 /**
  * Mirrors server getTasksForKanban date branch for one calendar day.
  * Used so Kanban, Dashboard, and Calendar View stay consistent.
- * For finished/review tasks, matches solely on completion timestamp.
- * For active tasks, matches on workStartedAt, startDate, dueDate, or createdAt.
+ * For finished tasks, matches on completion timestamp or scheduled due/start date.
+ * For active tasks (To Do, In Progress, Review, Hold), matches on dueDate, startDate, workStartedAt, or createdAt.
  */
 export function taskMatchesKanbanDay(task, day) {
     if (!task || !day) return false;
@@ -49,56 +42,23 @@ export function taskMatchesKanbanDay(task, day) {
     const updatedAt = d(task.updatedAt);
 
     if (isFinished) {
-        // For completed / in-review / finished tasks, match strictly on completion time
-        if (ok(workCompletedAt)) {
-            const val = workCompletedAt.valueOf();
-            return val >= s && val <= e;
-        }
-        if (ok(actualCompletionDate)) {
-            const val = actualCompletionDate.valueOf();
-            return val >= s && val <= e;
-        }
-        if (ok(validatedAt)) {
-            const val = validatedAt.valueOf();
-            return val >= s && val <= e;
-        }
-        if (ok(completedAt)) {
-            const val = completedAt.valueOf();
-            return val >= s && val <= e;
-        }
-        // Fallback for older tasks with no completion timestamp recorded
-        if (ok(updatedAt) && updatedAt.valueOf() >= s && updatedAt.valueOf() <= e) {
-            return true;
-        }
-        if (ok(dueDate) && dueDate.valueOf() >= s && dueDate.valueOf() <= e) {
-            return true;
-        }
-        if (ok(startDate) && startDate.valueOf() >= s && startDate.valueOf() <= e) {
-            return true;
-        }
+        if (ok(workCompletedAt) && workCompletedAt.valueOf() >= s && workCompletedAt.valueOf() <= e) return true;
+        if (ok(actualCompletionDate) && actualCompletionDate.valueOf() >= s && actualCompletionDate.valueOf() <= e) return true;
+        if (ok(validatedAt) && validatedAt.valueOf() >= s && validatedAt.valueOf() <= e) return true;
+        if (ok(completedAt) && completedAt.valueOf() >= s && completedAt.valueOf() <= e) return true;
+        if (ok(dueDate) && dueDate.valueOf() >= s && dueDate.valueOf() <= e) return true;
+        if (ok(startDate) && startDate.valueOf() >= s && startDate.valueOf() <= e) return true;
+        if (ok(updatedAt) && updatedAt.valueOf() >= s && updatedAt.valueOf() <= e) return true;
         return false;
     }
 
-    // Active / unfinished tasks:
-    if (ok(workStartedAt) && workStartedAt.valueOf() >= s && workStartedAt.valueOf() <= e) {
-        return true;
-    }
+    // Active / unfinished tasks (To Do, In Progress, Review, Hold, etc.):
+    if (ok(dueDate) && dueDate.valueOf() >= s && dueDate.valueOf() <= e) return true;
+    if (ok(startDate) && startDate.valueOf() >= s && startDate.valueOf() <= e) return true;
+    if (ok(workStartedAt) && workStartedAt.valueOf() >= s && workStartedAt.valueOf() <= e) return true;
 
-    // 1. Check startDate
-    if (ok(startDate) && startDate.valueOf() >= s && startDate.valueOf() <= e) {
-        return true;
-    }
-
-    // 2. Check dueDate
-    if (ok(dueDate) && dueDate.valueOf() >= s && dueDate.valueOf() <= e) {
-        return true;
-    }
-
-    // 3. Fallback to createdAt if no dates set
     const noDates = (!ok(startDate) || task.startDate === null) && (!ok(dueDate) || task.dueDate === null);
-    if (noDates && ok(createdAt) && createdAt.valueOf() >= s && createdAt.valueOf() <= e) {
-        return true;
-    }
+    if (noDates && ok(createdAt) && createdAt.valueOf() >= s && createdAt.valueOf() <= e) return true;
 
     return false;
 }

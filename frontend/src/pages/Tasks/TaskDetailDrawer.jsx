@@ -363,19 +363,14 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
               {liveTask.assignedTo?.name || "N/A"}
             </Space>
           </Descriptions.Item>
-          {!(
-            liveTask.status &&
-            ["review", "done", "completed", "validated", "complete"].includes(liveTask.status)
-          ) && (
-            <Descriptions.Item label="Due Date">
-              <Space>
-                <CalendarOutlined />
-                {liveTask.dueDate
-                  ? dayjs(liveTask.dueDate).format("DD/MM/YYYY HH:mm")
-                  : "N/A"}
-              </Space>
-            </Descriptions.Item>
-          )}
+          <Descriptions.Item label="Due Date">
+            <Space>
+              <CalendarOutlined />
+              {liveTask.dueDate
+                ? dayjs(liveTask.dueDate).format("DD/MM/YYYY HH:mm")
+                : "N/A"}
+            </Space>
+          </Descriptions.Item>
           <Descriptions.Item label="Start Date">
             {liveTask.startDate
               ? dayjs(liveTask.startDate).format("DD/MM/YYYY HH:mm")

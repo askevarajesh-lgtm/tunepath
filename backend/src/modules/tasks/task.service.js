@@ -848,43 +848,25 @@ const getAllTasks = async (
     }
     if (Object.keys(dateQuery).length > 0) {
       const finishedStatuses = [
-        "review",
-        "in_review",
-        "submitted",
         "completed",
         "complete",
         "validated",
         "approved",
         "done",
-        "sent_for_client_review",
-        "rejected",
-        "Rejected",
       ];
 
       const activeTaskDateOr = [
-        // Option A: Task has a defined startDate -> match on startDate
+        // Option A: Active task has startDate in range
         {
-          $and: [
-            { startDate: { $ne: null, $exists: true } },
-            { startDate: { $gte: start, $lte: end } },
-          ],
+          startDate: { $gte: start, $lte: end },
         },
-        // Option B: Task only has dueDate (show from createdAt to dueDate)
+        // Option B: Active task has dueDate in range
         {
-          $and: [
-            {
-              $or: [
-                { startDate: { $eq: null } },
-                { startDate: { $exists: false } },
-              ],
-            },
-            { createdAt: { $lte: end } },
-            { dueDate: { $gte: start, $lte: end } },
-          ],
+          dueDate: { $gte: start, $lte: end },
         },
-        // Option C: Task started on this day
+        // Option C: Active task was started on this day
         { workStartedAt: { $gte: start, $lte: end } },
-        // Option D: Task was created in this range and has no dueDate (newly created tasks)
+        // Option D: Active task was created in this range and has no dueDate (newly created tasks)
         {
           $and: [
             { createdAt: { $gte: start, $lte: end } },
@@ -903,35 +885,22 @@ const getAllTasks = async (
         { actualCompletionDate: { $gte: start, $lte: end } },
         { validatedAt: { $gte: start, $lte: end } },
         { completedAt: { $gte: start, $lte: end } },
-        // Fallback for older tasks without explicit completion timestamps
-        {
-          $and: [
-            { workCompletedAt: { $in: [null, undefined] } },
-            { actualCompletionDate: { $in: [null, undefined] } },
-            { validatedAt: { $in: [null, undefined] } },
-            { completedAt: { $in: [null, undefined] } },
-            {
-              $or: [
-                { updatedAt: { $gte: start, $lte: end } },
-                { dueDate: { $gte: start, $lte: end } },
-                { startDate: { $gte: start, $lte: end } },
-              ],
-            },
-          ],
-        },
+        { dueDate: { $gte: start, $lte: end } },
+        { startDate: { $gte: start, $lte: end } },
+        { updatedAt: { $gte: start, $lte: end } },
       ];
 
       const dateOrFilter = [
         {
           $or: [
-            // 1. Active tasks matching date range
+            // 1. Active tasks (To Do, In Progress, Review, Hold) matching date range
             {
               $and: [
                 { status: { $nin: finishedStatuses } },
                 { $or: activeTaskDateOr },
               ],
             },
-            // 2. Finished/completed tasks matching completion date in range
+            // 2. Finished/completed tasks matching completion date or scheduled date in range
             {
               $and: [
                 { status: { $in: finishedStatuses } },
@@ -3321,17 +3290,11 @@ const getTasksForKanban = async (
       query.startDate = { $gte: start, $lte: end };
     } else {
       const finishedStatuses = [
-        "review",
-        "in_review",
-        "submitted",
         "completed",
         "complete",
         "validated",
         "approved",
         "done",
-        "sent_for_client_review",
-        "rejected",
-        "Rejected",
       ];
 
       const activeTaskDateOr = [
@@ -3364,35 +3327,22 @@ const getTasksForKanban = async (
         { actualCompletionDate: { $gte: start, $lte: end } },
         { validatedAt: { $gte: start, $lte: end } },
         { completedAt: { $gte: start, $lte: end } },
-        // Fallback for older tasks without explicit completion timestamps
-        {
-          $and: [
-            { workCompletedAt: { $in: [null, undefined] } },
-            { actualCompletionDate: { $in: [null, undefined] } },
-            { validatedAt: { $in: [null, undefined] } },
-            { completedAt: { $in: [null, undefined] } },
-            {
-              $or: [
-                { updatedAt: { $gte: start, $lte: end } },
-                { dueDate: { $gte: start, $lte: end } },
-                { startDate: { $gte: start, $lte: end } },
-              ],
-            },
-          ],
-        },
+        { dueDate: { $gte: start, $lte: end } },
+        { startDate: { $gte: start, $lte: end } },
+        { updatedAt: { $gte: start, $lte: end } },
       ];
 
       const dateOrFilter = [
         {
           $or: [
-            // 1. Active tasks matching date range
+            // 1. Active tasks (To Do, In Progress, Review, Hold) matching date range
             {
               $and: [
                 { status: { $nin: finishedStatuses } },
                 { $or: activeTaskDateOr },
               ],
             },
-            // 2. Finished/completed tasks matching completion date in range
+            // 2. Finished/completed tasks matching completion date or scheduled date in range
             {
               $and: [
                 { status: { $in: finishedStatuses } },
@@ -6147,22 +6097,10 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
   const settings = await Settings.findOne({ tenantCompanyId }).lean();
   const roleLimits = settings?.dmTeam?.roleLimits || {};
 
-  if (Object.keys(roleLimits).length === 0) {
-    return {
-      totalCapacity: 0,
-      totalAssignedToday: 0,
-      totalRemaining: 0,
-      breakdown: [],
-      date: new Date()
-    };
-  }
-
-  const roleIds = Object.keys(roleLimits);
-  const roles = await Role.find({ _id: { $in: roleIds } }).lean();
-
-  const departmentIds = [...new Set(roles.map(r => r.departmentId?.toString()).filter(Boolean))];
-  const departments = await Department.find({ _id: { $in: departmentIds } }).lean();
-  const deptMap = new Map(departments.map(d => [d._id.toString(), d.name]));
+  const allRoles = await Role.find({}).lean();
+  const roleNameMap = new Map(allRoles.map(r => [r._id.toString(), r.roleName || r.roleKey]));
+  const allDepts = await Department.find({}).lean();
+  const deptMap = new Map(allDepts.map(d => [d._id.toString(), d.name]));
 
   const clientCompanyIds = await getClientCompanyIds(tenantCompanyId);
   let now = new Date();
@@ -6174,94 +6112,270 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
       now = new Date(selectedDate);
     }
   }
-  const todayStart = new Date(now);
-  todayStart.setHours(0, 0, 0, 0);
-  const todayEnd = new Date(now);
-  todayEnd.setHours(23, 59, 59, 999);
+  const dateStart = new Date(now);
+  dateStart.setHours(0, 0, 0, 0);
+  const dateEnd = new Date(now);
+  dateEnd.setHours(23, 59, 59, 999);
 
-  const dmTasks = await Task.find({
+  const completedStatuses = ["done", "completed", "complete", "validated"];
+
+  // 1. Fetch all tasks assigned for the selected date
+  const dateTasksList = await Task.find({
     tenantCompanyId: { $in: [tenantCompanyId, ...clientCompanyIds] },
     ...(selectedClientCompanyId ? { companyId: selectedClientCompanyId } : {}),
-    status: { $ne: "rejected" },
-    dueDate: { $gte: todayStart, $lte: todayEnd },
+    status: { $nin: ["rejected", "Rejected"] },
+    $or: [
+      { dueDate: { $gte: dateStart, $lte: dateEnd } },
+      { startDate: { $gte: dateStart, $lte: dateEnd } },
+      {
+        $and: [
+          { dueDate: { $exists: false } },
+          { startDate: { $exists: false } },
+          { createdAt: { $gte: dateStart, $lte: dateEnd } },
+        ],
+      },
+    ],
   })
-    .select("assignedTo")
-    .populate("assignedTo", "customRoleId")
+    .select("_id title status priority taskCategory labels dueDate startDate timeSpent assignedTo projectId companyId")
+    .populate("assignedTo", "_id name email role customRoleId roleName departmentId departmentName avatar phone")
+    .populate("projectId", "_id name title clientName status")
+    .populate("companyId", "_id name companyName")
     .lean();
 
-  let totalCapacity = 0;
-  const deptBreakdownMap = new Map();
-  const roleLimitDataMap = new Map();
+  // 2. Fetch agency team members
+  const agencyUsers = await User.find({
+    $or: [
+      { agencyId: tenantCompanyId },
+      { tenantCompanyId: tenantCompanyId },
+      { adminId: tenantCompanyId },
+      { _id: tenantCompanyId },
+    ],
+    role: { $nin: ["agency_client", "client", "brand_super_admin", "brand_manager", "brand_admin", "brand_team_user"] },
+    status: { $ne: "inactive" },
+  })
+    .select("_id name email role customRoleId roleName departmentId departmentName avatar phone")
+    .lean();
 
-  for (const role of roles) {
-    const roleId = role._id.toString();
-    const deptId = role.departmentId?.toString() || 'unknown';
-    const deptName = deptMap.get(deptId) || 'Unknown Department';
-    
-    if (!deptBreakdownMap.has(deptId)) {
-      deptBreakdownMap.set(deptId, {
-        departmentId: deptId,
-        departmentName: deptName,
-        roles: new Map()
+  // Build User Map
+  const userMap = new Map();
+
+  const getOrCreateUserEntry = (u) => {
+    if (!u) return null;
+    const uid = (u._id || u).toString();
+    if (!userMap.has(uid)) {
+      const roleId = u.customRoleId?._id?.toString() || u.customRoleId?.toString() || null;
+      const dailyLimit = roleId && roleLimits[roleId] ? Number(roleLimits[roleId]) : null;
+      userMap.set(uid, {
+        userId: uid,
+        _id: uid,
+        name: u.name || "Unknown User",
+        email: u.email || "",
+        avatar: u.avatar || null,
+        phone: u.phone || null,
+        role: u.role || "user",
+        roleName: u.roleName || (roleId && roleNameMap.get(roleId)) || u.role || "Staff",
+        departmentId: u.departmentId?._id?.toString() || u.departmentId?.toString() || null,
+        departmentName: u.departmentName || (u.departmentId && deptMap.get(u.departmentId.toString())) || "General",
+        todayAssignedCount: 0,
+        todayTasks: [],
+        pendingCount: 0,
+        pendingTasks: [],
+        todoCount: 0,
+        todoTasks: [],
+        inProgressCount: 0,
+        inProgressTasks: [],
+        reviewCount: 0,
+        reviewTasks: [],
+        completedCount: 0,
+        completedTasks: [],
+        holdCount: 0,
+        holdTasks: [],
+        dailyLimit: dailyLimit,
+        remaining: dailyLimit !== null ? dailyLimit : null,
       });
     }
-    
-    const limit = Number(roleLimits[roleId]) || 0;
-    totalCapacity += limit;
-    
-    const roleObj = {
-      roleId: roleId,
-      roleName: role.roleName || role.roleKey || 'Unknown Role',
-      dailyLimit: limit,
-      assignedToday: 0,
-      remaining: limit
-    };
-    
-    deptBreakdownMap.get(deptId).roles.set(roleId, roleObj);
-    roleLimitDataMap.set(roleId, roleObj);
+    return userMap.get(uid);
+  };
+
+  // Seed userMap with all agency members
+  for (const u of agencyUsers) {
+    getOrCreateUserEntry(u);
   }
 
-  let totalAssignedToday = 0;
+  const formatTask = (t) => ({
+    _id: t._id,
+    title: t.title,
+    status: t.status,
+    priority: t.priority || "medium",
+    taskCategory: t.taskCategory || "General",
+    labels: t.labels || [],
+    dueDate: t.dueDate,
+    startDate: t.startDate,
+    timeSpent: t.timeSpent || 0,
+    projectName: t.projectId?.name || t.projectId?.title || (typeof t.projectId === 'string' ? t.projectId : null),
+    clientName: t.companyId?.companyName || t.companyId?.name || t.projectId?.clientName || null,
+  });
 
-  for (const task of dmTasks) {
-    if (task.assignedTo && task.assignedTo.customRoleId) {
-      const customRoleId = task.assignedTo.customRoleId.toString();
-      if (roleLimitDataMap.has(customRoleId)) {
-        const roleData = roleLimitDataMap.get(customRoleId);
-        roleData.assignedToday += 1;
-        roleData.remaining = Math.max(0, roleData.dailyLimit - roleData.assignedToday);
-        totalAssignedToday += 1;
+  // Populate tasks and counts strictly for the selected date
+  let totalAssignedToday = 0;
+  let totalPendingTasks = 0;
+  let totalTodoCount = 0;
+  let totalInProgressCount = 0;
+  let totalReviewCount = 0;
+  let totalCompletedToday = 0;
+  let totalHoldCount = 0;
+
+  for (const task of dateTasksList) {
+    if (task.assignedTo) {
+      const userEntry = getOrCreateUserEntry(task.assignedTo);
+      const formatted = formatTask(task);
+      const status = (task.status || "").toLowerCase().trim();
+
+      const isCompleted = ["done", "completed", "complete", "validated"].includes(status);
+      const isReview = ["review", "in_review", "in review", "submitted", "reviewing"].includes(status);
+      const isInProgress = ["in_progress", "in progress"].includes(status);
+      const isHold = ["hold", "on_hold"].includes(status);
+
+      if (userEntry) {
+        userEntry.todayAssignedCount += 1;
+        userEntry.todayTasks.push(formatted);
+
+        if (isCompleted) {
+          userEntry.completedCount += 1;
+          userEntry.completedTasks.push(formatted);
+        } else if (isReview) {
+          userEntry.reviewCount += 1;
+          userEntry.reviewTasks.push(formatted);
+        } else if (isInProgress) {
+          userEntry.inProgressCount += 1;
+          userEntry.inProgressTasks.push(formatted);
+          userEntry.pendingCount += 1;
+          userEntry.pendingTasks.push(formatted);
+        } else if (isHold) {
+          userEntry.holdCount += 1;
+          userEntry.holdTasks.push(formatted);
+          userEntry.pendingCount += 1;
+          userEntry.pendingTasks.push(formatted);
+        } else {
+          userEntry.todoCount += 1;
+          userEntry.todoTasks.push(formatted);
+          userEntry.pendingCount += 1;
+          userEntry.pendingTasks.push(formatted);
+        }
+
+        if (userEntry.dailyLimit !== null) {
+          userEntry.remaining = Math.max(0, userEntry.dailyLimit - userEntry.todayAssignedCount);
+        }
+      }
+
+      totalAssignedToday += 1;
+      if (isCompleted) {
+        totalCompletedToday += 1;
+      } else if (isReview) {
+        totalReviewCount += 1;
+      } else if (isInProgress) {
+        totalInProgressCount += 1;
+        totalPendingTasks += 1;
+      } else if (isHold) {
+        totalHoldCount += 1;
+        totalPendingTasks += 1;
+      } else {
+        totalTodoCount += 1;
+        totalPendingTasks += 1;
       }
     }
   }
 
+  // Build sorted users list
+  const users = Array.from(userMap.values()).sort((a, b) => {
+    if (b.todayAssignedCount !== a.todayAssignedCount) {
+      return b.todayAssignedCount - a.todayAssignedCount;
+    }
+    if (b.pendingCount !== a.pendingCount) {
+      return b.pendingCount - a.pendingCount;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  // Calculate legacy / configured role limits breakdown
+  let totalCapacity = 0;
   let totalRemaining = 0;
   const breakdown = [];
 
-  for (const dept of deptBreakdownMap.values()) {
-    const rolesArray = [];
-    for (const role of dept.roles.values()) {
-      totalRemaining += role.remaining;
-      rolesArray.push(role);
-    }
-    
-    rolesArray.sort((a, b) => a.roleName.localeCompare(b.roleName));
-    
-    breakdown.push({
-      departmentId: dept.departmentId,
-      departmentName: dept.departmentName,
-      roles: rolesArray
-    });
-  }
+  if (Object.keys(roleLimits).length > 0) {
+    const roleIds = Object.keys(roleLimits);
+    const configuredRoles = await Role.find({ _id: { $in: roleIds } }).lean();
+    const deptBreakdownMap = new Map();
+    const roleLimitDataMap = new Map();
 
-  breakdown.sort((a, b) => a.departmentName.localeCompare(b.departmentName));
+    for (const role of configuredRoles) {
+      const roleId = role._id.toString();
+      const deptId = role.departmentId?.toString() || 'unknown';
+      const deptName = deptMap.get(deptId) || 'Unknown Department';
+      
+      if (!deptBreakdownMap.has(deptId)) {
+        deptBreakdownMap.set(deptId, {
+          departmentId: deptId,
+          departmentName: deptName,
+          roles: new Map()
+        });
+      }
+      
+      const limit = Number(roleLimits[roleId]) || 0;
+      totalCapacity += limit;
+      
+      const roleObj = {
+        roleId: roleId,
+        roleName: role.roleName || role.roleKey || 'Unknown Role',
+        dailyLimit: limit,
+        assignedToday: 0,
+        remaining: limit
+      };
+      
+      deptBreakdownMap.get(deptId).roles.set(roleId, roleObj);
+      roleLimitDataMap.set(roleId, roleObj);
+    }
+
+    for (const task of dateTasksList) {
+      if (task.assignedTo && (task.assignedTo.customRoleId || task.assignedTo.role)) {
+        const customRoleId = (task.assignedTo.customRoleId?._id || task.assignedTo.customRoleId || "").toString();
+        if (roleLimitDataMap.has(customRoleId)) {
+          const roleData = roleLimitDataMap.get(customRoleId);
+          roleData.assignedToday += 1;
+          roleData.remaining = Math.max(0, roleData.dailyLimit - roleData.assignedToday);
+        }
+      }
+    }
+
+    for (const dept of deptBreakdownMap.values()) {
+      const rolesArray = [];
+      for (const role of dept.roles.values()) {
+        totalRemaining += role.remaining;
+        rolesArray.push(role);
+      }
+      rolesArray.sort((a, b) => a.roleName.localeCompare(b.roleName));
+      breakdown.push({
+        departmentId: dept.departmentId,
+        departmentName: dept.departmentName,
+        roles: rolesArray
+      });
+    }
+    breakdown.sort((a, b) => a.departmentName.localeCompare(b.departmentName));
+  }
 
   return {
     totalCapacity,
     totalAssignedToday,
+    totalPendingTasks,
+    totalTodoCount,
+    totalInProgressCount,
+    totalReviewCount,
+    totalCompletedToday,
+    totalHoldCount,
     totalRemaining,
+    users,
     breakdown,
-    date: todayStart,
+    date: dateStart,
   };
 };
 
