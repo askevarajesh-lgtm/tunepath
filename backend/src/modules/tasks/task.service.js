@@ -6139,6 +6139,30 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
   tenantCompanyId,
   selectedClientCompanyId = null,
 ) => {
+  const Settings = require("../settings/settings.model");
+  const Role = require("../roles/role.model");
+  const Department = require("../departments/department.model");
+
+  const settings = await Settings.findOne({ tenantCompanyId }).lean();
+  const roleLimits = settings?.dmTeam?.roleLimits || {};
+
+  if (Object.keys(roleLimits).length === 0) {
+    return {
+      totalCapacity: 0,
+      totalAssignedToday: 0,
+      totalRemaining: 0,
+      breakdown: [],
+      date: new Date()
+    };
+  }
+
+  const roleIds = Object.keys(roleLimits);
+  const roles = await Role.find({ _id: { $in: roleIds } }).lean();
+
+  const departmentIds = [...new Set(roles.map(r => r.departmentId?.toString()).filter(Boolean))];
+  const departments = await Department.find({ _id: { $in: departmentIds } }).lean();
+  const deptMap = new Map(departments.map(d => [d._id.toString(), d.name]));
+
   const clientCompanyIds = await getClientCompanyIds(tenantCompanyId);
   const now = new Date();
   const todayStart = new Date(now);
@@ -6146,68 +6170,88 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
   const todayEnd = new Date(now);
   todayEnd.setHours(23, 59, 59, 999);
 
-  const dmUsers = await User.find({
-    companyId: tenantCompanyId,
-    isActive: true,
-  })
-    .select("name email role team")
-    .lean();
-
-  const dmUserIds = dmUsers.map((u) => u._id);
   const dmTasks = await Task.find({
     tenantCompanyId: { $in: [tenantCompanyId, ...clientCompanyIds] },
     ...(selectedClientCompanyId ? { companyId: selectedClientCompanyId } : {}),
-    // "Assigned today" in task planning is based on dueDate day-bucket.
-    // Count all tasks regardless of if they are completed so capacity doesn't go back up.
     status: { $ne: "rejected" },
     dueDate: { $gte: todayStart, $lte: todayEnd },
   })
-    .select("assignedTo department")
+    .select("assignedTo")
+    .populate("assignedTo", "customRoleId")
     .lean();
 
-  const assigneeMap = new Map();
-  dmUsers.forEach((user) => {
-    assigneeMap.set(user._id.toString(), {
-      userId: user._id.toString(),
-      userName: user.name || user.email || "Unknown User",
-      userEmail: user.email || "",
-      role: user.role || "",
-      team: user.team || "",
-      taskCount: 0,
-    });
-  });
+  let totalCapacity = 0;
+  const deptBreakdownMap = new Map();
+  const roleLimitDataMap = new Map();
 
-  const unassignedMap = new Map(); // department -> count
-
-  dmTasks.forEach((task) => {
-    const isAssigned = !!task.assignedTo;
+  for (const role of roles) {
+    const roleId = role._id.toString();
+    const deptId = role.departmentId?.toString() || 'unknown';
+    const deptName = deptMap.get(deptId) || 'Unknown Department';
     
-    if (isAssigned) {
-      const key = task.assignedTo.toString();
-      if (assigneeMap.has(key)) {
-        assigneeMap.get(key).taskCount += 1;
-      }
-    } else {
-      const dept = task.department || 'unassigned';
-      unassignedMap.set(dept, (unassignedMap.get(dept) || 0) + 1);
+    if (!deptBreakdownMap.has(deptId)) {
+      deptBreakdownMap.set(deptId, {
+        departmentId: deptId,
+        departmentName: deptName,
+        roles: new Map()
+      });
     }
-  });
+    
+    const limit = Number(roleLimits[roleId]) || 0;
+    totalCapacity += limit;
+    
+    const roleObj = {
+      roleId: roleId,
+      roleName: role.roleName || role.roleKey || 'Unknown Role',
+      dailyLimit: limit,
+      assignedToday: 0,
+      remaining: limit
+    };
+    
+    deptBreakdownMap.get(deptId).roles.set(roleId, roleObj);
+    roleLimitDataMap.set(roleId, roleObj);
+  }
 
-  const breakdown = Array.from(assigneeMap.values()).sort((a, b) => {
-    if (b.taskCount !== a.taskCount) return b.taskCount - a.taskCount;
-    return a.userName.localeCompare(b.userName);
-  });
-  
-  const unassignedBreakdown = Array.from(unassignedMap.entries()).map(([department, count]) => ({
-    department,
-    count
-  }));
+  let totalAssignedToday = 0;
+
+  for (const task of dmTasks) {
+    if (task.assignedTo && task.assignedTo.customRoleId) {
+      const customRoleId = task.assignedTo.customRoleId.toString();
+      if (roleLimitDataMap.has(customRoleId)) {
+        const roleData = roleLimitDataMap.get(customRoleId);
+        roleData.assignedToday += 1;
+        roleData.remaining = Math.max(0, roleData.dailyLimit - roleData.assignedToday);
+        totalAssignedToday += 1;
+      }
+    }
+  }
+
+  let totalRemaining = 0;
+  const breakdown = [];
+
+  for (const dept of deptBreakdownMap.values()) {
+    const rolesArray = [];
+    for (const role of dept.roles.values()) {
+      totalRemaining += role.remaining;
+      rolesArray.push(role);
+    }
+    
+    rolesArray.sort((a, b) => a.roleName.localeCompare(b.roleName));
+    
+    breakdown.push({
+      departmentId: dept.departmentId,
+      departmentName: dept.departmentName,
+      roles: rolesArray
+    });
+  }
+
+  breakdown.sort((a, b) => a.departmentName.localeCompare(b.departmentName));
 
   return {
-    totalAssignedToday: dmTasks.filter(t => !!t.assignedTo).length,
-    totalUnassignedToday: dmTasks.filter(t => !t.assignedTo).length,
+    totalCapacity,
+    totalAssignedToday,
+    totalRemaining,
     breakdown,
-    unassignedBreakdown,
     date: todayStart,
   };
 };
