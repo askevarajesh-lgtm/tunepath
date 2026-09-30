@@ -19,6 +19,7 @@ import {
   SaveOutlined,
   InfoCircleOutlined,
   ApartmentOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import { notifySuccess, notifyError } from '../../utils/notify';
 import {
@@ -26,6 +27,7 @@ import {
   useUpdateDMTeamSettingsMutation,
   useGetDepartmentsQuery,
 } from "../../api/settingsApi";
+import { useGetRolesQuery } from "../../api/accessControlApi";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const { Title, Text } = Typography;
@@ -43,31 +45,56 @@ const DigitalMarketingTeamSettings = () => {
   } = useGetDMTeamSettingsQuery();
 
   const { data: deptData } = useGetDepartmentsQuery();
+  const { data: rolesResp } = useGetRolesQuery();
 
   const [updateDMTeamSettings, { isLoading: isSaving }] =
     useUpdateDMTeamSettingsMutation();
 
   const dmSettings = dmSettingsData?.data?.dmTeam;
   const departments = deptData?.data?.departments || deptData?.data || [];
+  const allRoles = rolesResp?.data || [];
+  
+  const selectedDeptId = Form.useWatch('departmentId', form);
+  
+  const departmentRoles = React.useMemo(() => {
+    if (!selectedDeptId) return [];
+    return allRoles.filter(r => r.departmentId === selectedDeptId || String(r.departmentId?._id) === String(selectedDeptId));
+  }, [allRoles, selectedDeptId]);
 
-  // Populate form when data arrives
+  // Populate form when data arrives or department changes
   useEffect(() => {
     if (dmSettings) {
-      form.setFieldsValue({
+      const initialValues = {
         departmentId: dmSettings.departmentId || undefined,
         designerDailyLimit: dmSettings.designerDailyLimit ?? 7,
         videoEditorDailyLimit: dmSettings.videoEditorDailyLimit ?? 3,
-      });
+      };
+      if (dmSettings.roleLimits) {
+        Object.keys(dmSettings.roleLimits).forEach(roleId => {
+          initialValues[`roleLimit_${roleId}`] = dmSettings.roleLimits[roleId];
+        });
+      }
+      form.setFieldsValue(initialValues);
     }
   }, [dmSettings, form]);
 
   const handleSave = async () => {
     try {
       const values = await form.validateFields();
+      
+      const roleLimits = { ...(dmSettings.roleLimits || {}) };
+      Object.keys(values).forEach(key => {
+        if (key.startsWith('roleLimit_') && values[key] !== undefined) {
+          const roleId = key.replace('roleLimit_', '');
+          roleLimits[roleId] = values[key];
+        }
+      });
+      
       const res = await updateDMTeamSettings({
         departmentId: values.departmentId,
         designerDailyLimit: values.designerDailyLimit,
         videoEditorDailyLimit: values.videoEditorDailyLimit,
+        roleLimits
       });
 
       if (res?.data?.success) {
@@ -186,102 +213,66 @@ const DigitalMarketingTeamSettings = () => {
           </Form.Item>
         </Card>
 
-        <Row gutter={[20, 0]}>
-          {/* Designer limit */}
-          <Col xs={24} md={12}>
-            <Card style={cardStyle} bodyStyle={{ padding: "20px 24px" }}>
-              <div style={accentStyle("var(--accent-primary)")}>
-                <PictureOutlined />
-              </div>
-              <Title
-                level={5}
-                style={{
-                  margin: "0 0 4px",
-                  color: isDark ? "#f3f4f6" : "#111827",
-                }}
-              >
-                Designer
-              </Title>
-              <Text
-                type="secondary"
-                style={{ fontSize: 12, display: "block", marginBottom: 16 }}
-              >
-                Max tasks a Designer can be assigned per day
-              </Text>
-              <Form.Item
-                name="designerDailyLimit"
-                label="Daily Task Limit"
-                rules={[
-                  { required: true, message: "Please enter a limit" },
-                  {
-                    type: "number",
-                    min: 1,
-                    max: 50,
-                    message: "Limit must be between 1 and 50",
-                  },
-                ]}
-                style={{ marginBottom: 0 }}
-              >
-                <InputNumber
-                  min={1}
-                  max={50}
-                  precision={0}
-                  style={{ width: "100%" }}
-                  size="large"
-                  placeholder="e.g. 7"
-                  addonAfter="tasks / day"
-                />
-              </Form.Item>
-            </Card>
-          </Col>
+        <Row gutter={[20, 20]}>
+          {!selectedDeptId && (
+            <Col span={24}>
+              <Alert type="info" message="Please select a department to configure daily task limits for its roles." />
+            </Col>
+          )}
+          {selectedDeptId && departmentRoles.length === 0 && (
+            <Col span={24}>
+              <Alert type="warning" message="No roles found for this department." />
+            </Col>
+          )}
 
-          {/* Video Editor limit */}
-          <Col xs={24} md={12}>
-            <Card style={cardStyle} bodyStyle={{ padding: "20px 24px" }}>
-              <div style={accentStyle("#7c3aed")}>
-                <VideoCameraOutlined />
-              </div>
-              <Title
-                level={5}
-                style={{
-                  margin: "0 0 4px",
-                  color: isDark ? "#f3f4f6" : "#111827",
-                }}
-              >
-                Video Editor
-              </Title>
-              <Text
-                type="secondary"
-                style={{ fontSize: 12, display: "block", marginBottom: 16 }}
-              >
-                Max tasks a Video Editor can be assigned per day
-              </Text>
-              <Form.Item
-                name="videoEditorDailyLimit"
-                label="Daily Task Limit"
-                rules={[
-                  { required: true, message: "Please enter a limit" },
-                  {
-                    type: "number",
-                    min: 1,
-                    max: 50,
-                    message: "Limit must be between 1 and 50",
-                  },
-                ]}
-                style={{ marginBottom: 0 }}
-              >
-                <InputNumber
-                  min={1}
-                  max={50}
-                  precision={0}
-                  style={{ width: "100%" }}
-                  size="large"
-                  placeholder="e.g. 2"
-                  addonAfter="tasks / day"
-                />
-              </Form.Item>
-            </Card>
-          </Col>
+          {departmentRoles.map((role, idx) => (
+            <Col xs={24} md={12} key={role._id}>
+              <Card style={cardStyle} bodyStyle={{ padding: "20px 24px" }}>
+                <div style={accentStyle(idx % 2 === 0 ? "var(--accent-primary)" : "#7c3aed")}>
+                  <UserOutlined />
+                </div>
+                <Title
+                  level={5}
+                  style={{
+                    margin: "0 0 4px",
+                    color: isDark ? "#f3f4f6" : "#111827",
+                  }}
+                >
+                  {role.roleName || role.name || "Role"}
+                </Title>
+                <Text
+                  type="secondary"
+                  style={{ fontSize: 12, display: "block", marginBottom: 16 }}
+                >
+                  Max tasks a {role.roleName || role.name || "user"} can be assigned per day
+                </Text>
+                <Form.Item
+                  name={`roleLimit_${role._id}`}
+                  label="Daily Task Limit"
+                  rules={[
+                    { required: true, message: "Please enter a limit" },
+                    {
+                      type: "number",
+                      min: 1,
+                      max: 50,
+                      message: "Limit must be between 1 and 50",
+                    },
+                  ]}
+                  style={{ marginBottom: 0 }}
+                >
+                  <InputNumber
+                    min={1}
+                    max={50}
+                    precision={0}
+                    style={{ width: "100%" }}
+                    size="large"
+                    placeholder="e.g. 7"
+                    addonAfter="tasks / day"
+                  />
+                </Form.Item>
+              </Card>
+            </Col>
+          ))}
         </Row>
 
         <Divider style={{ margin: "20px 0" }} />
@@ -300,10 +291,16 @@ const DigitalMarketingTeamSettings = () => {
             <Text type="secondary" style={{ fontSize: 12 }}>
               <strong>Currently saved:</strong> &nbsp; Department →{" "}
               <strong>{dmSettings.departmentName || "Digital Marketing"}</strong>
-              &nbsp;&nbsp;|&nbsp;&nbsp; Designer →{" "}
-              <strong>{dmSettings.designerDailyLimit} tasks/day</strong>
-              &nbsp;&nbsp;|&nbsp;&nbsp; Video Editor →{" "}
-              <strong>{dmSettings.videoEditorDailyLimit} tasks/day</strong>
+              {dmSettings.roleLimits && Object.entries(dmSettings.roleLimits).map(([roleId, limit]) => {
+                const role = allRoles.find(r => r._id === roleId);
+                if (!role) return null;
+                return (
+                  <span key={roleId}>
+                    &nbsp;&nbsp;|&nbsp;&nbsp; {role.roleName || role.name} →{" "}
+                    <strong>{limit} tasks/day</strong>
+                  </span>
+                );
+              })}
             </Text>
           </Card>
         )}

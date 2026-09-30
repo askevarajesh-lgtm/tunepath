@@ -11,7 +11,8 @@ const settingsSchema = new mongoose.Schema({
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
     departmentName: { type: String, default: 'Digital Marketing' },
     designerDailyLimit: { type: Number, default: 7 },
-    videoEditorDailyLimit: { type: Number, default: 3 }
+    videoEditorDailyLimit: { type: Number, default: 3 },
+    roleLimits: { type: Map, of: Number, default: {} }
   }
 }, { timestamps: true });
 

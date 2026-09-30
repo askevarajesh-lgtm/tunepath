@@ -20,7 +20,8 @@ exports.getDMTeamSettings = async (req, res) => {
           departmentId: null,
           departmentName: 'Digital Marketing',
           designerDailyLimit: 7,
-          videoEditorDailyLimit: 3
+          videoEditorDailyLimit: 3,
+          roleLimits: {}
         }
       };
     }
@@ -32,7 +33,8 @@ exports.getDMTeamSettings = async (req, res) => {
           departmentId: settings.dmTeam?.departmentId || null,
           departmentName: settings.dmTeam?.departmentName || 'Digital Marketing',
           designerDailyLimit: settings.dmTeam?.designerDailyLimit ?? 7,
-          videoEditorDailyLimit: settings.dmTeam?.videoEditorDailyLimit ?? 3
+          videoEditorDailyLimit: settings.dmTeam?.videoEditorDailyLimit ?? 3,
+          roleLimits: settings.dmTeam?.roleLimits || {}
         }
       }
     });
@@ -49,12 +51,12 @@ exports.updateDMTeamSettings = async (req, res) => {
       return res.status(401).json({ success: false, message: 'Unauthorized: Company context missing' });
     }
 
-    const { designerDailyLimit, videoEditorDailyLimit, departmentId } = req.body;
+    const { designerDailyLimit, videoEditorDailyLimit, departmentId, roleLimits } = req.body;
 
     const designerLimit = Number(designerDailyLimit);
     const videoEditorLimit = Number(videoEditorDailyLimit);
 
-    if (isNaN(designerLimit) || designerLimit < 1 || isNaN(videoEditorLimit) || videoEditorLimit < 1) {
+    if (designerDailyLimit !== undefined && (isNaN(designerLimit) || designerLimit < 1) || videoEditorDailyLimit !== undefined && (isNaN(videoEditorLimit) || videoEditorLimit < 1)) {
       return res.status(400).json({ success: false, message: 'Limits must be numbers greater than 0' });
     }
 
@@ -63,16 +65,19 @@ exports.updateDMTeamSettings = async (req, res) => {
       const dept = await Department.findById(departmentId).lean();
       if (dept) deptName = dept.name;
     }
+    
+    const updateObj = {
+      'dmTeam.departmentId': departmentId || null,
+      'dmTeam.departmentName': deptName,
+    };
+    if (designerDailyLimit !== undefined) updateObj['dmTeam.designerDailyLimit'] = designerLimit;
+    if (videoEditorDailyLimit !== undefined) updateObj['dmTeam.videoEditorDailyLimit'] = videoEditorLimit;
+    if (roleLimits !== undefined) updateObj['dmTeam.roleLimits'] = roleLimits;
 
     const updatedSettings = await Settings.findOneAndUpdate(
       { tenantCompanyId: companyId },
       {
-        $set: {
-          'dmTeam.departmentId': departmentId || null,
-          'dmTeam.departmentName': deptName,
-          'dmTeam.designerDailyLimit': designerLimit,
-          'dmTeam.videoEditorDailyLimit': videoEditorLimit
-        }
+        $set: updateObj
       },
       { new: true, upsert: true, runValidators: true }
     ).lean();
@@ -85,7 +90,8 @@ exports.updateDMTeamSettings = async (req, res) => {
           departmentId: updatedSettings.dmTeam.departmentId,
           departmentName: updatedSettings.dmTeam.departmentName,
           designerDailyLimit: updatedSettings.dmTeam.designerDailyLimit,
-          videoEditorDailyLimit: updatedSettings.dmTeam.videoEditorDailyLimit
+          videoEditorDailyLimit: updatedSettings.dmTeam.videoEditorDailyLimit,
+          roleLimits: updatedSettings.dmTeam.roleLimits || {}
         }
       }
     });

@@ -28,6 +28,7 @@ import {
   TeamOutlined,
   BankOutlined,
   CrownOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useGetDepartmentsDynamicQuery, useGetRolesQuery } from "../../api/accessControlApi";
@@ -47,7 +48,7 @@ import {
   useGetTodayAssignedDMSummaryQuery,
 } from "../../api/taskApi";
 import { useGetUnassignedDeliverablesSummaryQuery } from "../../api/projectApi";
-// import removed
+import { useGetDMTeamSettingsQuery } from "../../api/settingsApi";
 import { useTheme } from "../../contexts/ThemeContext";
 
 const { Title, Text } = Typography;
@@ -115,7 +116,7 @@ const TasksPage = () => {
   const [isTaskTypeModalOpen, setIsTaskTypeModalOpen] = useState(false);
   const [pendingInitialStatus, setPendingInitialStatus] = useState(null);
 
-  const { data: todayStatsData, refetch: refetchTodayStats } =
+  const { data: todayStatsData, refetch: refetchTodayStats, isLoading: isTodayStatsLoading } =
     useGetTodayTaskStatsQuery(undefined, {
       skip: !user?._id,
     });
@@ -125,11 +126,11 @@ const TasksPage = () => {
   };
   const [isPosterModalOpen, setIsPosterModalOpen] = useState(false);
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
-  const [isTodayAssignedModalOpen, setIsTodayAssignedModalOpen] =
-    useState(false);
+  const [isTodayAssignedModalOpen, setIsTodayAssignedModalOpen] = useState(false);
+  const [isTodayUnassignedModalOpen, setIsTodayUnassignedModalOpen] = useState(false);
 
   const canViewTaskInsightCards =
-    ["admin", "super_admin"].includes(userRole) ||
+    ["admin", "super_admin", "agency_manager", "agency_super_admin"].includes(userRole) ||
     userRole?.toLowerCase().includes("digital-marketing") ||
     user?.team?.toLowerCase().includes("marketing");
 
@@ -142,33 +143,51 @@ const TasksPage = () => {
       skip: !canViewTaskInsightCards,
     });
 
-  // Hardcoded DM team daily task limits (removed missing API call)
-  const designerDailyLimit = 7;
-  const videoEditorDailyLimit = 2;
+  const { data: dmSettingsData } = useGetDMTeamSettingsQuery();
+  const dmSettings = dmSettingsData?.data?.dmTeam || {};
+  const { data: rolesData } = useGetRolesQuery();
+  const allRoles = rolesData?.data || [];
+  const { data: departmentsResp } = useGetDepartmentsDynamicQuery();
+  const departments = departmentsResp?.data?.departments || [];
 
   const unassignedSummary = unassignedSummaryData?.data?.summary || {};
   const posterProjects = unassignedSummary.posterProjects || [];
   const videoProjects = unassignedSummary.videoProjects || [];
   const todayAssignedSummary = todayAssignedDMData?.data?.summary || {};
   const todayAssignedBreakdown = todayAssignedSummary.breakdown || [];
-  const creativeRoles = ["video_editor", "designer"];
-  const getDailyLimitForCreativeRole = (role) => {
-    const normalized = (role || "").toLowerCase().replace(/\s+/g, "_");
-    if (normalized.includes("designer")) return designerDailyLimit;
-    if (normalized.includes("video_editor")) return videoEditorDailyLimit;
+
+  const getDailyLimitForRole = (roleStr) => {
+    if (!roleStr) return 0;
+    
+    const roleObj = allRoles.find(r => 
+      String(r._id) === String(roleStr) || 
+      (r.roleName && r.roleName.toLowerCase().replace(/\s+/g, '_') === roleStr.toLowerCase().replace(/\s+/g, '_')) ||
+      (r.name && r.name.toLowerCase().replace(/\s+/g, '_') === roleStr.toLowerCase().replace(/\s+/g, '_')) ||
+      (r.slug && r.slug.toLowerCase() === roleStr.toLowerCase())
+    );
+
+    if (roleObj && dmSettings.roleLimits && dmSettings.roleLimits[roleObj._id]) {
+      return Number(dmSettings.roleLimits[roleObj._id]);
+    }
+    
+    // Fallback for hardcoded designer/video_editor if not found in dynamic limits
+    const normalized = roleStr.toLowerCase().replace(/\s+/g, "_");
+    if (normalized.includes("designer")) return dmSettings.designerDailyLimit ?? 7;
+    if (normalized.includes("video_editor")) return dmSettings.videoEditorDailyLimit ?? 2;
+    
     return 0;
   };
-  const todayAssignedCreativeBreakdown = useMemo(
-    () =>
-      todayAssignedBreakdown.filter((row) =>
-        creativeRoles.includes((row.role || "").toLowerCase()),
-      ),
-    [todayAssignedBreakdown],
-  );
+
+  const todayAssignedCreativeBreakdown = useMemo(() => {
+    return todayAssignedBreakdown.filter((row) => {
+      return getDailyLimitForRole(row.role) > 0;
+    });
+  }, [todayAssignedBreakdown, allRoles, dmSettings]);
+
   const todayAssignedCreativeWithLimits = useMemo(
     () =>
       todayAssignedCreativeBreakdown.map((row) => {
-        const dailyLimit = getDailyLimitForCreativeRole(row.role);
+        const dailyLimit = getDailyLimitForRole(row.role);
         const assignedCount = Number(row.taskCount) || 0;
         return {
           ...row,
@@ -177,8 +196,9 @@ const TasksPage = () => {
           unassignedCount: Math.max(0, dailyLimit - assignedCount),
         };
       }),
-    [todayAssignedCreativeBreakdown, designerDailyLimit, videoEditorDailyLimit],
+    [todayAssignedCreativeBreakdown, allRoles, dmSettings],
   );
+
   const todayAssignedCreativeTotal = useMemo(
     () =>
       todayAssignedCreativeBreakdown.reduce(
@@ -187,6 +207,16 @@ const TasksPage = () => {
       ),
     [todayAssignedCreativeBreakdown],
   );
+
+  const todayAssignedCreativeTotalLimit = useMemo(
+    () =>
+      todayAssignedCreativeWithLimits.reduce(
+        (sum, row) => sum + (Number(row.dailyLimit) || 0),
+        0,
+      ),
+    [todayAssignedCreativeWithLimits],
+  );
+
   const todayAssignedCreativeUnassignedTotal = useMemo(
     () =>
       todayAssignedCreativeWithLimits.reduce(
@@ -195,6 +225,36 @@ const TasksPage = () => {
       ),
     [todayAssignedCreativeWithLimits],
   );
+
+  const assignedGrouped = useMemo(() => {
+    const groups = {};
+    todayAssignedCreativeWithLimits.forEach((row) => {
+      const roleObj = allRoles.find(
+        (r) =>
+          r.slug === row.role ||
+          r._id === row.role ||
+          r.roleName === row.role ||
+          r.name === row.role
+      );
+      let deptName = "Other";
+
+      if (roleObj && roleObj.departmentId) {
+        const deptId =
+          typeof roleObj.departmentId === "object"
+            ? roleObj.departmentId._id
+            : roleObj.departmentId;
+        const dept = departments.find((d) => String(d._id) === String(deptId));
+        if (dept) deptName = dept.name;
+      }
+
+      if (!groups[deptName]) groups[deptName] = [];
+      groups[deptName].push(row);
+    });
+    return groups;
+  }, [todayAssignedCreativeWithLimits, allRoles, departments]);
+
+  const todayUnassignedBreakdown = todayAssignedSummary.unassignedBreakdown || [];
+  const todayUnassignedTotalCount = todayAssignedSummary.totalUnassignedToday || 0;
 
   // Page title based on user role
   const pageTitle = isAdmin ? "Tasks" : "My Tasks";
@@ -353,8 +413,6 @@ const TasksPage = () => {
   ];
 
   const isUserPortal = location.pathname.startsWith("/user");
-  const { data: departmentsResp } = useGetDepartmentsDynamicQuery();
-  const departments = departmentsResp?.data?.departments || [];
 
   const { data: rolesResp } = useGetRolesQuery();
   const roles = rolesResp?.data || [];
@@ -509,47 +567,8 @@ const TasksPage = () => {
 
       {canViewTaskInsightCards && (
         <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
-          <Col xs={24} md={8}>
-            <Card
-              hoverable
-              onClick={() => setIsPosterModalOpen(true)}
-              styles={{ body: summaryCardBody("var(--accent-primary)") }}
-              style={summaryCardBase}
-            >
-              <Statistic
-                title="Overall Unassigned Posters"
-                value={unassignedSummary.overallUnassignedPosters || 0}
-                loading={isUnassignedSummaryLoading}
-                valueStyle={summaryValueStyle}
-                prefix={
-                  <PictureOutlined
-                    style={{ color: isDark ? "#93c5fd" : "var(--accent-primary)" }}
-                  />
-                }
-              />
-            </Card>
-          </Col>
-          <Col xs={24} md={8}>
-            <Card
-              hoverable
-              onClick={() => setIsVideoModalOpen(true)}
-              styles={{ body: summaryCardBody("#7c3aed") }}
-              style={summaryCardBase}
-            >
-              <Statistic
-                title="Overall Unassigned Videos"
-                value={unassignedSummary.overallUnassignedVideos || 0}
-                loading={isUnassignedSummaryLoading}
-                valueStyle={summaryValueStyle}
-                prefix={
-                  <VideoCameraOutlined
-                    style={{ color: isDark ? "#c4b5fd" : "#7c3aed" }}
-                  />
-                }
-              />
-            </Card>
-          </Col>
-          <Col xs={24} md={8}>
+
+          <Col style={{ flex: 1, minWidth: 200 }}>
             <Card
               hoverable
               onClick={() => setIsTodayAssignedModalOpen(true)}
@@ -564,6 +583,45 @@ const TasksPage = () => {
                 prefix={
                   <TeamOutlined
                     style={{ color: isDark ? "#fca5a5" : "#dc2626" }}
+                  />
+                }
+              />
+            </Card>
+          </Col>
+          <Col style={{ flex: 1, minWidth: 200 }}>
+            <Card
+              hoverable
+              styles={{ body: summaryCardBody("#1890ff") }}
+              style={summaryCardBase}
+            >
+              <Statistic
+                title="Total Task Count"
+                value={todayAssignedCreativeTotalLimit || 0}
+                loading={isTodayAssignedLoading}
+                valueStyle={summaryValueStyle}
+                prefix={
+                  <AppstoreOutlined
+                    style={{ color: isDark ? "#91caff" : "#1890ff" }}
+                  />
+                }
+              />
+            </Card>
+          </Col>
+          <Col style={{ flex: 1, minWidth: 200 }}>
+            <Card
+              hoverable
+              onClick={() => setIsTodayUnassignedModalOpen(true)}
+              styles={{ body: summaryCardBody("#faad14") }}
+              style={summaryCardBase}
+            >
+              <Statistic
+                title="Today Unassigned Tasks"
+                value={todayUnassignedTotalCount || 0}
+                loading={isTodayAssignedLoading}
+                valueStyle={summaryValueStyle}
+                prefix={
+                  <UserOutlined
+                    style={{ color: isDark ? "#ffe58f" : "#faad14" }}
                   />
                 }
               />
@@ -676,7 +734,7 @@ const TasksPage = () => {
       </Modal>
 
       <Modal
-        title="Today Assigned Tasks - Designer & Video Editor Users"
+        title="Today Assigned Tasks - Configured Roles"
         open={isTodayAssignedModalOpen}
         onCancel={() => setIsTodayAssignedModalOpen(false)}
         footer={null}
@@ -715,34 +773,105 @@ const TasksPage = () => {
             </Text>
           </Space>
         </Card>
+        {Object.keys(assignedGrouped).length === 0 ? (
+          <List
+            locale={{ emptyText: "No tasks have been assigned today." }}
+            dataSource={[]}
+            renderItem={() => null}
+          />
+        ) : (
+          Object.keys(assignedGrouped).map((dept) => (
+            <div key={dept} style={{ marginBottom: 16 }}>
+              <Title level={5} style={{ marginBottom: 8, color: "var(--accent-primary)", borderBottom: "1px solid #f0f0f0", paddingBottom: 4 }}>
+                {dept}
+              </Title>
+              <List
+                dataSource={assignedGrouped[dept]}
+                renderItem={(row) => (
+                  <List.Item
+                    style={{ paddingInline: 0, alignItems: "flex-start" }}
+                    actions={[
+                      <Space key={`row-metrics-${row.userId}`} size={6}>
+                        <Tag color="red">Assigned: {row.assignedCount}</Tag>
+                        <Tag color="blue">Limit: {row.dailyLimit}</Tag>
+                        <Tag color={row.unassignedCount > 0 ? "gold" : "green"}>
+                          Remaining: {row.unassignedCount}
+                        </Tag>
+                      </Space>,
+                    ]}
+                  >
+                    <List.Item.Meta
+                      title={row.userName}
+                      description={
+                        <Space size={6} wrap>
+                          <span style={{ color: "#6b7280" }}>
+                            {row.userEmail || "N/A"}
+                          </span>
+                          <Tag>{(row.role || "").replace(/_/g, " ") || "staff"}</Tag>
+                        </Space>
+                      }
+                    />
+                  </List.Item>
+                )}
+              />
+            </div>
+          ))
+        )}
+      </Modal>
+
+      <Modal
+        title="Today Unassigned Tasks - Configured Roles"
+        open={isTodayUnassignedModalOpen}
+        onCancel={() => setIsTodayUnassignedModalOpen(false)}
+        footer={null}
+        width={700}
+        styles={{
+          body: {
+            maxHeight: "60vh",
+            overflowY: "auto",
+            paddingRight: 8,
+          },
+        }}
+      >
+        <Card
+          size="small"
+          style={{
+            marginBottom: 14,
+            borderRadius: 12,
+            border: "1px solid #faad14",
+            boxShadow: "0 6px 18px rgba(250, 173, 20, 0.08)",
+          }}
+          styles={{ body: { padding: "14px 16px" } }}
+        >
+          <Space direction="vertical" size={4} style={{ width: "100%" }}>
+            <span style={{ color: "#9ca3af", fontSize: 12, fontWeight: 600 }}>
+              TODAY UNASSIGNED TASKS
+            </span>
+            <Statistic
+              value={todayAssignedCreativeUnassignedTotal || 0}
+              loading={isTodayAssignedLoading}
+              valueStyle={{ fontSize: 28, fontWeight: 700, color: "#111827" }}
+              prefix={<UserOutlined style={{ color: "#faad14" }} />}
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Total tasks that can still be assigned to roles today.
+            </Text>
+          </Space>
+        </Card>
         <List
-          dataSource={todayAssignedCreativeWithLimits}
+          dataSource={todayUnassignedBreakdown}
           locale={{
-            emptyText: "No designer/video editor task assignments today.",
+            emptyText: "No unassigned tasks today.",
           }}
           renderItem={(row) => (
             <List.Item
               style={{ paddingInline: 0, alignItems: "flex-start" }}
               actions={[
-                <Space key={`row-metrics-${row.userId}`} size={6}>
-                  <Tag color="red">Assigned: {row.assignedCount}</Tag>
-                  <Tag color="blue">Limit: {row.dailyLimit}</Tag>
-                  <Tag color={row.unassignedCount > 0 ? "gold" : "green"}>
-                    Unassigned: {row.unassignedCount}
-                  </Tag>
-                </Space>,
+                <Tag color="red" key={`unassigned-${row.department}`}>Unassigned: {row.count}</Tag>
               ]}
             >
               <List.Item.Meta
-                title={row.userName}
-                description={
-                  <Space size={6} wrap>
-                    <span style={{ color: "#6b7280" }}>
-                      {row.userEmail || "N/A"}
-                    </span>
-                    <Tag>{(row.role || "").replace(/_/g, " ") || "staff"}</Tag>
-                  </Space>
-                }
+                title={row.department}
               />
             </List.Item>
           )}

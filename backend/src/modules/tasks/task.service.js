@@ -6146,23 +6146,9 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
   const todayEnd = new Date(now);
   todayEnd.setHours(23, 59, 59, 999);
 
-  const digitalMarketingRoles = [
-    "digital_marketing_coordinator",
-    "digital_marketing_manager",
-    "designer",
-    "video_editor",
-    "editor",
-    "seo",
-    "coordinator",
-  ];
-
   const dmUsers = await User.find({
     companyId: tenantCompanyId,
     isActive: true,
-    $or: [
-      { role: { $in: digitalMarketingRoles } },
-      { team: { $regex: "marketing", $options: "i" } },
-    ],
   })
     .select("name email role team")
     .lean();
@@ -6171,14 +6157,12 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
   const dmTasks = await Task.find({
     tenantCompanyId: { $in: [tenantCompanyId, ...clientCompanyIds] },
     ...(selectedClientCompanyId ? { companyId: selectedClientCompanyId } : {}),
-    assignedTo: { $in: dmUserIds },
-    department: "digital-marketing",
     // "Assigned today" in task planning is based on dueDate day-bucket.
     // Count all tasks regardless of if they are completed so capacity doesn't go back up.
     status: { $ne: "rejected" },
     dueDate: { $gte: todayStart, $lte: todayEnd },
   })
-    .select("assignedTo")
+    .select("assignedTo department")
     .lean();
 
   const assigneeMap = new Map();
@@ -6193,20 +6177,37 @@ const getTodayAssignedTaskBreakdownForDigitalMarketing = async (
     });
   });
 
+  const unassignedMap = new Map(); // department -> count
+
   dmTasks.forEach((task) => {
-    const key = task.assignedTo?.toString();
-    if (!key || !assigneeMap.has(key)) return;
-    assigneeMap.get(key).taskCount += 1;
+    const isAssigned = !!task.assignedTo;
+    
+    if (isAssigned) {
+      const key = task.assignedTo.toString();
+      if (assigneeMap.has(key)) {
+        assigneeMap.get(key).taskCount += 1;
+      }
+    } else {
+      const dept = task.department || 'unassigned';
+      unassignedMap.set(dept, (unassignedMap.get(dept) || 0) + 1);
+    }
   });
 
   const breakdown = Array.from(assigneeMap.values()).sort((a, b) => {
     if (b.taskCount !== a.taskCount) return b.taskCount - a.taskCount;
     return a.userName.localeCompare(b.userName);
   });
+  
+  const unassignedBreakdown = Array.from(unassignedMap.entries()).map(([department, count]) => ({
+    department,
+    count
+  }));
 
   return {
-    totalAssignedToday: dmTasks.length,
+    totalAssignedToday: dmTasks.filter(t => !!t.assignedTo).length,
+    totalUnassignedToday: dmTasks.filter(t => !t.assignedTo).length,
     breakdown,
+    unassignedBreakdown,
     date: todayStart,
   };
 };
