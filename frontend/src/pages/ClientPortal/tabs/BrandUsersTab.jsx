@@ -186,8 +186,7 @@ const BrandUsersTab = ({ user }) => {
 
         message.success(`Logged in as ${res.data.user.name}`);
         const isClientPortalUser =
-          ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(res.data.user.role) ||
-          Boolean(res.data.user.brandId);
+          ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(res.data.user.role);
         window.location.href = isClientPortalUser
           ? '/client/dashboard'
           : '/user/dashboard';

@@ -13,9 +13,9 @@ import AgencyLayout from './layouts/AgencyLayout';
 import ClientLayout from './layouts/ClientLayout';
 import UserLayout from './layouts/UserLayout';
 import PlaceholderPage from './components/PlaceholderPage';
-import { 
-  Users, HeartHandshake, Monitor, MessageCircle, TrendingUp, Zap, 
-  CheckSquare, Globe, PieChart, BarChart2, GitMerge, LineChart, 
+import {
+  Users, HeartHandshake, Monitor, MessageCircle, TrendingUp, Zap,
+  CheckSquare, Globe, PieChart, BarChart2, GitMerge, LineChart,
   Lightbulb, Calendar, DollarSign, File, Store, Book, Library, Shield, Bell, CreditCard, Activity, Bot, Award,
   Target, PenTool, Cpu, Share2, Megaphone, Inbox, Layout, Search
 } from 'lucide-react';
@@ -163,34 +163,34 @@ function ScrollToTop() {
 function OAuthRedirectHandler() {
   const { search } = useLocation();
   const { role } = useAuth();
-  
+
   if (!role) {
     return <Navigate to="/signin" replace />;
   }
 
   let target = "/dashboard";
   if (['supreme_super_admin', 'superadmin', 'commander_admin'].includes(role)) {
-      target = "/workspace/social";
+    target = "/workspace/social";
   } else if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
-      target = "/agency/social-media";
+    target = "/agency/social-media";
   } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role)) {
-      target = "/client/workspace/social";
+    target = "/client/workspace/social";
   } else {
-      target = "/user/workspace/social";
+    target = "/user/workspace/social";
   }
-  
+
   return <Navigate to={`${target}${search}`} replace />;
 }
 
 // Protected Route Component
 const ProtectedRoute = ({ allowedRoles }) => {
   const { role, user } = useAuth();
-  
+
   if (!role) {
     return <Navigate to="/signin" replace />;
   }
 
-  const isClientUser = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) || Boolean(user?.brandId);
+  const isClientUser = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(role);
 
   if (allowedRoles && !allowedRoles.includes(role)) {
     if (isClientUser && (allowedRoles.includes('agency_client') || allowedRoles.includes('brand_team_user') || allowedRoles.includes('client') || allowedRoles.includes('brand_super_admin') || allowedRoles.includes('user'))) {
@@ -204,7 +204,7 @@ const ProtectedRoute = ({ allowedRoles }) => {
     if (isClientUser) return <Navigate to="/client/dashboard" replace />;
     return <Navigate to="/user/dashboard" replace />;
   }
-  
+
   return <Outlet />;
 };
 
@@ -256,7 +256,7 @@ const ClientReportsRouteGuard = () => {
 
 const UserLayoutRouteGuard = () => {
   const { role, user } = useAuth();
-  const isClientUser = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) || Boolean(user?.brandId);
+  const isClientUser = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(role);
   if (isClientUser) {
     return <Navigate to="/client/dashboard" replace />;
   }
@@ -265,7 +265,7 @@ const UserLayoutRouteGuard = () => {
 
 const AppRoutes = () => {
   const { role, user } = useAuth();
-  
+
   return (
     <Routes>
       {/* Top-level universal SEO and Reports routes */}
@@ -276,16 +276,16 @@ const AppRoutes = () => {
 
       <Route path="/signin" element={role ? (
         <Navigate to={
-          ['supreme_super_admin', 'superadmin'].includes(role) ? '/superadmin/dashboard' : 
-          role === 'commander_admin' ? '/dashboard' : 
-          role === 'agency_super_admin' ? '/agency/admin-overview' :
-          ['agency_manager', 'agency'].includes(role) ? '/agency/overview' : 
-          (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role) || Boolean(user?.brandId)) ? '/client/dashboard' :
-          '/user/dashboard'
+          ['supreme_super_admin', 'superadmin'].includes(role) ? '/superadmin/dashboard' :
+            role === 'commander_admin' ? '/dashboard' :
+              role === 'agency_super_admin' ? '/agency/admin-overview' :
+                ['agency_manager', 'agency'].includes(role) ? '/agency/overview' :
+                  (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(role)) ? '/client/dashboard' :
+                    '/user/dashboard'
         } replace />
       ) : <SignIn />} />
       <Route path="/forgot-password" element={role ? <Navigate to="/dashboard" replace /> : <ForgotPassword />} />
-      
+
       {/* Public / Embed Routes */}
       <Route path="/embed/form/:formId" element={<FormEmbedView />} />
       <Route path="/embed/blog/:blogId" element={<BlogEmbedView />} />
@@ -294,7 +294,7 @@ const AppRoutes = () => {
       <Route path="/blog/:blogSlug/:postSlug" element={<BlogPostEmbedView />} />
       <Route path="/preview/website/:websiteId/page/:pageId" element={<WebsitePreviewView />} />
       <Route path="/preview/website/:websiteId/blog-post/:postId" element={<BlogPostPreviewView />} />
-      
+
       {/* Super Admin Routes */}
       <Route element={<ProtectedRoute allowedRoles={['supreme_super_admin', 'superadmin']} />}>
         <Route path="/superadmin" element={<SuperAdminLayout />}>
@@ -303,7 +303,7 @@ const AppRoutes = () => {
           <Route path="companies" element={<SuperAdminCompanies />} />
           <Route path="subscriptions" element={<SuperAdminSubscriptions />} />
           <Route path="integrations" element={<SuperAdminIntegrations />} />
-          
+
           <Route path="admins" element={<SuperAdminAdmins />} />
           <Route path="settings" element={<SuperAdminSettings />} />
         </Route>
@@ -313,7 +313,7 @@ const AppRoutes = () => {
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
-          
+
           <Route path="clients/accounts" element={<Accounts />} />
           <Route path="clients/sla" element={<SLA />} />
           <Route path="clients/portal" element={<PortalSettings />} />
@@ -439,7 +439,7 @@ const AppRoutes = () => {
           <Route path="settings" element={role === 'agency_super_admin' ? <ErrorBoundary><AgencySettingsTab /></ErrorBoundary> : <ErrorBoundary><SettingsPage /></ErrorBoundary>} />
           <Route path="users" element={<AgencyUsersTab />} />
           <Route path="support" element={<AgencySupportTab />} />
-          
+
           {/* Agency Manager Dynamic Modules */}
           <Route element={<ProtectedRoute allowedRoles={['agency_manager', 'agency']} />}>
             <Route path="marketplace" element={<Marketplace />} />
@@ -511,7 +511,7 @@ const AppRoutes = () => {
           <Route path="accounts/campaign-expenses/:id" element={<CampaignExpensesView />} />
           <Route path="accounts/sales-tracking" element={<SalesTrackingPageEnhanced />} />
           <Route path="accounts/pl-analytics" element={<PLDashboard />} />
-          
+
           {/* HRMS Routes (Agency Manager) */}
           <Route path="hrms/staff" element={<EktaHrStaffPage />} />
           <Route path="hrms/attendance" element={<EktaHrAttendanceModulePage />} />
@@ -529,9 +529,9 @@ const AppRoutes = () => {
           <Route index element={<Navigate to="/client/dashboard" replace />} />
           <Route path="users" element={<BrandManagersTab />} />
           <Route path="billing" element={<BillingTab />} />
-          
+
           <Route path="dashboard" element={<ClientDashboardTab />} />
-          
+
           {/* Brand Admin / Manager Additional Modules */}
           <Route path="clients/sla" element={<SLA />} />
           {role !== 'brand_manager' && (
@@ -567,7 +567,7 @@ const AppRoutes = () => {
           <Route path="workspace/invoices/new" element={<InvoiceForm />} />
           <Route path="workspace/invoices/:id" element={<InvoiceForm />} />
           <Route path="workspace/invoices/:id/view" element={<InvoiceViewPage />} />
-          
+
           <Route path="workspace/website/*" element={<WebsiteBuilder />} />
           <Route path="workspace/website/:websiteId/pages/:pageId/edit" element={<BuilderRouteWrapper />} />
           <Route path="workspace/website/:websiteId/blogs/:blogId/posts/:postId/edit" element={<BlogPostBuilderRouteWrapper />} />
@@ -606,17 +606,17 @@ const AppRoutes = () => {
           <Route path="ops/salespipeline" element={<SalesPipeline />} />
 
           <Route path="settings/company" element={
-            role === 'brand_super_admin' ? <BrandSettingsTab /> : 
-            (role === 'agency_client' || Boolean(user?.brandId)) ? <ClientSettingsTab /> : 
-            <SettingsPage />
+            role === 'brand_super_admin' ? <BrandSettingsTab /> :
+              (role === 'agency_client' || Boolean(user?.brandId)) ? <ClientSettingsTab /> :
+                <SettingsPage />
           } />
-          
+
           <Route element={<ProtectedRoute allowedRoles={['agency_client', 'user', 'client']} />}>
             <Route path="marketplace" element={<Marketplace />} />
             <Route path="marketplace/seo/*" element={<Marketplace />} />
             <Route path="marketplace/*" element={<Marketplace />} />
           </Route>
-          
+
           <Route path="settings/users" element={<PlaceholderPage title="User Settings" description="Manage user preferences." icon={Users} />} />
           <Route path="settings/roles" element={<PlaceholderPage title="Roles & Permissions" description="Define role-based access control." icon={Shield} />} />
           <Route path="settings/integrations" element={<PlaceholderPage title="Integrations" description="Connect third-party apps and APIs." icon={Zap} />} />
@@ -635,7 +635,7 @@ const AppRoutes = () => {
           <Route path="meetings" element={<MeetingsPage />} />
           <Route path="calendar" element={<CalendarPage />} />
           <Route path="deliverables" element={<DeliverablesPage />} />
-          
+
           {/* HRMS Routes (Brand Manager) */}
           <Route path="hrms/staff" element={<EktaHrStaffPage />} />
           <Route path="hrms/attendance" element={<EktaHrAttendanceModulePage />} />
@@ -661,10 +661,10 @@ const AppRoutes = () => {
           <Route path="workspace/tasks/:id/edit" element={<TaskForm />} />
           <Route path="workspace/tasks/analytics" element={<TaskAnalyticsPage />} />
           <Route path="workspace/tasks/coordinator" element={<CoordinatorTasks />} />
-          
+
           <Route path="clients" element={<ClientsTab />} />
           <Route path="sla" element={<SLA />} />
-          
+
           {/* Dynamically Granted Modules */}
           <Route path="workspace/strategy" element={<Strategy />} />
           <Route path="workspace/seo/*" element={<MarketplaceSEO />} />
@@ -699,14 +699,14 @@ const AppRoutes = () => {
           <Route path="workspace/salespipeline" element={<SalesPipeline />} />
           <Route path="time" element={<TimeTracking />} />
           <Route path="ops/time" element={<TimeTracking />} />
-          
+
           {/* HRMS Modules for Employees */}
           <Route path="hrms/performance" element={<PerformancePage />} />
           <Route path="hrms/performance/history/:userId?" element={<PerformancePage />} />
           <Route path="hrms/performance/self-assessment" element={<SelfAssessmentForm />} />
           <Route path="hrms/daily-reports" element={<DailyReports />} />
           <Route path="workspace/seo-panel/*" element={<SEOPanel />} />
-          
+
           {/* Keep legacy route temporarily for fallback if needed */}
           <Route path="performance" element={<PerformancePage />} />
           <Route path="performance/history/:userId?" element={<PerformancePage />} />
@@ -734,7 +734,7 @@ const AppRoutes = () => {
             <Route path="reports" element={<ReportsTab />} />
             <Route path="activity" element={<ActivityTab />} />
           </Route>
-          
+
           <Route path="settings" element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
         </Route>
       </Route>

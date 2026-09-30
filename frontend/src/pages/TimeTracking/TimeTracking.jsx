@@ -335,21 +335,7 @@ const TimeTracking = () => {
       </div>
     ) },
     { title: 'HOURS', dataIndex: 'hours', key: 'hours', render: (text, r) => <strong style={{ color: r.isRunning ? '#52c41a' : 'var(--text-primary)' }}>{formatTime(text)}</strong> },
-    { title: 'BILLABLE', dataIndex: 'billable', key: 'billable', render: val => val ? <CheckCircle2 size={18} color="var(--accent-primary)" /> : <AlertCircle size={18} color="var(--text-tertiary)" /> },
-    {
-      title: 'ACTIONS', key: 'actions', render: (_, record) => (
-        record.isRunning ? (
-          <Text type="secondary" style={{ fontSize: 12, fontStyle: 'italic' }}>Live Timer</Text>
-        ) : (
-          <div style={{ display: 'flex', gap: 16 }}>
-            <a onClick={() => handleEditOpen(record)} style={{ color: 'var(--text-tertiary)' }}><Edit3 size={16} /></a>
-            <Popconfirm title="Delete this entry?" onConfirm={() => handleDelete(record.id)} okText="Yes" cancelText="No">
-              <a style={{ color: 'var(--text-tertiary)' }}><Trash2 size={16} /></a>
-            </Popconfirm>
-          </div>
-        )
-      )
-    }
+    { title: 'BILLABLE', dataIndex: 'billable', key: 'billable', render: val => val ? <CheckCircle2 size={18} color="var(--accent-primary)" /> : <AlertCircle size={18} color="var(--text-tertiary)" /> }
   ];
 
   // Department performance columns

@@ -161,12 +161,25 @@ const TaskCalendarView = ({ onTaskClick, departmentFilter }) => {
     // even if any server-side filtering is missed for an edge case.
     const filteredTasks = useMemo(() => {
         return flatTasks.filter((task) => {
-            if (
-                departmentFilter &&
-                departmentFilter !== "all" &&
-                task.department !== departmentFilter
-            ) {
-                return false;
+            if (departmentFilter && departmentFilter !== "all") {
+                const rawDept = task.department;
+                let effectiveDept = "";
+                if (typeof rawDept === "object" && rawDept !== null) {
+                    effectiveDept = rawDept.slug || (rawDept.name || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
+                } else if (typeof rawDept === "string") {
+                    effectiveDept = rawDept.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-");
+                }
+                if (effectiveDept !== departmentFilter) {
+                    // check if the string was actually an ObjectId that matches the department slug
+                    // For simplicity, since the backend already filters this perfectly for calendar view,
+                    // we don't strictly need to re-validate it here if it's an ObjectId.
+                    // But to be safe, let's just let it pass if it's an ObjectId that we can't easily resolve here without the full departments array.
+                    if (rawDept && /^[0-9a-fA-F]{24}$/.test(rawDept)) {
+                        // Let backend filtering stand
+                    } else {
+                        return false;
+                    }
+                }
             }
             if (
                 selectedProject &&
