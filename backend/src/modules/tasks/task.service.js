@@ -12,6 +12,7 @@ const Company = require("../auth/user.model");
 const User = require("../auth/user.model");
 const EventConfig = require("../integrations/eventConfig.model");
 const whatsappService = require("../../utils/whatsapp.service");
+const { isIntegrationGloballyEnabled } = require("../../utils/integrationAccess");
 const eventConfigService = { 
   getEventConfigByType: async (eventType, companyId) => {
     return await EventConfig.findOne({ eventType, companyId });
@@ -21,8 +22,9 @@ const eventConfigService = {
     const result = {};
     try {
       if (channels.includes('whatsapp') && phone) {
+        const isWhatsappGloballyEnabled = await isIntegrationGloballyEnabled('whatsapp');
         const config = await EventConfig.findOne({ eventType, companyId: tenantCompanyId });
-        const whatsappIntegration = await Integration.findOne({ type: 'whatsapp', companyId: tenantCompanyId, isActive: true });
+        const whatsappIntegration = isWhatsappGloballyEnabled ? await Integration.findOne({ type: 'whatsapp', companyId: tenantCompanyId, isActive: true }) : null;
         
         const backendUrl = whatsappIntegration?.config?.backendUrl || process.env.WHATSAPP_API_URL || 'https://api.whatsapp.com/send'; // fallback or placeholder
         const apiToken = whatsappIntegration?.config?.apiToken || process.env.WHATSAPP_API_KEY || 'default-token';

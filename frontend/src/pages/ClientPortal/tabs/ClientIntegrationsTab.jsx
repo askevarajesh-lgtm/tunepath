@@ -254,7 +254,7 @@ const GearIcon = () => (
   </svg>
 );
 
-const IntegrationCard = ({ title, description, icon: Icon, active, configured, buttonText, onConfigure, onToggle }) => {
+const IntegrationCard = ({ title, description, icon: Icon, active, configured, isGloballyDisabled, buttonText, onConfigure, onToggle }) => {
   return (
     <>
       <style>{cardStyles}</style>
@@ -269,7 +269,16 @@ const IntegrationCard = ({ title, description, icon: Icon, active, configured, b
           <div className="int-toggle-wrap" onClick={(e) => e.stopPropagation()}>
             <Switch
               checked={active}
-              onChange={onToggle}
+              disabled={isGloballyDisabled}
+              onChange={(checked) => {
+                if (isGloballyDisabled) {
+                  import('antd').then(({ message }) => {
+                    message.warning("This integration is currently disabled platform-wide by Super Admin.");
+                  });
+                  return;
+                }
+                onToggle(checked);
+              }}
               size="small"
             />
           </div>
@@ -279,11 +288,17 @@ const IntegrationCard = ({ title, description, icon: Icon, active, configured, b
           <span className="int-title">{title}</span>
 
           <div className="int-badges">
-            <span className={`int-dot ${active ? "int-dot-active" : "int-dot-inactive"}`}>
-              <span className="int-dot-pulse" />
-              {active ? "Active" : "Inactive"}
-            </span>
-            {configured && (
+            {isGloballyDisabled ? (
+              <span className="int-dot" style={{ background: '#ffeee8', color: '#ff4d4f', border: '1px solid #ffccc7' }}>
+                Disabled by Super Admin
+              </span>
+            ) : (
+              <span className={`int-dot ${active ? "int-dot-active" : "int-dot-inactive"}`}>
+                <span className="int-dot-pulse" />
+                {active ? "Active" : "Inactive"}
+              </span>
+            )}
+            {!isGloballyDisabled && configured && (
               <span className="int-dot int-dot-configured">✦ Configured</span>
             )}
           </div>
@@ -291,7 +306,16 @@ const IntegrationCard = ({ title, description, icon: Icon, active, configured, b
           <p className="int-desc">{description}</p>
 
           <div className="int-footer">
-            <button className="int-cta-btn" onClick={(e) => { e.stopPropagation(); onConfigure(); }}>
+            <button className="int-cta-btn" onClick={(e) => { 
+                e.stopPropagation(); 
+                if (isGloballyDisabled) {
+                  import('antd').then(({ message }) => {
+                    message.warning("This integration is currently disabled platform-wide by Super Admin.");
+                  });
+                  return;
+                }
+                onConfigure(); 
+              }}>
               <GearIcon />
               Setup Integration
             </button>
@@ -353,6 +377,7 @@ const ClientIntegrationsTab = ({ user }) => {
   const [createIntegration] = useCreateIntegrationMutation();
 
   const integrations = data?.data?.integrations || [];
+  const globalStateMap = data?.data?.globalStateMap || {};
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -470,6 +495,11 @@ const ClientIntegrationsTab = ({ user }) => {
               }
             }
 
+            const isGloballyDisabled = globalStateMap[type] === false;
+            if (isGloballyDisabled) {
+              isActive = false;
+            }
+
             return (
               <Col xs={24} sm={12} lg={6} key={type}>
                 <motion.div variants={itemVariants} style={{ height: '100%' }}>
@@ -479,6 +509,7 @@ const ClientIntegrationsTab = ({ user }) => {
                     icon={meta.icon}
                     active={isActive}
                     configured={isConfigured}
+                    isGloballyDisabled={isGloballyDisabled}
                     buttonText="Configure"
                     onConfigure={() => setSelectedConfig(type)}
                     onToggle={(checked) => handleToggle(type, checked)}

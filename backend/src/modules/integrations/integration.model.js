@@ -38,6 +38,10 @@ const integrationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    isGloballyEnabled: {
+      type: Boolean,
+      default: true,
+    },
     config: {
       type: mongoose.Schema.Types.Mixed,
       default: {},

@@ -2,6 +2,22 @@ const { resolveCompanyIntegrations } = require('./companyIntegrations');
 const { getEffectivePackageIntegrations, resolveCompanyUser } = require('../modules/packages/packageAccess.service');
 const { isSupportedProductIntegration } = require('./supportedIntegrations');
 
+const Integration = require('../modules/integrations/integration.model');
+
+/**
+ * Checks if an integration is globally enabled at the platform level.
+ * @param {string} integrationType 
+ * @returns {Promise<boolean>}
+ */
+const isIntegrationGloballyEnabled = async (integrationType) => {
+  if (!integrationType) return false;
+  const platformIntegration = await Integration.findOne({ companyId: null, type: integrationType }).lean();
+  if (!platformIntegration) {
+    return true; // globally enabled by default
+  }
+  return platformIntegration.isGloballyEnabled !== false;
+};
+
 /**
  * @param {object} user - the requesting user (see packageAccess.service.js)
  * @param {object} company - the company/User doc, as already passed into
@@ -11,6 +27,12 @@ const { isSupportedProductIntegration } = require('./supportedIntegrations');
  */
 const isIntegrationAllowedForUser = async (user, company, integrationType) => {
   if (!integrationType) return false;
+  
+  // Layer 0 -- platform-level global master switch
+  const globallyEnabled = await isIntegrationGloballyEnabled(integrationType);
+  if (!globallyEnabled) {
+    return false;
+  }
   
   if (!isSupportedProductIntegration(integrationType)) {
     return false;
@@ -48,4 +70,4 @@ const isIntegrationAllowedForUser = async (user, company, integrationType) => {
   return false;
 };
 
-module.exports = { isIntegrationAllowedForUser };
+module.exports = { isIntegrationAllowedForUser, isIntegrationGloballyEnabled };

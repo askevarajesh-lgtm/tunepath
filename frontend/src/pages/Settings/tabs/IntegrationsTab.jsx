@@ -338,6 +338,7 @@ const IntegrationsTab = () => {
   const [selectedConfig, setSelectedConfig] = useState(null);
 
   const integrations = data?.data?.integrations || [];
+  const globalStateMap = data?.data?.globalStateMap || {};
 
   const websiteIntegration = integrations.find((i) => i.type === "website");
   const facebookIntegration = integrations.find((i) => i.type === "facebook_leads");
@@ -429,16 +430,21 @@ const IntegrationsTab = () => {
   };
 
   const IntegrationCard = ({ type, integration, icon, title, description, isActiveOverride, isConfiguredOverride }) => {
-    let isActive = isActiveOverride !== undefined ? isActiveOverride : (integration?.isActive || false);
+    const isGloballyDisabled = globalStateMap[type] === false;
+    let isActive = isGloballyDisabled ? false : (isActiveOverride !== undefined ? isActiveOverride : (integration?.isActive || false));
     let isConfigured = isConfiguredOverride !== undefined ? isConfiguredOverride : (integration?.config && Object.keys(integration.config).length > 0);
     
     // As per user request: "If any integration is configured inside the Integrations section, its corresponding card should show Active."
     // Force the UI to show Active if it's configured, ensuring consistent logic across all integrations.
-    if (isConfigured && integration?.isActive !== false) {
+    if (isConfigured && integration?.isActive !== false && !isGloballyDisabled) {
       isActive = true;
     }
 
     const handleCardClick = () => {
+      if (isGloballyDisabled) {
+        message.warning("This integration is currently disabled platform-wide by Super Admin.");
+        return;
+      }
       setSelectedConfig({
         type,
         id: integration?._id || 'new'
@@ -455,7 +461,14 @@ const IntegrationsTab = () => {
           <div className="int-toggle-wrap" onClick={(e) => e.stopPropagation()}>
             <Switch
               checked={isActive}
-              onChange={(checked) => handleToggle(type, checked)}
+              disabled={isGloballyDisabled}
+              onChange={(checked) => {
+                if (isGloballyDisabled) {
+                  message.warning("This integration is currently disabled platform-wide by Super Admin.");
+                  return;
+                }
+                handleToggle(type, checked);
+              }}
               size="small"
             />
           </div>
@@ -465,11 +478,17 @@ const IntegrationsTab = () => {
           <span className="int-title">{title}</span>
 
           <div className="int-badges">
-            <span className={`int-dot ${isActive ? "int-dot-active" : "int-dot-inactive"}`}>
-              <span className="int-dot-pulse" />
-              {isActive ? "Active" : "Inactive"}
-            </span>
-            {isConfigured && (
+            {isGloballyDisabled ? (
+              <span className="int-dot" style={{ background: '#ffeee8', color: '#ff4d4f', border: '1px solid #ffccc7' }}>
+                Disabled by Super Admin
+              </span>
+            ) : (
+              <span className={`int-dot ${isActive ? "int-dot-active" : "int-dot-inactive"}`}>
+                <span className="int-dot-pulse" />
+                {isActive ? "Active" : "Inactive"}
+              </span>
+            )}
+            {!isGloballyDisabled && isConfigured && (
               <span className="int-dot int-dot-configured">✦ Configured</span>
             )}
           </div>

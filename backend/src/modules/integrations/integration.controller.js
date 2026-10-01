@@ -10,13 +10,18 @@ const {
 const getAllIntegrations = async (req, res) => {
   try {
     const companyId = req.query.clientId || req.user?.brandId || req.companyId || (req.user && (req.user.agencyId || req.user.workspaceId || req.user.agency));
-    const integrations = await integrationService.getAllIntegrations(
+    const result = await integrationService.getAllIntegrations(
       companyId,
       req.user.role,
       req.user,
     );
+    // Support both old array return and new object return
+    const integrations = Array.isArray(result) ? result : result.integrations;
+    const globalStateMap = Array.isArray(result) ? {} : result.globalStateMap;
+
     return sendSuccess(res, "Integrations retrieved successfully", {
       integrations,
+      globalStateMap,
     });
   } catch (error) {
     return sendError(res, 500, error.message);

@@ -5,6 +5,7 @@ const User = require('../auth/user.model');
 const Integration = require('../integrations/integration.model');
 const solluService = require('./sollu.service');
 const { getEffectivePackageIntegrations, resolveCompanyUser } = require('../packages/packageAccess.service');
+const { isIntegrationGloballyEnabled } = require('../../utils/integrationAccess');
 
 const PLATFORM_ADMIN_ROLES = ['supreme_super_admin', 'commander_admin', 'super_admin'];
 
@@ -51,6 +52,11 @@ async function findAgentByPhone(rawPhone) {
  * Helper to get the active IVR Integration for a company/client
  */
 async function getActiveIvrIntegration(companyId, clientId = null) {
+  const isGloballyEnabled = await isIntegrationGloballyEnabled('ivr');
+  if (!isGloballyEnabled) {
+    return null;
+  }
+
   const query = {
     type: 'ivr',
     isActive: true,
@@ -145,10 +151,17 @@ exports.initiateOutboundCall = async (req, res) => {
     if (effectiveCompanyId) ivrQuery.$or.push({ companyId: effectiveCompanyId });
     if (effectiveClientId) ivrQuery.$or.push({ clientId: effectiveClientId });
 
-    const existingIntegrations = await Integration.find(ivrQuery).sort({ clientId: -1, companyId: -1 }).lean();
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('ivr');
+    const existingIntegrations = isGloballyEnabled ? await Integration.find(ivrQuery).sort({ clientId: -1, companyId: -1 }).lean() : [];
     const ivrIntegration = existingIntegrations[0] || null;
 
     if (!ivrIntegration) {
+      if (!isGloballyEnabled) {
+        return res.status(400).json({
+          success: false,
+          message: 'IVR Telephony is currently disabled platform-wide by Super Admin.',
+        });
+      }
       return res.status(400).json({
         success: false,
         message: 'IVR Telephony is not configured. Please configure Sollu IVR in Settings > Integrations.',

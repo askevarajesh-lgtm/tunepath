@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const PerformanceAd = require('./performanceAds.model');
 const Integration = require('../integrations/integration.model');
 const axios = require('axios');
+const { isIntegrationGloballyEnabled } = require('../../utils/integrationAccess');
 
 // Empty structure to replace mock data for future API integrations
 const getEmptyData = () => {
@@ -101,7 +102,8 @@ const extractLeadsFromActions = (actions) => {
 
 const syncPerformanceAds = async (agencyId) => {
   // 1. Check for Meta Integration
-  const integration = await Integration.findOne({ companyId: agencyId, type: 'meta_ads', isActive: true });
+  const globallyEnabled = await isIntegrationGloballyEnabled('meta_ads');
+  const integration = globallyEnabled ? await Integration.findOne({ companyId: agencyId, type: 'meta_ads', isActive: true }) : null;
   
   if (!integration || !integration.config || !integration.config.accessToken) {
     // If not connected, just return what we have (or empty)
