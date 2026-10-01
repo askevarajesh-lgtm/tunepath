@@ -433,9 +433,18 @@ taskSchema.pre("save", function (next) {
   // If we have both, ensure workDurationMinutes is at least the difference
   // (Note: Service will handle cumulative addition)
   if (this.workStartedAt && this.workCompletedAt && !this.workDurationMinutes) {
-    this.workDurationMinutes = Math.round(
-      (this.workCompletedAt - this.workStartedAt) / 60000,
-    );
+    let stopTime = this.workCompletedAt;
+    if (this.dueDate) {
+      const dueEnd = new Date(this.dueDate);
+      if (!isNaN(dueEnd.getTime())) {
+        dueEnd.setHours(23, 59, 59, 999);
+        if (stopTime > dueEnd) {
+          stopTime = dueEnd;
+        }
+      }
+    }
+    const diffMs = Math.max(0, stopTime - this.workStartedAt);
+    this.workDurationMinutes = Math.round(diffMs / 60000);
   }
 
   // ── actualCompletionDate ───────────────────────────────────────────────────

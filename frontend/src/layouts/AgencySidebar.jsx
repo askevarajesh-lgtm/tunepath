@@ -234,8 +234,8 @@ const AgencySidebar = ({ collapsed, setCollapsed }) => {
   const accountsChildren = [];
   accountsChildren.push({ key: '/agency/invoices', icon: getIcon(CreditCard), label: 'Invoices' });
   accountsChildren.push({ key: '/agency/accounts/transactions', icon: getIcon(CreditCard), label: 'Transactions' });
-  // Sales Tracking: hidden when a specific client is selected
-  if (!isClientSelected) accountsChildren.push({ key: '/agency/accounts/sales-tracking', icon: getIcon(TrendingUp), label: 'Sales Tracking' });
+  // Sales Tracking: temporarily disabled
+  // if (!isClientSelected) accountsChildren.push({ key: '/agency/accounts/sales-tracking', icon: getIcon(TrendingUp), label: 'Sales Tracking' });
   // Expenses Management: hidden when a specific client is selected
   if (!isClientSelected) accountsChildren.push({ key: '/agency/accounts/expenses', icon: getIcon(FileText), label: 'Expenses Management' });
   // Campaign Expenses: hidden when a specific client is selected

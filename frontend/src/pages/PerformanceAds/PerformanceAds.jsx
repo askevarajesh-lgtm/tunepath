@@ -473,7 +473,21 @@ const PerformanceAds = () => {
           extra={<Button style={{ borderRadius: 8, borderColor: 'var(--border-color)', color: 'var(--text-primary)', fontWeight: 500 }}>All campaigns</Button>}
           className="glassmorphism" style={{ borderRadius: 16, marginBottom: 24, border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)' }} bodyStyle={{ padding: 0 }}
         >
-          <Table columns={campaignCols} dataSource={dashboardData.activeCampaigns || []} pagination={false} rowKey="id" size="middle" scroll={{ x: 1000 }} rowClassName={() => 'hover-bg'} />
+          <Table
+            columns={campaignCols}
+            dataSource={dashboardData.activeCampaigns || []}
+            pagination={{
+              defaultPageSize: 10,
+              showSizeChanger: true,
+              pageSizeOptions: ['5', '10', '20', '50'],
+              showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} campaigns`,
+              position: ['bottomRight']
+            }}
+            rowKey="id"
+            size="middle"
+            scroll={{ x: 1000 }}
+            rowClassName={() => 'hover-bg'}
+          />
         </Card>
       </motion.div>
 

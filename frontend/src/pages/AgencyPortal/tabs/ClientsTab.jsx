@@ -58,6 +58,7 @@ const ClientsTab = () => {
   const [clientInvoices, setClientInvoices] = useState([]);
   const [clientDataLoading, setClientDataLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -137,7 +138,7 @@ const ClientsTab = () => {
     }
   };
 
-  const fetchClients = async (page = currentPage, limit = pageSize, search = searchQuery, clientId = globalSelectedClient?._id) => {
+  const fetchClients = async (page = currentPage, limit = pageSize, search = debouncedSearch, clientId = globalSelectedClient?._id) => {
     try {
       setLoading(true);
       const headers = { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
@@ -190,9 +191,18 @@ const ClientsTab = () => {
     }
   };
 
+  // Debounce search query so typing from the 1st character filters instantly
   useEffect(() => {
-    fetchClients(currentPage, pageSize, searchQuery, globalSelectedClient?._id);
-  }, [currentPage, pageSize, globalSelectedClient]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setCurrentPage(1);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    fetchClients(currentPage, pageSize, debouncedSearch, globalSelectedClient?._id);
+  }, [currentPage, pageSize, debouncedSearch, globalSelectedClient]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -487,19 +497,11 @@ const ClientsTab = () => {
 
           <Input
             prefix={<Search size={18} style={{ color: 'var(--text-tertiary)' }} />}
-            placeholder="Search clients by name or email (press enter)..."
+            placeholder="Search clients by name, company, or email..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            onPressEnter={() => {
-              setCurrentPage(1);
-              fetchClients(1, pageSize, searchQuery, globalSelectedClient?._id);
-            }}
             allowClear
-            onClear={() => {
-              setSearchQuery('');
-              setCurrentPage(1);
-              fetchClients(1, pageSize, '', globalSelectedClient?._id);
-            }}
+            onClear={() => setSearchQuery('')}
             style={{
               maxWidth: 400,
               background: 'transparent',

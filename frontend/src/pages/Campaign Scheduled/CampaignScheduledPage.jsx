@@ -21,7 +21,7 @@ import LinkedInPageSelectModal from "./LinkedInPageSelectModal";
 import YouTubeChannelSelectModal from "./YouTubeChannelSelectModal";
 import GoogleBusinessLocationSelectModal from "./GoogleBusinessLocationSelectModal";
 import ReviewsView from "./ReviewsView";
-import { campaignScheduledApi, getCookie } from "./api";
+import { campaignScheduledApi, getAuthToken } from "./api";
 import "./campaignScheduled.css";
 import { useAuth } from "../../contexts/AuthContext";
 import { useClientContext } from "../../contexts/ClientContext";
@@ -290,7 +290,7 @@ export default function CampaignScheduledPage() {
 
   const handleConnectYouTubeAnother = () => {
     // Redirect to the same YouTube auth route but with the current discoveryId
-    const token = getCookie("token") || localStorage.getItem("token") || "";
+    const token = getAuthToken();
     let url = `/api/campaign-scheduled/auth/youtube?token=${encodeURIComponent(token)}`;
     if (activeClientId)
       url += `&clientCompanyId=${encodeURIComponent(activeClientId)}`;

@@ -62,7 +62,8 @@ exports.getBrands = async (req, res, next) => {
     }
 
     if (req.query.search) {
-      const searchRegex = new RegExp(req.query.search, 'i');
+      const escaped = String(req.query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
       if (filter.$or) {
         const existingOr = filter.$or;
         delete filter.$or;
