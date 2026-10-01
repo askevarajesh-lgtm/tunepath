@@ -251,6 +251,8 @@ const TasksPage = () => {
 
   const allPendingProjectsMap = new Map();
   const addProjectToMap = (project, type, count) => {
+    const validCount = Number(count) || 0;
+    if (validCount <= 0) return;
     if (!allPendingProjectsMap.has(project._id)) {
       allPendingProjectsMap.set(project._id, {
         ...project,
@@ -259,14 +261,29 @@ const TasksPage = () => {
       });
     }
     const p = allPendingProjectsMap.get(project._id);
-    p.pendingBreakdown[type] = (p.pendingBreakdown[type] || 0) + count;
-    p.totalPending += count;
+    p.pendingBreakdown[type] = (p.pendingBreakdown[type] || 0) + validCount;
+    p.totalPending += validCount;
   };
 
   (unassignedSummary.posterProjects || []).forEach(p => addProjectToMap(p, 'Posters', p.pendingCount));
   (unassignedSummary.videoProjects || []).forEach(p => addProjectToMap(p, 'Videos', p.pendingCount));
   (unassignedSummary.shootProjects || []).forEach(p => addProjectToMap(p, 'Shoots', p.pendingCount));
-  (unassignedSummary.dynamicProjects || []).forEach(p => addProjectToMap(p, 'Dynamic', p.pendingCount));
+  (unassignedSummary.dynamicProjects || []).forEach(p => {
+    if (p.categories && Array.isArray(p.categories) && p.categories.length > 0) {
+      p.categories.forEach(cat => {
+        const catName = cat.name || cat.categoryName || 'Other';
+        const isStandard = ['poster', 'video', 'shoot'].some(k => catName.toLowerCase().includes(k));
+        if (!isStandard) {
+          const rem = Math.max(0, Number(cat.remaining) || 0);
+          if (rem > 0) {
+            addProjectToMap(p, catName, rem);
+          }
+        }
+      });
+    } else if (p.pendingCount > 0) {
+      addProjectToMap(p, 'Other', p.pendingCount);
+    }
+  });
 
   const allPendingProjects = Array.from(allPendingProjectsMap.values()).sort((a, b) => b.totalPending - a.totalPending);
 

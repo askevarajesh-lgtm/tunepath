@@ -1210,7 +1210,21 @@ const getProjectListSummaryStats = async (
           $sum: {
             $sum: {
               $map: {
-                input: { $ifNull: ["$selectedCategories", []] },
+                input: {
+                  $filter: {
+                    input: { $ifNull: ["$selectedCategories", []] },
+                    as: "cat",
+                    cond: {
+                      $not: {
+                        $regexMatch: {
+                          input: { $ifNull: ["$$cat.name", { $ifNull: ["$$cat.categoryName", ""] }] },
+                          regex: "poster|video|shoot",
+                          options: "i",
+                        },
+                      },
+                    },
+                  },
+                },
                 as: "cat",
                 in: { $max: [{ $ifNull: ["$$cat.remaining", 0] }, 0] },
               },
@@ -1290,7 +1304,15 @@ const getUnassignedDeliverablesSummary = async (
     const remainingPosters = Math.max(0, Number(project.remainingPosters) || 0);
     const remainingVideos = Math.max(0, Number(project.remainingVideos) || 0);
     const remainingShoots = Math.max(0, Number(project.remainingShoots) || 0);
-    const remainingDynamic = (project.selectedCategories || []).reduce(
+
+    // Non-standard dynamic categories: filter out posters, videos, shoots that are already counted in standard fields
+    const dynamicCats = (project.selectedCategories || []).filter((cat) => {
+      const rawName = String(cat.name || cat.categoryName || "").toLowerCase().trim();
+      const isStandard = ["poster", "video", "shoot"].some((k) => rawName.includes(k));
+      return !isStandard && (Math.max(0, Number(cat.remaining) || 0) > 0);
+    });
+
+    const remainingDynamic = dynamicCats.reduce(
       (sum, cat) => sum + Math.max(0, Number(cat.remaining) || 0),
       0,
     );
@@ -1344,9 +1366,7 @@ const getUnassignedDeliverablesSummary = async (
         clientName: project.clientId?.name || "N/A",
         status: project.status || "created",
         pendingCount: remainingDynamic,
-        categories: project.selectedCategories.filter(
-          (c) => (c.remaining || 0) > 0,
-        ),
+        categories: dynamicCats,
       });
     }
   });

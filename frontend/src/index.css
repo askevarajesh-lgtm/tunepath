@@ -521,24 +521,96 @@ a {
   font-weight: 700;
 }
 
-.app-sidebar .ant-menu-item:hover,
+.app-sidebar .ant-menu-item:not(.ant-menu-item-selected):hover,
 .app-sidebar .ant-menu-submenu-title:hover {
-  background: var(--bg-tertiary) !important;
+  background: rgba(225, 20, 60, 0.08) !important;
   color: var(--text-primary) !important;
-  transform: translateX(2px);
+  transform: translateX(3px);
 }
 
+[data-theme='dark'] .app-sidebar .ant-menu-item:not(.ant-menu-item-selected):hover,
+[data-theme='dark'] .app-sidebar .ant-menu-submenu-title:hover {
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: #ffffff !important;
+  transform: translateX(3px);
+}
+
+[data-theme='dark'] .app-sidebar .ant-menu-item:not(.ant-menu-item-selected):hover .ant-menu-item-icon,
+[data-theme='dark'] .app-sidebar .ant-menu-submenu-title:hover .ant-menu-item-icon {
+  color: #ffffff !important;
+}
+
+/* Active sidebar item styling - Ultra-premium, vibrant, high-contrast glow design */
 .app-sidebar .ant-menu-item-selected,
-.app-sidebar .ant-menu-item-selected:hover {
-  background:
-    linear-gradient(90deg, var(--sidebar-accent-soft), rgba(255, 255, 255, 0.5)) !important;
-  color: var(--sidebar-accent) !important;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sidebar-accent) 18%, transparent);
+.app-sidebar .ant-menu-item-selected:hover,
+.app-sidebar .ant-menu-sub .ant-menu-item-selected,
+.app-sidebar .ant-menu-sub .ant-menu-item-selected:hover {
+  background: linear-gradient(135deg, #e1143c 0%, #be123c 100%) !important;
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  box-shadow: 0 4px 18px rgba(225, 20, 60, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  position: relative !important;
+  transform: scale(1.02) !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 
+[data-theme='dark'] .app-sidebar .ant-menu-item-selected,
+[data-theme='dark'] .app-sidebar .ant-menu-item-selected:hover,
+[data-theme='dark'] .app-sidebar .ant-menu-sub .ant-menu-item-selected,
+[data-theme='dark'] .app-sidebar .ant-menu-sub .ant-menu-item-selected:hover {
+  background: linear-gradient(135deg, #e1143c 0%, #9f0728 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 6px 22px rgba(225, 20, 60, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Glowing side indicator accent */
+.app-sidebar .ant-menu-item-selected::before,
+.app-sidebar .ant-menu-sub .ant-menu-item-selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 22px;
+  border-radius: 0 4px 4px 0;
+  background: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.95);
+}
+
+/* Active icon style with subtle elevation */
 .app-sidebar .ant-menu-item-selected .ant-menu-item-icon,
-.app-sidebar .ant-menu-item-selected:hover .ant-menu-item-icon {
-  color: var(--sidebar-accent) !important;
+.app-sidebar .ant-menu-item-selected:hover .ant-menu-item-icon,
+[data-theme='dark'] .app-sidebar .ant-menu-item-selected .ant-menu-item-icon,
+[data-theme='dark'] .app-sidebar .ant-menu-item-selected:hover .ant-menu-item-icon,
+.app-sidebar .ant-menu-sub .ant-menu-item-selected .ant-menu-item-icon,
+.app-sidebar .ant-menu-sub .ant-menu-item-selected:hover .ant-menu-item-icon {
+  color: #ffffff !important;
+  transform: scale(1.1);
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.22));
+}
+
+/* Active label text */
+.app-sidebar .ant-menu-item-selected .ant-menu-title-content,
+.app-sidebar .ant-menu-item-selected:hover .ant-menu-title-content,
+.app-sidebar .ant-menu-item-selected .sidebar-menu-label,
+.app-sidebar .ant-menu-item-selected:hover .sidebar-menu-label,
+.app-sidebar .ant-menu-item-selected span,
+.app-sidebar .ant-menu-item-selected:hover span,
+.app-sidebar .ant-menu-item-selected a,
+.app-sidebar .ant-menu-item-selected:hover a {
+  color: #ffffff !important;
+  font-weight: 800 !important;
+}
+
+/* Active item badges */
+.app-sidebar .ant-menu-item-selected .sidebar-menu-badge,
+.app-sidebar .ant-menu-item-selected:hover .sidebar-menu-badge {
+  background: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.45) !important;
+  backdrop-filter: blur(6px);
+  font-weight: 800 !important;
 }
 
 .app-sidebar .ant-menu-item::after,
