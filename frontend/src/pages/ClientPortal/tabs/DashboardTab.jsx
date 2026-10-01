@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Typography, Row, Col, Button, Tag, Empty, Table, Spin, DatePicker, Avatar } from 'antd';
+import { Typography, Row, Col, Button, Tag, Empty, Table, Spin, DatePicker, Avatar, Modal, Image, Input, message, Dropdown } from 'antd';
 import { motion } from 'framer-motion';
-import { AlertTriangle, Calendar, CheckCircle2, FileText, Receipt, CheckSquare, TrendingUp, DollarSign, Users } from 'lucide-react';
+import { AlertTriangle, Calendar, CheckCircle2, FileText, Receipt, CheckSquare, TrendingUp, DollarSign, Users, Eye, Download, MoreVertical } from 'lucide-react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { useFeatures } from '../../../contexts/FeatureContext';
 import BubbleCard from '../../../components/BubbleCard';
@@ -61,9 +61,15 @@ const DashboardTab = () => {
   const [selectedDate, setSelectedDate] = useState(dayjs());
   const [selectedTaskDetails, setSelectedTaskDetails] = useState(null);
   const [showCelebration, setShowCelebration] = useState(false);
+  const [deliverables, setDeliverables] = useState([]);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [rejectModalOpen, setRejectModalOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [selectedDeliverableForReject, setSelectedDeliverableForReject] = useState(null);
 
   useEffect(() => {
     fetchOverview();
+    fetchDeliverables();
   }, [selectedDate]);
 
   useEffect(() => {
@@ -78,6 +84,70 @@ const DashboardTab = () => {
         .catch(err => console.error('Failed to fetch Semrush project:', err));
     }
   }, [isSeoFeatureEnabled]);
+
+  const fetchDeliverables = async () => {
+    try {
+      const res = await api.get('/deliverables');
+      if (res.data && res.data.success) {
+        setDeliverables(res.data.data.deliverables || res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load deliverables', err);
+    }
+  };
+
+  const handleDownload = (item) => {
+    if (item.assetUrl) {
+      const link = document.createElement('a');
+      link.href = item.assetUrl;
+      const filename = item.title ? item.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'asset';
+      link.download = `${filename}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const handleAccept = async (id) => {
+    try {
+      // Optimistic update
+      setDeliverables(prev => prev.map(d => d._id === id ? { ...d, status: 'approved' } : d));
+      
+      const res = await api.put(`/deliverables/${id}/approve`, { remarks: 'Approved from Client Dashboard' });
+      if (res.data && res.data.success) {
+        message.success('Deliverable accepted');
+        fetchDeliverables();
+      }
+    } catch (err) {
+      console.error(err);
+      message.error('Failed to accept deliverable');
+      fetchDeliverables(); // Revert on failure
+    }
+  };
+
+  const handleReject = async () => {
+    if (!rejectReason.trim()) {
+      return message.error('Please provide a reason');
+    }
+    try {
+      const rejectId = selectedDeliverableForReject._id;
+      // Optimistic update
+      setDeliverables(prev => prev.map(d => d._id === rejectId ? { ...d, status: 'revisions' } : d));
+      
+      const res = await api.put(`/deliverables/${rejectId}/revision`, { remarks: rejectReason });
+      if (res.data && res.data.success) {
+        message.success('Deliverable rejected');
+        setRejectModalOpen(false);
+        setRejectReason('');
+        setSelectedDeliverableForReject(null);
+        fetchDeliverables();
+      }
+    } catch (err) {
+      console.error(err);
+      message.error('Failed to reject deliverable');
+      fetchDeliverables(); // Revert on failure
+    }
+  };
 
   const fetchOverview = async () => {
     setLoading(true);
@@ -525,29 +595,72 @@ const DashboardTab = () => {
             </Col>
 
             <Col xs={24} lg={12} style={{ marginTop: { xs: 48, lg: 0 } }}>
-              <Title level={4} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Action Items</Title>
-              <Text type="secondary" style={{ fontSize: 14, display: 'block', marginBottom: 24, fontWeight: 500 }}>Tasks requiring attention</Text>
+              <Title level={4} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>Deliverables</Title>
+              <Text type="secondary" style={{ fontSize: 14, display: 'block', marginBottom: 24, fontWeight: 500 }}>Latest deliverables from your account team</Text>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {filteredActionItems && filteredActionItems.length > 0 ? (
-                  filteredActionItems.map((item, idx) => (
+                {deliverables && deliverables.length > 0 ? (
+                  deliverables.map((item, idx) => (
                     <div key={idx} className="hover-bg" style={{ display: 'flex', alignItems: 'center', padding: '20px 24px', background: 'var(--bg-secondary)', borderRadius: '24px 24px 24px 8px', border: '1px solid var(--border-color)', boxShadow: 'var(--shadow-sm)', flexWrap: 'wrap', gap: 16 }}>
-                      <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 12, color: 'var(--accent-danger)', border: '1px solid var(--border-color)' }}>
-                        <AlertTriangle size={18}/>
+                      <div style={{ background: 'var(--bg-tertiary)', padding: 12, borderRadius: 12, color: 'var(--accent-info)', border: '1px solid var(--border-color)' }}>
+                        <FileText size={18}/>
                       </div>
                       <div style={{ flex: 1, minWidth: 200 }}>
                         <Text style={{ fontWeight: 700, display: 'block', fontSize: 15, color: 'var(--text-primary)', marginBottom: 4 }}>{item.title}</Text>
-                        <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>Due: {dayjs(item.dueDate || item.createdAt).format('D MMM YYYY')}</Text>
+                        <Text type="secondary" style={{ fontSize: 13, fontWeight: 500 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span>{item.deliverableType || 'deliverable'}</span>
+                            <span>Due: {item.dueDate ? dayjs(item.dueDate).format('MMM D, YYYY') : 'No Date'}</span>
+                            <span>Status: {item.status === 'backlog' ? 'pending' : (item.status || 'pending')}</span>
+                          </div>
+                        </Text>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 24, minWidth: 150, justifyContent: 'flex-end' }}>
-                        <Button type="primary" size="small" onClick={() => setSelectedTaskDetails(item)} style={{ borderRadius: 8 }}>
-                          Resolve
-                        </Button>
+                      <div style={{ display: 'flex', alignItems: 'center', minWidth: 40, justifyContent: 'flex-end' }}>
+                        {(() => {
+                          const isPending = ['pending', 'in_review', 'submitted', 'backlog'].includes(item.status?.toLowerCase());
+                          const menuItems = [];
+                          if (isPending) {
+                            menuItems.push({
+                              key: 'accept',
+                              label: <span style={{ color: 'var(--accent-success)', fontWeight: 600 }}>Accept</span>,
+                              onClick: () => handleAccept(item._id)
+                            });
+                            menuItems.push({
+                              key: 'reject',
+                              label: 'Reject',
+                              danger: true,
+                              onClick: () => {
+                                setSelectedDeliverableForReject(item);
+                                setRejectModalOpen(true);
+                              }
+                            });
+                          }
+                          if (item.assetUrl) {
+                            if (menuItems.length > 0) menuItems.push({ type: 'divider' });
+                            menuItems.push({
+                              key: 'view',
+                              label: 'View',
+                              icon: <Eye size={14} />,
+                              onClick: () => setPreviewImage(item.assetUrl)
+                            });
+                            menuItems.push({
+                              key: 'download',
+                              label: 'Download',
+                              icon: <Download size={14} />,
+                              onClick: () => handleDownload(item)
+                            });
+                          }
+                          return menuItems.length > 0 ? (
+                            <Dropdown menu={{ items: menuItems }} trigger={['click']} placement="bottomRight">
+                              <Button type="text" icon={<MoreVertical size={18} />} style={{ color: 'var(--text-secondary)' }} />
+                            </Dropdown>
+                          ) : null;
+                        })()}
                       </div>
                     </div>
                   ))
                 ) : (
-                  <Empty description="No action items found" />
+                  <Empty description={<span style={{ color: 'var(--text-secondary)' }}>Your account team hasn't sent any deliverables yet.</span>} />
                 )}
               </div>
             </Col>
@@ -575,6 +688,40 @@ const DashboardTab = () => {
         isActive={showCelebration}
         onComplete={() => setShowCelebration(false)}
       />
+
+      <Modal
+        open={!!previewImage}
+        footer={null}
+        onCancel={() => setPreviewImage(null)}
+        width="auto"
+        bodyStyle={{ padding: 0 }}
+        centered
+        closeIcon={<div style={{ background: 'rgba(0,0,0,0.5)', borderRadius: '50%', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>×</div>}
+      >
+        {previewImage && <img src={previewImage} alt="Preview" style={{ maxWidth: '100vw', maxHeight: '90vh', objectFit: 'contain', display: 'block' }} />}
+      </Modal>
+      <Modal
+        title="Reject Deliverable"
+        open={rejectModalOpen}
+        onOk={handleReject}
+        onCancel={() => {
+          setRejectModalOpen(false);
+          setRejectReason('');
+          setSelectedDeliverableForReject(null);
+        }}
+        okText="Reject"
+        okButtonProps={{ danger: true }}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text style={{ display: 'block', marginBottom: 8 }}>Please provide a reason for rejecting this deliverable:</Text>
+          <Input.TextArea
+            rows={4}
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="E.g., The color scheme doesn't match our brand guidelines..."
+          />
+        </div>
+      </Modal>
     </Spin>
   );
 };
