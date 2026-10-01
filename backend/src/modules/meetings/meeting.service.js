@@ -178,7 +178,7 @@ const getAllMeetings = async (companyId, query, userRole, userId) => {
     .populate('participants', 'name email role logo')
     .populate('clientId', 'name companyName email')
     .populate('projectId', 'name status')
-    .sort({ date: 1, time: 1 })
+    .sort({ createdAt: -1 })
     .limit(parseInt(limit))
     .skip(parseInt(skip));
 

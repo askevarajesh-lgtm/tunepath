@@ -106,9 +106,15 @@ const DeliverablesTab = () => {
       key: 'status',
       render: (status) => {
         let color = 'default';
-        if (status === 'Approved') color = 'success';
-        if (status === 'In Review' || status === 'Pending Approval') color = 'warning';
-        return <Tag color={color}>{status || 'Pending'}</Tag>;
+        const normalized = (status || '').toLowerCase();
+        let displayStatus = status || 'Pending';
+        if (normalized === 'approved') color = 'success';
+        else if (normalized === 'revisions' || normalized === 'rejected') color = 'error';
+        else if (normalized === 'in_review' || normalized === 'pending' || normalized === 'backlog') {
+          color = 'warning';
+          if (normalized === 'backlog') displayStatus = 'pending';
+        }
+        return <Tag color={color}>{displayStatus}</Tag>;
       },
     },
     ...(canView ? [{
@@ -204,6 +210,7 @@ const DeliverablesTab = () => {
         title="View Deliverable"
         open={viewModalVisible}
         onCancel={() => setViewModalVisible(false)}
+        width={800}
         footer={[
           <Button key="close" onClick={() => setViewModalVisible(false)}>
             Close
@@ -211,42 +218,15 @@ const DeliverablesTab = () => {
         ]}
       >
         {selectedDeliverable && (
-          <div>
-            <div style={{ marginBottom: 16 }}>
-              <Text strong>Title: </Text>
-              <Text>{selectedDeliverable.title}</Text>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <Text strong>Type: </Text>
-              <Text style={{ textTransform: 'capitalize' }}>
-                {selectedDeliverable.deliverableType ? selectedDeliverable.deliverableType.replace('_', ' ') : 'N/A'}
-              </Text>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <Text strong>Status: </Text>
-              <Tag color={selectedDeliverable.status === 'Approved' ? 'success' : (selectedDeliverable.status === 'In Review' || selectedDeliverable.status === 'Pending Approval') ? 'warning' : 'default'}>
-                {selectedDeliverable.status || 'Pending'}
-              </Tag>
-            </div>
-            {selectedDeliverable.description && (
-              <div style={{ marginBottom: 16 }}>
-                <Text strong>Description: </Text>
-                <p style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
-                  {selectedDeliverable.assetUrl && selectedDeliverable.description.includes(selectedDeliverable.assetUrl)
-                    ? selectedDeliverable.description.replace(selectedDeliverable.assetUrl, '(Asset Attached)')
-                    : selectedDeliverable.description}
-                </p>
-              </div>
-            )}
-            {selectedDeliverable.assetUrl && (
-              <div style={{ marginBottom: 16 }}>
-                <Text strong>Asset: </Text>
-                <div style={{ marginTop: 8 }}>
-                  {selectedDeliverable.assetUrl.startsWith('data:image') ? (
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 350px', minWidth: 350 }}>
+              {selectedDeliverable.assetUrl ? (
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'flex-start' }}>
+                  {selectedDeliverable.assetUrl.startsWith('data:image') || selectedDeliverable.assetUrl.match(/\.(jpeg|jpg|gif|png)$/i) != null ? (
                     <img 
                       src={selectedDeliverable.assetUrl} 
                       alt="Deliverable Asset" 
-                      style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #eee' }} 
+                      style={{ width: '100%', borderRadius: 8, border: '1px solid #eee' }} 
                     />
                   ) : (
                     <a href={selectedDeliverable.assetUrl} target="_blank" rel="noreferrer">
@@ -254,8 +234,48 @@ const DeliverablesTab = () => {
                     </a>
                   )}
                 </div>
+              ) : (
+                <div style={{ width: '100%', height: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5', borderRadius: 8, border: '1px dashed #d9d9d9' }}>
+                  <Text type="secondary">No Asset Attached</Text>
+                </div>
+              )}
+            </div>
+            <div style={{ flex: '1 1 350px', minWidth: 350 }}>
+              <div style={{ marginBottom: 16 }}>
+                <Text strong>Title: </Text>
+                <Text>{selectedDeliverable.title}</Text>
               </div>
-            )}
+              <div style={{ marginBottom: 16 }}>
+                <Text strong>Type: </Text>
+                <Text style={{ textTransform: 'capitalize' }}>
+                  {selectedDeliverable.deliverableType ? selectedDeliverable.deliverableType.replace('_', ' ') : 'N/A'}
+                </Text>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <Text strong>Status: </Text>
+                <Tag color={selectedDeliverable.status === 'approved' ? 'success' : selectedDeliverable.status === 'revisions' ? 'error' : (selectedDeliverable.status === 'in_review' || selectedDeliverable.status === 'backlog') ? 'warning' : 'default'}>
+                  {selectedDeliverable.status === 'backlog' ? 'pending' : (selectedDeliverable.status || 'Pending')}
+                </Tag>
+              </div>
+              {selectedDeliverable.status === 'revisions' && selectedDeliverable.approvalHistory && selectedDeliverable.approvalHistory.some(h => h.action === 'revision_requested') && (
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong style={{ color: 'var(--accent-danger)' }}>Rejection Reason: </Text>
+                  <Text style={{ color: 'var(--accent-danger)' }}>
+                    {selectedDeliverable.approvalHistory.filter(h => h.action === 'revision_requested').pop().remarks || 'No reason provided.'}
+                  </Text>
+                </div>
+              )}
+              {selectedDeliverable.description && (
+                <div style={{ marginBottom: 16 }}>
+                  <Text strong>Description: </Text>
+                  <p style={{ wordBreak: 'break-word', whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
+                    {selectedDeliverable.assetUrl && selectedDeliverable.description.includes(selectedDeliverable.assetUrl)
+                      ? selectedDeliverable.description.replace(selectedDeliverable.assetUrl, '(Asset Attached)')
+                      : selectedDeliverable.description}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </Modal>
