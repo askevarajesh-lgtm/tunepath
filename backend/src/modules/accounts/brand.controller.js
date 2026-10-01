@@ -57,13 +57,32 @@ exports.getBrands = async (req, res, next) => {
       }
     }
 
+    if (req.query.clientId && req.query.clientId !== 'all') {
+      filter._id = req.query.clientId;
+    }
+
     if (req.query.search) {
       const searchRegex = new RegExp(req.query.search, 'i');
-      filter.$or = [
-        { name: searchRegex },
-        { companyName: searchRegex },
-        { email: searchRegex }
-      ];
+      if (filter.$or) {
+        const existingOr = filter.$or;
+        delete filter.$or;
+        filter.$and = [
+          { $or: existingOr },
+          {
+            $or: [
+              { name: searchRegex },
+              { companyName: searchRegex },
+              { email: searchRegex }
+            ]
+          }
+        ];
+      } else {
+        filter.$or = [
+          { name: searchRegex },
+          { companyName: searchRegex },
+          { email: searchRegex }
+        ];
+      }
     }
 
     let totalBrands = 0;

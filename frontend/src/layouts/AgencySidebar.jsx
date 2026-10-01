@@ -41,20 +41,33 @@ const AgencySidebar = ({ collapsed, setCollapsed }) => {
 
   const [slaCount, setSlaCount] = React.useState(0);
 
-  React.useEffect(() => {
-    const fetchSlaCount = async () => {
-      try {
-        const res = await slaApi.getSlaDashboardStats();
-        if (res && res.data && res.data.stats) {
-          const { total, resolved } = res.data.stats;
-          setSlaCount(total - resolved);
-        }
-      } catch (error) {
-        console.error('Failed to fetch SLA stats for sidebar', error);
+  const fetchSlaCount = React.useCallback(async () => {
+    try {
+      const clientId = selectedClient?._id;
+      const res = await slaApi.getSlaDashboardStats({ clientId });
+      if (res && res.data && res.data.stats) {
+        const { total, resolved } = res.data.stats;
+        setSlaCount(Math.max(0, total - resolved));
+      } else {
+        setSlaCount(0);
       }
-    };
+    } catch (error) {
+      console.error('Failed to fetch SLA stats for sidebar', error);
+      setSlaCount(0);
+    }
+  }, [selectedClient]);
+
+  React.useEffect(() => {
     fetchSlaCount();
-  }, []);
+  }, [fetchSlaCount]);
+
+  React.useEffect(() => {
+    const handleClientSwitched = () => {
+      fetchSlaCount();
+    };
+    window.addEventListener('client-switched', handleClientSwitched);
+    return () => window.removeEventListener('client-switched', handleClientSwitched);
+  }, [fetchSlaCount]);
 
   const getInitials = (name) => {
     if (!name) return 'U';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Typography, Input, Button, Tag, Row, Col, Drawer, Tabs, Progress, Switch, Select, message, Modal, Form, Checkbox, Table, Dropdown, Menu, Popconfirm, Tooltip, Card, Radio } from 'antd';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -137,7 +137,7 @@ const ClientsTab = () => {
     }
   };
 
-  const fetchClients = async (page = 1, limit = 10, search = '') => {
+  const fetchClients = async (page = currentPage, limit = pageSize, search = searchQuery, clientId = globalSelectedClient?._id) => {
     try {
       setLoading(true);
       const headers = { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
@@ -145,7 +145,8 @@ const ClientsTab = () => {
       const queryParams = new URLSearchParams({
         page,
         limit,
-        ...(search ? { search } : {})
+        ...(search ? { search } : {}),
+        ...(clientId ? { clientId } : {})
       }).toString();
 
       const [brandsRes, mosRes] = await Promise.all([
@@ -190,9 +191,20 @@ const ClientsTab = () => {
   };
 
   useEffect(() => {
-    // Only fetch on mount or when dependencies change
-    fetchClients(currentPage, pageSize, searchQuery);
-  }, [currentPage, pageSize]); // Add dependencies as needed
+    fetchClients(currentPage, pageSize, searchQuery, globalSelectedClient?._id);
+  }, [currentPage, pageSize, globalSelectedClient]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [globalSelectedClient]);
+
+  useEffect(() => {
+    const handleClientSwitched = () => {
+      setCurrentPage(1);
+    };
+    window.addEventListener('client-switched', handleClientSwitched);
+    return () => window.removeEventListener('client-switched', handleClientSwitched);
+  }, []);
 
   useEffect(() => {
     fetchPackages();
@@ -434,15 +446,7 @@ const ClientsTab = () => {
     </div>
   );
 
-  // Frontend filtering is now only for globalSelectedClient if needed, 
-  // search is handled by the backend.
-  const filteredClients = useMemo(() => {
-    let clientsToFilter = dbClients;
-    if (globalSelectedClient) {
-      clientsToFilter = dbClients.filter(c => c._id === globalSelectedClient._id);
-    }
-    return clientsToFilter;
-  }, [dbClients, globalSelectedClient]);
+  const filteredClients = dbClients;
 
   const hasAccountsPerm = (action) => {
     if (['supreme_super_admin', 'commander_admin', 'agency_super_admin', 'agency_manager'].includes(user?.role)) return true;
@@ -456,9 +460,11 @@ const ClientsTab = () => {
 
       <motion.div variants={itemVariants} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 32, flexWrap: 'wrap', gap: 16 }}>
         <div>
-          <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>All Clients</Title>
+          <Title level={2} style={{ margin: '0 0 8px 0', fontWeight: 800 }}>
+            {globalSelectedClient ? (globalSelectedClient.name || globalSelectedClient.companyName) : 'All Clients'}
+          </Title>
           <Text type="secondary" style={{ fontSize: 15, fontWeight: 500 }}>
-            {totalClients} total active clients in your agency
+            {totalClients} {totalClients === 1 ? 'active client' : 'total active clients'} in your agency
           </Text>
         </div>
         <div style={{ display: 'flex', gap: 12 }}>
@@ -486,13 +492,13 @@ const ClientsTab = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
             onPressEnter={() => {
               setCurrentPage(1);
-              fetchClients(1, pageSize, searchQuery);
+              fetchClients(1, pageSize, searchQuery, globalSelectedClient?._id);
             }}
             allowClear
             onClear={() => {
               setSearchQuery('');
               setCurrentPage(1);
-              fetchClients(1, pageSize, '');
+              fetchClients(1, pageSize, '', globalSelectedClient?._id);
             }}
             style={{
               maxWidth: 400,
