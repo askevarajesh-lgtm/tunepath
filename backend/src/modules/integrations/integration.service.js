@@ -12,18 +12,23 @@ const {
 const leadService = require("../leads/lead.service");
 const Lead = require("../leads/lead.model");
 const ClientCompany = User;
-const {
-  getEffectivePackageIntegrations,
+const { getEffectivePackageIntegrations,
   getEffectivePackageForUser,
   resolveCompanyUser,
 } = require("../packages/packageAccess.service");
-const { isSupportedProductIntegration } = require("../../utils/supportedIntegrations");
+const { isSupportedProductIntegration, isInternalProvider } = require("../../utils/supportedIntegrations");
+const { isIntegrationGloballyEnabled } = require("../../utils/integrationAccess");
 
 const assertIntegrationEnabledForCompany = async (
   companyId,
   integrationType,
 ) => {
   if (!companyId || !integrationType) return;
+
+  const isGloballyEnabled = await isIntegrationGloballyEnabled(integrationType);
+  if (!isGloballyEnabled) {
+    throw new Error(`${integrationType.toUpperCase()} integration is currently disabled platform-wide by Super Admin.`);
+  }
 
   const company = await Company.findById(companyId)
     .select("name integrations")
@@ -279,11 +284,24 @@ const getAllIntegrations = async (companyId, role, user) => {
     isSupportedProductIntegration(integration.type)
   );
 
+  // For platform admins, allow them to see internal providers configured globally
+  const allPlatformIntegrations = integrations.filter(integration => 
+    isSupportedProductIntegration(integration.type) || 
+    (integration.companyId === null && ["super_admin", "supreme_super_admin", "commander_admin"].includes(role))
+  );
+
+  // Map globallyDisabled state so frontend knows it's disabled by Super Admin
+  const platformIntegrations = await Integration.find({ companyId: null }).lean();
+  const globalStateMap = {};
+  platformIntegrations.forEach(pi => {
+    globalStateMap[pi.type] = pi.isGloballyEnabled !== false;
+  });
+
   if (["super_admin", "supreme_super_admin", "commander_admin"].includes(role)) {
     // Platform admins configure integrations/packages themselves -- never
     // restricted by either the company-level gate below or Package-level
     // entitlement (Layer 2, applied further down for consuming users only).
-    return productIntegrations;
+    return { integrations: allPlatformIntegrations, globalStateMap };
   }
 
   const targetLookupId = companyId || user?.brandId || user?.agencyId;
@@ -291,7 +309,7 @@ const getAllIntegrations = async (companyId, role, user) => {
     .select("name integrations")
     .lean() : null;
   if (!company && targetLookupId) {
-    return [];
+    return { integrations: [], globalStateMap };
   }
   const allowed = await resolveCompanyIntegrations(company || user);
   const companyFiltered = productIntegrations.filter((integration) => {
@@ -313,7 +331,7 @@ const getAllIntegrations = async (companyId, role, user) => {
   const isAgencyRole = ['agency', 'agency_manager', 'agency_super_admin'].includes(role) ||
     (companyUser && ['agency', 'agency_manager', 'agency_super_admin'].includes(companyUser.role));
 
-  return companyFiltered.filter((integration) => {
+  const finalFiltered = companyFiltered.filter((integration) => {
     if (disabled.includes(integration.type)) {
       return false;
     }
@@ -330,6 +348,8 @@ const getAllIntegrations = async (companyId, role, user) => {
       (user?.integrations && user.integrations.includes(integration.type))
     );
   });
+
+  return { integrations: finalFiltered, globalStateMap };
 };
 
 const getPaymentIntegration = async (companyId) => {
@@ -355,9 +375,14 @@ const INTEGRATION_DEFAULT_NAMES = {
 };
 
 const createIntegration = async (integrationData, companyId, role, user) => {
-  // Reject unsupported PRODUCT integration types
+  // Reject unsupported PRODUCT integration types, unless platform admin configuring internal provider
+  const isInternal = isInternalProvider(integrationData.type);
+  const isPlatformAdmin = ["super_admin", "supreme_super_admin", "commander_admin"].includes(role);
+  
   if (!isSupportedProductIntegration(integrationData.type)) {
-    throw new Error(`Unsupported integration type: ${integrationData.type}`);
+    if (!(isPlatformAdmin && integrationData.companyId === null && isInternal)) {
+      throw new Error(`Unsupported integration type: ${integrationData.type}`);
+    }
   }
 
   // Only super admin can create platform-level integrations
@@ -386,6 +411,25 @@ const createIntegration = async (integrationData, companyId, role, user) => {
       ? integrationData.type.charAt(0).toUpperCase() + integrationData.type.slice(1) + " Integration"
       : "Unnamed Integration"
   );
+
+  // Prevent duplicate platform-level integrations for ANY type
+  if (finalCompanyId === null && !integrationData.clientId && !integrationData.ownerId) {
+    const existingPlatformRecord = await Integration.findOne({ 
+      type: integrationData.type, 
+      companyId: null, 
+      clientId: null, 
+      ownerId: null 
+    });
+    
+    if (existingPlatformRecord) {
+      Object.assign(existingPlatformRecord, { name: existingPlatformRecord.name || name, ...integrationData, companyId: null });
+      if (integrationData.config !== undefined) {
+        existingPlatformRecord.markModified('config');
+      }
+      await existingPlatformRecord.save();
+      return existingPlatformRecord;
+    }
+  }
 
   // Prevent duplicate payment integrations - upsert if one already exists
   if (integrationData.type === 'payment') {
@@ -454,8 +498,11 @@ const updateIntegration = async (
   }
 
   // Reject modifications to non-product integrations through the generic API
+  const isInternal = isInternalProvider(integration.type);
   if (!isSupportedProductIntegration(integration.type)) {
-    throw new Error(`Cannot modify internal provider via product integration API: ${integration.type}`);
+    if (!(isPlatformAdmin && (integration.companyId === null || integration.companyId === undefined) && isInternal)) {
+      throw new Error(`Cannot modify internal provider via product integration API: ${integration.type}`);
+    }
   }
 
   // If the target integration is a global platform-level template (companyId === null)

@@ -2,6 +2,7 @@ const Integration = require('./integration.model');
 const axios = require('axios');
 const mongoose = require('mongoose');
 const jwt = require('jsonwebtoken');
+const { isIntegrationGloballyEnabled } = require('../../utils/integrationAccess');
 
 const META_APP_ID = process.env.META_APP_ID || 'dummy_app_id';
 const META_APP_SECRET = process.env.META_SECRET || process.env.META_APP_SECRET || 'dummy_app_secret';
@@ -25,6 +26,11 @@ const getClientContext = (req) => {
 
 exports.generateAuthUrl = async (req, res, next) => {
   try {
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('facebook_leads');
+    if (!isGloballyEnabled) {
+      return res.status(403).json({ success: false, message: 'Facebook Leads integration is currently disabled platform-wide by Super Admin.' });
+    }
+
     const { token, redirectPath, clientId: queryClientId } = req.query;
     if (!token) {
       return res.status(400).json({ success: false, message: 'Missing token in query parameters' });
@@ -64,6 +70,11 @@ exports.generateAuthUrl = async (req, res, next) => {
 exports.handleCallback = async (req, res, next) => {
   let redirectPath = '/settings/integrations/website';
   try {
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('facebook_leads');
+    if (!isGloballyEnabled) {
+      return res.redirect(`${FRONTEND_URL}${redirectPath}?facebook_oauth=error&reason=DisabledBySuperAdmin`);
+    }
+
     const { code, state } = req.query;
     
     if (!code || !state) {
@@ -222,6 +233,11 @@ exports.handleCallback = async (req, res, next) => {
 
 exports.getIntegrations = async (req, res, next) => {
   try {
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('facebook_leads');
+    if (!isGloballyEnabled) {
+      return res.status(200).json({ success: true, data: { isConnected: false, integrations: [] } });
+    }
+
     const { companyId, clientId } = getClientContext(req);
     const query = { companyId, clientId: clientId || null, type: 'facebook_leads', isActive: true };
     
@@ -517,6 +533,11 @@ exports.getLogs = async (req, res, next) => {
 
 exports.syncLeads = async (req, res, next) => {
   try {
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('facebook_leads');
+    if (!isGloballyEnabled) {
+      return res.status(403).json({ success: false, message: 'Facebook Leads integration is currently disabled platform-wide by Super Admin.' });
+    }
+
     const { companyId, clientId } = getClientContext(req);
     const { pageId, formIds } = req.body;
     

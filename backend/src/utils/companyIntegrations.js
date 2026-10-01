@@ -36,12 +36,30 @@ const resolveCompanyIntegrations = async (companyOrId) => {
 
   const allowedMap = {};
   
+  // Fetch platform-level integration settings to check global switches
+  const platformIntegrations = await Integration.find({ companyId: null }).lean();
+  const platformConfigMap = {};
+  platformIntegrations.forEach(pi => {
+    platformConfigMap[pi.type] = pi;
+  });
+
   // By default, all supported product integrations are structurally available.
   // The actual permission gating (Package Entitlements, disabled overrides)
   // is handled by Layer 2 (integrationAccess.js / packageAccess.service.js).
-  const { SUPPORTED_INTEGRATIONS } = require('./supportedIntegrations');
-  SUPPORTED_INTEGRATIONS.forEach(type => {
-    allowedMap[type] = true;
+  // Now we respect the global master switch first.
+  const { SUPPORTED_INTEGRATIONS, INTERNAL_PROVIDERS } = require('./supportedIntegrations');
+  const allIntegrations = [...SUPPORTED_INTEGRATIONS, ...INTERNAL_PROVIDERS];
+  
+  allIntegrations.forEach(type => {
+    const platformConfig = platformConfigMap[type];
+    if (platformConfig) {
+      // If the platform-level document exists, use its isGloballyEnabled value
+      // (Fallback to true if isGloballyEnabled is undefined/missing on old documents)
+      allowedMap[type] = platformConfig.isGloballyEnabled !== false;
+    } else {
+      // If no platform-level document exists, treat it as globally enabled by default
+      allowedMap[type] = true;
+    }
   });
 
   return allowedMap;

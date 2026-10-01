@@ -447,7 +447,7 @@ const Reports = () => {
                 <Tag color="success" style={{ borderRadius: 12, margin: 0, fontWeight: 600, border: 'none', background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>Live</Tag>
               </div>
               <Text type="secondary" style={{ fontWeight: 600, fontSize: 13, letterSpacing: 0.5, textTransform: 'uppercase' }}>Delivery Success Rate</Text>
-              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{deliveryRate}%</Title>
+              <Title level={1} style={{ margin: '4px 0 0 0', fontWeight: 800, color: 'var(--text-primary)', fontSize: 32 }}>{deliveryRate}</Title>
             </Card>
           </Col>
           <Col xs={24} sm={12} lg={6}>

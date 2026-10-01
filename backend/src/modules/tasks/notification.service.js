@@ -129,6 +129,7 @@ const CompanyNotificationSettings = require("./companyNotificationSettings.model
 const User = require("../auth/user.model");
 const Integration = require("../integrations/integration.model");
 const twilioService = require("../../utils/twilio.service");
+const { isIntegrationGloballyEnabled } = require('../../utils/integrationAccess');
 
 /**
  * Dispatch system notification
@@ -174,11 +175,12 @@ const dispatchSystemNotification = async (companyId, triggerKey, type, title, me
 
     // Send SMS via Twilio
     if (triggerSettings.sms) {
-      const smsIntegration = await Integration.findOne({
+      const isSmsGloballyEnabled = await isIntegrationGloballyEnabled('sms');
+      const smsIntegration = isSmsGloballyEnabled ? await Integration.findOne({
         companyId,
         type: "sms",
         isActive: true,
-      });
+      }) : null;
 
       if (smsIntegration && smsIntegration.config && smsIntegration.config.accountSid) {
         const { accountSid, authToken, phoneNumber: fromNumber } = smsIntegration.config;

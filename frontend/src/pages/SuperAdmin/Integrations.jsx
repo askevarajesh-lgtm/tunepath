@@ -34,15 +34,7 @@ const ALL_INTEGRATIONS = [
     bg: '#FF6B6B',
     color: '#fff'
   },
-  {
-    type: 'ivr',
-    name: 'IVR Integration',
-    category: 'Communication',
-    description: 'Cloud telephony and IVR services setup for voice calls',
-    icon: <Phone size={24} />,
-    bg: '#F39C12',
-    color: '#fff'
-  },
+
   {
     type: 'website',
     name: 'Lead Management Integration',
@@ -126,20 +118,21 @@ const Integrations = () => {
       let payload = { 
         type: integrationObj.type, 
         name: integrationObj.name, 
-        isActive: !currentStatus 
+        isGloballyEnabled: !currentStatus,
+        companyId: null
       };
 
       if (integrationObj._id && !integrationObj._id.startsWith('dummy')) {
         url = `/integrations/${integrationObj._id}`;
         method = 'put';
-        payload = { isActive: !currentStatus };
+        payload = { isGloballyEnabled: !currentStatus, companyId: null };
       }
 
       await api[method](url, payload);
-      message.success(`Integration ${!currentStatus ? 'enabled' : 'disabled'}`);
+      message.success(`Integration ${!currentStatus ? 'enabled globally' : 'disabled globally'}`);
       fetchIntegrations();
     } catch (error) {
-      message.error('Failed to update integration status');
+      message.error('Failed to update integration global status');
     }
   };
 
@@ -150,7 +143,7 @@ const Integrations = () => {
       ...defaultInt,
       ...dbInt, // overwrite defaults if it exists in db
       _id: dbInt?._id || `dummy-${defaultInt.type}`,
-      isActive: dbInt ? (dbInt.isActive || dbInt.status) : false,
+      isGloballyEnabled: dbInt ? (dbInt.isGloballyEnabled !== false) : true,
       name: dbInt?.name || defaultInt.name,
       category: defaultInt.category, // always use default category
       description: dbInt?.description || defaultInt.description,
@@ -233,14 +226,14 @@ const Integrations = () => {
                             <Text style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)', display: 'block', marginBottom: 4 }}>
                               {integration.name}
                             </Text>
-                            <Tag color={integration.isActive ? 'green' : 'default'} style={{ borderRadius: 12 }}>
-                              {integration.isActive ? 'Connected' : 'Disconnected'}
+                            <Tag color={integration.isGloballyEnabled ? 'green' : 'default'} style={{ borderRadius: 12 }}>
+                              {integration.isGloballyEnabled ? 'Globally Enabled' : 'Globally Disabled'}
                             </Tag>
                           </div>
                         </div>
                         <Switch 
-                          checked={integration.isActive} 
-                          onChange={() => handleToggleStatus(integration, integration.isActive)}
+                          checked={integration.isGloballyEnabled} 
+                          onChange={() => handleToggleStatus(integration, integration.isGloballyEnabled)}
                         />
                       </div>
                       

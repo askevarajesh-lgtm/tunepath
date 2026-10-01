@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const axios = require('axios');
 const Integration = require('./integration.model');
 const Lead = require('../leads/lead.model');
+const { isIntegrationGloballyEnabled } = require('../../utils/integrationAccess');
 
 /**
  * Lead Sync Scheduler
@@ -226,6 +227,9 @@ const syncFacebookIntegrationLeads = async (integration) => {
 
 const runLeadSyncJob = async () => {
   try {
+    const globallyEnabled = await isIntegrationGloballyEnabled('facebook_leads');
+    if (!globallyEnabled) return;
+
     const activeIntegrations = await Integration.find({
       type: 'facebook_leads',
       isActive: true

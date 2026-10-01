@@ -1,6 +1,7 @@
 const Integration = require('./integration.model');
 const axios = require('axios');
 const mongoose = require('mongoose');
+const { isIntegrationGloballyEnabled } = require('../../utils/integrationAccess');
 
 const META_APP_ID = process.env.META_APP_ID || 'dummy_app_id';
 const META_APP_SECRET = process.env.META_SECRET || process.env.META_APP_SECRET || 'dummy_app_secret';
@@ -16,6 +17,11 @@ const getAgencyId = (req) => {
 
 exports.generateAuthUrl = async (req, res, next) => {
   try {
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('meta_ads');
+    if (!isGloballyEnabled) {
+      return res.status(403).json({ success: false, message: 'Meta Ads integration is currently disabled platform-wide by Super Admin.' });
+    }
+
     const agencyId = getAgencyId(req);
     if (!agencyId) {
       return res.status(400).json({ success: false, message: 'Agency ID missing from user token' });
@@ -94,6 +100,11 @@ exports.handleCallback = async (req, res, next) => {
     });
     const userId = meRes.data.id;
 
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('meta_ads');
+    if (!isGloballyEnabled) {
+      throw new Error('Meta Ads integration is currently disabled platform-wide by Super Admin.');
+    }
+
     // 4. Save to Database
     await Integration.findOneAndUpdate(
       { companyId: agencyId, type: 'meta_ads' },
@@ -132,6 +143,10 @@ exports.handleCallback = async (req, res, next) => {
 
 exports.getAdAccounts = async (req, res, next) => {
   try {
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('meta_ads');
+    if (!isGloballyEnabled) {
+      return res.status(403).json({ success: false, message: 'Meta Ads integration is currently disabled platform-wide by Super Admin.' });
+    }
     const agencyId = getAgencyId(req);
     const integration = await Integration.findOne({ companyId: agencyId, type: 'meta_ads', isActive: true });
     
@@ -251,6 +266,10 @@ exports.saveSelectedAdAccounts = async (req, res, next) => {
 
 exports.createCampaign = async (req, res, next) => {
   try {
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('meta_ads');
+    if (!isGloballyEnabled) {
+      return res.status(403).json({ success: false, message: 'Meta Ads integration is currently disabled platform-wide by Super Admin.' });
+    }
     const agencyId = getAgencyId(req);
     const integration = await Integration.findOne({ companyId: agencyId, type: 'meta_ads', isActive: true });
     
@@ -366,6 +385,10 @@ exports.disconnectMeta = async (req, res, next) => {
 
 exports.getMetaIntegrationStatus = async (req, res, next) => {
   try {
+    const isGloballyEnabled = await isIntegrationGloballyEnabled('meta_ads');
+    if (!isGloballyEnabled) {
+      return res.status(200).json({ success: true, isConnected: false });
+    }
     const agencyId = getAgencyId(req);
     const integration = await Integration.findOne({ companyId: agencyId, type: 'meta_ads', isActive: true });
     
