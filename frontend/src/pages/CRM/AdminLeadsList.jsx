@@ -238,6 +238,13 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
   const allUsers = usersData?.data?.users || usersData?.data?.data || (Array.isArray(usersData?.data) ? usersData.data : []);
   const departments = departmentsData?.data || [];
 
+  const assignableUsers = useMemo(() => {
+    if (allUsers && allUsers.length > 0) {
+      return allUsers;
+    }
+    return user ? [{ _id: user._id || user.id, name: user.name || user.username }] : [];
+  }, [allUsers, user]);
+
   const allDepartmentNames = useMemo(() => {
     if (!isAgencyClient) return [];
     const set = new Set();
@@ -404,7 +411,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
               <Button type="text" icon={<EyeOutlined />} style={{ color: 'var(--accent-info)' }} onClick={() => handleOpenViewModal(record)} />
             </Tooltip>
           )}
-          {isAgencyClient && !isRegularUser && canEdit && (
+          {isAgencyClient && canEdit && (
             <Tooltip title="Assign Department">
               <Button 
                 type="text" 
@@ -438,7 +445,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
     if (searchQuery && searchQuery.trim()) params.search = searchQuery.trim();
     if (statusFilter && statusFilter.length > 0) params.status = statusFilter[0]; // Supports single status on server for now
     if (departmentFilter && departmentFilter.length > 0) params.department = departmentFilter[0];
-    if (formNameFilter && formNameFilter.length > 0) params.formName = formNameFilter[0];
+    if (formNameFilter && formNameFilter.length > 0) params.formName = formNameFilter.join(',');
     if (dateRangeFilter && dateRangeFilter.length === 2) {
       params.startDate = dateRangeFilter[0].toISOString();
       params.endDate = dateRangeFilter[1].toISOString();
@@ -466,7 +473,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
       email: record.email,
       source: record.source,
       status: record.status?.toUpperCase(),
-      assignedTo: record.assignedTo || (isRegularUser ? (user?.name || user?.username) : undefined),
+      assignedTo: record.assignedTo || undefined,
       notes: record.notes
     });
     setIsModalOpen(true);
@@ -514,7 +521,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
           countryCode: leadCountryCode,
           status: statusValue
         };
-        if (isRegularUser) {
+        if (!payload.assignedTo && isRegularUser) {
           payload.assignedTo = user?.name || user?.username || '';
         }
         if (editingLead) {
@@ -553,7 +560,7 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
         payload.endDate = dateRangeFilter[1].toISOString();
       }
       if (formNameFilter && formNameFilter.length > 0) {
-        payload.formName = formNameFilter[0];
+        payload.formName = formNameFilter.join(',');
       }
 
       const idsToExport = Array.isArray(customIds) && customIds.length > 0 ? customIds : null;
@@ -969,20 +976,21 @@ const AdminLeadsList = ({ leads = [], isLoading = false, refetch }) => {
             </Col>
             <Col span={12}>
               <Form.Item name="assignedTo" label={<CustomLabel text="Assigned To" />}>
-                {isRegularUser ? (
-                  <Input 
-                    size="large" 
-                    disabled 
-                    placeholder={user?.name || user?.username || "Assigned to You"} 
-                    style={{ borderRadius: 6 }} 
-                  />
-                ) : (
-                  <Select size="large" placeholder="Select User" allowClear loading={isLoadingUsers} showSearch>
-                    {allUsers.map(u => (
-                      <Option key={u._id} value={u.name || u.username}>{u.name || u.username}</Option>
-                    ))}
-                  </Select>
-                )}
+                <Select 
+                  size="large" 
+                  placeholder="Select User" 
+                  allowClear 
+                  loading={isLoadingUsers} 
+                  showSearch
+                  optionFilterProp="children"
+                  style={{ borderRadius: 6 }}
+                >
+                  {assignableUsers.map(u => (
+                    <Option key={u._id} value={u.name || u.username}>
+                      {u.name || u.username} {u.departmentName || u.departmentId?.name ? `(${u.departmentName || u.departmentId?.name})` : ''}
+                    </Option>
+                  ))}
+                </Select>
               </Form.Item>
             </Col>
           </Row>

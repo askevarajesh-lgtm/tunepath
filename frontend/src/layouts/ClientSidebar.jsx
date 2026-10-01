@@ -47,6 +47,7 @@ import { useFeatures } from '../contexts/FeatureContext';
 import PortalSidebar from './PortalSidebar';
 import { sidebarApi } from '../api/sidebarApi';
 import { slaApi } from '../api/slaApi';
+import { isAgencyClientUser } from '../utils/userPanelHelper';
 
 const ClientSidebar = ({ collapsed, setCollapsed }) => {
   const navigate = useNavigate();
@@ -147,7 +148,7 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
     },
   ];
 
-  const isDirectBrand = role === 'brand_super_admin' || role === 'brand_manager' || (user?.isDirect === true) || (user?.brandId && user?.brandId?.isDirect === true);
+  const isDirectBrand = !isAgencyClientUser(user, role) && (role === 'brand_super_admin' || role === 'brand_manager' || (user?.isDirect === true) || (user?.brandId && user?.brandId?.isDirect === true));
   const isAgencyClientFlow = !isDirectBrand;
 
   const workspaceChildren = [];
@@ -241,7 +242,7 @@ const ClientSidebar = ({ collapsed, setCollapsed }) => {
   }
 
   const hrmsChildren = [];
-  if (hasFeature('hrms')) {
+  if (isDirectBrand && hasFeature('hrms')) {
     hrmsChildren.push({ key: '/client/hrms/staff', icon: getIcon(Users), label: 'Staff' });
     hrmsChildren.push({ key: '/client/hrms/attendance', icon: getIcon(ClipboardList), label: 'Attendance' });
     hrmsChildren.push({ key: '/client/hrms/performance', icon: getIcon(Activity), label: 'Performance' });

@@ -17,6 +17,7 @@ import { useClientContext } from '../contexts/ClientContext';
 import { useTheme } from '../contexts/ThemeContext';
 import api from '../services/api';
 import { getNotificationRoute } from '../utils/notificationRoute';
+import { isAgencyClientUser, isClientPanelUser, getDashboardRouteForUser } from '../utils/userPanelHelper';
 
 const { Header: AntHeader } = Layout;
 const { Text } = Typography;
@@ -87,7 +88,7 @@ const Header = ({ collapsed, setCollapsed }) => {
         if (['supreme_super_admin', 'superadmin'].includes(role)) return '/superadmin/settings';
         if (['commander_admin'].includes(role)) return '/settings/company';
         if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) return '/agency/settings';
-        if (['brand_super_admin', 'brand_manager', 'agency_client', 'brand_team_user', 'client'].includes(role) || (role === 'user' && user?.brandId)) return '/client/settings/company';
+        if (isClientPanelUser(user, role)) return '/client/settings/company';
         return '/user/settings';
     };
 
@@ -134,17 +135,7 @@ const Header = ({ collapsed, setCollapsed }) => {
             localStorage.removeItem('original_token');
             localStorage.removeItem('original_user');
 
-            if (parsedUser.role === 'supreme_super_admin') {
-                window.location.href = '/superadmin/dashboard';
-            } else if (parsedUser.role === 'commander_admin') {
-                window.location.href = '/dashboard';
-            } else if (['agency_super_admin', 'agency_manager', 'agency'].includes(parsedUser.role)) {
-                window.location.href = '/agency/overview';
-            } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(parsedUser.role)) {
-                window.location.href = '/client/dashboard';
-            } else {
-                window.location.href = '/user/dashboard';
-            }
+            window.location.href = getDashboardRouteForUser(parsedUser, parsedUser.role);
         }
     };
 
@@ -282,6 +273,7 @@ const Header = ({ collapsed, setCollapsed }) => {
     if (origUser) {
         if (origUser.role === 'commander_admin') revertPanelName = 'Commander Admin';
         else if (origUser.role === 'agency_manager' || origUser.role === 'agency') revertPanelName = 'Agency Manager';
+        else if (origUser.role === 'agency_client') revertPanelName = 'Agency Client';
         else if (origUser.role === 'brand_manager') revertPanelName = 'Brand Manager';
         else if (origUser.role === 'agency_super_admin') revertPanelName = 'Agency Admin';
         else if (origUser.role === 'brand_super_admin') revertPanelName = 'Brand Admin';

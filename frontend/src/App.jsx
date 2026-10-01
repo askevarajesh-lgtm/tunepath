@@ -152,6 +152,8 @@ import TransactionsPage from './pages/transactions/TransactionsPage';
 import SalesTrackingPageEnhanced from './pages/sales/SalesTrackingPageEnhanced';
 import SEOPanel from './pages/seo-panel/SEOPanel';
 
+import { isAgencyClientUser, isDirectBrandExecutive, isClientPanelUser, getDashboardRouteForUser } from './utils/userPanelHelper';
+
 function ScrollToTop() {
   const { pathname } = useLocation();
   useEffect(() => {
@@ -162,7 +164,7 @@ function ScrollToTop() {
 
 function OAuthRedirectHandler() {
   const { search } = useLocation();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
 
   if (!role) {
     return <Navigate to="/signin" replace />;
@@ -173,7 +175,7 @@ function OAuthRedirectHandler() {
     target = "/workspace/social";
   } else if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
     target = "/agency/social-media";
-  } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role)) {
+  } else if (isClientPanelUser(user, role)) {
     target = "/client/workspace/social";
   } else {
     target = "/user/workspace/social";
@@ -190,7 +192,7 @@ const ProtectedRoute = ({ allowedRoles }) => {
     return <Navigate to="/signin" replace />;
   }
 
-  const isClientUser = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(role);
+  const isClientUser = isClientPanelUser(user, role);
 
   if (allowedRoles && !allowedRoles.includes(role)) {
     if (isClientUser && (allowedRoles.includes('agency_client') || allowedRoles.includes('brand_team_user') || allowedRoles.includes('client') || allowedRoles.includes('brand_super_admin') || allowedRoles.includes('user'))) {
@@ -209,14 +211,14 @@ const ProtectedRoute = ({ allowedRoles }) => {
 };
 
 const SeoRedirect = () => {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const location = useLocation();
   const sub = location.pathname.replace(/^\/seo\/?/, '') || 'dashboard';
 
   if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
     return <Navigate to={`/agency/marketplace/seo/${sub}`} replace />;
   }
-  if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role)) {
+  if (isClientPanelUser(user, role)) {
     return <Navigate to={`/client/marketplace/seo/${sub}`} replace />;
   }
   if (['supreme_super_admin', 'superadmin', 'commander_admin'].includes(role)) {
@@ -232,23 +234,23 @@ const AgencySeoRedirect = () => {
 };
 
 const ReportsRedirect = () => {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
 
   if (['agency_super_admin', 'agency_manager', 'agency'].includes(role)) {
     return <Navigate to="/agency/reports" replace />;
   }
-  if (role === 'agency_client') {
+  if (isAgencyClientUser(user, role)) {
     return <Navigate to="/client/reports" replace />;
   }
-  if (['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user', 'client'].includes(role)) {
+  if (isDirectBrandExecutive(user, role)) {
     return <Navigate to="/client/dashboard" replace />;
   }
   return <Navigate to="/intelligence/reporting" replace />;
 };
 
 const ClientReportsRouteGuard = () => {
-  const { role } = useAuth();
-  if (['brand_super_admin', 'brand_manager', 'brand_admin', 'brand_team_user'].includes(role)) {
+  const { role, user } = useAuth();
+  if (isDirectBrandExecutive(user, role)) {
     return <Navigate to="/client/dashboard" replace />;
   }
   return <ClientReportsTab />;
@@ -256,8 +258,7 @@ const ClientReportsRouteGuard = () => {
 
 const UserLayoutRouteGuard = () => {
   const { role, user } = useAuth();
-  const isClientUser = ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(role);
-  if (isClientUser) {
+  if (isClientPanelUser(user, role)) {
     return <Navigate to="/client/dashboard" replace />;
   }
   return <UserLayout />;
@@ -275,14 +276,7 @@ const AppRoutes = () => {
       <Route path="/reports" element={<ReportsRedirect />} />
 
       <Route path="/signin" element={role ? (
-        <Navigate to={
-          ['supreme_super_admin', 'superadmin'].includes(role) ? '/superadmin/dashboard' :
-            role === 'commander_admin' ? '/dashboard' :
-              role === 'agency_super_admin' ? '/agency/admin-overview' :
-                ['agency_manager', 'agency'].includes(role) ? '/agency/overview' :
-                  (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(role)) ? '/client/dashboard' :
-                    '/user/dashboard'
-        } replace />
+        <Navigate to={getDashboardRouteForUser(user, role)} replace />
       ) : <SignIn />} />
       <Route path="/forgot-password" element={role ? <Navigate to="/dashboard" replace /> : <ForgotPassword />} />
 

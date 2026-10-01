@@ -280,15 +280,26 @@ const getLeads = async (companyId, currentUser, query = {}) => {
   if (query.department) {
     accessFilter.assignedDepartment = query.department;
   }
-  if (query.formName) {
-    const fnRegex = new RegExp(escapeRegex(query.formName), "i");
-    andConditions.push({
-      $or: [
-        { "customData.form_name": fnRegex },
-        { "customData.formName": fnRegex },
-        { formName: fnRegex }
-      ]
-    });
+  if (query.formName || query.formNames) {
+    const rawForms = query.formNames || query.formName;
+    const formArray = (Array.isArray(rawForms) 
+      ? rawForms 
+      : typeof rawForms === 'string' && rawForms.includes(',') 
+        ? rawForms.split(',').map(s => s.trim()).filter(Boolean)
+        : [rawForms]
+    ).filter(Boolean);
+
+    if (formArray.length > 0) {
+      const orConditions = formArray.flatMap(fn => {
+        const fnRegex = new RegExp(escapeRegex(fn), "i");
+        return [
+          { "customData.form_name": fnRegex },
+          { "customData.formName": fnRegex },
+          { formName: fnRegex }
+        ];
+      });
+      andConditions.push({ $or: orConditions });
+    }
   }
   if (query.startDate && query.endDate) {
     const start = new Date(query.startDate);
@@ -400,13 +411,12 @@ const createLead = async (leadData, companyId, userId, currentUser) => {
   let assignedDeptValue = String(assignedDepartment || "").trim();
   let assignedDeptIdValue = assignedDepartmentId || null;
 
-  // Regular users (not admin/manager) can ONLY create leads assigned to themselves and their own department
-  if (!isAdminOrManager) {
-    assignedToValue = String(currentUser?.name || currentUser?.email || "").trim();
-    assignedDeptValue = String(currentUser?.departmentName || "").trim();
-    assignedDeptIdValue = currentUser?.departmentId || null;
-  } else if (!assignedToValue && !isAgencyAdminOrManager) {
+  if (!assignedToValue && !isAgencyAdminOrManager) {
     assignedToValue = String(currentUser?.name || "").trim();
+  }
+  if (!assignedDeptValue && currentUser?.departmentName) {
+    assignedDeptValue = String(currentUser.departmentName || "").trim();
+    assignedDeptIdValue = currentUser.departmentId || null;
   }
 
   const isClientAdmin = ['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole);
@@ -483,17 +493,14 @@ const updateLead = async (leadId, updateData, companyId, currentUser) => {
   if (source !== undefined) lead.source = String(source || "").trim();
   if (status !== undefined) lead.status = status || lead.status;
   
-  // Only admins / managers can reassign leads to another person or department
-  if (isAdminOrManager) {
-    if (assignedTo !== undefined) {
-      lead.assignedTo = String(assignedTo || "").trim();
-    }
-    if (assignedDepartment !== undefined) {
-      lead.assignedDepartment = String(assignedDepartment || "").trim();
-    }
-    if (assignedDepartmentId !== undefined) {
-      lead.assignedDepartmentId = assignedDepartmentId ? (toObjectId(assignedDepartmentId) || assignedDepartmentId) : null;
-    }
+  if (assignedTo !== undefined) {
+    lead.assignedTo = String(assignedTo || "").trim();
+  }
+  if (assignedDepartment !== undefined) {
+    lead.assignedDepartment = String(assignedDepartment || "").trim();
+  }
+  if (assignedDepartmentId !== undefined) {
+    lead.assignedDepartmentId = assignedDepartmentId ? (toObjectId(assignedDepartmentId) || assignedDepartmentId) : null;
   }
 
   if (notes !== undefined) {
@@ -666,17 +673,26 @@ const getLeadsForExport = async (
     });
   }
 
-  if (query.formName) {
-    const fnFilter = query.formName.toLowerCase();
-    filteredLeads = filteredLeads.filter((lead) => {
-      const formName = (
-        lead?.customData?.form_name ||
-        lead?.customData?.formName ||
-        lead?.formName ||
-        ""
-      ).toLowerCase();
-      return formName.includes(fnFilter);
-    });
+  if (query.formName || query.formNames) {
+    const rawForms = query.formNames || query.formName;
+    const formArray = (Array.isArray(rawForms) 
+      ? rawForms 
+      : typeof rawForms === 'string' && rawForms.includes(',') 
+        ? rawForms.split(',').map(s => s.trim()).filter(Boolean)
+        : [rawForms]
+    ).map(f => String(f).toLowerCase()).filter(Boolean);
+
+    if (formArray.length > 0) {
+      filteredLeads = filteredLeads.filter((lead) => {
+        const formName = (
+          lead?.customData?.form_name ||
+          lead?.customData?.formName ||
+          lead?.formName ||
+          ""
+        ).toLowerCase();
+        return formArray.some(fn => formName.includes(fn));
+      });
+    }
   }
 
   return filteredLeads;
@@ -904,9 +920,7 @@ const importLeadsFromCsvBuffer = async (
 
 const assignLeads = async (leadIds, assignData, companyId, currentUser) => {
   await ensureCurrentUserData(currentUser);
-  if (!isFullAdminOrManager(currentUser)) {
-    throw new Error("You do not have permission to assign leads to another person or department");
-  }
+  const isAdminOrManager = isFullAdminOrManager(currentUser);
   if (!Array.isArray(leadIds) || leadIds.length === 0) {
     throw new Error("No lead IDs provided");
   }

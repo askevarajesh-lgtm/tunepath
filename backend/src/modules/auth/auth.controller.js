@@ -282,6 +282,7 @@ exports.signin = async (req, res, next) => {
         agencyName: user.agencyId ? (user.agencyId.companyName || user.agencyId.name) : null,
         brandId: user.brandId ? user.brandId._id : null,
         brandName: user.brandId ? (user.brandId.companyName || user.brandId.name) : null,
+        isDirect: user.isDirect ?? false,
         logo: effectiveLogo,
         logoDark: effectiveLogoDark,
         contactEmail: user.contactEmail,
@@ -761,6 +762,7 @@ exports.impersonate = async (req, res, next) => {
       industry: targetUser.industry,
       agencyId: targetUser.agencyId ? targetUser.agencyId._id : null,
       brandId: targetUser.brandId ? targetUser.brandId._id : null,
+      isDirect: targetUser.isDirect ?? false,
       workspaceId: targetUser.workspaceId || targetUser.agencyId || targetUser.brandId || targetUser._id,
       impersonatorId: req.user._id // keep track of who is actually logged in
     };

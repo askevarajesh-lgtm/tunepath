@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { getDashboardRouteForUser } from '../utils/userPanelHelper';
 
 const AuthContext = createContext();
 
@@ -63,17 +64,8 @@ export const AuthProvider = ({ children }) => {
     window.dispatchEvent(new Event('user-updated'));
     
     if (!skipNavigate) {
-      if (['supreme_super_admin', 'superadmin'].includes(user.role)) {
-        navigate('/superadmin/dashboard');
-      } else if (user.role === 'commander_admin') {
-        navigate('/dashboard');
-      } else if (['agency_super_admin', 'agency_manager', 'agency'].includes(user.role)) {
-        navigate('/agency/overview');
-      } else if (['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(user.role)) {
-        navigate('/client/dashboard');
-      } else {
-        navigate('/user/dashboard');
-      }
+      const targetRoute = getDashboardRouteForUser(user, user.role);
+      navigate(targetRoute);
     }
   };
 

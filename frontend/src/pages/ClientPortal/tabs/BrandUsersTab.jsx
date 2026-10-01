@@ -11,6 +11,7 @@ import PhoneInput from '../../../components/common/PhoneInput';
 import { isValidPhoneNumber } from 'libphonenumber-js';
 import { useAuth } from '../../../contexts/AuthContext';
 import api from '../../../services/api';
+import { getDashboardRouteForUser } from '../../../utils/userPanelHelper';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -185,11 +186,8 @@ const BrandUsersTab = ({ user }) => {
         localStorage.setItem('user', JSON.stringify(res.data.user));
 
         message.success(`Logged in as ${res.data.user.name}`);
-        const isClientPortalUser =
-          ['agency_client', 'brand_super_admin', 'brand_manager', 'brand_admin', 'client'].includes(res.data.user.role);
-        window.location.href = isClientPortalUser
-          ? '/client/dashboard'
-          : '/user/dashboard';
+        const targetDashboard = getDashboardRouteForUser(res.data.user, res.data.user.role);
+        window.location.href = targetDashboard;
       }
     } catch (error) {
       console.error(error);

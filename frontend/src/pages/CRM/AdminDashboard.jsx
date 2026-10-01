@@ -16,14 +16,14 @@ const AdminDashboard = ({ leads = [], stats = null, isLoading = false, onOpenRep
   const [timeframe, setTimeframe] = useState('All Time');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sourceFilter, setSourceFilter] = useState(null);
-  const [formNameFilter, setFormNameFilter] = useState(null);
+  const [formNameFilter, setFormNameFilter] = useState([]);
   const [ownerFilter, setOwnerFilter] = useState(null);
 
   const handleClearAll = () => {
     setTimeframe('All Time');
     setStatusFilter('All');
     setSourceFilter(null);
-    setFormNameFilter(null);
+    setFormNameFilter([]);
     setOwnerFilter(null);
   };
 
@@ -70,7 +70,10 @@ const AdminDashboard = ({ leads = [], stats = null, isLoading = false, onOpenRep
       }
       
       if (sourceFilter && l.source !== sourceFilter) return false;
-      if (formNameFilter && getFormName(l) !== formNameFilter) return false;
+      if (formNameFilter && formNameFilter.length > 0) {
+        const leadForm = getFormName(l);
+        if (!formNameFilter.includes(leadForm)) return false;
+      }
       
       if (ownerFilter) {
         if (ownerFilter === 'Unassigned') {
@@ -299,8 +302,18 @@ const AdminDashboard = ({ leads = [], stats = null, isLoading = false, onOpenRep
                 {sourceOptions.map(s => <Select.Option key={s} value={s}>{s}</Select.Option>)}
               </Select>
             </Col>
-            <Col style={{ flex: '1 1 160px' }}>
-              <Select allowClear showSearch value={formNameFilter} onChange={setFormNameFilter} placeholder="Form Name" style={{ width: '100%' }} size="large">
+            <Col style={{ flex: '1 1 200px' }}>
+              <Select 
+                mode="multiple"
+                allowClear 
+                showSearch 
+                maxTagCount="responsive"
+                value={formNameFilter} 
+                onChange={val => setFormNameFilter(val || [])} 
+                placeholder="Form Name" 
+                style={{ width: '100%' }} 
+                size="large"
+              >
                 {formNames.map(f => <Select.Option key={f} value={f}>{f}</Select.Option>)}
               </Select>
             </Col>
