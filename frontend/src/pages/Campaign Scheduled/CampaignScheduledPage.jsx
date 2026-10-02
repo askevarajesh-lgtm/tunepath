@@ -138,12 +138,12 @@ export default function CampaignScheduledPage() {
     try {
       setRefreshTrigger(prev => prev + 1);
       
-      const promises = [];
-      
-      // Always fetch accounts, status, meta on first load or activeClientId change
-      promises.push(campaignScheduledApi.getAccounts(activeClientId));
-      promises.push(campaignScheduledApi.getSchedulerStatus(activeClientId));
-      promises.push(campaignScheduledApi.getMetaStatus(activeClientId));
+      const promises = [
+        campaignScheduledApi.getAccounts(activeClientId),
+        campaignScheduledApi.getSchedulerStatus(activeClientId),
+        campaignScheduledApi.getMetaStatus(activeClientId),
+        campaignScheduledApi.getPosts(activeClientId),
+      ];
 
       // Fetch Analytics if on dashboard or campaigns
       if (activeTab === "dashboard" || activeTab === "campaigns") {
@@ -152,29 +152,18 @@ export default function CampaignScheduledPage() {
         promises.push(Promise.resolve(analytics));
       }
 
-      // Fetch Posts if on list, calendar, or campaigns. If already fetched and not forcing refetch, skip.
-      if (activeTab === "list" || activeTab === "calendar" || activeTab === "campaigns" || forceRefetch) {
-        promises.push(campaignScheduledApi.getPosts(activeClientId));
-      } else {
-        promises.push(Promise.resolve(posts));
-      }
-
-      const [accountsData, statusData, metaData, analyticsData, postsData] = await Promise.all(promises);
+      const [accountsData, statusData, metaData, postsData, analyticsData] = await Promise.all(promises);
       
-      setAccounts(accountsData);
+      setAccounts(accountsData || []);
       setSchedulerStatus(statusData);
-      setMetaConfigured(Boolean(metaData.configured));
-      setLinkedInConfigured(Boolean(metaData.linkedInConfigured));
-      setYoutubeConfigured(Boolean(metaData.youtubeConfigured));
-      setPinterestConfigured(Boolean(metaData.pinterestConfigured));
+      setMetaConfigured(Boolean(metaData?.configured));
+      setLinkedInConfigured(Boolean(metaData?.linkedInConfigured));
+      setYoutubeConfigured(Boolean(metaData?.youtubeConfigured));
+      setPinterestConfigured(Boolean(metaData?.pinterestConfigured));
+      setPosts(postsData || []);
+      setHasFetchedPosts(true);
       
       if (analyticsData !== null) setAnalytics(analyticsData);
-      
-      // Only update posts if we actually fetched new ones
-      if (activeTab === "list" || activeTab === "calendar" || activeTab === "campaigns" || forceRefetch) {
-         setPosts(postsData);
-         setHasFetchedPosts(true);
-      }
     } catch (err) {
       const nextErrorMessage = err?.message || "Failed to load scheduler data";
       if (nextErrorMessage !== lastLoadErrorMessageRef.current) {
@@ -303,7 +292,7 @@ export default function CampaignScheduledPage() {
   useEffect(() => {
     if (activeTab === "dashboard" && !analytics) {
       loadInitial();
-    } else if ((activeTab === "list" || activeTab === "calendar" || activeTab === "campaigns") && !hasFetchedPosts) {
+    } else if ((activeTab === "planner" || activeTab === "list" || activeTab === "calendar" || activeTab === "campaigns") && !hasFetchedPosts) {
       loadInitial();
     }
   }, [activeTab]);
@@ -554,6 +543,7 @@ export default function CampaignScheduledPage() {
         onDelete={handleDeletePost}
         canEdit={canEdit}
         canDelete={canDelete}
+        loading={isRefreshing}
       />
     );
   };

@@ -2,6 +2,34 @@ const Proposal = require('./proposal.model');
 const Invoice = require('../invoices/invoice.model');
 const MasterItem = require('../masterItems/masterItem.model');
 
+const syncProposalStatus = async (proposals) => {
+  if (!proposals) return;
+  const list = Array.isArray(proposals) ? proposals : [proposals];
+  if (list.length === 0) return;
+
+  const proposalIds = list.map(p => p._id).filter(Boolean);
+  if (proposalIds.length === 0) return;
+
+  const activeInvoices = await Invoice.find({ proposalId: { $in: proposalIds }, isDeleted: false }).select('proposalId').lean();
+  const invoiceProposalIdSet = new Set(activeInvoices.map(i => i.proposalId.toString()));
+
+  for (const p of list) {
+    if (!p || !p._id) continue;
+    const hasInvoice = invoiceProposalIdSet.has(p._id.toString());
+    if (hasInvoice) {
+      if (p.status !== 'Invoice Created') {
+        p.status = 'Invoice Created';
+        await Proposal.updateOne({ _id: p._id }, { $set: { status: 'Invoice Created' } });
+      }
+    } else {
+      if (p.status === 'Converted to Invoice' || p.status === 'Invoice Created') {
+        p.status = 'Draft';
+        await Proposal.updateOne({ _id: p._id }, { $set: { status: 'Draft' } });
+      }
+    }
+  }
+};
+
 // Create Proposal
 exports.createProposal = async (req, res, next) => {
   try {
@@ -60,7 +88,11 @@ exports.getProposals = async (req, res, next) => {
       ];
     }
     if (req.query.status && req.query.status !== 'all') {
-      queryFilter.status = req.query.status;
+      if (req.query.status === 'Invoice Created' || req.query.status === 'Converted to Invoice') {
+        queryFilter.status = { $in: ['Invoice Created', 'Converted to Invoice'] };
+      } else {
+        queryFilter.status = req.query.status;
+      }
     }
     if (req.query.month) {
       const [yearStr, monthStr] = req.query.month.split('-');
@@ -101,6 +133,8 @@ exports.getProposals = async (req, res, next) => {
       .skip(skip)
       .limit(limit);
 
+    await syncProposalStatus(proposals);
+
     res.status(200).json({ 
       success: true, 
       count: proposals.length,
@@ -126,6 +160,9 @@ exports.getProposal = async (req, res, next) => {
     if (!proposal) {
       return res.status(404).json({ success: false, message: 'Proposal not found' });
     }
+
+    await syncProposalStatus(proposal);
+
     res.status(200).json({ success: true, data: proposal });
   } catch (error) {
     next(error);
@@ -151,9 +188,6 @@ exports.updateProposal = async (req, res, next) => {
         agencyId: proposal.agencyId,
         brandId: proposal.brandId
       };
-      // For updates, we can either update the existing custom master item if it's already custom, 
-      // or create a new one. Since a proposal might have used a global one previously, 
-      // the safest is to create a new custom one and link it.
       const newMasterItem = await MasterItem.create(customData);
       req.body.masterItems = [newMasterItem._id];
       delete req.body.customMasterItem;
@@ -166,6 +200,9 @@ exports.updateProposal = async (req, res, next) => {
       .populate('agencyId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
       .populate('adminId', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature')
       .populate('createdBy', 'name companyName email phone supportPhone address domain logo logoDark industry invoiceSignature');
+    
+    await syncProposalStatus(updatedProposal);
+
     res.status(200).json({ success: true, data: updatedProposal });
   } catch (error) {
     next(error);
@@ -215,13 +252,15 @@ exports.generateInvoice = async (req, res, next) => {
     if (!proposal) {
       return res.status(404).json({ success: false, message: 'Proposal not found' });
     }
-    if (proposal.status !== 'Approved') {
-      return res.status(400).json({ success: false, message: 'Proposal must be approved to generate invoice' });
+    if (proposal.status !== 'Approved' && proposal.status !== 'Draft') {
+      return res.status(400).json({ success: false, message: 'Invalid proposal status to generate invoice' });
     }
 
     // Check if invoice already exists
     const existingInvoice = await Invoice.findOne({ proposalId: proposal._id, isDeleted: false });
     if (existingInvoice) {
+      proposal.status = 'Invoice Created';
+      await proposal.save();
       return res.status(400).json({ success: false, message: 'Invoice already generated for this proposal', invoiceId: existingInvoice._id });
     }
 
@@ -242,7 +281,7 @@ exports.generateInvoice = async (req, res, next) => {
 
     const invoice = await Invoice.create(invoiceData);
 
-    proposal.status = 'Converted to Invoice';
+    proposal.status = 'Invoice Created';
     await proposal.save();
 
     res.status(201).json({ success: true, data: invoice, message: 'Invoice generated successfully' });
@@ -259,13 +298,11 @@ exports.approveAndGenerateInvoice = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Proposal not found' });
     }
 
-    proposal.status = 'Approved';
-    proposal.updatedBy = req.user._id;
-
     // Check if invoice already exists
     const existingInvoice = await Invoice.findOne({ proposalId: proposal._id, isDeleted: false });
     if (existingInvoice) {
-      proposal.status = 'Converted to Invoice';
+      proposal.status = 'Invoice Created';
+      proposal.updatedBy = req.user._id;
       await proposal.save();
       return res.status(200).json({
         success: true,
@@ -273,7 +310,7 @@ exports.approveAndGenerateInvoice = async (req, res, next) => {
           proposal,
           invoice: existingInvoice
         },
-        message: 'Proposal approved. Invoice already exists.'
+        message: 'Invoice already exists for this proposal.'
       });
     }
 
@@ -294,7 +331,8 @@ exports.approveAndGenerateInvoice = async (req, res, next) => {
 
     const invoice = await Invoice.create(invoiceData);
 
-    proposal.status = 'Converted to Invoice';
+    proposal.status = 'Invoice Created';
+    proposal.updatedBy = req.user._id;
     await proposal.save();
 
     res.status(200).json({
@@ -303,7 +341,7 @@ exports.approveAndGenerateInvoice = async (req, res, next) => {
         proposal,
         invoice
       },
-      message: 'Proposal approved and invoice generated successfully'
+      message: 'Invoice generated successfully'
     });
   } catch (error) {
     next(error);

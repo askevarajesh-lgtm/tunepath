@@ -101,52 +101,77 @@ const convertDealToClient = async (req, res) => {
 };
 
 const hasSalesPipelineEnabled = (userDoc) => {
-  if (userDoc.customRoleId && userDoc.customRoleId.permissions) {
-    const p = userDoc.customRoleId.permissions;
-    const spPerm = p['Agency Ops-Sales Pipeline'] || p['Sales Pipeline'] || p['salespipeline'] || p['Agency Ops'];
+  // Exclude client team members belonging to a client/brand
+  if (userDoc.brandId) return false;
 
-    if (!spPerm) return false;
+  const perms = userDoc.customRoleId?.permissions || userDoc.permissions || {};
+  
+  for (const [key, val] of Object.entries(perms)) {
+    const cleanKey = String(key).toLowerCase().replace(/[-_\s]/g, '');
 
-    if (typeof spPerm === 'boolean') return spPerm;
-    if (Array.isArray(spPerm)) return spPerm.includes('Sales Pipeline') || spPerm.includes('salespipeline');
-    if (typeof spPerm === 'object') {
-      return Boolean(spPerm.View || spPerm.Create || spPerm.Edit || spPerm.All || spPerm['Sales Pipeline'] || spPerm.canView || spPerm.canAdd);
+    // 1. Direct key match (e.g. 'Sales Pipeline', 'salespipeline', 'Agency Ops-Sales Pipeline')
+    if (cleanKey.includes('salespipeline') || cleanKey === 'sales') {
+      if (typeof val === 'boolean') return val;
+      if (typeof val === 'number') return val === 1;
+      if (typeof val === 'string') return val === 'true' || val === '1';
+      if (Array.isArray(val)) return val.length > 0;
+      if (typeof val === 'object' && val !== null) {
+        return Object.values(val).some(v => v === true || v === 'true' || v === 1);
+      }
     }
-    return false;
-  }
 
-  if (userDoc.permissions) {
-    const p = userDoc.permissions;
-    const spPerm = p['Agency Ops-Sales Pipeline'] || p['Sales Pipeline'] || p['salespipeline'] || p['Agency Ops'];
-    if (spPerm) {
-      if (typeof spPerm === 'boolean') return spPerm;
-      if (Array.isArray(spPerm)) return spPerm.includes('Sales Pipeline');
-      if (typeof spPerm === 'object') {
-        return Boolean(spPerm.View || spPerm.Create || spPerm.Edit || spPerm.All || spPerm['Sales Pipeline'] || spPerm.canView || spPerm.canAdd);
+    // 2. Group key match (e.g. key = 'Agency Ops' where val is array of strings or object of modules)
+    if (cleanKey.includes('agencyops')) {
+      if (Array.isArray(val)) {
+        const hasSp = val.some(item => String(item).toLowerCase().replace(/[-_\s]/g, '').includes('salespipeline'));
+        if (hasSp) return true;
+      } else if (typeof val === 'object' && val !== null) {
+        for (const [subKey, subVal] of Object.entries(val)) {
+          const cleanSubKey = String(subKey).toLowerCase().replace(/[-_\s]/g, '');
+          if (cleanSubKey.includes('salespipeline') || cleanSubKey === 'sales') {
+            if (typeof subVal === 'boolean') return subVal;
+            if (typeof subVal === 'number') return subVal === 1;
+            if (typeof subVal === 'string') return subVal === 'true' || subVal === '1';
+            if (typeof subVal === 'object' && subVal !== null) {
+              return Object.values(subVal).some(v => v === true || v === 'true' || v === 1);
+            }
+          }
+        }
       }
     }
   }
 
-  return true;
+  // Check role name / key as fallback for explicit sales roles
+  const roleName = String(userDoc.customRoleId?.roleName || userDoc.roleName || userDoc.customRoleId?.roleKey || '').toLowerCase();
+  if (roleName.includes('sales') || roleName.includes('business development') || roleName.includes('bde') || roleName.includes('bdm')) {
+    return true;
+  }
+
+  return false;
 };
 
 const getSalesReps = async (req, res) => {
   try {
     const agencyId = req.user?.agencyId || req.companyId || req.user?._id;
     
-    // Fetch ONLY sub-users (role: 'user') belonging to this agency.
-    // Explicitly exclude clients (brand_super_admin, brand_manager, agency_client, client)
-    // and agency admins / agency managers.
+    // Fetch ONLY internal agency users (brandId is null or undefined)
+    // and exclude external client roles
     const users = await User.find({
       $or: [
         { agencyId: agencyId },
         { companyId: agencyId },
         { adminId: agencyId }
       ],
-      role: 'user'
-    }).populate('customRoleId').select('_id name email role customRoleId permissions');
+      brandId: { $in: [null, undefined] },
+      role: { $nin: ['supreme_super_admin', 'commander_admin', 'brand_super_admin', 'brand_manager', 'brand_team_user', 'agency_client', 'client'] },
+      status: { $ne: 'inactive' },
+      isActive: { $ne: false }
+    })
+    .populate('customRoleId')
+    .select('_id name email role roleName brandId customRoleId permissions')
+    .lean();
 
-    // Filter users who have Sales Pipeline enabled in Role Configuration
+    // Filter users who strictly have Sales Pipeline enabled in Role Configuration
     const reps = users.filter(hasSalesPipelineEnabled);
 
     return sendSuccess(res, "Reps retrieved successfully", {

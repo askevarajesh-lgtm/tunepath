@@ -53,6 +53,12 @@ const projectSchema = new mongoose.Schema(
       comment:
         "Whether project is active. Only active projects are shown in task creation dropdown.",
     },
+    color: {
+      type: String,
+      default: null,
+      trim: true,
+      comment: "Hex color code for identifying this project in Kanban and task views",
+    },
 
     // Workflow (sent to client for approval)
     workflow: {

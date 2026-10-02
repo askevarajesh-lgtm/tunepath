@@ -119,7 +119,7 @@ const Analytics = () => {
           onProjectsRefresh={fetchProjects}
           refreshing={refreshing}
           onExport={handleExport}
-          showExport={activeTab === 'analytics'}
+          showExport={true}
           previousDateRange={data?.meta?.previousDateRange}
         />
       </motion.div>

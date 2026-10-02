@@ -965,7 +965,7 @@ const resolveProjectListQueryOptions = async (
 ) => {
   const q = { ...reqQuery };
   let clientIdFilter = null;
-  const isGlobalAdmin = ["supreme_super_admin"].includes(userRole);
+  const isGlobalAdmin = ["supreme_super_admin", "commander_admin"].includes(userRole);
   
   if (['client', 'agency_client', 'brand_super_admin', 'brand_manager'].includes(userRole) && userId) {
     clientIdFilter = userId;
@@ -997,39 +997,77 @@ const resolveProjectListQueryOptions = async (
   const rawItemName =
     pickItemNameParam(q.itemName) || pickItemNameParam(q.masterItemName);
 
-  let masterItemIdFilter = null;
+  let masterItemCondition = null;
   if (rawItemName) {
-    if (!MASTER_ITEM_NAME_WHITELIST.includes(rawItemName)) {
-      return { ok: false };
-    }
-    const masterItems = await Service.find({
-      name: rawItemName,
+    const escaped = rawItemName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const masterItems = await MasterItem.find({
+      name: { $regex: new RegExp(`^${escaped}$`, 'i') },
+      isDeleted: { $ne: true }
     }).select("_id");
 
-    if (masterItems.length > 0) {
-      masterItemIdFilter = { $in: masterItems.map((mi) => mi._id) };
+    const matchedIds = masterItems.map((mi) => mi._id);
+    if (matchedIds.length > 0) {
+      masterItemCondition = {
+        $or: [
+          { masterItemId: { $in: matchedIds } },
+          { masterItemIds: { $in: matchedIds } }
+        ]
+      };
     } else {
-      return { ok: false };
+      masterItemCondition = {
+        $or: [
+          { name: { $regex: escaped, $options: 'i' } },
+          { packageName: { $regex: escaped, $options: 'i' } }
+        ]
+      };
     }
   } else if (q.masterItemId) {
-    masterItemIdFilter = q.masterItemId;
+    masterItemCondition = {
+      $or: [
+        { masterItemId: q.masterItemId },
+        { masterItemIds: q.masterItemId }
+      ]
+    };
+  }
+
+  let statusCondition = null;
+  if (q.status && q.status !== 'all') {
+    const s = String(q.status).trim();
+    const regexPattern = `^${s.replace(/[_ -]/g, '[_ -]')}$`;
+    statusCondition = { status: { $regex: new RegExp(regexPattern, 'i') } };
+  }
+
+  const additionalFilters = {};
+
+  if (clientIdFilter) {
+    additionalFilters.clientId = clientIdFilter;
+  } else if (q.companyId && q.companyId !== 'all') {
+    additionalFilters.clientId = q.companyId;
+  } else if (q.clientId && q.clientId !== 'all') {
+    additionalFilters.clientId = q.clientId;
+  }
+
+  if (!isGlobalAdmin && tenantCompanyId) {
+    additionalFilters.companyId = tenantCompanyId;
+  }
+
+  if (statusCondition) {
+    additionalFilters.status = statusCondition.status;
+  }
+
+  if (masterItemCondition) {
+    additionalFilters.$or = masterItemCondition.$or;
+  }
+
+  if (q.departments?.length) {
+    additionalFilters.departments = { $in: q.departments };
   }
 
   const queryOptions = buildQuery(q, {
-    searchFields: ["name", "description"],
+    searchFields: ["name", "description", "packageName"],
     defaultSortField: "createdAt",
     defaultSortOrder: "desc",
-    additionalFilters: {
-      ...(clientIdFilter && { clientId: clientIdFilter }),
-      ...(q.status && { status: q.status }),
-      ...(q.companyId && !clientIdFilter && { clientId: q.companyId }),
-      ...(q.clientId && !clientIdFilter && { clientId: q.clientId }),
-      ...(!isGlobalAdmin && tenantCompanyId && { companyId: tenantCompanyId }),
-      ...(masterItemIdFilter && { masterItemId: masterItemIdFilter }),
-      ...(q.departments?.length && {
-        departments: { $in: q.departments },
-      }),
-    },
+    additionalFilters,
   });
 
   return { ok: true, queryOptions };
@@ -1814,6 +1852,7 @@ const createProject = async (projectData, tenantCompanyId, createdByUserId) => {
     renewalDate,
     departments,
     isActive: true, // Projects are active by default
+    color: projectData.color || null,
     // Proposal reference (optional - get from invoice if available)
     proposalId: proposalId, // Optional field - get from invoice if invoice was created from a proposal
     // Invoice and master item references
@@ -1984,6 +2023,7 @@ const updateProject = async (projectId, projectData, tenantCompanyId) => {
     "endDate",
     "renewalDate",
     "isActive",
+    "color",
     "packageName",
     "numberOfPosters",
     "numberOfVideos",

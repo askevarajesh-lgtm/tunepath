@@ -112,6 +112,7 @@ const ProposalsList = () => {
         return 'green';
       case 'Sent':
         return 'cyan';
+      case 'Invoice Created':
       case 'Converted to Invoice':
         return 'purple';
       case 'Rejected':
@@ -182,10 +183,10 @@ const ProposalsList = () => {
             >
               <Select.Option value="all">All Statuses</Select.Option>
               <Select.Option value="Draft">Draft</Select.Option>
+              <Select.Option value="Invoice Created">Invoice Created</Select.Option>
               <Select.Option value="Sent">Sent</Select.Option>
               <Select.Option value="Approved">Approved</Select.Option>
               <Select.Option value="Rejected">Rejected</Select.Option>
-              <Select.Option value="Converted to Invoice">Converted to Invoice</Select.Option>
             </Select>
           </Col>
           <Col xs={24} sm={12} md={4}>

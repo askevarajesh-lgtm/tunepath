@@ -29,50 +29,139 @@ const WebsiteBuilder = () => {
   const [websiteInitialAction, setWebsiteInitialAction] = useState(null);
   const [dashboardStats, setDashboardStats] = useState({
     totalWebsites: 0,
+    activeWebsites: 0,
     totalPages: 0,
-    recentActivity: []
+    totalForms: 0,
+    totalSubmissions: 0,
+    totalBlogs: 0,
+    totalBlogPosts: 0,
+    totalQrs: 0,
+    totalScans: 0,
+    totalWidgets: 0,
+    totalDomains: 0,
+    connectedDomains: 0,
+    recentActivity: [],
+    loading: true
   });
 
   useEffect(() => {
-    const fetchWebsites = async () => {
+    const fetchDashboardData = async () => {
       try {
         const token = localStorage.getItem("token");
-        const res = await fetch("/api/websites", {
-          headers: {
-            "Authorization": token ? `Bearer ${token}` : ""
-          }
-        });
-        const data = await res.json();
-        if (data.success && data.data) {
-          const websites = data.data;
-          const totalPages = websites.reduce((acc, w) => acc + (w.pagesCount || 1), 0);
-          
-          const sortedWebsites = [...websites].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 5);
-          const recentActivity = sortedWebsites.map(w => {
-            const isNew = Math.abs(new Date(w.createdAt).getTime() - new Date(w.updatedAt).getTime()) < 1000;
-            const dateStr = new Date(w.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            return {
-              user: w.updatedBy?.name || 'User',
-              action: isNew ? 'created the website' : 'updated the website',
-              site: w.name,
-              time: dateStr,
-              dot: isNew ? 'var(--accent-primary)' : 'var(--accent-warning)'
-            };
-          });
+        const headers = {
+          "Authorization": token ? `Bearer ${token}` : ""
+        };
 
-          setDashboardStats(prev => ({
-            ...prev,
-            totalWebsites: websites.length,
-            totalPages: totalPages,
-            recentActivity
-          }));
+        const [
+          webRes,
+          wpRes,
+          formsAnalyticsRes,
+          blogsRes,
+          qrsRes,
+          domainsRes,
+          widgetsRes
+        ] = await Promise.allSettled([
+          fetch("/api/websites", { headers }).then(r => r.json()),
+          fetch("/api/wordpress", { headers }).then(r => r.json()),
+          fetch("/api/forms/analytics", { headers }).then(r => r.json()),
+          fetch("/api/blogs", { headers }).then(r => r.json()),
+          fetch("/api/qrs", { headers }).then(r => r.json()),
+          fetch("/api/domains", { headers }).then(r => r.json()),
+          fetch("/api/chat-widgets", { headers }).then(r => r.json())
+        ]);
+
+        let websites = [];
+        if (webRes.status === 'fulfilled' && webRes.value?.success && Array.isArray(webRes.value?.data)) {
+          websites = webRes.value.data;
         }
+
+        let wordpressSites = [];
+        if (wpRes.status === 'fulfilled' && wpRes.value?.success && Array.isArray(wpRes.value?.data)) {
+          wordpressSites = wpRes.value.data;
+        }
+
+        const totalWebsites = websites.length + wordpressSites.length;
+        const totalPages = websites.reduce((acc, w) => acc + (w.pagesCount || 1), 0);
+        const activeWebsites = websites.filter(w => w.status === 'Ready' || w.status === 'Published' || !w.status).length + wordpressSites.length;
+
+        // Forms stats
+        let totalForms = 0;
+        let totalSubmissions = 0;
+        if (formsAnalyticsRes.status === 'fulfilled' && formsAnalyticsRes.value?.success && formsAnalyticsRes.value?.data) {
+          totalForms = formsAnalyticsRes.value.data.formsCount || 0;
+          totalSubmissions = formsAnalyticsRes.value.data.totalSubmissions || 0;
+        }
+
+        // Blogs stats
+        let totalBlogs = 0;
+        let totalBlogPosts = 0;
+        if (blogsRes.status === 'fulfilled' && blogsRes.value?.success && Array.isArray(blogsRes.value?.data)) {
+          const blogs = blogsRes.value.data;
+          totalBlogs = blogs.length;
+          totalBlogPosts = blogs.reduce((acc, b) => acc + (b.posts || 0), 0);
+        }
+
+        // QR stats
+        let totalQrs = 0;
+        let totalScans = 0;
+        if (qrsRes.status === 'fulfilled' && qrsRes.value?.success && Array.isArray(qrsRes.value?.data)) {
+          const qrs = qrsRes.value.data;
+          totalQrs = qrs.length;
+          totalScans = qrs.reduce((acc, q) => acc + (q.scans || 0), 0);
+        }
+
+        // Domains stats
+        let totalDomains = 0;
+        let connectedDomains = 0;
+        if (domainsRes.status === 'fulfilled' && domainsRes.value?.success && Array.isArray(domainsRes.value?.data)) {
+          const domains = domainsRes.value.data;
+          totalDomains = domains.length;
+          connectedDomains = domains.filter(d => d.status === 'Connected' || d.status === 'Active' || d.connectedTo).length;
+        }
+
+        // Chat widgets stats
+        let totalWidgets = 0;
+        if (widgetsRes.status === 'fulfilled' && widgetsRes.value?.success && Array.isArray(widgetsRes.value?.data)) {
+          totalWidgets = widgetsRes.value.data.length;
+        }
+
+        // Recent Activity
+        const sortedWebsites = [...websites].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)).slice(0, 5);
+        const recentActivity = sortedWebsites.map(w => {
+          const isNew = Math.abs(new Date(w.createdAt).getTime() - new Date(w.updatedAt).getTime()) < 1000;
+          const dateStr = new Date(w.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          return {
+            user: w.updatedBy?.name || 'User',
+            action: isNew ? 'created the website' : 'updated the website',
+            site: w.name,
+            time: dateStr,
+            dot: isNew ? 'var(--accent-primary)' : 'var(--accent-warning)'
+          };
+        });
+
+        setDashboardStats({
+          totalWebsites,
+          activeWebsites,
+          totalPages,
+          totalForms,
+          totalSubmissions,
+          totalBlogs,
+          totalBlogPosts,
+          totalQrs,
+          totalScans,
+          totalWidgets,
+          totalDomains,
+          connectedDomains,
+          recentActivity,
+          loading: false
+        });
       } catch (err) {
-        console.error("Failed to fetch websites for dashboard", err);
+        console.error("Failed to fetch dashboard data", err);
+        setDashboardStats(prev => ({ ...prev, loading: false }));
       }
     };
 
-    fetchWebsites();
+    fetchDashboardData();
   }, []);
 
   const containerVariants = {
@@ -114,77 +203,124 @@ const WebsiteBuilder = () => {
     navigate(`${basePath}/${tabId}`);
   };
 
+  const renderOverviewContent = () => {
+    const kpiCards = [
+      {
+        label: 'TOTAL WEBSITES',
+        val: dashboardStats.totalWebsites.toString(),
+        sub: `${dashboardStats.activeWebsites || dashboardStats.totalWebsites} Active projects`,
+        alert: 'Manage in Websites tab',
+        color: 'var(--accent-secondary)',
+        tab: 'websites'
+      },
+      {
+        label: 'ACTIVE PAGES',
+        val: dashboardStats.totalPages.toString(),
+        sub: 'Across all websites',
+        alert: 'Manage pages in builder',
+        color: 'var(--accent-primary)',
+        tab: 'websites'
+      },
+      {
+        label: 'LEAD FORMS',
+        val: dashboardStats.totalForms.toString(),
+        sub: `${dashboardStats.totalSubmissions} Form Submissions`,
+        alert: 'Manage in Forms tab',
+        color: 'var(--accent-info)',
+        tab: 'forms'
+      },
+      {
+        label: 'BLOG ARTICLES',
+        val: dashboardStats.totalBlogPosts.toString(),
+        sub: `Across ${dashboardStats.totalBlogs} active blogs`,
+        alert: 'Manage in Blogs tab',
+        color: 'var(--accent-warning)',
+        tab: 'blogs'
+      },
+      {
+        label: 'QR LINKS',
+        val: dashboardStats.totalQrs.toString(),
+        sub: `${dashboardStats.totalScans} Total scans`,
+        alert: 'Manage in QR Links tab',
+        color: 'var(--accent-primary)',
+        tab: 'qr-links'
+      },
+      {
+        label: 'CUSTOM DOMAINS',
+        val: dashboardStats.totalDomains.toString(),
+        sub: `${dashboardStats.connectedDomains} Connected domains`,
+        alert: 'Manage in Domains tab',
+        color: 'var(--accent-secondary)',
+        tab: 'domains'
+      },
+    ];
 
-  const renderOverviewContent = () => (
-    <motion.div variants={itemVariants}>
-      <Row gutter={[16, 16]} style={{ marginBottom: 32 }}>
-        {[
-          { label: 'SITE HEALTH SCORE', val: 'N/A', sub: 'Connect Analytics', alert: 'No data available', showRing: false, color: 'var(--text-secondary)' },
-          { label: 'MONTHLY VISITORS', val: '0', sub: 'Connect Analytics', alert: '0 conversions this month', color: 'var(--text-secondary)' },
-          { label: 'CONVERSION RATE', val: '0%', sub: 'Connect Analytics', alert: '0 conversions this month', color: 'var(--text-secondary)' },
-          { label: 'TOTAL WEBSITES', val: dashboardStats.totalWebsites.toString(), sub: 'Active projects', alert: 'Manage in Websites tab', color: 'var(--accent-secondary)' },
-          { label: 'ACTIVE PAGES', val: dashboardStats.totalPages.toString(), sub: 'Across all websites', alert: 'Manage pages in builder', color: 'var(--accent-secondary)' },
-        ].map((kpi, i) => (
-          <Col style={{ flex: '1 1 200px', minWidth: 200 }} key={i}>
-            <motion.div variants={itemVariants} whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ height: '100%' }}>
-              <Card
-                bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', height: '100%' }}
-                style={{
-                  borderRadius: 12,
-                  height: '100%',
-                  background: 'var(--bg-secondary)',
-                  border: '1px solid var(--border-color)',
-                  boxShadow: 'var(--shadow-sm)',
-                  overflow: 'hidden'
-                }}
-              >
-                <div style={{
-                  height: 32,
-                  background: 'var(--bg-tertiary)',
-                  borderBottom: '1px solid var(--border-color)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  padding: '0 12px',
-                  gap: 6
-                }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-danger)' }} />
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-warning)' }} />
-                  <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary)' }} />
-                  <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
-                    <div style={{ width: '40%', height: 6, background: 'var(--border-color)', borderRadius: 4 }} />
+    return (
+      <motion.div variants={itemVariants}>
+        <Row gutter={[16, 16]} style={{ marginBottom: 32 }}>
+          {kpiCards.map((kpi, i) => (
+            <Col style={{ flex: '1 1 180px', minWidth: 175 }} key={i}>
+              <motion.div variants={itemVariants} whileHover={{ y: -4, transition: { duration: 0.2 } }} style={{ height: '100%' }}>
+                <Card
+                  bodyStyle={{ padding: 0, display: 'flex', flexDirection: 'column', height: '100%' }}
+                  onClick={() => kpi.tab && handleTabClick(kpi.tab)}
+                  style={{
+                    borderRadius: 12,
+                    height: '100%',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-color)',
+                    boxShadow: 'var(--shadow-sm)',
+                    overflow: 'hidden',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{
+                    height: 32,
+                    background: 'var(--bg-tertiary)',
+                    borderBottom: '1px solid var(--border-color)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    padding: '0 12px',
+                    gap: 6
+                  }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-danger)' }} />
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-warning)' }} />
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary)' }} />
+                    <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}>
+                      <div style={{ width: '40%', height: 6, background: 'var(--border-color)', borderRadius: 4 }} />
+                    </div>
                   </div>
-                </div>
 
-                <div style={{ padding: '20px 24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                  <Text type="secondary" style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.5 }}>{kpi.label}</Text>
+                  <div style={{ padding: '20px 24px', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <Text type="secondary" style={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.5 }}>{kpi.label}</Text>
 
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
-                    <div>
-                      <Title level={2} style={{ margin: '0 0 4px', color: 'var(--text-primary)', fontWeight: 800 }}>{kpi.val}</Title>
-                      {kpi.sub && <Text style={{ fontSize: 13, color: kpi.color, display: 'block', fontWeight: 600 }}>{kpi.sub}</Text>}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 12 }}>
+                      <div>
+                        <Title level={2} style={{ margin: '0 0 4px', color: 'var(--text-primary)', fontWeight: 800 }}>{kpi.val}</Title>
+                        {kpi.sub && <Text style={{ fontSize: 13, color: kpi.color, display: 'block', fontWeight: 600 }}>{kpi.sub}</Text>}
+                      </div>
+
+                      {kpi.showRing && (
+                        <div style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: '50%',
+                          border: '4px solid var(--accent-primary)',
+                          borderTopColor: 'transparent',
+                          transform: 'rotate(45deg)'
+                        }} />
+                      )}
+
+                      {kpi.badge && <Tag style={{ borderRadius: 12, border: 'none', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-primary)', fontWeight: 700, padding: '2px 8px', margin: 0 }}>{kpi.badge}</Tag>}
                     </div>
 
-                    {kpi.showRing && (
-                      <div style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: '50%',
-                        border: '4px solid var(--accent-primary)',
-                        borderTopColor: 'transparent',
-                        transform: 'rotate(45deg)'
-                      }} />
-                    )}
-
-                    {kpi.badge && <Tag style={{ borderRadius: 12, border: 'none', background: 'rgba(16, 185, 129, 0.15)', color: 'var(--accent-primary)', fontWeight: 700, padding: '2px 8px', margin: 0 }}>{kpi.badge}</Tag>}
+                    <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 'auto', paddingTop: 16, fontWeight: 500 }}>{kpi.alert}</Text>
                   </div>
-
-                  <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 'auto', paddingTop: 16, fontWeight: 500 }}>{kpi.alert}</Text>
-                </div>
-              </Card>
-            </motion.div>
-          </Col>
-        ))}
-      </Row>
+                </Card>
+              </motion.div>
+            </Col>
+          ))}
+        </Row>
 
       <Row gutter={[24, 24]} style={{ marginBottom: 40 }}>
         <Col xs={24} lg={8}>
@@ -257,6 +393,7 @@ const WebsiteBuilder = () => {
       </motion.div>
     </motion.div>
   );
+};
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible">

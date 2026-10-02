@@ -466,12 +466,11 @@ const DashboardTab = () => {
                   </Button>
                   <Button
                     type="primary"
-                    ghost
                     block
                     icon={<Download size={15} />}
                     loading={downloadingPdf}
                     onClick={handleDownloadMasterPdf}
-                    style={{ borderColor: '#1890ff', color: '#1890ff', fontWeight: 600 }}
+                    style={{ fontWeight: 600 }}
                   >
                     Export Full SEO Audit PDF
                   </Button>

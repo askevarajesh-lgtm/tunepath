@@ -133,26 +133,11 @@ const CoordinatorTasks = () => {
     ].includes(user?.role);
 
     if (isAdminView) {
-      // Agency managers/admins should see all tasks, even for users without the module enabled.
-      // So we must combine dropdown users with any users found in tasks.
-      const tasks = tasksData?.data?.tasks || [];
-      const userMap = new Map();
-
-      allCoordinators.forEach((u) => userMap.set(u._id, u));
-
-      tasks.forEach((task) => {
-        if (task.assignedTo && !userMap.has(task.assignedTo._id || task.assignedTo)) {
-          // Add the missing user from the task
-          const userObj = task.assignedTo._id ? task.assignedTo : { _id: task.assignedTo, name: 'Unknown User' };
-          userMap.set(userObj._id, userObj);
-        }
-      });
-
-      return Array.from(userMap.values());
+      return allCoordinators;
     }
 
     return allCoordinators.filter((u) => u._id === user?._id);
-  }, [usersData, user, tasksData]);
+  }, [usersData, user]);
 
   const tasksByCoordinator = useMemo(() => {
     const tasks = tasksData?.data?.tasks || [];

@@ -43,7 +43,7 @@ const proposalSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['Draft', 'Sent', 'Approved', 'Rejected', 'Converted to Invoice'],
+    enum: ['Draft', 'Sent', 'Approved', 'Rejected', 'Converted to Invoice', 'Invoice Created'],
     default: 'Draft'
   },
   isDeleted: {

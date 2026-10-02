@@ -48,6 +48,7 @@ const ClientDetailContent = ({
   const [loading, setLoading] = useState(false);
   const [togglingFeatureId, setTogglingFeatureId] = useState(null);
   const [togglingIntId, setTogglingIntId] = useState(null);
+  const [activeTabKey, setActiveTabKey] = useState('overview');
   const clientId = selectedClient?._id || selectedClient?.id;
   const { user: authUser } = useAuth();
 
@@ -292,7 +293,8 @@ const ClientDetailContent = ({
   return (
     <Spin spinning={loading}>
       <Tabs
-        defaultActiveKey="overview"
+        activeKey={activeTabKey}
+        onChange={setActiveTabKey}
         tabBarStyle={{ fontWeight: 600, marginBottom: 0 }}
         items={[
           {
@@ -400,6 +402,28 @@ const ClientDetailContent = ({
                       </div>
                     ))}
                   </div>
+                </div>
+
+                {/* Activities Section */}
+                <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: 14, padding: 20, marginTop: 20 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                    <Text style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-tertiary)', letterSpacing: 1, textTransform: 'uppercase' }}>Recent Activities</Text>
+                    <Button 
+                      type="link" 
+                      size="small" 
+                      style={{ padding: 0, fontWeight: 700, color: 'var(--accent-primary)' }} 
+                      onClick={() => setActiveTabKey('activity')}
+                    >
+                      View Full Activity →
+                    </Button>
+                  </div>
+                  <ClientActivity 
+                    clientId={clientId} 
+                    client={selectedClient} 
+                    compact 
+                    limit={6} 
+                    onTaskClick={onTaskClick} 
+                  />
                 </div>
               </div>
             ),
@@ -657,7 +681,15 @@ const ClientDetailContent = ({
           {
             key: 'activity',
             label: 'Activity',
-            children: <ClientActivity clientId={clientId} />,
+            children: (
+              <div style={{ paddingTop: 12 }}>
+                <ClientActivity 
+                  clientId={clientId} 
+                  client={selectedClient} 
+                  onTaskClick={onTaskClick} 
+                />
+              </div>
+            ),
           },
         ]}
       />

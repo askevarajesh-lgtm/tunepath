@@ -356,8 +356,31 @@ const ProjectForm = () => {
     });
   };
 
+  const extractColorHex = (rawColor) => {
+    if (!rawColor) return null;
+    if (typeof rawColor === "string") {
+      const trimmed = rawColor.trim();
+      if (!trimmed || trimmed.toLowerCase() === "transparent") return null;
+      return trimmed;
+    }
+    if (typeof rawColor === "object") {
+      if (typeof rawColor.toHexString === "function") {
+        const hex = rawColor.toHexString();
+        return hex && hex.toLowerCase() !== "transparent" ? hex : null;
+      }
+      if (rawColor.hex) {
+        const h = String(rawColor.hex).trim();
+        if (!h || h.toLowerCase() === "transparent") return null;
+        return h.startsWith("#") ? h : `#${h}`;
+      }
+    }
+    return null;
+  };
+
   const onFinish = async (values) => {
     try {
+      const colorVal = extractColorHex(values.color);
+
       if (isEdit) {
         // For edit, only allow updating certain fields
         const processedCategories = (values.selectedCategories || []).map((cat) => {
@@ -395,6 +418,7 @@ const ProjectForm = () => {
           name: values.name,
           description: values.description,
           status: values.status || "created",
+          color: colorVal,
           startDate: values.startDate ? values.startDate.toISOString() : null,
           endDate: values.endDate ? values.endDate.toISOString() : null,
           renewalDate: values.renewalDate
@@ -440,6 +464,7 @@ const ProjectForm = () => {
           invoiceItemId: parseInt(values.invoiceItemId),
           description: values.description || "",
           status: "created",
+          color: colorVal,
           startDate: values.startDate ? values.startDate.toISOString() : null,
           endDate: values.endDate ? values.endDate.toISOString() : null,
           renewalDate: values.renewalDate
@@ -943,7 +968,7 @@ const ProjectForm = () => {
                     {
                       label: "Recommended Colors",
                       colors: [
-                        "var(--accent-primary)",
+                        "#1677ff",
                         "#52c41a",
                         "#faad14",
                         "#f5222d",

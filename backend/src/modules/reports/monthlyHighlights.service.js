@@ -170,95 +170,69 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
             clientTargetIds.push(new mongoose.Types.ObjectId(clientId));
         }
         const user = await User.findById(clientId).catch(() => null);
-        if (user) {
-            [user.clientCompanyId, user.brandId, user.workspaceId].forEach(id => {
-                if (id) {
-                    clientTargetIds.push(id, String(id));
-                    if (mongoose.Types.ObjectId.isValid(id)) clientTargetIds.push(new mongoose.Types.ObjectId(id));
-                }
-            });
+        if (user && user.clientCompanyId) {
+            clientTargetIds.push(user.clientCompanyId, String(user.clientCompanyId));
+            if (mongoose.Types.ObjectId.isValid(user.clientCompanyId)) {
+                clientTargetIds.push(new mongoose.Types.ObjectId(user.clientCompanyId));
+            }
         }
 
         const Project = mongoose.models.Project || require('../projects/project.model');
-        const projects = await Project.find({
-            $and: [
-                { $or: [
-                    { clientId: { $in: clientTargetIds } },
-                    { companyId: { $in: clientTargetIds } }
-                ] },
-                { $or: [
-                    { createdAt: { $gte: startDate, $lte: endDate } },
-                    { updatedAt: { $gte: startDate, $lte: endDate } }
-                ] }
-            ]
-        }).catch(() => []);
+        const MasterItem = mongoose.models.MasterItem || require('../masterItems/masterItem.model');
 
-        projects.forEach(p => {
-            const numPosters = p.numberOfPosters || 0;
-            if (numPosters > 0) {
-                const compP = (p.completedPosters !== undefined && p.completedPosters !== null)
-                    ? Math.max(p.completedPosters || 0, p.approvedPosters || 0)
-                    : (p.approvedPosters || 0);
-                const remP = (p.remainingPosters !== undefined && p.remainingPosters !== null)
-                    ? Math.max(0, p.remainingPosters)
-                    : Math.max(0, numPosters - compP);
+        // Strictly fetch projects that belong ONLY to this specific client
+        const allClientProjects = await Project.find({
+            clientId: { $in: clientTargetIds }
+        })
+        .populate('masterItemIds')
+        .populate('masterItemId')
+        .lean()
+        .catch(() => []);
 
-                if (!deliverablesMap['poster']) {
-                    deliverablesMap['poster'] = { name: 'Posters', total: 0, completed: 0, remaining: 0, unit: 'Completed' };
-                }
-                deliverablesMap['poster'].total += numPosters;
-                deliverablesMap['poster'].completed += compP;
-                deliverablesMap['poster'].remaining += remP;
-            }
+        // Filter projects active or overlapping with the reporting period
+        let activePeriodProjects = allClientProjects.filter(p => {
+            const pStart = p.startDate ? new Date(p.startDate) : null;
+            const pEnd = p.endDate ? new Date(p.endDate) : null;
+            const pRenewal = p.renewalDate ? new Date(p.renewalDate) : null;
+            const pCreated = p.createdAt ? new Date(p.createdAt) : null;
+            const pUpdated = p.updatedAt ? new Date(p.updatedAt) : null;
+            const pInvoice = p.invoiceDate ? new Date(p.invoiceDate) : null;
 
-            const numVideos = p.numberOfVideos || 0;
-            if (numVideos > 0) {
-                const compV = (p.completedVideos !== undefined && p.completedVideos !== null)
-                    ? Math.max(p.completedVideos || 0, p.approvedVideos || 0)
-                    : (p.approvedVideos || 0);
-                const remV = (p.remainingVideos !== undefined && p.remainingVideos !== null)
-                    ? Math.max(0, p.remainingVideos)
-                    : Math.max(0, numVideos - compV);
+            if (pStart && pEnd && pStart <= endDate && pEnd >= startDate) return true;
+            if (pStart && pStart >= startDate && pStart <= endDate) return true;
+            if (pEnd && pEnd >= startDate && pEnd <= endDate) return true;
+            if (pRenewal && pRenewal >= startDate && pRenewal <= endDate) return true;
+            if (pCreated && pCreated >= startDate && pCreated <= endDate) return true;
+            if (pUpdated && pUpdated >= startDate && pUpdated <= endDate) return true;
+            if (pInvoice && pInvoice >= startDate && pInvoice <= endDate) return true;
+            return false;
+        });
 
-                if (!deliverablesMap['video']) {
-                    deliverablesMap['video'] = { name: 'Videos', total: 0, completed: 0, remaining: 0, unit: 'Completed' };
-                }
-                deliverablesMap['video'].total += numVideos;
-                deliverablesMap['video'].completed += compV;
-                deliverablesMap['video'].remaining += remV;
-            }
+        // If no projects matched strictly by date window, fallback to all projects of THIS client
+        const targetProjects = activePeriodProjects.length > 0 ? activePeriodProjects : allClientProjects;
 
-            const numShoots = p.numberOfShoots || 0;
-            if (numShoots > 0) {
-                const compS = (p.completedShoots !== undefined && p.completedShoots !== null)
-                    ? Math.max(p.completedShoots || 0, p.approvedShoots || 0)
-                    : (p.approvedShoots || 0);
-                const remS = (p.remainingShoots !== undefined && p.remainingShoots !== null)
-                    ? Math.max(0, p.remainingShoots)
-                    : Math.max(0, numShoots - compS);
+        // Deduplicate projects by ID to prevent repeated counts
+        const targetProjectsMap = new Map();
+        targetProjects.forEach(p => {
+            if (p && p._id) targetProjectsMap.set(String(p._id), p);
+        });
+        const uniqueTargetProjects = Array.from(targetProjectsMap.values());
 
-                if (!deliverablesMap['shoot']) {
-                    deliverablesMap['shoot'] = { name: 'Shoots', total: 0, completed: 0, remaining: 0, unit: 'Completed' };
-                }
-                deliverablesMap['shoot'].total += numShoots;
-                deliverablesMap['shoot'].completed += compS;
-                deliverablesMap['shoot'].remaining += remS;
-            }
+        uniqueTargetProjects.forEach(p => {
+            const projectCategories = Array.isArray(p.selectedCategories) && p.selectedCategories.length > 0
+                ? p.selectedCategories
+                : [];
 
-            if (p.selectedCategories && Array.isArray(p.selectedCategories)) {
-                p.selectedCategories.forEach(cat => {
+            if (projectCategories.length > 0) {
+                // The project has configured dynamic deliverables in selectedCategories
+                projectCategories.forEach(cat => {
                     const rawName = cat.name || cat.categoryName;
-                    const cTotal = cat.quantity ?? cat.count ?? 0;
+                    const cTotal = Number(cat.quantity ?? cat.count ?? 0);
                     if (!rawName || cTotal <= 0) return;
 
                     const { key, displayName } = getKeyAndDisplayName(rawName);
-
-                    const cComp = (cat.completed !== undefined && cat.completed !== null)
-                        ? Math.max(cat.completed || 0, cat.approved || 0)
-                        : (cat.approved || 0);
-                    const cRem = (cat.remaining !== undefined && cat.remaining !== null)
-                        ? Math.max(0, cat.remaining)
-                        : Math.max(0, cTotal - cComp);
+                    const cComp = Number(cat.completed ?? cat.approved ?? 0);
+                    const cRem = Number(cat.remaining !== undefined && cat.remaining !== null ? cat.remaining : Math.max(0, cTotal - cComp));
 
                     if (!deliverablesMap[key]) {
                         deliverablesMap[key] = {
@@ -273,6 +247,44 @@ const autoAggregateMetrics = async (clientId, month, year, projectId = null, fro
                     deliverablesMap[key].completed += cComp;
                     deliverablesMap[key].remaining += cRem;
                 });
+            } else {
+                // Fallback to direct project fields (numberOfPosters, numberOfVideos, numberOfShoots)
+                const numPosters = Number(p.numberOfPosters) || 0;
+                const numVideos = Number(p.numberOfVideos) || 0;
+                const numShoots = Number(p.numberOfShoots) || 0;
+
+                if (numPosters > 0) {
+                    const compP = Number(p.completedPosters !== undefined && p.completedPosters !== null ? p.completedPosters : (p.approvedPosters || 0));
+                    const remP = Number(p.remainingPosters !== undefined && p.remainingPosters !== null ? p.remainingPosters : Math.max(0, numPosters - compP));
+                    if (!deliverablesMap['poster']) {
+                        deliverablesMap['poster'] = { name: 'Posters', total: 0, completed: 0, remaining: 0, unit: 'Completed' };
+                    }
+                    deliverablesMap['poster'].total += numPosters;
+                    deliverablesMap['poster'].completed += compP;
+                    deliverablesMap['poster'].remaining += remP;
+                }
+
+                if (numVideos > 0) {
+                    const compV = Number(p.completedVideos !== undefined && p.completedVideos !== null ? p.completedVideos : (p.approvedVideos || 0));
+                    const remV = Number(p.remainingVideos !== undefined && p.remainingVideos !== null ? p.remainingVideos : Math.max(0, numVideos - compV));
+                    if (!deliverablesMap['video']) {
+                        deliverablesMap['video'] = { name: 'Videos', total: 0, completed: 0, remaining: 0, unit: 'Completed' };
+                    }
+                    deliverablesMap['video'].total += numVideos;
+                    deliverablesMap['video'].completed += compV;
+                    deliverablesMap['video'].remaining += remV;
+                }
+
+                if (numShoots > 0) {
+                    const compS = Number(p.completedShoots !== undefined && p.completedShoots !== null ? p.completedShoots : (p.approvedShoots || 0));
+                    const remS = Number(p.remainingShoots !== undefined && p.remainingShoots !== null ? p.remainingShoots : Math.max(0, numShoots - compS));
+                    if (!deliverablesMap['shoot']) {
+                        deliverablesMap['shoot'] = { name: 'Shoots', total: 0, completed: 0, remaining: 0, unit: 'Completed' };
+                    }
+                    deliverablesMap['shoot'].total += numShoots;
+                    deliverablesMap['shoot'].completed += compS;
+                    deliverablesMap['shoot'].remaining += remS;
+                }
             }
         });
 
@@ -929,9 +941,12 @@ exports.getMonthlyHighlights = async (clientId, month, year, isClientUser = fals
             return { status: 'NotPublished', publishedReportTypes: [], message: 'Report for this month has not been published yet.' };
         }
         
-        report = report.toObject ? report.toObject() : report;
-        report.publishedReportTypes = allPublishedTypes;
-        return report;
+        // For published reports, return the frozen snapshot
+        if (report.status === 'Published') {
+            report = report.toObject ? report.toObject() : report;
+            report.publishedReportTypes = allPublishedTypes;
+            return report;
+        }
     }
 
     if (isClientUser && (!report || (report.status !== 'Published' && sentTypes.length === 0))) {

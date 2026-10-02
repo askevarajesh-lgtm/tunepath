@@ -40,6 +40,7 @@ export default function ListView({
   onDelete,
   canEdit = true,
   canDelete = true,
+  loading = false,
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("All");
@@ -167,9 +168,10 @@ export default function ListView({
           />
         </Space>
         <Table
+          loading={loading}
           rowKey="id"
           dataSource={filtered}
-          pagination={{ defaultPageSize: 6, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100', '200'] }}
+          pagination={{ defaultPageSize: 6, showSizeChanger: true, pageSizeOptions: ['6', '10', '20', '50', '100', '200'] }}
           scroll={{ x: 1300 }}
           columns={[
             {

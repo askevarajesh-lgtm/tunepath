@@ -193,15 +193,12 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         accountId: c.accountId || postRecord.platformId,
       }));
       setDetailModalData(formatted);
-      if (formatted.length > 0) {
-        setPostCommentsCountMap((prev) => ({
-          ...prev,
-          [postRecord.id]: formatted.length,
-          ...(postRecord.parentPostId ? { [postRecord.parentPostId]: formatted.length } : {}),
-          ...(postRecord._id ? { [postRecord._id]: formatted.length } : {}),
-          ...(postRecord.platformId ? { [`${postRecord.parentPostId || postRecord.id || postRecord._id}_${postRecord.platformId}`]: formatted.length } : {}),
-        }));
-      }
+      const specificKey = `${postRecord.parentPostId || postRecord.id || postRecord._id}_${postRecord.platformId || postRecord.platform}`;
+      setPostCommentsCountMap((prev) => ({
+        ...prev,
+        [postRecord.id]: formatted.length,
+        [specificKey]: formatted.length,
+      }));
     } catch (err) {
       console.error("Failed loading post comments:", err);
       setDetailModalData([]);
@@ -414,25 +411,23 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
             const account = (accounts || []).find((a) => a.id === platformId || a.platform === pub.platform);
             const platformName = pub.platform || account?.platform || (typeof platformId === "string" ? platformId.split("-")[0] : "unknown");
 
-            const postIdKey = `${post.id || post._id}_${platformId}`;
+            const specificKey = `${post.parentPostId || post.id || post._id}_${platformId}`;
             const commentsCount =
-              postCommentsCountMap[postIdKey] ??
-              postCommentsCountMap[platformId] ??
               postCommentsCountMap[post.id] ??
-              postCommentsCountMap[post._id] ??
-              (typeof pub.comments === "number" ? pub.comments : (post.comments || 0));
+              postCommentsCountMap[specificKey] ??
+              (typeof pub.comments === "number" ? pub.comments : 0);
 
             expanded.push({
               ...post,
-              id: postIdKey,
-              parentPostId: post.id || post._id,
+              id: `${post.parentPostId || post.id || post._id}_${platformId}`,
+              parentPostId: post.parentPostId || post.id || post._id,
               platformId: platformId,
               platform: platformName,
               accountName: account?.page_name || account?.username || account?.business_name || post.accountName || null,
               url: pub.url || post.url,
-              likes: typeof pub.likes === "number" ? pub.likes : (post.likes || 0),
+              likes: typeof pub.likes === "number" ? pub.likes : 0,
               comments: commentsCount,
-              shares: typeof pub.shares === "number" ? pub.shares : (post.shares || 0),
+              shares: typeof pub.shares === "number" ? pub.shares : 0,
               published_at: pub.published_at || post.published_at || post.scheduled_iso,
               platform_publications: { [platformId]: pub },
             });
@@ -442,11 +437,13 @@ export default function DashboardView({ posts, accounts, activeClientId, refresh
         const commentsCount =
           postCommentsCountMap[post.id] ??
           postCommentsCountMap[post._id] ??
-          (post.comments || 0);
+          (typeof post.comments === "number" ? post.comments : 0);
 
         expanded.push({
           ...post,
+          likes: typeof post.likes === "number" ? post.likes : 0,
           comments: commentsCount,
+          shares: typeof post.shares === "number" ? post.shares : 0,
         });
       }
     });

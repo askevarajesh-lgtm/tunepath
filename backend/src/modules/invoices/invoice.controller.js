@@ -127,6 +127,11 @@ exports.createInvoice = async (req, res, next) => {
     }
 
     const invoice = await Invoice.create(data);
+
+    if (invoice.proposalId) {
+      await Proposal.findByIdAndUpdate(invoice.proposalId, { status: 'Invoice Created' });
+    }
+
     res.status(201).json({ success: true, data: invoice });
   } catch (error) {
     next(error);
@@ -141,9 +146,21 @@ exports.updateInvoice = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Invoice not found' });
     }
 
+    const oldProposalId = invoice.proposalId;
     req.body.updatedBy = req.user._id;
 
     const updatedInvoice = await Invoice.findByIdAndUpdate(req.params.id, req.body, { returnDocument: 'after', runValidators: true });
+
+    if (updatedInvoice.proposalId) {
+      await Proposal.findByIdAndUpdate(updatedInvoice.proposalId, { status: 'Invoice Created' });
+    }
+    if (oldProposalId && (!updatedInvoice.proposalId || oldProposalId.toString() !== updatedInvoice.proposalId.toString())) {
+      const remainingInvoices = await Invoice.countDocuments({ proposalId: oldProposalId, isDeleted: false });
+      if (remainingInvoices === 0) {
+        await Proposal.findByIdAndUpdate(oldProposalId, { status: 'Draft' });
+      }
+    }
+
     res.status(200).json({ success: true, data: updatedInvoice });
   } catch (error) {
     next(error);
@@ -385,6 +402,13 @@ exports.deleteInvoice = async (req, res, next) => {
     invoice.isDeleted = true;
     invoice.updatedBy = req.user._id;
     await invoice.save();
+
+    if (invoice.proposalId) {
+      const remainingInvoices = await Invoice.countDocuments({ proposalId: invoice.proposalId, isDeleted: false });
+      if (remainingInvoices === 0) {
+        await Proposal.findByIdAndUpdate(invoice.proposalId, { status: 'Draft' });
+      }
+    }
     
     res.status(200).json({ success: true, message: 'Invoice deleted successfully' });
   } catch (error) {

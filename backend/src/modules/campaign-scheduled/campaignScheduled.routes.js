@@ -1990,10 +1990,16 @@ router.get("/preflight-facebook", async (req, res) => {
 });
 
 router.get("/posts", async (req, res) => {
-    try {
-        await refreshPublishedPostMetrics(req.companyId, req.clientCompanyId);
-    } catch (err) {
-        console.warn("[Posts] Metric refresh warning:", err.message);
+    const forceRefresh = req.query.forceRefresh === "true";
+    if (forceRefresh) {
+        try {
+            await refreshPublishedPostMetrics(req.companyId, req.clientCompanyId);
+        } catch (err) {
+            console.warn("[Posts] Metric refresh warning:", err.message);
+        }
+    } else {
+        // Non-blocking background sync so posts listing response is instant
+        refreshPublishedPostMetrics(req.companyId, req.clientCompanyId).catch(() => {});
     }
     const posts = await getAllPosts(req.companyId, req.clientCompanyId);
     res.json({ success: true, posts, total: posts.length });
@@ -2267,9 +2273,9 @@ router.get("/analytics", async (req, res) => {
                         platform: pub.platform || account?.platform || platformId.split("-")[0],
                         accountName: account?.page_name || account?.username || account?.business_name || null,
                         url: pub.url || postObj.url,
-                        likes: typeof pub.likes === 'number' ? pub.likes : (postObj.likes || 0),
-                        comments: typeof pub.comments === 'number' ? pub.comments : (postObj.comments || 0),
-                        shares: typeof pub.shares === 'number' ? pub.shares : (postObj.shares || 0),
+                        likes: typeof pub.likes === 'number' ? pub.likes : 0,
+                        comments: typeof pub.comments === 'number' ? pub.comments : 0,
+                        shares: typeof pub.shares === 'number' ? pub.shares : 0,
                         published_at: pub.published_at || postObj.published_at || postObj.scheduled_iso,
                         platform_publications: { [platformId]: pub }
                     });
@@ -2437,8 +2443,8 @@ router.post("/comments/:commentId/reply", async (req, res) => {
 
         res.json({ success: true, ...result });
     } catch (err) {
-        console.error("[Comment Reply] Error publishing reply:", err?.response?.data || err.message);
-        const errMsg = err?.response?.data?.error?.message || err.message || "Failed to publish reply";
+        console.error("[Comment Reply] Error publishing reply:", err?.response?.data || err?.errors || err.message);
+        const errMsg = err?.response?.data?.error?.message || (Array.isArray(err?.errors) && err.errors[0]?.message) || err.message || "Failed to publish reply";
         res.status(500).json({ success: false, error: errMsg });
     }
 });

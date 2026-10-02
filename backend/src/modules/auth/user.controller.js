@@ -62,6 +62,75 @@ exports.getUsers = async (req, res, next) => {
   }
 };
 
+const getRoleIdsWithModuleAccess = async (moduleSlug, reqUser, companyId) => {
+  let roleScope = {};
+  if (reqUser.role === 'commander_admin') {
+    roleScope.adminId = reqUser._id;
+  } else if (reqUser.brandId) {
+    roleScope = {
+      $or: [
+        { brandId: reqUser.brandId },
+        { agencyId: reqUser.agencyId || companyId },
+        { agencyId: null, brandId: null, adminId: null }
+      ]
+    };
+  } else {
+    const agencyId = companyId || reqUser.agencyId || reqUser._id;
+    roleScope = {
+      $or: [
+        { agencyId: agencyId },
+        { agencyId: null, brandId: null, adminId: null }
+      ]
+    };
+  }
+
+  const roles = await Role.find({
+    status: { $ne: 'inactive' },
+    ...roleScope
+  }).lean();
+
+  const matchingRoleIds = [];
+  const matchingRoleKeys = [];
+
+  const normalizedTarget = moduleSlug.toLowerCase().replace(/[-_\s]/g, '');
+
+  if (normalizedTarget === 'coordinatortasks') {
+    matchingRoleKeys.push('coordinator', 'website_coordinator', 'digital_marketing_coordinator');
+  }
+
+  for (const r of roles) {
+    if (r.roleKey && matchingRoleKeys.includes(r.roleKey)) {
+      matchingRoleIds.push(r._id);
+      continue;
+    }
+
+    const perms = r.permissions || {};
+    let hasAccess = false;
+
+    for (const [permKey, permVal] of Object.entries(perms)) {
+      const cleanKey = permKey.toLowerCase().replace(/[-_\s]/g, '');
+      if (cleanKey.includes(normalizedTarget) || (normalizedTarget === 'coordinatortasks' && cleanKey.includes('coordinator'))) {
+        if (permVal && typeof permVal === 'object') {
+          if (Object.values(permVal).some(v => v === true || v === 'true' || v === 1)) {
+            hasAccess = true;
+            break;
+          }
+        } else if (permVal === true || permVal === 'true' || permVal === 1) {
+          hasAccess = true;
+          break;
+        }
+      }
+    }
+
+    if (hasAccess) {
+      matchingRoleIds.push(r._id);
+      if (r.roleKey) matchingRoleKeys.push(r.roleKey);
+    }
+  }
+
+  return { matchingRoleIds, matchingRoleKeys };
+};
+
 exports.getUsersDropdown = async (req, res, next) => {
   try {
     let queryFilter = {};
@@ -115,6 +184,36 @@ exports.getUsersDropdown = async (req, res, next) => {
         delete queryFilter.role; // Remove the top level role since it's now in $and
       } else {
         queryFilter.role = req.query.role;
+      }
+    }
+
+    if (req.query.hasModuleAccess) {
+      const { matchingRoleIds, matchingRoleKeys } = await getRoleIdsWithModuleAccess(
+        req.query.hasModuleAccess,
+        req.user,
+        req.companyId
+      );
+
+      const moduleRoleFilter = {
+        $or: [
+          { customRoleId: { $in: matchingRoleIds } },
+          { role: { $in: matchingRoleKeys } }
+        ]
+      };
+
+      if (queryFilter.$or || queryFilter.$and) {
+        queryFilter = { $and: [queryFilter, moduleRoleFilter] };
+      } else {
+        Object.assign(queryFilter, moduleRoleFilter);
+      }
+    }
+
+    if (req.query.isActive !== undefined) {
+      const activeVal = req.query.isActive === 'true' || req.query.isActive === true;
+      if (activeVal) {
+        queryFilter.isActive = { $ne: false };
+      } else {
+        queryFilter.isActive = false;
       }
     }
 

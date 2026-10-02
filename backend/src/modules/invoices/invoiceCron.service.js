@@ -75,6 +75,9 @@ const startInvoiceCron = () => {
         
         // Create the new invoice
         await Invoice.create(newInvoiceData);
+        if (newProposalId) {
+          await Proposal.findByIdAndUpdate(newProposalId, { status: 'Invoice Created' });
+        }
         
         // Update the old invoice so it's no longer the active retainer head
         invoice.nextGenerationDate = null;

@@ -13,10 +13,27 @@ module.exports = {
     hasPrevPage: page > 1,
   }),
   buildQuery: (query, config) => {
-    const filters = { ...config.additionalFilters };
-    if (query.search && config.searchFields && config.searchFields.length > 0) {
-      filters.$or = config.searchFields.map(field => ({ [field]: { $regex: query.search, $options: 'i' } }));
+    const andClauses = [];
+    const additionalFilters = { ...(config.additionalFilters || {}) };
+
+    if (additionalFilters.$or) {
+      andClauses.push({ $or: additionalFilters.$or });
+      delete additionalFilters.$or;
     }
+
+    if (query.search && config.searchFields && config.searchFields.length > 0) {
+      andClauses.push({
+        $or: config.searchFields.map(field => ({ [field]: { $regex: query.search, $options: 'i' } }))
+      });
+    }
+
+    for (const [key, val] of Object.entries(additionalFilters)) {
+      if (val !== undefined && val !== null) {
+        andClauses.push({ [key]: val });
+      }
+    }
+
+    const filters = andClauses.length > 0 ? (andClauses.length === 1 ? andClauses[0] : { $and: andClauses }) : {};
     const sortField = query.sortBy || config.defaultSortField || 'createdAt';
     const sortOrder = query.sortOrder === 'asc' ? 1 : -1;
     const sort = { [sortField]: sortOrder };

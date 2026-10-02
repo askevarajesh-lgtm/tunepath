@@ -220,6 +220,7 @@ const ProjectList = () => {
 
   const handleFilterChange = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
+    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
   const handleClearFilters = () => {
@@ -228,6 +229,7 @@ const ProjectList = () => {
       companyId: undefined,
       itemName: undefined,
     });
+    setPagination((prev) => ({ ...prev, current: 1 }));
   };
 
   const hasActiveFilters =
@@ -297,7 +299,24 @@ const ProjectList = () => {
       title: "Project Name",
       dataIndex: "name",
       key: "name",
-      render: (text) => <strong>{text}</strong>,
+      render: (text, record) => (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          {record.color && (
+            <span
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: "50%",
+                backgroundColor: record.color,
+                display: "inline-block",
+                flexShrink: 0,
+              }}
+              title={`Color: ${record.color}`}
+            />
+          )}
+          <strong>{text}</strong>
+        </span>
+      ),
     },
     {
       title: "Client Company",
@@ -655,10 +674,11 @@ const ProjectList = () => {
             >
               <Select.Option value="created">Created</Select.Option>
               <Select.Option value="workflow_sent">Workflow Sent</Select.Option>
-              <Select.Option value="workflow_approved">
-                Workflow Approved
-              </Select.Option>
+              <Select.Option value="workflow_revision_requested">Revision Requested</Select.Option>
+              <Select.Option value="workflow_approved">Workflow Approved</Select.Option>
               <Select.Option value="in_progress">In Progress</Select.Option>
+              <Select.Option value="sent_for_client_review">Sent for Review</Select.Option>
+              <Select.Option value="approved">Approved</Select.Option>
               <Select.Option value="on_hold">On Hold</Select.Option>
               <Select.Option value="completed">Completed</Select.Option>
               <Select.Option value="project_near_due_date">Near Due Date</Select.Option>

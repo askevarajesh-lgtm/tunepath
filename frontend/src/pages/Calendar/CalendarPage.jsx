@@ -312,6 +312,7 @@ const CalendarPage = () => {
 
   const calendarDateCellRender = (value) => {
     const listData = getCalendarListData(value);
+    if (!listData || listData.length === 0) return null;
 
     // Color map per source: [background, text, border]
     const sourceColors = {
@@ -330,56 +331,124 @@ const CalendarPage = () => {
       custom:               ['#dcfce7', '#14532d', '#86efac'],
     };
 
+    const maxVisible = 2;
+    const visibleItems = listData.slice(0, maxVisible);
+    const extraCount = listData.length - maxVisible;
+
     return (
-      <ul style={{ listStyle: 'none', padding: 0, margin: 0, maxHeight: '90px', overflowY: 'auto' }}>
-        {listData.map(item => {
-          const [bg, text, border] = sourceColors[item.source] || ['#f3f4f6', '#374151', '#d1d5db'];
-          // Strip the bracket prefix like "[Proposal Created] " → keep just the name
-          const cleanTitle = item.title.replace(/^\[[^\]]+\]\s*/, '');
-          return (
-            <li key={item._id} style={{ marginBottom: '3px' }}>
-              <Tooltip title={`${item.title} · ${dayjs(item.startDateTime).format('h:mm a')}`}>
-                <div
-                  onClick={(e) => { e.stopPropagation(); openDetailModal(item); }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    background: bg,
-                    border: `1px solid ${border}`,
-                    borderRadius: '4px',
-                    padding: '1px 6px',
-                    cursor: 'pointer',
-                    overflow: 'hidden',
-                    transition: 'opacity 0.15s',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
-                  onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-                >
-                  <span style={{
-                    width: '6px',
-                    height: '6px',
-                    borderRadius: '50%',
-                    background: text,
-                    flexShrink: 0,
-                  }} />
-                  <span style={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    color: text,
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    maxWidth: '110px',
-                  }}>
-                    {cleanTitle}
-                  </span>
-                </div>
-              </Tooltip>
-            </li>
-          );
-        })}
-      </ul>
+      <div style={{ padding: '2px 0' }}>
+        {/* Count of events per day */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', marginBottom: '4px' }}>
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedDate(value.format('YYYY-MM-DD'));
+              setDayModalVisible(true);
+            }}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '4px',
+              background: isDark ? 'rgba(22, 119, 255, 0.2)' : '#e6f4ff',
+              color: isDark ? '#69b1ff' : '#0958d9',
+              border: `1px solid ${isDark ? 'rgba(22, 119, 255, 0.35)' : '#b5dcfe'}`,
+              borderRadius: '10px',
+              padding: '1px 7px',
+              fontSize: '11px',
+              fontWeight: 600,
+              lineHeight: '16px',
+              cursor: 'pointer',
+              transition: 'transform 0.15s ease'
+            }}
+            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.05)'}
+            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+          >
+            <span style={{ width: 5, height: 5, borderRadius: '50%', background: isDark ? '#69b1ff' : '#0958d9' }} />
+            {listData.length} {listData.length === 1 ? 'event' : 'events'}
+          </span>
+        </div>
+
+        {/* Top items */}
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          {visibleItems.map(item => {
+            const [bg, text, border] = sourceColors[item.source] || ['#f3f4f6', '#374151', '#d1d5db'];
+            const cleanTitle = item.title.replace(/^\[[^\]]+\]\s*/, '');
+            return (
+              <li key={item._id} style={{ marginBottom: '3px' }}>
+                <Tooltip title={`${item.title} · ${dayjs(item.startDateTime).format('h:mm a')}`}>
+                  <div
+                    onClick={(e) => { e.stopPropagation(); openDetailModal(item); }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      background: bg,
+                      border: `1px solid ${border}`,
+                      borderRadius: '4px',
+                      padding: '1px 6px',
+                      cursor: 'pointer',
+                      overflow: 'hidden',
+                      transition: 'opacity 0.15s',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.opacity = '0.8'}
+                    onMouseLeave={e => e.currentTarget.style.opacity = '1'}
+                  >
+                    <span style={{
+                      width: '6px',
+                      height: '6px',
+                      borderRadius: '50%',
+                      background: text,
+                      flexShrink: 0,
+                    }} />
+                    <span style={{
+                      fontSize: '11px',
+                      fontWeight: 600,
+                      color: text,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}>
+                      {cleanTitle}
+                    </span>
+                  </div>
+                </Tooltip>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* +N more pill */}
+        {extraCount > 0 && (
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              setSelectedDate(value.format('YYYY-MM-DD'));
+              setDayModalVisible(true);
+            }}
+            style={{
+              marginTop: '3px',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: isDark ? '#69b1ff' : '#1677ff',
+              background: isDark ? 'rgba(22, 119, 255, 0.12)' : '#f0f7ff',
+              border: `1px dashed ${isDark ? '#1677ff' : '#91caff'}`,
+              borderRadius: '4px',
+              padding: '1px 6px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = isDark ? 'rgba(22, 119, 255, 0.25)' : '#bae0ff';
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = isDark ? 'rgba(22, 119, 255, 0.12)' : '#f0f7ff';
+            }}
+          >
+            +{extraCount} more
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -1097,54 +1166,84 @@ const CalendarPage = () => {
       })()}
 
       {/* Day Events Modal */}
-      <Modal
-        title={`Activities for ${dayjs(selectedDate).format('MMMM DD, YYYY')}`}
-        open={dayModalVisible}
-        onCancel={() => {
-          setDayModalVisible(false);
-          setSelectedDate(null);
-        }}
-        footer={null}
-        width={600}
-      >
-        <List
-          itemLayout="horizontal"
-          style={{ maxHeight: '60vh', overflowY: 'auto' }}
-          dataSource={selectedDate ? events.filter(e => dayjs(e.startDateTime).format('YYYY-MM-DD') === selectedDate) : []}
-          renderItem={item => (
-            <List.Item
-              actions={[
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => {
-                    setDayModalVisible(false);
-                    openDetailModal(item);
-                  }}
+      {(() => {
+        const dayEvents = selectedDate ? events.filter(e => dayjs(e.startDateTime).format('YYYY-MM-DD') === selectedDate) : [];
+        return (
+          <Modal
+            title={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <CalendarOutlined style={{ color: '#1677ff' }} />
+                <span>Activities for {dayjs(selectedDate).format('MMMM DD, YYYY')}</span>
+                <Tag color="blue" style={{ borderRadius: '10px' }}>
+                  {dayEvents.length} {dayEvents.length === 1 ? 'Event' : 'Events'}
+                </Tag>
+              </div>
+            }
+            open={dayModalVisible}
+            onCancel={() => {
+              setDayModalVisible(false);
+              setSelectedDate(null);
+            }}
+            footer={null}
+            width={650}
+          >
+            <List
+              itemLayout="horizontal"
+              style={{ maxHeight: '60vh', overflowY: 'auto' }}
+              dataSource={dayEvents}
+              renderItem={item => (
+                <List.Item
+                  actions={[
+                    <Button
+                      size="middle"
+                      icon={<EyeOutlined />}
+                      onClick={() => {
+                        setDayModalVisible(false);
+                        openDetailModal(item);
+                      }}
+                      style={{
+                        borderRadius: '8px',
+                        fontWeight: 600,
+                        fontSize: '12px',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        color: '#ffffff',
+                        background: '#2563eb',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: '4px 14px',
+                        height: '32px',
+                        boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)'
+                      }}
+                    >
+                      View Details
+                    </Button>
+                  ]}
                 >
-                  View Details
-                </Button>
-              ]}
-            >
-              <List.Item.Meta
-                avatar={getStatusTag(item.status)}
-                title={<span>{item.title}</span>}
-                description={
-                  <Space direction="vertical" size={0}>
-                    <span style={{ fontSize: '12px' }}>
-                      <ClockCircleOutlined style={{ marginRight: 6 }} />
-                      {dayjs(item.startDateTime).format('h:mm a')} - {dayjs(item.endDateTime).format('h:mm a')}
-                    </span>
-                    <span style={{ fontSize: '12px', color: '#8c8c8c' }}>
-                      {item.notes || 'No additional details provided.'}
-                    </span>
-                  </Space>
-                }
-              />
-            </List.Item>
-          )}
-        />
-      </Modal>
+                  <List.Item.Meta
+                    avatar={getStatusTag(item.status)}
+                    title={<span style={{ fontWeight: 600 }}>{item.title}</span>}
+                    description={
+                      <Space direction="vertical" size={2}>
+                        <span style={{ fontSize: '12px', color: '#595959' }}>
+                          <ClockCircleOutlined style={{ marginRight: 6 }} />
+                          {dayjs(item.startDateTime).format('h:mm a')} - {dayjs(item.endDateTime).format('h:mm a')}
+                        </span>
+                        {item.notes && (
+                          <span style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                            {item.notes}
+                          </span>
+                        )}
+                      </Space>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          </Modal>
+        );
+      })()}
 
     </div>
   );

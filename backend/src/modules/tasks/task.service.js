@@ -974,7 +974,7 @@ const getAllTasks = async (
     {
       path: "projectId",
       select:
-        "name status numberOfPosters remainingPosters completedPosters numberOfVideos remainingVideos completedVideos numberOfShoots remainingShoots completedShoots selectedCategories",
+        "name status color numberOfPosters remainingPosters completedPosters numberOfVideos remainingVideos completedVideos numberOfShoots remainingShoots completedShoots selectedCategories",
     },
     { path: "assignedTo", select: "name email role" },
     { path: "assignedBy", select: "name email" },
@@ -1062,7 +1062,7 @@ const getTaskById = async (
 
   const task = await taskQuery
     .populate("companyId", "name email phone address")
-    .populate("projectId", "name status description")
+    .populate("projectId", "name status description color")
     .populate("assignedTo", "name email role avatar")
     .populate("assignedBy", "name email")
     .populate("validatedBy", "name email")

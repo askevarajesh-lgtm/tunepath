@@ -249,7 +249,27 @@ const TaskListView = ({ onTaskClick, departmentFilter, onTaskCompleted, clientId
       title: "Project",
       dataIndex: ["projectId", "name"],
       key: "projectName",
-      render: (_, record) => record.projectId?.name || "N/A",
+      render: (_, record) => {
+        if (!record.projectId?.name) return "N/A";
+        const pColor = record.projectId.color;
+        return (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            {pColor && (
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  backgroundColor: pColor,
+                  display: "inline-block",
+                  flexShrink: 0,
+                }}
+              />
+            )}
+            {record.projectId.name}
+          </span>
+        );
+      },
     },
     {
       title: "Company",
