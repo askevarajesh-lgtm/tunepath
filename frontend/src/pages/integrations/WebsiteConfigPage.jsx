@@ -177,6 +177,10 @@ const WebsiteConfigPage = ({ integrationId: propId, initialTab, onBack, clientId
       const whatsappValues = await whatsappForm.validateFields();
       const websiteValues = websiteForm.getFieldsValue();
       
+      const cleanedApiUrl = (whatsappValues.whatsappApiUrl || "")
+        .trim()
+        .replace(/^https?:\/\/my\.askeva\.io/i, "https://backend.askeva.io");
+
       const configData = {
         name: websiteValues.name || "Lead Management Integration",
         type: "website",
@@ -185,8 +189,8 @@ const WebsiteConfigPage = ({ integrationId: propId, initialTab, onBack, clientId
           domain: websiteValues.domain || "",
           apiKey: apiKey,
           whatsappLeads: {
-            apiUrl: whatsappValues.whatsappApiUrl,
-            token: whatsappValues.whatsappToken,
+            apiUrl: cleanedApiUrl,
+            token: (whatsappValues.whatsappToken || "").trim(),
           },
           customFields: websiteValues.customFields || [],
         },
@@ -574,9 +578,9 @@ document.getElementById('tunepath-lead-form').addEventListener('submit', async (
               label="API Endpoint"
               name="whatsappApiUrl"
               rules={[{ required: true, message: "API Endpoint is required" }]}
-              help="The URL from where WhatsApp leads will be fetched. (e.g., https://api.bccmartech.com/v1/leads)"
+              help="The API URL from where WhatsApp leads will be fetched (e.g., https://backend.askeva.io/v1/leads or https://api.bccmartech.com/v1/leads)."
             >
-              <Input placeholder="https://api.bccmartech.com/v1/leads" disabled={!isWhatsappEditing} />
+              <Input placeholder="https://backend.askeva.io/v1/leads" disabled={!isWhatsappEditing} />
             </Form.Item>
 
             <Form.Item

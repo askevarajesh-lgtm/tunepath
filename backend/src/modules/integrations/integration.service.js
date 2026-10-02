@@ -1557,7 +1557,13 @@ const fetchWhatsAppLeads = async (integrationId, companyId, role) => {
   }
 
   try {
-    let fetchUrl = whatsappLeads.apiUrl;
+    let fetchUrl = (whatsappLeads.apiUrl || "").trim();
+
+    // Auto-correct frontend portal domain to backend API domain if entered
+    if (fetchUrl.includes("my.askeva.io")) {
+      fetchUrl = fetchUrl.replace(/https?:\/\/my\.askeva\.io/i, "https://backend.askeva.io");
+    }
+
     const config = {
       headers: {
         "Content-Type": "application/json",
@@ -1579,19 +1585,9 @@ const fetchWhatsAppLeads = async (integrationId, companyId, role) => {
     const response = await axios.get(fetchUrl, config);
 
     const externalLeads = response.data;
-    let leadsArray = [];
+    logger.info("Raw WhatsApp API response received:", typeof externalLeads === "object" ? JSON.stringify(externalLeads).slice(0, 500) : String(externalLeads).slice(0, 500));
 
-    if (Array.isArray(externalLeads)) {
-      leadsArray = externalLeads;
-    } else if (externalLeads.data && Array.isArray(externalLeads.data)) {
-      leadsArray = externalLeads.data;
-    } else if (externalLeads.leads && Array.isArray(externalLeads.leads)) {
-      leadsArray = externalLeads.leads;
-    } else if (externalLeads.results && Array.isArray(externalLeads.results)) {
-      leadsArray = externalLeads.results;
-    } else {
-      throw new Error("External API did not return an array of leads");
-    }
+    const leadsArray = extractWhatsAppLeadsArray(externalLeads);
 
     return await processWhatsAppLeads(
       leadsArray,
@@ -1600,11 +1596,139 @@ const fetchWhatsAppLeads = async (integrationId, companyId, role) => {
     );
   } catch (error) {
     logger.error("Error fetching WhatsApp leads:", error);
-    throw new Error(`Failed to fetch leads: ${error.message}`);
+    const backendMsg =
+      error.response?.data?.message ||
+      error.response?.data?.error ||
+      error.message;
+    throw new Error(`Failed to fetch leads: ${backendMsg}`);
   }
 };
 
+/**
+ * Helper to extract lead array from various API response shapes
+ */
+const extractWhatsAppLeadsArray = (responseData) => {
+  if (!responseData) return [];
+
+  let data = responseData;
+  if (typeof data === "string") {
+    const trimmed = data.trim();
+    if (
+      trimmed.startsWith("<") ||
+      trimmed.toLowerCase().includes("<!doctype html") ||
+      trimmed.toLowerCase().includes("<html")
+    ) {
+      throw new Error(
+        "External API returned an HTML page instead of JSON. Please check the API Endpoint URL and token.",
+      );
+    }
+    try {
+      data = JSON.parse(trimmed);
+    } catch {
+      throw new Error(
+        `External API returned invalid JSON: ${trimmed.slice(0, 100)}`,
+      );
+    }
+  }
+
+  // If response is an explicit error from external API
+  if (
+    data.success === false ||
+    data.status === false ||
+    data.status === "error" ||
+    data.status === "failed"
+  ) {
+    const errorMsg =
+      data.message ||
+      data.error ||
+      data.msg ||
+      data.errMsg ||
+      "External API returned a failure response";
+    throw new Error(`External API error: ${errorMsg}`);
+  }
+
+  // Direct array
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  // Common array property names
+  const arrayKeys = [
+    "data",
+    "leads",
+    "results",
+    "records",
+    "items",
+    "rows",
+    "contacts",
+    "messages",
+    "chats",
+    "payload",
+    "list",
+  ];
+
+  for (const key of arrayKeys) {
+    if (Array.isArray(data[key])) {
+      return data[key];
+    }
+  }
+
+  // Nested objects: data.data, data.leads, response.leads, payload.leads, etc.
+  if (typeof data === "object" && data !== null) {
+    for (const parentKey of ["data", "response", "payload", "result", "body"]) {
+      if (data[parentKey] && typeof data[parentKey] === "object") {
+        if (Array.isArray(data[parentKey])) {
+          return data[parentKey];
+        }
+        for (const childKey of arrayKeys) {
+          if (Array.isArray(data[parentKey][childKey])) {
+            return data[parentKey][childKey];
+          }
+        }
+      }
+    }
+
+    // Any array found anywhere among top-level values
+    for (const key of Object.keys(data)) {
+      if (Array.isArray(data[key])) {
+        return data[key];
+      }
+    }
+
+    // If response is empty or null data (e.g. no leads present in API)
+    if (
+      data.data === null ||
+      data.data === undefined ||
+      (typeof data.data === "object" && Object.keys(data.data).length === 0) ||
+      data.leads === null ||
+      data.count === 0 ||
+      data.total === 0 ||
+      Object.keys(data).length === 0
+    ) {
+      return [];
+    }
+
+    if (data.error || data.message || data.msg) {
+      throw new Error(`External API: ${data.message || data.error || data.msg}`);
+    }
+  }
+
+  throw new Error(
+    `External API returned unrecognized response format: ${JSON.stringify(data).slice(0, 150)}`,
+  );
+};
+
 const processWhatsAppLeads = async (leads, companyId, integrationCompanyId) => {
+  if (!leads || leads.length === 0) {
+    return {
+      success: true,
+      message: "No new leads found to fetch from WhatsApp API",
+      createdCount: 0,
+      duplicateCount: 0,
+      skippedCount: 0,
+    };
+  }
+
   const targetCompanyId = integrationCompanyId || companyId || null;
 
   // Find a user for this company to act as creator
