@@ -84,8 +84,27 @@ async function run(projectId, workspaceId, options = {}, userId = 'system') {
 }
 
 async function synthesizeSiteAudit(jobId) {
-  const job = await WorkspaceAuditJob.findById(jobId).populate('projectId');
-  if (!job || !job.projectId) throw new Error('Job/Project not found');
+  // Use findOneAndUpdate to atomically lock this job to prevent race conditions
+  const job = await WorkspaceAuditJob.findOneAndUpdate(
+    { _id: jobId, isSynthesizing: { $ne: true } },
+    { $set: { isSynthesizing: true } },
+    { new: true }
+  ).populate('projectId');
+
+  if (!job) {
+    logger.info(TAG, `Audit for job ${jobId} is already being synthesized or not found.`);
+    // Polling until the audit is created by the other process
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      const audit = await WorkspaceAudit.findOne({ taskId: jobId });
+      if (audit) return audit;
+    }
+    const existing = await WorkspaceAudit.findOne({ taskId: jobId });
+    if (existing) return existing;
+    throw new Error('Timeout waiting for audit synthesis by another process');
+  }
+
+  if (!job.projectId) throw new Error('Project not found');
 
   const project = job.projectId;
   const agencyId = job.agencyId;
@@ -341,38 +360,43 @@ async function synthesizeSiteAudit(jobId) {
   else if (overall >= 30) healthStatus = 'Poor';
   else healthStatus = 'Critical';
 
-  const rawAudit = await WorkspaceAudit.create({
-    projectId: project._id,
-    agencyId,
-    taskId: job._id,
-    status: 'completed',
-    metrics: {
-      technical: scores.technical,
-      indexability: scores.indexability,
-      onpage: scores.onpage,
-      content: scores.content,
-      performance: scores.performance,
-      structuredData: scores.structuredData,
-      internalLinking: scores.internalLinking,
-      authority: scores.authority,
-      overall: overall,
-      healthStatus: healthStatus,
-      scoreConfidence: confidence,
-      confidenceReason: confidenceReason,
-      measurementCoverage: measurementCoverage,
-      sitemapUrls: job.progress.urlsDiscovered, // approximate
-      discoveredUrls: job.progress.urlsDiscovered,
-      indexableUrls: indexableCount,
-      nonIndexableUrls: nonIndexableCount,
-      scoreBreakdown: scoreBreakdown,
-      pagesCrawled: pages.length
+  const rawAudit = await WorkspaceAudit.findOneAndUpdate(
+    { taskId: job._id },
+    {
+      $set: {
+        projectId: project._id,
+        agencyId,
+        status: 'completed',
+        metrics: {
+          technical: scores.technical,
+          indexability: scores.indexability,
+          onpage: scores.onpage,
+          content: scores.content,
+          performance: scores.performance,
+          structuredData: scores.structuredData,
+          internalLinking: scores.internalLinking,
+          authority: scores.authority,
+          overall: overall,
+          healthStatus: healthStatus,
+          scoreConfidence: confidence,
+          confidenceReason: confidenceReason,
+          measurementCoverage: measurementCoverage,
+          sitemapUrls: job.progress.urlsDiscovered, // approximate
+          discoveredUrls: job.progress.urlsDiscovered,
+          indexableUrls: indexableCount,
+          nonIndexableUrls: nonIndexableCount,
+          scoreBreakdown: scoreBreakdown,
+          pagesCrawled: pages.length
+        },
+        groupedIssues,
+        agent: {
+          findings: [] // Legacy findings left empty
+        },
+        completedAt: new Date()
+      }
     },
-    groupedIssues,
-    agent: {
-      findings: [] // Legacy findings left empty
-    },
-    completedAt: new Date()
-  });
+    { upsert: true, new: true }
+  );
 
   // Call the AI Analyzer to explain top issues
   return await analyzeAudit(project, rawAudit, agencyId, job);

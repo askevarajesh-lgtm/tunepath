@@ -64,6 +64,10 @@ const ClientsTab = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [totalClients, setTotalClients] = useState(0);
+  const [createdFilter, setCreatedFilter] = useState('all');
+  const [assignedFilter, setAssignedFilter] = useState('all');
+  const [creatorUsersList, setCreatorUsersList] = useState([]);
+  const [assignedUsersList, setAssignedUsersList] = useState([]);
 
   const [clientCountryCode, setClientCountryCode] = useState('91');
   const [clientCountryIso, setClientCountryIso] = useState('IN');
@@ -92,15 +96,37 @@ const ClientsTab = () => {
   const fetchAgencyUsers = async () => {
     try {
       const headers = { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
-      const res = await fetch('/api/users', { headers });
-      const data = await res.json();
-      if (data.success) {
-        const allUsers = data.data || [];
+      const [usersRes, allBrandsRes] = await Promise.all([
+        fetch('/api/users', { headers }),
+        fetch('/api/brands', { headers })
+      ]);
+      const usersData = await usersRes.json();
+      const brandsData = await allBrandsRes.json();
+      
+      if (usersData.success) {
+        const allUsers = usersData.data || [];
         const excludedRoles = [
           'supreme_super_admin', 'superadmin', 'super_admin', 'commander_admin', 'admin',
           'agency_super_admin'
         ];
-        setAgencyUsersList(allUsers.filter(u => !excludedRoles.includes(u.role)));
+        const validUsers = allUsers.filter(u => !excludedRoles.includes(u.role));
+        setAgencyUsersList(validUsers);
+
+        if (brandsData.success) {
+          const allBrands = brandsData.data || [];
+          
+          const creatorIds = new Set(allBrands.map(b => b.createdBy?._id || b.createdBy));
+          const assignedIds = new Set();
+          
+          allBrands.forEach(b => {
+            if (b.assignedUsers && Array.isArray(b.assignedUsers)) {
+              b.assignedUsers.forEach(u => assignedIds.add(u._id || u));
+            }
+          });
+
+          setCreatorUsersList(validUsers.filter(u => creatorIds.has(u._id)));
+          setAssignedUsersList(validUsers.filter(u => assignedIds.has(u._id)));
+        }
       }
     } catch (error) {
       console.error('Failed to fetch agency users', error);
@@ -138,7 +164,7 @@ const ClientsTab = () => {
     }
   };
 
-  const fetchClients = async (page = currentPage, limit = pageSize, search = debouncedSearch, clientId = globalSelectedClient?._id) => {
+  const fetchClients = async (page = currentPage, limit = pageSize, search = debouncedSearch, clientId = globalSelectedClient?._id, createdBy = createdFilter, assignedUser = assignedFilter) => {
     try {
       setLoading(true);
       const headers = { 'Authorization': `Bearer ${localStorage.getItem('token')}` };
@@ -147,7 +173,9 @@ const ClientsTab = () => {
         page,
         limit,
         ...(search ? { search } : {}),
-        ...(clientId ? { clientId } : {})
+        ...(clientId ? { clientId } : {}),
+        ...(createdBy !== 'all' ? { createdBy } : {}),
+        ...(assignedUser !== 'all' ? { assignedUser } : {})
       }).toString();
 
       const [brandsRes, mosRes] = await Promise.all([
@@ -201,8 +229,8 @@ const ClientsTab = () => {
   }, [searchQuery]);
 
   useEffect(() => {
-    fetchClients(currentPage, pageSize, debouncedSearch, globalSelectedClient?._id);
-  }, [currentPage, pageSize, debouncedSearch, globalSelectedClient]);
+    fetchClients(currentPage, pageSize, debouncedSearch, globalSelectedClient?._id, createdFilter, assignedFilter);
+  }, [currentPage, pageSize, debouncedSearch, globalSelectedClient, createdFilter, assignedFilter]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -218,6 +246,7 @@ const ClientsTab = () => {
 
   useEffect(() => {
     fetchPackages();
+    fetchAgencyUsers();
   }, []);
 
   useEffect(() => {
@@ -503,12 +532,34 @@ const ClientsTab = () => {
             allowClear
             onClear={() => setSearchQuery('')}
             style={{
-              maxWidth: 400,
-              background: 'transparent',
-              border: 'none',
+              flex: 1,
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 8,
               boxShadow: 'none',
-              fontSize: 15
+              fontSize: 15,
+              padding: '6px 12px'
             }}
+          />
+          <Select
+            placeholder="Created By"
+            value={createdFilter}
+            onChange={setCreatedFilter}
+            style={{ flex: 1 }}
+            options={[
+              { label: 'All Creators', value: 'all' },
+              ...creatorUsersList.map(u => ({ label: u.name, value: u._id }))
+            ]}
+          />
+          <Select
+            placeholder="Assigned User"
+            value={assignedFilter}
+            onChange={setAssignedFilter}
+            style={{ flex: 1 }}
+            options={[
+              { label: 'All Assigned', value: 'all' },
+              ...assignedUsersList.map(u => ({ label: u.name, value: u._id }))
+            ]}
           />
         </div>
       </motion.div>

@@ -24,7 +24,17 @@ class MonitoringHistoryService {
       timestamp: { $gte: fromDate }
     }).sort({ timestamp: 1 }).lean();
 
-    return snapshots;
+    return snapshots.map(s => {
+      const ts = new Date(s.timestamp);
+      return {
+        date: `${ts.toLocaleDateString()} ${ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+        healthScore: s.healthScore || 0,
+        top10Keywords: s.keywordSummary?.top10 || 0,
+        cwvLcp: s.coreWebVitals?.lcp ? `${s.coreWebVitals.lcp}s` : 'N/A',
+        uptime: s.uptime?.uptimePercentage ? `${s.uptime.uptimePercentage}%` : 'N/A',
+        criticalAlerts: s.alerts?.critical || 0
+      };
+    });
   }
 
   /**

@@ -13,6 +13,7 @@ import {
   InstagramFilled,
   LinkedinFilled,
   YoutubeFilled,
+  MoreOutlined,
 } from "@ant-design/icons";
 import {
   Button,
@@ -27,6 +28,8 @@ import {
   Tag,
   Tooltip,
   Typography,
+  Dropdown,
+  Modal,
 } from "antd";
 import { SOCIAL_ACCOUNTS } from "./socialAccounts";
 
@@ -553,47 +556,50 @@ export default function ListView({
             {
               title: "Action",
               key: "action",
-              render: (_, row) => (
-                <Space size={4}>
-                  <Tooltip title="View">
-                    <Button
-                      type="text"
-                      icon={<EyeOutlined />}
-                      aria-label={`View ${row.caption}`}
-                      onClick={() => onView?.(row)}
-                    />
-                  </Tooltip>
-                  {canEdit && (row.status === "Draft" || row.status === "Failed") && (
-                    <Tooltip title="Edit">
-                      <Button
-                        type="text"
-                        icon={<EditOutlined />}
-                        aria-label={`Edit ${row.caption}`}
-                        onClick={() => onEdit?.(row)}
-                      />
-                    </Tooltip>
-                  )}
-                  {canDelete && (
-                    <Popconfirm
-                      title="Delete this post?"
-                      description="This action cannot be undone."
-                      okText="Delete"
-                      cancelText="Cancel"
-                      okButtonProps={{ danger: true }}
-                      onConfirm={() => onDelete?.(row)}
-                    >
-                      <Tooltip title="Delete">
-                        <Button
-                          type="text"
-                          danger
-                          icon={<DeleteOutlined />}
-                          aria-label={`Delete ${row.caption}`}
-                        />
-                      </Tooltip>
-                    </Popconfirm>
-                  )}
-                </Space>
-              ),
+              render: (_, row) => {
+                const items = [
+                  {
+                    key: 'view',
+                    icon: <EyeOutlined />,
+                    label: 'View',
+                    onClick: () => onView?.(row)
+                  }
+                ];
+
+                if (canEdit && (row.status === "Draft" || row.status === "Failed")) {
+                  items.push({
+                    key: 'edit',
+                    icon: <EditOutlined />,
+                    label: 'Edit',
+                    onClick: () => onEdit?.(row)
+                  });
+                }
+
+                if (canDelete) {
+                  items.push({
+                    key: 'delete',
+                    icon: <DeleteOutlined />,
+                    danger: true,
+                    label: 'Delete',
+                    onClick: () => {
+                      Modal.confirm({
+                        title: "Delete this post?",
+                        content: "This action cannot be undone.",
+                        okText: "Delete",
+                        cancelText: "Cancel",
+                        okButtonProps: { danger: true },
+                        onOk: () => onDelete?.(row)
+                      });
+                    }
+                  });
+                }
+
+                return (
+                  <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+                    <Button type="text" icon={<MoreOutlined />} aria-label="Actions" />
+                  </Dropdown>
+                );
+              },
             },
           ]}
         />
