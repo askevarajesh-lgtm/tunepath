@@ -10,7 +10,7 @@
   --text-secondary: #536484;
   --text-tertiary: #8a9ab5;
   
-  --accent-primary: var(--accent-primary);
+  --accent-primary: #034EA1;
   --accent-secondary: #10b981;
   --accent-success: #10b981;
   --accent-warning: #f59e0b;
@@ -47,7 +47,7 @@
   --text-secondary: #c7d2e4;
   --text-tertiary: #8492aa;
 
-  --accent-primary: var(--accent-primary);
+  --accent-primary: #034EA1;
   --accent-secondary: #10b981;
   --accent-success: #10b981;
   --accent-warning: #f59e0b;

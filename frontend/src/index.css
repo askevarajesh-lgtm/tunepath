@@ -523,7 +523,7 @@ a {
 
 .app-sidebar .ant-menu-item:not(.ant-menu-item-selected):hover,
 .app-sidebar .ant-menu-submenu-title:hover {
-  background: rgba(225, 20, 60, 0.08) !important;
+  background: var(--sidebar-accent-soft, rgba(3, 78, 161, 0.08)) !important;
   color: var(--text-primary) !important;
   transform: translateX(3px);
 }
@@ -540,15 +540,15 @@ a {
   color: #ffffff !important;
 }
 
-/* Active sidebar item styling - Ultra-premium, vibrant, high-contrast glow design */
+/* Active sidebar item styling - Uses dynamic primary accent color */
 .app-sidebar .ant-menu-item-selected,
 .app-sidebar .ant-menu-item-selected:hover,
 .app-sidebar .ant-menu-sub .ant-menu-item-selected,
 .app-sidebar .ant-menu-sub .ant-menu-item-selected:hover {
-  background: linear-gradient(135deg, #e1143c 0%, #be123c 100%) !important;
+  background: linear-gradient(135deg, var(--sidebar-accent, var(--accent-primary, #034EA1)) 0%, color-mix(in srgb, var(--sidebar-accent, var(--accent-primary, #034EA1)) 82%, #000000) 100%) !important;
   color: #ffffff !important;
   font-weight: 800 !important;
-  box-shadow: 0 4px 18px rgba(225, 20, 60, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
+  box-shadow: 0 4px 18px color-mix(in srgb, var(--sidebar-accent, var(--accent-primary, #034EA1)) 38%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.25) !important;
   position: relative !important;
   transform: scale(1.02) !important;
   transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
@@ -558,9 +558,9 @@ a {
 [data-theme='dark'] .app-sidebar .ant-menu-item-selected:hover,
 [data-theme='dark'] .app-sidebar .ant-menu-sub .ant-menu-item-selected,
 [data-theme='dark'] .app-sidebar .ant-menu-sub .ant-menu-item-selected:hover {
-  background: linear-gradient(135deg, #e1143c 0%, #9f0728 100%) !important;
+  background: linear-gradient(135deg, var(--sidebar-accent, var(--accent-primary, #034EA1)) 0%, color-mix(in srgb, var(--sidebar-accent, var(--accent-primary, #034EA1)) 65%, #000000) 100%) !important;
   color: #ffffff !important;
-  box-shadow: 0 6px 22px rgba(225, 20, 60, 0.48), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+  box-shadow: 0 6px 22px color-mix(in srgb, var(--sidebar-accent, var(--accent-primary, #034EA1)) 48%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
 }
 
 /* Glowing side indicator accent */
