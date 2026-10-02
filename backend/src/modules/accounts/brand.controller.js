@@ -61,6 +61,14 @@ exports.getBrands = async (req, res, next) => {
       filter._id = req.query.clientId;
     }
 
+    if (req.query.createdBy && req.query.createdBy !== 'all') {
+      filter.createdBy = req.query.createdBy;
+    }
+
+    if (req.query.assignedUser && req.query.assignedUser !== 'all') {
+      filter.assignedUsers = req.query.assignedUser;
+    }
+
     if (req.query.search) {
       const escaped = String(req.query.search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const searchRegex = new RegExp(escaped, 'i');

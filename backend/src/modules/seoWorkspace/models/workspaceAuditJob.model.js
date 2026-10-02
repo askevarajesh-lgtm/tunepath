@@ -51,7 +51,8 @@ const workspaceAuditJobSchema = new mongoose.Schema({
   },
   startedAt: { type: Date },
   completedAt: { type: Date },
-  error: { type: String }
+  error: { type: String },
+  isSynthesizing: { type: Boolean, default: false }
 }, { timestamps: true });
 
 workspaceAuditJobSchema.pre('save', function() {

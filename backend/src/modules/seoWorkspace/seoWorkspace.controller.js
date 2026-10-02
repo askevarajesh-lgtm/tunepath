@@ -2468,8 +2468,8 @@ exports.getDashboard = async (req, res) => {
       if (seoScore != null) { totalSeoScore += seoScore; validSeoScores++; }
       if (healthScore != null) { totalHealthScore += healthScore; validHealthScores++; }
     });
-    const avgSeoScore = validSeoScores > 0 ? Math.round(totalSeoScore / validSeoScores) : 82;
-    const avgHealthScore = validHealthScores > 0 ? Math.round(totalHealthScore / validHealthScores) : 85;
+    const avgSeoScore = validSeoScores > 0 ? Math.round(totalSeoScore / validSeoScores) : 0;
+    const avgHealthScore = validHealthScores > 0 ? Math.round(totalHealthScore / validHealthScores) : 0;
 
     const [
       pendingStrategies,
@@ -2526,8 +2526,8 @@ exports.getDashboard = async (req, res) => {
       }
     });
 
-    const latestAeoScore = latestAeoAudits?.[0]?.overallScore ?? 78;
-    const latestGeoScore = latestGeoAudits?.[0]?.overallGeoScore ?? 84;
+    const latestAeoScore = latestAeoAudits?.[0]?.overallScore ?? 0;
+    const latestGeoScore = latestGeoAudits?.[0]?.overallGeoScore ?? 0;
 
     res.json({
       success: true,

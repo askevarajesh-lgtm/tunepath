@@ -321,20 +321,8 @@ async function run(projectId, workspaceId, options = {}) {
       await WorkspaceKeyword.bulkWrite(gscUpdates);
   }
 
-  try {
-      const newlyInsertedKeywords = await WorkspaceKeyword.find({
-        projectId,
-        keyword: { $in: finalCandidates.map(k => k.keyword) }
-      });
-      
-      if (newlyInsertedKeywords.length > 0) {
-        logger.info(TAG, `Synchronously running SERP track for ${newlyInsertedKeywords.length} extracted candidates.`);
-        await rankTrackingService.trackKeywords(project, newlyInsertedKeywords);
-      }
-  } catch (err) {
-      logger.error(TAG, `Failed to synchronously track ranks: ${err.message}`);
-  }
-
+  // Removed synchronous SERP tracking so candidates stay in CANDIDATE status 
+  // and show up in the 'Keyword Opportunities' tab for user approval.
   let summaryText = `Found ${finalCandidates.length} evidence-based candidates. ${aiSummary} ${partial ? '(Based on partial homepage crawl while deep crawl runs)' : ''}`;
 
   return {
