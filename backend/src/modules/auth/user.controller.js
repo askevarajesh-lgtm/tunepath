@@ -218,7 +218,7 @@ exports.getUsersDropdown = async (req, res, next) => {
     }
 
     const users = await User.find(queryFilter)
-      .select('name email role customRoleId departmentId departmentName department')
+      .select('name email role customRoleId departmentId departmentName department phone countryCode')
       .populate('departmentId', 'name slug')
       .sort({ name: 1 });
     res.status(200).json({ success: true, data: { users } });

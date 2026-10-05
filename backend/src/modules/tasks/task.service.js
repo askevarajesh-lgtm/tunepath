@@ -18,7 +18,7 @@ const eventConfigService = {
     return await EventConfig.findOne({ eventType, companyId });
   },
   sendEventNotification: async (eventType, eventData, options) => {
-    const { phone, channels, tenantCompanyId } = options;
+    const { phone, channels = ['whatsapp', 'email'], tenantCompanyId, countryCode = '91' } = options;
     const result = {};
     try {
       if (channels.includes('whatsapp') && phone) {
@@ -44,13 +44,27 @@ const eventConfigService = {
             templateName = templateObj.name;
           }
           
+          // Format phone with selected country code
+          const formatPhoneWithCountryCode = (rawPhone, rawCC) => {
+            if (!rawPhone) return '';
+            const digitsOnly = String(rawPhone).replace(/\D/g, '');
+            const ccDigits = String(rawCC || '91').replace(/\D/g, '') || '91';
+            if (!digitsOnly) return '';
+            if (digitsOnly.startsWith(ccDigits) && digitsOnly.length > ccDigits.length + 5) {
+              return digitsOnly;
+            }
+            return `${ccDigits}${digitsOnly}`;
+          };
+
+          const targetPhone = formatPhoneWithCountryCode(phone, countryCode);
+          
           const fs = require('fs');
-          fs.appendFileSync('whatsapp_debug.log', `[${new Date().toISOString()}] Sending WhatsApp to ${phone}. Template: ${templateName}, Variables: ${JSON.stringify(variables)}\n`);
+          fs.appendFileSync('whatsapp_debug.log', `[${new Date().toISOString()}] Sending WhatsApp to ${targetPhone} (countryCode: ${countryCode}). Template: ${templateName}, Variables: ${JSON.stringify(variables)}\n`);
           try {
             const res = await whatsappService.sendMessage(
               backendUrl,
               apiToken,
-              phone,
+              targetPhone,
               templateName,
               variables,
               { templateName }
@@ -1472,13 +1486,21 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
     logger.error("Error auto-adding leka@tunepath.com to watchers:", lekaErr);
   }
 
-  // Fetch assigned user's phone number if a user is assigned
+  // Fetch assigned user's phone number & country code if a user is assigned
   if (cleanedTaskData.assignedTo) {
-    const assignedUser = await User.findById(cleanedTaskData.assignedTo).select('phone');
-    if (assignedUser && assignedUser.phone) {
-      cleanedTaskData.assignedUserPhone = assignedUser.phone;
+    const assignedUser = await User.findById(cleanedTaskData.assignedTo).select('phone countryCode');
+    if (assignedUser) {
+      if (assignedUser.phone) {
+        cleanedTaskData.assignedUserPhone = assignedUser.phone;
+      }
+      if (!cleanedTaskData.countryCode && assignedUser.countryCode) {
+        cleanedTaskData.countryCode = assignedUser.countryCode;
+      }
     }
   }
+
+  cleanedTaskData.countryCode = cleanedTaskData.countryCode || taskData.countryCode || '91';
+  cleanedTaskData.assignedUserCountryCode = cleanedTaskData.countryCode;
 
   const task = await Task.create({
     ...cleanedTaskData,
@@ -1684,6 +1706,7 @@ const createTask = async (taskData, tenantCompanyId, createdByUserId) => {
               phone: assignedUser.phone,
               channels: channels,
               tenantCompanyId: agencyCompanyId,
+              countryCode: task.countryCode || task.assignedUserCountryCode || assignedUser.countryCode || '91',
             },
           );
 
@@ -1960,6 +1983,8 @@ const updateTask = async (
     "taskCategory",
     "requiresClientReview",
     "serviceType",
+    "countryCode",
+    "assignedUserCountryCode",
     "assignedUserPhone",
   ];
 
@@ -2014,14 +2039,21 @@ const updateTask = async (
 
   normalizeTaskDateFields(cleanedTaskData);
 
-  // Fetch new assigned user's phone number if assignment changed
+  // Fetch new assigned user's phone number & country code if assignment changed
   if (cleanedTaskData.assignedTo !== undefined && cleanedTaskData.assignedTo !== oldAssignedTo) {
     if (cleanedTaskData.assignedTo) {
-      const assignedUser = await User.findById(cleanedTaskData.assignedTo).select('phone');
+      const assignedUser = await User.findById(cleanedTaskData.assignedTo).select('phone countryCode');
       cleanedTaskData.assignedUserPhone = assignedUser?.phone || null;
+      if (!cleanedTaskData.countryCode && assignedUser?.countryCode) {
+        cleanedTaskData.countryCode = assignedUser.countryCode;
+      }
     } else {
       cleanedTaskData.assignedUserPhone = null;
     }
+  }
+
+  if (cleanedTaskData.countryCode) {
+    cleanedTaskData.assignedUserCountryCode = cleanedTaskData.countryCode;
   }
 
   allowedUpdates.forEach((field) => {
@@ -2449,6 +2481,7 @@ const updateTask = async (
                     to: assignedUser.email,
                     phone: assignedUser.phone,
                     tenantCompanyId,
+                    countryCode: task.countryCode || task.assignedUserCountryCode || assignedUser.countryCode || '91',
                   },
                 );
 
@@ -4552,6 +4585,7 @@ const createStatusChangeNotifications = async (
               phone: user.phone,
               channels: channels,
               tenantCompanyId,
+              countryCode: user.countryCode || task.countryCode || task.assignedUserCountryCode || '91',
             },
           ),
         );

@@ -57,9 +57,38 @@ import dayjs from "dayjs";
 import { useActionPermissions } from "../../hooks/useActionPermissions";
 import { PERMISSION_ACTIONS } from "../../utils/actionPermissions";
 import { ensureNamedCategories } from "../../utils/categoryUtils";
+import { getCountries, getCountryCallingCode } from "libphonenumber-js";
 
 const { TextArea } = Input;
 const { Option } = Select;
+
+const countryCallingCodeOptions = (() => {
+  const countries = getCountries();
+  const displayNames =
+    typeof Intl !== "undefined" && Intl.DisplayNames
+      ? new Intl.DisplayNames(["en"], { type: "region" })
+      : null;
+  const flagOffset = 127397;
+  const list = countries
+    .map((country) => {
+      const callingCode = getCountryCallingCode(country);
+      const name = displayNames ? displayNames.of(country) : country;
+      const flag = country
+        .toUpperCase()
+        .replace(/./g, (char) =>
+          String.fromCodePoint(char.charCodeAt(0) + flagOffset),
+        );
+      return {
+        key: `${country}-${callingCode}`,
+        country,
+        callingCode,
+        label: `${flag} ${name} (+${callingCode})`,
+        searchString: `${name} +${callingCode} ${country}`.toLowerCase(),
+      };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label));
+  return list;
+})();
 
 const filterOptionByChildrenOrLabel = (input, option) => {
   if (!input) return true;
@@ -160,6 +189,7 @@ const TaskForm = () => {
       projectId: undefined,
       serviceType: undefined,
       assignedTo: undefined,
+      countryCode: "91",
       title: "",
       startDate: dayjs(),
       dueDate: null,
@@ -851,6 +881,7 @@ const TaskForm = () => {
         projectId: taskProjectId,
         companyId: taskCompanyId,
         assignedTo: task.assignedTo?._id || task.assignedTo,
+        countryCode: task.countryCode || task.assignedUserCountryCode || task.assignedTo?.countryCode || "91",
         priority: task.priority || "medium",
         taskCategory: task.taskCategory || "New",
         status: task.status,
@@ -1046,6 +1077,7 @@ const TaskForm = () => {
         projectId: undefined,
         serviceType: undefined,
         assignedTo: undefined,
+        countryCode: "91",
         title: "",
         startDate: dayjs(),
         dueDate: null,
@@ -1062,6 +1094,12 @@ const TaskForm = () => {
       prev.map((block, idx) => {
         if (idx !== index) return block;
         const updated = { ...block, [field]: value };
+        if (field === "assignedTo" && value) {
+          const assignedUser = allAvailableUsers.find((u) => u._id === value);
+          if (assignedUser?.countryCode) {
+            updated.countryCode = assignedUser.countryCode;
+          }
+        }
         if (field === "projectId" && value) {
           const projObj = allProjects.find((p) => (p._id || p.id) === value);
           if (projObj?.clientId) {
@@ -1113,6 +1151,10 @@ const TaskForm = () => {
         notifyError('save', 'validation', `Please select Assigned To user for Task #${num}`);
         return;
       }
+      if (!b.countryCode) {
+        notifyError('save', 'validation', `Please select Country Code for Task #${num}`);
+        return;
+      }
       if (!hideClientDropdown && !b.companyId && !b.projectId) {
         notifyError('save', 'validation', `Please select a Client or Project for Task #${num}`);
         return;
@@ -1156,6 +1198,7 @@ const TaskForm = () => {
         projectId: b.projectId || null,
         companyId: b.companyId,
         assignedTo: b.assignedTo,
+        countryCode: b.countryCode || "91",
         priority: b.priority || "medium",
         taskCategory: b.taskCategory || "New",
         startDate: b.startDate ? dayjs(b.startDate).startOf('day').toISOString() : null,
@@ -1209,6 +1252,7 @@ const TaskForm = () => {
         projectId: values.projectId || null,
         companyId: values.companyId,
         assignedTo: values.assignedTo,
+        countryCode: values.countryCode || "91",
         priority: values.priority || "medium",
         taskCategory: values.taskCategory || values.taskType || "New",
         startDate: startDate ? startDate.startOf('day').toISOString() : null,
@@ -1365,6 +1409,11 @@ const TaskForm = () => {
                           `${selectedUser.name} is on leave today. Please select another team member.`
                         );
                       }
+                      if (selectedUser?.countryCode) {
+                        form.setFieldsValue({ countryCode: selectedUser.countryCode });
+                      } else if (!form.getFieldValue("countryCode")) {
+                        form.setFieldsValue({ countryCode: "91" });
+                      }
                     }}
                     filterOption={(input, option) => {
                       const label = Array.isArray(option?.children)
@@ -1397,6 +1446,35 @@ const TaskForm = () => {
 
               <Col xs={24} md={8}>
                 <Form.Item
+                  label="Country Code"
+                  name="countryCode"
+                  rules={[
+                    { required: true, message: "Please select country code" },
+                  ]}
+                  initialValue="91"
+                >
+                  <Select
+                    placeholder="Select country code"
+                    showSearch
+                    optionFilterProp="children"
+                    filterOption={(input, option) => {
+                      const label = option?.label || "";
+                      return String(label).toLowerCase().includes(input.toLowerCase());
+                    }}
+                  >
+                    {countryCallingCodeOptions.map((opt) => (
+                      <Option key={opt.key} value={opt.callingCode} label={opt.label}>
+                        {opt.label}
+                      </Option>
+                    ))}
+                  </Select>
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Row gutter={16}>
+              <Col xs={24} md={8}>
+                <Form.Item
                   label="Task Title"
                   name="title"
                   rules={[{ required: true, message: "Please enter task title" }]}
@@ -1404,9 +1482,7 @@ const TaskForm = () => {
                   <Input placeholder="Enter task title" />
                 </Form.Item>
               </Col>
-            </Row>
 
-            <Row gutter={16}>
               {!hideClientDropdown && (
                 <Col xs={24} md={8}>
                   <Form.Item
@@ -1638,6 +1714,31 @@ const TaskForm = () => {
                               {u.name} ({u.email}) {isAbsentUser(u) ? " - Absent" : ""}
                             </Option>
                           ))}
+                      </Select>
+                    </div>
+                  </Col>
+
+                  <Col xs={24} md={8}>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ display: "block", marginBottom: 6, fontWeight: 500 }}>
+                        <span style={{ color: "#ff4d4f", marginRight: 4 }}>*</span>Country Code
+                      </label>
+                      <Select
+                        placeholder="Select country code"
+                        value={block.countryCode || "91"}
+                        onChange={(val) => handleUpdateTaskBlock(index, "countryCode", val)}
+                        style={{ width: "100%" }}
+                        showSearch
+                        filterOption={(input, option) => {
+                          const label = option?.label || "";
+                          return String(label).toLowerCase().includes(input.toLowerCase());
+                        }}
+                      >
+                        {countryCallingCodeOptions.map((opt) => (
+                          <Option key={opt.key} value={opt.callingCode} label={opt.label}>
+                            {opt.label}
+                          </Option>
+                        ))}
                       </Select>
                     </div>
                   </Col>

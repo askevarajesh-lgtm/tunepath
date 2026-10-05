@@ -86,6 +86,14 @@ const taskSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    countryCode: {
+      type: String,
+      default: "91",
+    },
+    assignedUserCountryCode: {
+      type: String,
+      default: "91",
+    },
     assignedUserPhone: {
       type: String,
       default: null,

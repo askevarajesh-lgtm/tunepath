@@ -361,6 +361,9 @@ const TaskDetailDrawer = ({ task, visible, onClose, onTaskCompleted, isDeliverab
                 {liveTask.assignedTo?.name?.charAt(0) || <UserOutlined />}
               </Avatar>
               {liveTask.assignedTo?.name || "N/A"}
+              {(liveTask.countryCode || liveTask.assignedUserCountryCode) && (
+                <Tag color="blue">+{liveTask.countryCode || liveTask.assignedUserCountryCode}</Tag>
+              )}
             </Space>
           </Descriptions.Item>
           <Descriptions.Item label="Due Date">
