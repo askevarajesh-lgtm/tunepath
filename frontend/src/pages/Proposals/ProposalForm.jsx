@@ -92,6 +92,13 @@ const ProposalForm = () => {
           const categories = item.categories?.map(c => c.name) || [];
           const categoryCounts = {};
           item.categories?.forEach(c => { categoryCounts[c.name] = c.count; });
+          
+          const itemCampAmt = item.isCampaign ? (item.campaignDetails?.campaignAmount || 0) : 0;
+          const calculatedSubtotal = (item.price || 0) + itemCampAmt;
+          const subtotalVal = (proposal.subtotal && proposal.subtotal >= calculatedSubtotal) 
+            ? proposal.subtotal 
+            : calculatedSubtotal;
+
           form.setFieldsValue({
             customName: item.name,
             customDescription: item.description,
@@ -101,7 +108,8 @@ const ProposalForm = () => {
             customApplicableAccess: item.applicableAccess || [],
             customHandlingDuration: item.handlingDuration,
             customIsCampaign: item.isCampaign || false,
-            customCampaignDetails: item.campaignDetails || { numberOfDays: 0, dailyBudget: 0, campaignAmount: 0 }
+            customCampaignDetails: item.campaignDetails || { numberOfDays: 0, dailyBudget: 0, campaignAmount: 0 },
+            subtotal: subtotalVal
           });
         }
       }
@@ -123,13 +131,35 @@ const ProposalForm = () => {
   const handleCustomValuesChange = (changedValues, allValues) => {
     if (isCustomizing) {
       let needsRecalc = false;
-      if ('customPrice' in changedValues) needsRecalc = true;
-      if (changedValues.customCampaignDetails && ('campaignAmount' in changedValues.customCampaignDetails)) needsRecalc = true;
-      if ('customIsCampaign' in changedValues) needsRecalc = true;
+      let campAmt = allValues.customCampaignDetails?.campaignAmount || 0;
+
+      if (
+        changedValues.customCampaignDetails &&
+        ('numberOfDays' in changedValues.customCampaignDetails || 'dailyBudget' in changedValues.customCampaignDetails)
+      ) {
+        const days = allValues.customCampaignDetails?.numberOfDays || 0;
+        const budget = allValues.customCampaignDetails?.dailyBudget || 0;
+        campAmt = days * budget;
+        form.setFieldsValue({
+          customCampaignDetails: {
+            ...allValues.customCampaignDetails,
+            campaignAmount: campAmt
+          }
+        });
+        needsRecalc = true;
+      }
+
+      if (
+        'customPrice' in changedValues ||
+        'customIsCampaign' in changedValues ||
+        (changedValues.customCampaignDetails && 'campaignAmount' in changedValues.customCampaignDetails)
+      ) {
+        needsRecalc = true;
+      }
       
       if (needsRecalc) {
         const cPrice = allValues.customPrice || 0;
-        const cCampAmt = allValues.customIsCampaign ? (allValues.customCampaignDetails?.campaignAmount || 0) : 0;
+        const cCampAmt = allValues.customIsCampaign ? campAmt : 0;
         form.setFieldsValue({ subtotal: cPrice + cCampAmt });
       }
     }
@@ -291,21 +321,31 @@ const ProposalForm = () => {
                 <span style={{ fontWeight: 600, fontSize: 16, color: 'var(--text-primary)' }}>Package Details: {selectedMasterItem.name}</span>
                 <Switch checked={isCustomizing} onChange={(checked) => {
                   setIsCustomizing(checked);
-                  if (checked && !form.getFieldValue('customName')) {
-                    const categories = selectedMasterItem.categories?.map(c => c.name) || [];
-                    const categoryCounts = {};
-                    selectedMasterItem.categories?.forEach(c => { categoryCounts[c.name] = c.count; });
-                    form.setFieldsValue({
-                      customName: selectedMasterItem.name,
-                      customDescription: selectedMasterItem.description,
-                      customPrice: selectedMasterItem.price,
-                      customCategories: categories,
-                      customCategoryCounts: categoryCounts,
-                      customApplicableAccess: selectedMasterItem.applicableAccess || [],
-                      customHandlingDuration: selectedMasterItem.handlingDuration,
-                      customIsCampaign: selectedMasterItem.isCampaign || false,
-                      customCampaignDetails: selectedMasterItem.campaignDetails || { numberOfDays: 0, dailyBudget: 0, campaignAmount: 0 }
-                    });
+                  if (checked) {
+                    if (!form.getFieldValue('customName')) {
+                      const categories = selectedMasterItem.categories?.map(c => c.name) || [];
+                      const categoryCounts = {};
+                      selectedMasterItem.categories?.forEach(c => { categoryCounts[c.name] = c.count; });
+                      form.setFieldsValue({
+                        customName: selectedMasterItem.name,
+                        customDescription: selectedMasterItem.description,
+                        customPrice: selectedMasterItem.price,
+                        customCategories: categories,
+                        customCategoryCounts: categoryCounts,
+                        customApplicableAccess: selectedMasterItem.applicableAccess || [],
+                        customHandlingDuration: selectedMasterItem.handlingDuration,
+                        customIsCampaign: selectedMasterItem.isCampaign || false,
+                        customCampaignDetails: selectedMasterItem.campaignDetails || { numberOfDays: 0, dailyBudget: 0, campaignAmount: 0 }
+                      });
+                    }
+                    const cPrice = form.getFieldValue('customPrice') ?? selectedMasterItem.price ?? 0;
+                    const isCamp = form.getFieldValue('customIsCampaign') ?? selectedMasterItem.isCampaign;
+                    const campAmt = isCamp ? (form.getFieldValue(['customCampaignDetails', 'campaignAmount']) ?? selectedMasterItem.campaignDetails?.campaignAmount ?? 0) : 0;
+                    form.setFieldsValue({ subtotal: cPrice + campAmt });
+                  } else if (selectedMasterItem) {
+                    const basePrice = selectedMasterItem.price || 0;
+                    const campAmt = selectedMasterItem.isCampaign ? (selectedMasterItem.campaignDetails?.campaignAmount || 0) : 0;
+                    form.setFieldsValue({ subtotal: basePrice + campAmt });
                   }
                 }} checkedChildren="Custom" unCheckedChildren="Original" />
               </div>
@@ -382,7 +422,19 @@ const ProposalForm = () => {
             <div style={{ marginBottom: 24, padding: 24, background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-color)' }}>
               <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 600, fontSize: 16, color: 'var(--text-primary)' }}>Customize Package: {selectedMasterItem.name}</span>
-                <Switch checked={isCustomizing} onChange={(checked) => setIsCustomizing(checked)} checkedChildren="Custom" unCheckedChildren="Original" />
+                <Switch checked={isCustomizing} onChange={(checked) => {
+                  setIsCustomizing(checked);
+                  if (checked) {
+                    const cPrice = form.getFieldValue('customPrice') ?? selectedMasterItem.price ?? 0;
+                    const isCamp = form.getFieldValue('customIsCampaign') ?? selectedMasterItem.isCampaign;
+                    const campAmt = isCamp ? (form.getFieldValue(['customCampaignDetails', 'campaignAmount']) ?? selectedMasterItem.campaignDetails?.campaignAmount ?? 0) : 0;
+                    form.setFieldsValue({ subtotal: cPrice + campAmt });
+                  } else {
+                    const basePrice = selectedMasterItem.price || 0;
+                    const campAmt = selectedMasterItem.isCampaign ? (selectedMasterItem.campaignDetails?.campaignAmount || 0) : 0;
+                    form.setFieldsValue({ subtotal: basePrice + campAmt });
+                  }
+                }} checkedChildren="Custom" unCheckedChildren="Original" />
               </div>
 
               <Form.Item label="Item Name" name="customName" rules={[{ required: true }]}>
@@ -414,7 +466,18 @@ const ProposalForm = () => {
               </Form.Item>
 
               <Form.Item name="customIsCampaign" valuePropName="checked">
-                <Switch checkedChildren="Campaign Enabled" unCheckedChildren="Campaign Disabled" />
+                <Switch 
+                  checkedChildren="Campaign Enabled" 
+                  unCheckedChildren="Campaign Disabled" 
+                  onChange={(checked) => {
+                    const cPrice = form.getFieldValue('customPrice') || 0;
+                    const campAmt = checked ? (form.getFieldValue(['customCampaignDetails', 'campaignAmount']) || 0) : 0;
+                    form.setFieldsValue({
+                      customIsCampaign: checked,
+                      subtotal: cPrice + campAmt
+                    });
+                  }}
+                />
               </Form.Item>
 
               <Form.Item noStyle dependencies={['customIsCampaign']}>
@@ -431,10 +494,15 @@ const ProposalForm = () => {
                               min={0} 
                               onChange={(val) => {
                                 const budget = form.getFieldValue(['customCampaignDetails', 'dailyBudget']) || 0;
-                                const campAmt = val * budget;
-                                form.setFieldsValue({ customCampaignDetails: { campaignAmount: campAmt } });
-                                const basePrice = form.getFieldValue('customPrice') || 0;
-                                form.setFieldsValue({ grandTotal: basePrice + campAmt });
+                                const campAmt = (val || 0) * budget;
+                                form.setFieldsValue({
+                                  customCampaignDetails: {
+                                    ...form.getFieldValue('customCampaignDetails'),
+                                    numberOfDays: val || 0,
+                                    campaignAmount: campAmt
+                                  },
+                                  subtotal: (form.getFieldValue('customPrice') || 0) + (form.getFieldValue('customIsCampaign') ? campAmt : 0)
+                                });
                               }}
                             />
                           </Form.Item>
@@ -447,10 +515,15 @@ const ProposalForm = () => {
                               prefix="₹" 
                               onChange={(val) => {
                                 const days = form.getFieldValue(['customCampaignDetails', 'numberOfDays']) || 0;
-                                const campAmt = days * val;
-                                form.setFieldsValue({ customCampaignDetails: { campaignAmount: campAmt } });
-                                const basePrice = form.getFieldValue('customPrice') || 0;
-                                form.setFieldsValue({ grandTotal: basePrice + campAmt });
+                                const campAmt = days * (val || 0);
+                                form.setFieldsValue({
+                                  customCampaignDetails: {
+                                    ...form.getFieldValue('customCampaignDetails'),
+                                    dailyBudget: val || 0,
+                                    campaignAmount: campAmt
+                                  },
+                                  subtotal: (form.getFieldValue('customPrice') || 0) + (form.getFieldValue('customIsCampaign') ? campAmt : 0)
+                                });
                               }}
                             />
                           </Form.Item>
@@ -462,8 +535,14 @@ const ProposalForm = () => {
                               min={0} 
                               prefix="₹" 
                               onChange={(val) => {
-                                const basePrice = form.getFieldValue('customPrice') || 0;
-                                form.setFieldsValue({ grandTotal: basePrice + (val || 0) });
+                                const campAmt = val || 0;
+                                form.setFieldsValue({
+                                  customCampaignDetails: {
+                                    ...form.getFieldValue('customCampaignDetails'),
+                                    campaignAmount: campAmt
+                                  },
+                                  subtotal: (form.getFieldValue('customPrice') || 0) + (form.getFieldValue('customIsCampaign') ? campAmt : 0)
+                                });
                               }}
                             />
                           </Form.Item>
@@ -511,7 +590,19 @@ const ProposalForm = () => {
               </Form.Item>
 
               <Form.Item label="Service Price" name="customPrice" rules={[{ required: true }]}>
-                <InputNumber style={{ width: '100%' }} prefix="₹" min={0} />
+                <InputNumber 
+                  style={{ width: '100%' }} 
+                  prefix="₹" 
+                  min={0} 
+                  onChange={(val) => {
+                    const isCamp = form.getFieldValue('customIsCampaign');
+                    const campAmt = isCamp ? (form.getFieldValue(['customCampaignDetails', 'campaignAmount']) || 0) : 0;
+                    form.setFieldsValue({
+                      customPrice: val || 0,
+                      subtotal: (val || 0) + campAmt
+                    });
+                  }}
+                />
               </Form.Item>
 
               <Form.Item label="Handling Duration" name="customHandlingDuration">

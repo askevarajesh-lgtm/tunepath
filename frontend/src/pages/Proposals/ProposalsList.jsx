@@ -232,9 +232,8 @@ const ProposalsList = () => {
               title: 'Service Amount', 
               key: 'serviceAmount', 
               render: (_, record) => {
-                const campAmt = record.masterItems?.reduce((acc, item) => acc + (item.isCampaign ? (item.campaignDetails?.campaignAmount || 0) : 0), 0) || 0;
-                const total = record.grandTotal || 0;
-                return `₹${(total - campAmt).toLocaleString()}`;
+                const serviceAmt = record.masterItems?.reduce((acc, item) => acc + (item.price || 0), 0) || 0;
+                return `₹${serviceAmt.toLocaleString()}`;
               } 
             },
             { title: 'Total Amount', dataIndex: 'grandTotal', key: 'grandTotal', render: (val) => `₹${val?.toLocaleString()}` },
